@@ -157,6 +157,7 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     for m in &app.midi_inputs {
         eprintln!("MIDI : {}", m.name());
     }
+    app.toast("Espace pour jouer · Ctrl+K pour tout trouver");
     let (w, h) = window.size();
     eprintln!("Ponzik · {} · {} Hz · {}", window.backend_name(), config.sample_rate, output_name);
     let mut canvas = Canvas::new(w as usize, h as usize);
