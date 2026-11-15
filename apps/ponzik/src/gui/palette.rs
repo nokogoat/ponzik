@@ -103,6 +103,10 @@ impl App {
         }
         add("Enregistrer".into(), "Fichier", "Ctrl S", Action::Save);
         add("Ouvrir un projet".into(), "Fichier", "Ctrl O", Action::OpenMenu);
+        for path in super::compat::list_projects().into_iter().take(6) {
+            let name = path.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
+            add(format!("Ouvrir : {name}"), "Récent", "", Action::Open(path));
+        }
         add("Nouveau projet".into(), "Fichier", "Ctrl N", Action::NewProject);
         add("Exporter en WAV".into(), "Fichier", "Ctrl R", Action::Export);
         add("Exporter les pistes séparées (stems)".into(), "Fichier", "", Action::ExportStems);
