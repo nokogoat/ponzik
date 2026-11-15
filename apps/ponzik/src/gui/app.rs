@@ -606,10 +606,12 @@ impl App {
             if a != b {
                 let sel = (a.min(b), a.max(b));
                 self.time_selection = Some((view, sel.0, sel.1));
+                self.set_loop(view, Some(sel));
                 changed = Some(sel);
             } else if input.released {
-                // Simple clic : marqueur de départ, sélection effacée.
+                // Simple clic : marqueur de départ, sélection et boucle effacées.
                 self.time_selection = None;
+                self.set_loop(view, None);
                 self.set_start_marker(a as f64);
             }
             if input.released && a != b {
@@ -637,6 +639,18 @@ impl App {
             c.fill_path(&p, t.text);
         }
         changed
+    }
+
+    /// La sélection de temps fait boucler la lecture quand elle correspond au mode
+    /// courant (piano roll en mode pattern, playlist en mode morceau). Ce n'est pas
+    /// une modification du projet : pas d'étape d'annulation.
+    fn set_loop(&mut self, view: View, range: Option<(u32, u32)>) {
+        let applies = matches!((view, self.project.mode), (View::Piano, PlayMode::Pattern(_)) | (View::Playlist, PlayMode::Song));
+        let range = if applies { range } else { None };
+        if self.project.loop_range != range {
+            self.project.loop_range = range;
+            self.sync_engine();
+        }
     }
 
     /// Place le marqueur de départ (clic dans une règle).
@@ -753,7 +767,9 @@ impl App {
                     self.popup = None;
                     self.piano.selected.clear();
                     self.playlist.selected = None;
-                    self.time_selection = None;
+                    if let Some((v, _, _)) = self.time_selection.take() {
+                        self.set_loop(v, None);
+                    }
                 }
                 Key::Space => self.play_stop(),
                 Key::F(5) => self.set_view(View::Playlist),
