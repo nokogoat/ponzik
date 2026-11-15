@@ -1,10 +1,11 @@
-use std::f32::consts::PI;
+use std::f32::consts::{PI, TAU};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FilterMode {
     LowPass,
     HighPass,
     BandPass,
+    Notch,
 }
 
 /// Filtre à variables d'état en topologie TPT (Zavalishin / Simper) :
@@ -52,7 +53,74 @@ impl Svf {
             FilterMode::LowPass => v2,
             FilterMode::BandPass => v1,
             FilterMode::HighPass => v0 - self.k * v1 - v2,
+            FilterMode::Notch => v0 - self.k * v1,
         }
+    }
+}
+
+/// Passe-bas à un pôle, sans dépassement ; le passe-haut s'en déduit.
+#[derive(Clone, Debug, Default)]
+pub struct OnePole {
+    a: f32,
+    z: f32,
+}
+
+impl OnePole {
+    pub fn new(cutoff_hz: f32, sample_rate: f32) -> Self {
+        let mut f = Self::default();
+        f.set_cutoff(cutoff_hz, sample_rate);
+        f
+    }
+
+    pub fn set_cutoff(&mut self, cutoff_hz: f32, sample_rate: f32) {
+        self.a = 1.0 - (-TAU * cutoff_hz.clamp(0.1, sample_rate * 0.49) / sample_rate).exp();
+    }
+
+    /// Réglage direct du coefficient (0 = figé, 1 = transparent).
+    pub fn set_coef(&mut self, a: f32) {
+        self.a = a.clamp(0.0, 1.0);
+    }
+
+    pub fn reset(&mut self) {
+        self.z = 0.0;
+    }
+
+    #[inline]
+    pub fn lowpass(&mut self, x: f32) -> f32 {
+        self.z += self.a * (x - self.z);
+        self.z
+    }
+
+    #[inline]
+    pub fn highpass(&mut self, x: f32) -> f32 {
+        x - self.lowpass(x)
+    }
+}
+
+/// Bloqueur de composante continue (passe-haut ~10 Hz).
+#[derive(Clone, Debug)]
+pub struct DcBlocker {
+    r: f32,
+    x1: f32,
+    y1: f32,
+}
+
+impl DcBlocker {
+    pub fn new(sample_rate: f32) -> Self {
+        Self { r: 1.0 - TAU * 10.0 / sample_rate, x1: 0.0, y1: 0.0 }
+    }
+
+    pub fn reset(&mut self) {
+        self.x1 = 0.0;
+        self.y1 = 0.0;
+    }
+
+    #[inline]
+    pub fn process(&mut self, x: f32) -> f32 {
+        let y = x - self.x1 + self.r * self.y1;
+        self.x1 = x;
+        self.y1 = y;
+        y
     }
 }
 
@@ -88,6 +156,27 @@ mod tests {
     fn highpass_cuts_lows() {
         let mut f = Svf::new(FilterMode::HighPass, 5_000.0, 0.707, SR);
         assert!(rms_through(&mut f, 100.0) < 0.01);
+    }
+
+    #[test]
+    fn notch_removes_its_center() {
+        let mut f = Svf::new(FilterMode::Notch, 1_000.0, 2.0, SR);
+        assert!(rms_through(&mut f, 1_000.0) < 0.01);
+        f.reset();
+        assert!(rms_through(&mut f, 100.0) > 0.65);
+    }
+
+    #[test]
+    fn one_pole_and_dc_blocker() {
+        let mut lp = OnePole::new(100.0, SR);
+        let mut dc = DcBlocker::new(SR);
+        let (mut a, mut b) = (0.0, 0.0);
+        for _ in 0..48_000 {
+            a = lp.lowpass(1.0);
+            b = dc.process(1.0);
+        }
+        assert!((a - 1.0).abs() < 1e-4);
+        assert!(b.abs() < 1e-3);
     }
 
     #[test]
