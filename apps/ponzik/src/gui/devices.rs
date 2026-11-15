@@ -98,6 +98,12 @@ fn groups(params: &'static [ParamInfo]) -> Vec<Group> {
     out
 }
 
+/// Instruments qui jouent un échantillon : ils montrent sa forme d'onde.
+fn sample_kind(kind: &str) -> bool {
+    matches!(kind, "sampler" | "slicer" | "granular")
+}
+const SAMPLE_W: f32 = 320.0;
+
 fn transfer_kind(kind: &str) -> bool {
     matches!(kind, "compressor" | "limiter" | "gate" | "saturator")
 }
@@ -111,7 +117,13 @@ fn card_width(kind: &str, params: &'static [ParamInfo]) -> f32 {
         return 220.0;
     }
     let body: f32 = g.iter().map(|g| g.width).sum::<f32>() + (g.len() - 1) as f32 * GROUP_GAP;
-    let extra = if transfer_kind(kind) { TRANSFER + GROUP_GAP } else { 0.0 };
+    let extra = if transfer_kind(kind) {
+        TRANSFER + GROUP_GAP
+    } else if sample_kind(kind) {
+        SAMPLE_W + GROUP_GAP
+    } else {
+        0.0
+    };
     (body + extra + 28.0).max(200.0)
 }
 
@@ -262,6 +274,9 @@ impl App {
             let side = TRANSFER.min(body.h - 6.0);
             self.transfer_graph(c, input, Rect::new(x, body.y + 4.0, side, side), device, &kind, params);
             x += TRANSFER + GROUP_GAP;
+        } else if sample_kind(&kind) {
+            self.sample_view(c, input, Rect::new(x, body.y + 4.0, SAMPLE_W, body.h - 10.0), device, params);
+            x += SAMPLE_W + GROUP_GAP;
         }
         let key = device_key(device);
         for (gi, g) in groups(params).into_iter().enumerate() {

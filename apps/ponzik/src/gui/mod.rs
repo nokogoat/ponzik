@@ -238,6 +238,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     if view == View::Playlist {
         app.set_mode(ponzik_engine::PlayMode::Song);
     }
+    // Fichier de test : posé dans la playlist et chargé dans un sampler.
+    if let Ok(path) = std::env::var("PONZIK_TEST_WAV") {
+        app.add_audio_clip(&path);
+        app.add_sample_channel(&path);
+    }
     app.toggle_play();
     let _ = Command::Play;
 

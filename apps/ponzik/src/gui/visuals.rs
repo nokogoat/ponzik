@@ -451,6 +451,58 @@ impl App {
     }
 }
 
+impl App {
+    /// Forme d'onde de l'échantillon d'un instrument, avec les marqueurs de début et
+    /// de fin (et de boucle) à faire glisser.
+    pub(super) fn sample_view(&mut self, c: &mut Canvas, input: &Input, r: Rect, device: Device, params: &'static [ParamInfo]) {
+        let t = self.theme;
+        c.fill_rrect(r, 10.0, t.well);
+        let Device::Instrument(ch) = device else { return };
+        let Some(path) = self.project.channels.get(ch).and_then(|c| c.instrument.sample.clone()) else {
+            let (cx, cy) = r.center();
+            self.text_center(c, self.f.sans, 12.0, cx, cy - 8.0, "Aucun échantillon", t.muted);
+            self.text_center(c, self.f.sans, 11.0, cx, cy + 10.0, "Choisis un fichier WAV dans le navigateur", t.muted);
+            return;
+        };
+        let g = r.inset_xy(8.0, 10.0);
+        let mid = g.y + g.h * 0.5;
+        if let Some(peaks) = self.waveform(&path) {
+            let n = peaks.len().max(1);
+            for px in 0..g.w as usize {
+                let a = px * n / g.w as usize;
+                let b = ((px + 1) * n / g.w as usize).max(a + 1);
+                let (lo, hi) = peaks[a.min(n - 1)..b.min(n)].iter().fold((0.0f32, 0.0f32), |(l, h), &(x, y)| (l.min(x), h.max(y)));
+                c.fill_rect(Rect::new(g.x + px as f32, mid - hi * g.h * 0.5, 1.0, ((hi - lo) * g.h * 0.5).max(1.0)), t.accent.alpha(0.75));
+            }
+        }
+        let name = std::path::Path::new(&path).file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
+        self.text(c, self.f.sans_med, 11.0, r.x + 10.0, r.y + 12.0, &name, t.text2);
+
+        // Marqueurs : début et fin (et début de boucle si présent), en pourcentage.
+        let find = |n: &str| params.iter().find(|p| p.name == n);
+        let markers = [(find("Début"), t.text), (find("Fin"), t.text), (find("Début de boucle"), t.select)];
+        for (k, (info, col)) in markers.into_iter().enumerate() {
+            let Some(info) = info else { continue };
+            let v = self.param_value(device, info);
+            let x = g.x + info.to_norm(v) * g.w;
+            let id = wid("smp-mk", device_key(device), k);
+            let hit = Rect::new(x - 6.0, r.y, 12.0, r.h);
+            let hov = self.hovered(input, id, hit);
+            if hov && input.pressed {
+                self.begin_drag(id, input, 0.0);
+            }
+            if self.is_dragging(id) {
+                self.set_param_value(device, info, info.from_norm((input.x - g.x) / g.w));
+            }
+            let hv = self.hover_anim(id, hov || self.is_dragging(id));
+            c.fill_rect(Rect::new(x.round() - 1.0, r.y + 4.0, 2.0, r.h - 8.0), col.alpha(0.6 + 0.4 * hv));
+            let mut p = Path::new();
+            p.polygon(&[(x - 5.0, r.y + 4.0), (x + 5.0, r.y + 4.0), (x, r.y + 11.0)]);
+            c.fill_path(&p, col);
+        }
+    }
+}
+
 /// Clé stable d'un appareil pour les identifiants de widgets.
 pub fn device_key(d: Device) -> usize {
     match d {
