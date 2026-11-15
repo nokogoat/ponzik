@@ -2,6 +2,9 @@
 //! (chargement de projet, menus du navigateur).
 
 use crate::effect::Effect;
+use crate::effects::{
+    AutoFilter, Bitcrusher, Chorus, Compressor, Delay, Eq, Gate, Limiter, Phaser, Reverb, Saturator, Utility,
+};
 use crate::instrument::Instrument;
 use crate::instruments::{DrumKind, DrumSynth, Pulse};
 
@@ -41,7 +44,92 @@ pub fn instruments() -> &'static [InstrumentKind] {
 }
 
 pub fn effects() -> &'static [EffectKind] {
-    &[]
+    &[
+        EffectKind {
+            id: "eq",
+            name: "EQ",
+            category: "EQ et filtres",
+            description: "Égaliseur paramétrique : coupe-bas, plateaux, trois cloches, coupe-haut",
+            create: || Box::new(Eq::default()),
+        },
+        EffectKind {
+            id: "autofilter",
+            name: "AutoFilter",
+            category: "EQ et filtres",
+            description: "Filtre modulé par LFO synchronisable et suivi d'enveloppe",
+            create: || Box::new(AutoFilter::default()),
+        },
+        EffectKind {
+            id: "compressor",
+            name: "Compresseur",
+            category: "Dynamique",
+            description: "Compresseur stéréo lié, genou doux, mix parallèle",
+            create: || Box::new(Compressor::default()),
+        },
+        EffectKind {
+            id: "limiter",
+            name: "Limiteur",
+            category: "Dynamique",
+            description: "Limiteur à anticipation : aucun dépassement du plafond",
+            create: || Box::new(Limiter::default()),
+        },
+        EffectKind {
+            id: "gate",
+            name: "Porte",
+            category: "Dynamique",
+            description: "Porte de bruit avec maintien et plage",
+            create: || Box::new(Gate::default()),
+        },
+        EffectKind {
+            id: "reverb",
+            name: "Réverb",
+            category: "Espace",
+            description: "Réverbération algorithmique à huit lignes",
+            create: || Box::new(Reverb::default()),
+        },
+        EffectKind {
+            id: "delay",
+            name: "Delay",
+            category: "Espace",
+            description: "Écho stéréo synchronisé au tempo, ping-pong",
+            create: || Box::new(Delay::default()),
+        },
+        EffectKind {
+            id: "chorus",
+            name: "Chorus",
+            category: "Modulation",
+            description: "Chorus et flanger stéréo",
+            create: || Box::new(Chorus::default()),
+        },
+        EffectKind {
+            id: "phaser",
+            name: "Phaser",
+            category: "Modulation",
+            description: "Phaser de 4 à 12 étages",
+            create: || Box::new(Phaser::default()),
+        },
+        EffectKind {
+            id: "saturator",
+            name: "Saturateur",
+            category: "Saturation",
+            description: "Saturation suréchantillonnée : douce, dure, lampe, repli, redresseur",
+            create: || Box::new(Saturator::default()),
+        },
+        EffectKind {
+            id: "bitcrusher",
+            name: "Bitcrusher",
+            category: "Saturation",
+            description: "Réduction de bits et de fréquence d'échantillonnage",
+            create: || Box::new(Bitcrusher::default()),
+        },
+        EffectKind {
+            id: "utility",
+            name: "Utilitaire",
+            category: "Utilitaires",
+            description: "Gain, balance, largeur, graves mono, phase",
+            create: || Box::new(Utility::default()),
+        },
+    ]
 }
 
 pub fn instrument_kind(id: &str) -> Option<&'static InstrumentKind> {

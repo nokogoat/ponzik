@@ -6,6 +6,7 @@
 //! [`Garbage`] pour être libérés hors du thread audio.
 
 pub mod effect;
+pub mod effects;
 pub mod engine;
 pub mod instrument;
 pub mod instruments;

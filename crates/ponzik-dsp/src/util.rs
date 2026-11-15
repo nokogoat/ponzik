@@ -28,6 +28,13 @@ pub fn decay_coef(tau: f32, sample_rate: f32) -> f32 {
     (-1.0 / (tau.max(1e-6) * sample_rate)).exp()
 }
 
+/// Annule les valeurs minuscules des boucles de rétroaction (évite les nombres
+/// dénormalisés, très lents sur certains processeurs).
+#[inline]
+pub fn flush_denormal(x: f32) -> f32 {
+    if x.abs() < 1e-15 { 0.0 } else { x }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
