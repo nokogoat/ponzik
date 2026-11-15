@@ -49,7 +49,8 @@ pub fn demo_breakcore() -> Project {
     p.swing = 0.0;
 
     // Percussions DrumSynth : 0 Type, 1 Accord, 2 Longueur, 3 Brillance, 4 Volume.
-    let kick = p.add_channel("Kick", inst("drumsynth", &[(0, 0.0), (1, -3.0), (2, 0.7), (4, 0.0)]), 60);
+    // Kick : 1 Hauteur de départ, 2 Chute, 4 Déclin, 5 Clic, 8 Saturation, 10 Volume.
+    let kick = p.add_channel("Kick", inst("kick", &[(1, 36.0), (2, 0.04), (4, 0.45), (5, 0.6), (8, 0.35), (10, -2.0)]), 60);
     let snare = p.add_channel("Snare", inst("drumsynth", &[(0, 1.0), (1, 2.0), (2, 0.8), (3, 0.75)]), 60);
     let ghost = p.add_channel("Ghost", inst("drumsynth", &[(0, 1.0), (1, 6.0), (2, 0.4), (3, 0.9), (4, -5.0)]), 60);
     let hat = p.add_channel("Hat", inst("drumsynth", &[(0, 3.0), (2, 0.6), (3, 0.8), (4, -3.0)]), 60);
@@ -81,6 +82,11 @@ pub fn demo_breakcore() -> Project {
     p.tracks[drum_bus].inserts[0] = fx("saturator", &[(0, 1.0), (1, 10.0), (4, 0.6)]);
     p.tracks[drum_bus].inserts[1] = fx("bitcrusher", &[(0, 10.0), (1, 2.0), (2, 0.3)]);
     p.tracks[drum_bus].inserts[2] = fx("compressor", &[(0, -20.0), (1, 5.0), (4, 0.002), (5, 0.08), (6, 5.0)]);
+    // Multibande : 0 Profondeur, 8 Sortie.
+    p.tracks[drum_bus].inserts[3] = fx("ott", &[(0, 0.35), (8, -2.0)]);
+    let pad_t = p.channels[pad].track;
+    // Pompe : 0 Cadence (1/4), 2 Profondeur.
+    p.tracks[pad_t].inserts[0] = fx("pompe", &[(0, 0.0), (2, 0.8)]);
     let acid_t = p.channels[acid].track;
     p.tracks[acid_t].inserts[0] = fx("saturator", &[(0, 2.0), (1, 12.0), (4, 0.8)]);
     p.tracks[acid_t].inserts[1] = fx("delay", &[(2, 0.45), (3, 1.0), (6, 0.22)]);
@@ -88,7 +94,8 @@ pub fn demo_breakcore() -> Project {
     p.tracks[stab_t].inserts[0] = fx("delay", &[(3, 1.0), (2, 0.5), (6, 0.35)]);
     let reverb_bus = 10;
     p.tracks[reverb_bus].name = "Réverbe".into();
-    p.tracks[reverb_bus].inserts[0] = fx("reverb", &[(1, 0.85), (2, 3.5), (5, 1.0)]);
+    // Shimmer : 0 Taille, 1 Déclin, 2 Shimmer, 5 Mix.
+    p.tracks[reverb_bus].inserts[0] = fx("shimmer", &[(0, 0.8), (1, 3.5), (2, 0.35), (5, 1.0)]);
     p.tracks[reverb_bus].gain = 0.6;
     for (ch, amount) in [(snare, 0.18), (ghost, 0.12), (stab, 0.45), (pad, 0.35)] {
         let t = p.channels[ch].track;
