@@ -71,6 +71,8 @@ pub enum Popup {
     Rename { target: Rename, text: String },
     /// Palette touche-à-tout (Ctrl+K).
     Palette { query: String, selected: usize },
+    /// Presets d'un appareil : enregistrer, ou charger un preset existant.
+    Presets { device: super::devices::Device, kind: String },
     /// Choix du pattern d'une case vide de la vue Session.
     SessionAssign { col: usize, row: usize },
     /// Menu d'un paramètre (clic droit sur un potard).
@@ -79,6 +81,8 @@ pub enum Popup {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Rename {
+    /// Nom d'un nouveau preset de l'appareil.
+    Preset(super::devices::Device),
     Project,
     /// Nouveau nom puis enregistrement dans un nouveau fichier.
     SaveAs,
@@ -125,6 +129,7 @@ pub enum Action {
     Automate(ponzik_engine::AutoTarget, f32),
     SaveAs,
     ExportStems,
+    LoadPreset(super::devices::Device, PathBuf),
     AssignSession(usize, usize, usize),
     RemoveAutomation(ponzik_engine::AutoTarget),
     SetParamValue(ponzik_engine::AutoTarget, f32),
@@ -1600,6 +1605,18 @@ impl App {
                 v.push(("Valeur par défaut".into(), String::new(), Action::SetParamValue(*target, *default)));
                 (label, v)
             }
+            Popup::Presets { device, kind } => {
+                let mut v = vec![(
+                    "Enregistrer le preset…".into(),
+                    "Les réglages actuels, sous un nom".into(),
+                    Action::Popup(Popup::Rename { target: Rename::Preset(*device), text: String::new() }),
+                )];
+                for path in compat::list_presets(kind) {
+                    let name = path.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
+                    v.push((name, String::new(), Action::LoadPreset(*device, path)));
+                }
+                ("Presets".into(), v)
+            }
             Popup::SessionAssign { col, row } => (
                 format!("Piste {} · scène {}", col + 1, row + 1),
                 p.patterns
@@ -1744,6 +1761,14 @@ impl App {
                 self.open_popup(Popup::Rename { target: Rename::SaveAs, text }, anchor);
             }
             Action::ExportStems => self.export_stems(),
+            Action::LoadPreset(device, path) => match compat::load_preset(&path) {
+                Ok(params) => {
+                    self.apply_preset(device, &params);
+                    let name = path.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
+                    self.toast(&format!("Preset chargé : {name}"));
+                }
+                Err(e) => self.toast(&e),
+            },
             Action::AssignSession(col, row, p) => {
                 self.project.session_grid[col][row] = Some(p);
                 self.commit("Remplir une case");
@@ -1798,6 +1823,10 @@ impl App {
             return;
         }
         match target {
+            Rename::Preset(device) => {
+                self.save_preset(device, text);
+                return;
+            }
             Rename::Project => self.project.name = text.into(),
             Rename::SaveAs => {
                 self.project.name = text.into();
@@ -1853,7 +1882,11 @@ impl App {
             c.fill_rect(screen, Color::rgba(0, 0, 0, (110.0 * open) as u8));
             c.fill_rrect(r, 16.0, t.panel);
             c.stroke_rrect(r, 16.0, 1.0, t.hairline.alpha(1.6));
-            let title = if *target == Rename::SaveAs { "Enregistrer sous" } else { "Renommer" };
+            let title = match target {
+                Rename::SaveAs => "Enregistrer sous",
+                Rename::Preset(_) => "Nom du preset",
+                _ => "Renommer",
+            };
             self.text(c, self.f.sans_med, 14.0, r.x + 20.0, r.y + 26.0, title, t.text);
             let field = Rect::new(r.x + 16.0, r.y + 46.0, r.w - 32.0, 40.0);
             c.fill_rrect(field, 10.0, t.well);

@@ -245,7 +245,15 @@ impl App {
             }
         };
         c.fill_rrect(Rect::new(head.x + 12.0, head.y + 12.0, 3.0, 12.0), 1.5, if bypass { t.muted } else { color });
-        self.text_fit(c, self.f.sans_med, 13.0, head.x + 22.0, head.y + 18.0, &name, head.w - 90.0, if bypass { t.muted } else { t.text });
+        let title_w = if matches!(device, Device::Effect { .. }) { head.w - 130.0 } else { head.w - 70.0 };
+        self.text_fit(c, self.f.sans_med, 13.0, head.x + 22.0, head.y + 18.0, &name, title_w, if bypass { t.muted } else { t.text });
+
+        // Presets de l'appareil.
+        let preset_x = if matches!(device, Device::Effect { .. }) { head.right() - 92.0 } else { head.right() - 32.0 };
+        let preset = Rect::new(preset_x, head.y + 5.0, 26.0, 26.0);
+        if self.icon_button(c, input, wid("fx-preset", device_key(device), 0), preset, Icon::Folder, false) {
+            self.open_popup(Popup::Presets { device, kind: kind.clone() }, preset);
+        }
 
         if let Device::Effect { track, slot } = device {
             let power = Rect::new(head.right() - 60.0, head.y + 5.0, 26.0, 26.0);
@@ -327,6 +335,42 @@ impl App {
             }
             x += g.width + GROUP_GAP;
         }
+    }
+
+    /// Réglages d'un appareil qui diffèrent des défauts.
+    fn device_params(&self, device: Device) -> Vec<(u32, f32)> {
+        match device {
+            Device::Instrument(ch) => self.project.channels.get(ch).map_or(Vec::new(), |c| c.instrument.params.clone()),
+            Device::Effect { track, slot } => {
+                self.project.tracks[track].inserts[slot].as_ref().map_or(Vec::new(), |e| e.params.clone())
+            }
+        }
+    }
+
+    pub fn save_preset(&mut self, device: Device, name: &str) {
+        let (kind, _) = self.device_kind(device);
+        let params = self.device_params(device);
+        match super::compat::save_preset(&kind, name, &params) {
+            Ok(_) => self.toast(&format!("Preset enregistré : {name}")),
+            Err(e) => self.toast(&e),
+        }
+    }
+
+    /// Remplace tous les réglages de l'appareil par ceux du preset.
+    pub fn apply_preset(&mut self, device: Device, params: &[(u32, f32)]) {
+        match device {
+            Device::Instrument(ch) => {
+                if let Some(c) = self.project.channels.get_mut(ch) {
+                    c.instrument.params = params.to_vec();
+                }
+            }
+            Device::Effect { track, slot } => {
+                if let Some(e) = self.project.tracks[track].inserts[slot].as_mut() {
+                    e.params = params.to_vec();
+                }
+            }
+        }
+        self.commit("Charger un preset");
     }
 
     pub(super) fn param_value(&self, device: Device, p: &ParamInfo) -> f32 {
