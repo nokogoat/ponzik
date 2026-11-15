@@ -216,6 +216,9 @@ pub struct App {
     pub piano: PianoState,
     pub playlist: PlaylistState,
     pub sidebar_scroll: f32,
+    /// Recherche du navigateur et son champ actif.
+    pub sidebar_query: String,
+    pub sidebar_focus: bool,
     pub chain_scroll: f32,
     pub mixer_scroll: f32,
     pub samples: HashMap<String, Arc<Sample>>,
@@ -295,6 +298,8 @@ impl App {
             },
             playlist: PlaylistState { scroll_x: 0.0, zoom: 44.0, brush: 0, selected: None },
             sidebar_scroll: 0.0,
+            sidebar_query: String::new(),
+            sidebar_focus: false,
             chain_scroll: 0.0,
             mixer_scroll: 0.0,
             samples: HashMap::new(),
@@ -783,6 +788,10 @@ impl App {
                 }
                 Key::Char('r') if mods.ctrl => self.export(),
                 Key::Char('k') if mods.ctrl => self.open_palette(),
+                Key::Char('f') if mods.ctrl => {
+                    self.sidebar = true;
+                    self.sidebar_focus = true;
+                }
                 Key::Char('m') if mods.ctrl => {
                     self.metronome = !self.metronome;
                     let m = self.metronome;
@@ -831,15 +840,15 @@ impl App {
         self.anim.begin_frame(dt);
         self.time += dt;
         self.poll_engine(dt);
-        if self.popup.is_none() {
+        if self.popup.is_none() && !self.sidebar_focus {
             self.shortcuts(input);
-        } else if input.keys.iter().any(|(k, _)| *k == Key::Escape) {
+            self.musical_keyboard(input);
+        } else if self.popup.is_some() && input.keys.iter().any(|(k, _)| *k == Key::Escape) {
             self.popup = None;
         }
         if input.focus_lost {
             self.release_all_held();
         }
-        self.musical_keyboard(input);
 
         let t = self.theme;
         let (w, h) = (c.width() as f32, c.height() as f32);
@@ -1141,8 +1150,53 @@ impl App {
         if let Some(i) = self.segmented(c, input, wid("theme", 0, 0), theme_box, &names, cur) {
             self.theme = THEMES[i];
         }
-        let list = Rect::new(r.x, r.y, r.w, theme_box.y - 12.0 - r.y);
         c.fill_rect(Rect::new(r.x, theme_box.y - 12.0, r.w - 1.0, 1.0), t.hairline);
+
+        // Recherche : filtre instruments, effets et échantillons.
+        let field = Rect::new(inner_x, r.y + 12.0, w, 36.0);
+        let fid = wid("sb-search", 0, 0);
+        let fhov = self.hovered(input, fid, field);
+        if fhov && input.pressed {
+            self.sidebar_focus = true;
+        } else if input.pressed && !field.contains(input.x, input.y) {
+            self.sidebar_focus = false;
+        }
+        let mut enter = false;
+        if self.sidebar_focus {
+            self.sidebar_query.push_str(&input.text);
+            for &(key, _) in &input.keys {
+                match key {
+                    Key::Backspace => {
+                        self.sidebar_query.pop();
+                    }
+                    Key::Escape => {
+                        self.sidebar_query.clear();
+                        self.sidebar_focus = false;
+                    }
+                    Key::Enter => enter = true,
+                    _ => {}
+                }
+            }
+            if !input.text.is_empty() || !input.keys.is_empty() {
+                self.sidebar_scroll = 0.0;
+            }
+        }
+        let fv = self.anim.to(wid("sb-search-f", 0, 0), self.sidebar_focus as u8 as f32, T_HOVER);
+        let fhv = self.hover_anim(fid, fhov);
+        c.fill_rrect(field, 10.0, t.raised.mix(t.raised_hi, fhv * 0.5));
+        c.stroke_rrect(field, 10.0, 1.0 + fv * 0.5, t.hairline.mix(t.select, fv * 0.8));
+        c.stroke_circle(field.x + 16.0, field.y + 17.0, 5.0, 1.5, t.muted);
+        c.stroke_polyline(&[(field.x + 20.0, field.y + 21.0), (field.x + 23.0, field.y + 24.0)], 1.5, t.muted);
+        let query = self.sidebar_query.clone();
+        let (shown, ink) = if query.is_empty() && !self.sidebar_focus { ("Rechercher  Ctrl F".to_string(), t.muted) } else { (query.clone(), t.text) };
+        let tw = self.text(c, self.f.sans, 13.0, field.x + 32.0, field.y + 18.0, &shown, ink);
+        if self.sidebar_focus {
+            if (self.time * 2.0).fract() < 0.6 {
+                c.fill_rect(Rect::new(field.x + 33.0 + if query.is_empty() { 0.0 } else { tw }, field.y + 9.0, 1.5, 18.0), t.select);
+            }
+            self.anim.set(wid("caret", 0, 0), self.time);
+        }
+        let list = Rect::new(r.x, field.bottom() + 8.0, r.w, theme_box.y - 12.0 - field.bottom() - 8.0);
 
         let hov_list = input.inside && list.contains(input.x, input.y);
         if hov_list && input.wheel != 0.0 {
@@ -1150,51 +1204,82 @@ impl App {
         }
         let scroll = self.anim.to(wid("sb-scroll", 0, 0), self.sidebar_scroll, T_LAYOUT);
         let inner = c.push_clip(list);
-        let mut y = list.y + 16.0 - scroll;
+        let mut y = list.y + 12.0 - scroll;
 
         let section = |app: &mut App, c: &mut Canvas, y: &mut f32, title: &str| {
             app.text(c, app.f.sans_med, 12.0, inner_x + 4.0, *y + 8.0, title, t.muted);
             *y += 24.0;
         };
+        // Filtre et tri par pertinence.
+        let rank = |items: Vec<(usize, String, String)>| -> Vec<(usize, String, String)> {
+            if query.trim().is_empty() {
+                return items;
+            }
+            let mut scored: Vec<(i32, (usize, String, String))> = items
+                .into_iter()
+                .filter_map(|it| super::palette::fuzzy_score(&query, &format!("{} {}", it.1, it.2)).map(|s| (s, it)))
+                .collect();
+            scored.sort_by(|a, b| b.0.cmp(&a.0));
+            scored.into_iter().map(|(_, it)| it).collect()
+        };
+        let insts = rank(registry::instruments().iter().enumerate().map(|(i, k)| (i, k.name.to_string(), k.description.to_string())).collect());
+        let fxs = rank(registry::effects().iter().enumerate().map(|(i, k)| (i, k.name.to_string(), k.description.to_string())).collect());
+        let files = self.sample_files.clone();
+        let wavs = rank(
+            files
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    let name = p.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
+                    let folder = p.parent().and_then(|p| p.file_name()).map_or(String::new(), |s| s.to_string_lossy().into_owned());
+                    (i, name, folder)
+                })
+                .collect(),
+        );
+        if enter {
+            if let Some((i, _, _)) = insts.first() {
+                self.add_instrument(registry::instruments()[*i].id);
+            } else if let Some((i, _, _)) = fxs.first() {
+                let track = self.focused_track();
+                self.add_effect(track, registry::effects()[*i].id);
+            } else if let Some((i, _, _)) = wavs.first() {
+                self.add_sample_channel(&files[*i].to_string_lossy());
+            }
+        }
 
-        section(self, c, &mut y, "Instruments");
-        for (i, k) in registry::instruments().iter().enumerate() {
+        if !insts.is_empty() {
+            section(self, c, &mut y, "Instruments");
+        }
+        for (i, name, desc) in &insts {
             let row = Rect::new(inner_x, y, w, 40.0);
-            if self.browser_row(c, input, wid("br-inst", i, 0), row, k.name, k.description) {
-                self.add_instrument(k.id);
+            if self.browser_row(c, input, wid("br-inst", *i, 0), row, name, desc) {
+                self.add_instrument(registry::instruments()[*i].id);
             }
             y += 42.0;
         }
-        y += 16.0;
-        section(self, c, &mut y, "Effets");
-        if registry::effects().is_empty() {
-            self.text(c, self.f.sans, 12.0, inner_x + 4.0, y + 10.0, "Aucun effet installé", t.muted);
-            y += 28.0;
+        if !fxs.is_empty() {
+            y += 16.0;
+            section(self, c, &mut y, "Effets");
         }
-        for (i, k) in registry::effects().iter().enumerate() {
+        for (i, name, desc) in &fxs {
             let row = Rect::new(inner_x, y, w, 40.0);
-            if self.browser_row(c, input, wid("br-fx", i, 0), row, k.name, k.description) {
+            if self.browser_row(c, input, wid("br-fx", *i, 0), row, name, desc) {
                 let track = self.focused_track();
-                self.add_effect(track, k.id);
+                self.add_effect(track, registry::effects()[*i].id);
             }
             y += 42.0;
         }
         y += 16.0;
         section(self, c, &mut y, "Échantillons");
-        if self.sample_files.is_empty() {
-            self.text(c, self.f.sans, 12.0, inner_x + 4.0, y + 10.0, "Aucun fichier WAV trouvé", t.muted);
+        if wavs.is_empty() {
+            let msg = if files.is_empty() { "Aucun fichier WAV trouvé" } else { "Aucun résultat" };
+            self.text(c, self.f.sans, 12.0, inner_x + 4.0, y + 10.0, msg, t.muted);
             y += 28.0;
         }
-        let files = self.sample_files.clone();
-        for (i, path) in files.iter().enumerate() {
-            let name = path.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
-            let folder = path
-                .parent()
-                .and_then(|p| p.file_name())
-                .map_or(String::new(), |s| s.to_string_lossy().into_owned());
+        for (i, name, folder) in &wavs {
             let row = Rect::new(inner_x, y, w, 40.0);
-            if self.browser_row(c, input, wid("br-wav", i, 0), row, &name, &folder) {
-                self.add_sample_channel(&path.to_string_lossy());
+            if self.browser_row(c, input, wid("br-wav", *i, 0), row, name, folder) {
+                self.add_sample_channel(&files[*i].to_string_lossy());
             }
             y += 42.0;
         }
