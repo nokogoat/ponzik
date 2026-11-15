@@ -9,6 +9,7 @@ mod compat;
 mod devices;
 mod keys;
 mod mixer;
+mod palette;
 mod piano;
 mod playlist;
 mod rack;

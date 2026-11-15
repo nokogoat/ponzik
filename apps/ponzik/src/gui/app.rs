@@ -65,6 +65,8 @@ pub enum Popup {
     /// Destination d'un nouvel envoi.
     Send(usize),
     Rename { target: Rename, text: String },
+    /// Palette touche-à-tout (Ctrl+K).
+    Palette { query: String, selected: usize },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -75,9 +77,9 @@ pub enum Rename {
     Track(usize),
 }
 
-/// Ce que fait une ligne de menu.
+/// Ce que fait une ligne de menu ou de palette.
 #[derive(Clone, Debug)]
-enum Action {
+pub enum Action {
     None,
     AddInstrument(&'static str, Option<usize>),
     AddEffect(usize, &'static str),
@@ -93,6 +95,23 @@ enum Action {
     SetOutput(usize, usize),
     AddSend(usize, usize),
     ResetTrack(usize),
+    PlayStop,
+    ToggleMode,
+    ToggleMetronome,
+    ToggleRecord,
+    ToggleTyping,
+    SetView(View),
+    ToggleSidebar,
+    TogglePanel,
+    FocusChannel(usize),
+    Save,
+    OpenMenu,
+    NewProject,
+    Export,
+    Undo,
+    Redo,
+    LoadDemo(usize),
+    SetTheme(usize),
 }
 
 pub struct PopupState {
@@ -763,6 +782,7 @@ impl App {
                     self.toast("Nouveau projet");
                 }
                 Key::Char('r') if mods.ctrl => self.export(),
+                Key::Char('k') if mods.ctrl => self.open_palette(),
                 Key::Char('m') if mods.ctrl => {
                     self.metronome = !self.metronome;
                     let m = self.metronome;
@@ -784,6 +804,10 @@ impl App {
                 _ => {}
             }
         }
+    }
+
+    pub fn open_palette(&mut self) {
+        self.open_popup(Popup::Palette { query: String::new(), selected: 0 }, Rect::new(0.0, 0.0, 0.0, 0.0));
     }
 
     pub fn toggle_typing_keyboard(&mut self) {
@@ -949,6 +973,7 @@ impl App {
         // Droite : fichier et historique, puis la charge DSP si la place le permet.
         let mut rx = r.w - 12.0 - 32.0;
         let buttons = [
+            (Icon::Search, "tb-search"),
             (Icon::Panel, "tb-panel"),
             (Icon::Export, "tb-export"),
             (Icon::Save, "tb-save"),
@@ -963,6 +988,7 @@ impl App {
             let on = icon == Icon::Panel && self.panel;
             if self.icon_button(c, input, wid(name, 0, 0), Rect::new(rx, cy - 16.0, 32.0, 32.0), icon, on) {
                 match icon {
+                    Icon::Search => self.open_palette(),
                     Icon::Panel => self.panel = !self.panel,
                     Icon::Export => self.export(),
                     Icon::Save => self.save(),
@@ -1305,7 +1331,7 @@ impl App {
                     .collect();
                 (if send { "Envoyer vers" } else { "Sortie vers" }.into(), v)
             }
-            Popup::Rename { .. } => ("Renommer".into(), Vec::new()),
+            Popup::Rename { .. } | Popup::Palette { .. } => (String::new(), Vec::new()),
         }
     }
 
@@ -1397,6 +1423,44 @@ impl App {
                 self.project.tracks[t].pan = 0.0;
                 self.commit("Réinitialiser une piste");
             }
+            Action::PlayStop => self.play_stop(),
+            Action::ToggleMode => {
+                let mode = match self.project.mode {
+                    PlayMode::Pattern(_) => PlayMode::Song,
+                    PlayMode::Song => PlayMode::Pattern(self.project.current_pattern),
+                };
+                self.set_mode(mode);
+            }
+            Action::ToggleMetronome => {
+                self.metronome = !self.metronome;
+                let m = self.metronome;
+                self.send(Command::SetMetronome(m));
+            }
+            Action::ToggleRecord => self.record = !self.record,
+            Action::ToggleTyping => self.toggle_typing_keyboard(),
+            Action::SetView(v) => self.set_view(v),
+            Action::ToggleSidebar => self.sidebar = !self.sidebar,
+            Action::TogglePanel => self.panel = !self.panel,
+            Action::FocusChannel(ch) => {
+                self.focus = Focus::Channel(ch);
+                self.panel = true;
+            }
+            Action::Save => self.save(),
+            Action::OpenMenu => self.open_popup(Popup::OpenProject(compat::list_projects()), anchor),
+            Action::NewProject => {
+                self.replace_project(Project::empty(), None);
+                self.toast("Nouveau projet");
+            }
+            Action::Export => self.export(),
+            Action::Undo => self.undo(),
+            Action::Redo => self.redo(),
+            Action::LoadDemo(i) => {
+                let p = if i == 1 { ponzik_project::demo_breakcore() } else { ponzik_project::demo_project() };
+                let name = p.name.clone();
+                self.replace_project(p, None);
+                self.toast(&format!("Démo chargée : {name}"));
+            }
+            Action::SetTheme(i) => self.theme = THEMES[i.min(THEMES.len() - 1)],
         }
     }
 
@@ -1443,6 +1507,16 @@ impl App {
     fn popup_layer(&mut self, c: &mut Canvas, input: &Input, screen: Rect) {
         let Some(mut state) = self.popup.take() else { return };
         let t = self.theme;
+        if let Popup::Palette { query, selected } = &state.kind {
+            let (run, next) = self.palette(c, input, screen, query.clone(), *selected);
+            if let Some(kind) = next {
+                self.popup = Some(PopupState { kind, anchor: state.anchor });
+            }
+            if let Some(action) = run {
+                self.run_action(action, Rect::new(screen.w * 0.5 - 150.0, screen.h * 0.2, 300.0, 0.0));
+            }
+            return;
+        }
         let open = self.anim.to(wid("popup", 0, 0), 1.0, T_HOVER);
 
         // Fenêtre de renommage : un champ texte.
