@@ -1,7 +1,7 @@
 //! Démo breakcore : break façon amen haché, roulements qui montent, ligne acide,
 //! sub, stabs FM, nappe. 180 BPM, uniquement des instruments natifs.
 
-use ponzik_engine::{Note, PlayMode, TICKS_PER_BAR};
+use ponzik_engine::{AutoScope, AutoTarget, Note, PlayMode, TICKS_PER_BAR};
 
 use crate::{ClipDef, EffectDef, InstrumentDef, Project};
 
@@ -204,6 +204,12 @@ pub fn demo_breakcore() -> Project {
         clip(amen, 0, 32, 4),
         clip(drill, 0, 36, 1),
     ];
+    // Automation : la coupure de l'acide s'ouvre et se referme sur le morceau.
+    let cutoff = AutoTarget::InstrumentParam { channel: acid, id: 1 };
+    for (bar_at, hz) in [(2u32, 180.0f32), (12, 1_400.0), (16, 320.0), (24, 900.0), (28, 2_600.0), (36, 260.0)] {
+        p.add_automation_point(cutoff, AutoScope::Song, bar_at * bar, hz);
+    }
+
     p.mode = PlayMode::Song;
     p.current_pattern = amen;
     p

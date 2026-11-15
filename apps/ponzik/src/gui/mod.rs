@@ -5,6 +5,7 @@
 #![allow(clippy::too_many_arguments)]
 
 mod app;
+mod automation;
 mod compat;
 mod devices;
 mod keys;
@@ -213,7 +214,11 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
 /// Rend l'interface hors écran, en pleine lecture, dans un PNG.
 pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result<(), String> {
     const SR: u32 = 48_000;
-    let project = demo_project();
+    // « bc-playlist » : la démo breakcore dans la vue playlist.
+    let (project, view) = match view.strip_prefix("bc-") {
+        Some(v) => (ponzik_project::demo_breakcore(), v),
+        None => (demo_project(), view),
+    };
     let none = |_: &str| None;
     let (mut engine, handle) = project.build_engine(SR as f32, &none);
     let mut app = App::new(handle, project, SR);
