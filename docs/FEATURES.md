@@ -13,23 +13,23 @@ Légende : **FL** = FL Studio · **AB** = Ableton Live · ✅ fait dans Ponzik �
 |---|---|---|
 | Channel Rack : un instrument par canal + rangée de pas | FL | ✅ 16 pas |
 | Step sequencer : longueur de pattern variable, swing, vélocité, pan, hauteur par pas (graph editor) | FL | 🟡 longueur variable côté moteur, pas de swing ni de graph editor |
-| Patterns multiples, sélecteur de pattern, « make unique », clonage | FL | ⬜ |
-| Playlist : pistes libres qui mélangent clips de pattern, d'audio et d'automation | FL | ⬜ |
+| Patterns multiples, sélecteur de pattern, « make unique », clonage | FL | ✅ sauf « make unique » |
+| Playlist : pistes libres qui mélangent clips de pattern, d'audio et d'automation | FL | 🟡 patterns, audio, automation dans des couloirs séparés |
 | Arrangements multiples dans un même projet | FL | ⬜ |
-| Vue Session : grille de clips, scènes, lancement quantifié | AB | ⬜ |
-| Vue Arrangement : timeline linéaire, pistes, enregistrement de la Session vers l'Arrangement | AB | ⬜ |
+| Vue Session : grille de clips, scènes, lancement quantifié | AB | ✅ 8 × 8 |
+| Vue Arrangement : timeline linéaire, pistes, enregistrement de la Session vers l'Arrangement | AB | 🟡 playlist |
 | Clip View / Device View (détail du clip et de la chaîne d'effets en bas d'écran) | AB | ⬜ |
 | Performance mode : lancer les clips de la Playlist en live | FL | ⬜ |
-| Navigateur (browser) : samples, presets, plugins, projets, favoris, tags, collections | FL · AB | ⬜ |
+| Navigateur (browser) : samples, presets, plugins, projets, favoris, tags, collections | FL · AB | 🟡 instruments, effets, WAV, recherche ; pas de presets ni favoris |
 | Recherche de sons similaires dans le navigateur | AB | ⬜ |
 | Plugin picker, base de données de plugins | FL | ⬜ |
 | Fenêtres détachables, multi-écran | FL · AB | ⬜ |
 | Barre d'aide contextuelle (hint bar / info view) | FL · AB | ⬜ |
-| Thèmes et couleurs personnalisables | FL | ⬜ |
-| Marqueurs : sections, boucle, signature rythmique, punch in/out | FL · AB | ⬜ |
-| Historique d'annulation complet | FL · AB | ⬜ |
-| Métronome, pré-compte, tap tempo | FL · AB | ⬜ |
-| Clavier d'ordinateur joué comme un piano | FL · AB | ⬜ |
+| Thèmes et couleurs personnalisables | FL | ✅ trois thèmes |
+| Marqueurs : sections, boucle, signature rythmique, punch in/out | FL · AB | 🟡 marqueur de départ, boucle ; pas de marqueurs de section |
+| Historique d'annulation complet | FL · AB | ✅ |
+| Métronome, pré-compte, tap tempo | FL · AB | 🟡 métronome ; pas de pré-compte ni de tap tempo |
+| Clavier d'ordinateur joué comme un piano | FL · AB | ✅ |
 | Changements de tempo et de signature dans le morceau | FL · AB | ⬜ |
 | Support tactile | FL | ⬜ |
 
@@ -37,10 +37,10 @@ Légende : **FL** = FL Studio · **AB** = Ableton Live · ✅ fait dans Ponzik �
 
 | Fonction | Où | Ponzik |
 |---|---|---|
-| Piano roll : dessiner, peindre, effacer, couper, sélectionner, muter, zoom | FL · AB | ⬜ |
+| Piano roll : dessiner, peindre, effacer, couper, sélectionner, muter, zoom | FL · AB | ✅ |
 | Propriétés de note : vélocité, release, pan, hauteur fine, mod X/Y, canal, couleur | FL | ⬜ |
 | Notes glissées (slide) et portamento | FL | ⬜ |
-| Notes fantômes des autres patterns ou canaux (ghost notes) | FL | ⬜ |
+| Notes fantômes des autres patterns ou canaux (ghost notes) | FL | ✅ |
 | Mise en évidence et contrainte à la gamme, détection de tonalité | FL · AB | ⬜ |
 | Accords en un clic (chord stamps), accords expressifs | FL · AB | ⬜ |
 | Outils : arpéger, strum, flam, flip, chop, glue, articuler, humaniser, quantifier | FL | ⬜ |
@@ -54,15 +54,15 @@ Légende : **FL** = FL Studio · **AB** = Ableton Live · ✅ fait dans Ponzik �
 | Score logger (récupérer ce qu'on a joué) | FL | ⬜ |
 | Systèmes d'accordage (micro-tonal) | AB | ⬜ |
 | Éditeur d'événements et de lanes de contrôleurs | FL · AB | ⬜ |
-| Import et export MIDI | FL · AB | ⬜ |
+| Import et export MIDI | FL · AB | 🟡 entrée MIDI des contrôleurs ; pas de fichiers .mid |
 
 ## 3. Audio : enregistrement, édition, warp
 
 | Fonction | Où | Ponzik |
 |---|---|---|
-| Enregistrement audio et MIDI, armement de piste, monitoring | FL · AB | ⬜ |
+| Enregistrement audio et MIDI, armement de piste, monitoring | FL · AB | 🟡 notes au clavier et au MIDI ; pas d'audio |
 | Prises en boucle, lanes de prises, comping | FL · AB | ⬜ |
-| Clips audio : fondus, gain, inversion, pitch et stretch par clip, édition par clip | FL · AB | ⬜ |
+| Clips audio : fondus, gain, inversion, pitch et stretch par clip, édition par clip | FL · AB | 🟡 position, durée, forme d'onde ; fondus fixes |
 | Warp : marqueurs, modes Beats, Tones, Texture, Re-Pitch, Complex, Complex Pro | AB | ⬜ |
 | Time-stretch et pitch-shift de haute qualité | FL · AB | ⬜ |
 | Détection de transitoires, découpe en tranches vers MIDI ou Drum Rack | FL · AB | ⬜ |
@@ -85,16 +85,16 @@ Les instruments propriétaires ne peuvent pas être copiés : Ponzik en fait ses
 | Instrument | Type | Équivalent Ponzik |
 |---|---|---|
 | 3x Osc, SimSynth, MiniSynth, Sawer | Soustractif simple | 🟡 Pulse |
-| Sytrus | FM + additif + soustractif | ⬜ |
+| Sytrus | FM + additif + soustractif | ✅ Ponzik FM |
 | Harmor, Harmless | Additif, resynthèse d'image et d'audio | ⬜ |
-| FLEX, GMS, Kepler, Kepler Exo | Rompler, synthés modernes | ⬜ |
+| FLEX, GMS, Kepler, Kepler Exo | Rompler, synthés modernes | 🟡 Ponzik Wave |
 | Toxic Biohazard, Sakura, PoiZone, Morphine, Ogun | Synthés variés (FM, cordes physiques, additif) | ⬜ |
-| Transistor Bass, BooBass, Fruity Kick, Drumaxx, Fruity DrumSynth Live | Basse type 303, kick, batterie modélisée | 🟡 DrumSynth |
+| Transistor Bass, BooBass, Fruity Kick, Drumaxx, Fruity DrumSynth Live | Basse type 303, kick, batterie modélisée | ✅ Acid 303, Kick, DrumSynth |
 | FPC, Drumpad | Pads de batterie | ⬜ |
-| DirectWave, Sampler de canal | Sampler multi-échantillons | ⬜ |
-| Slicex, Fruity Slicer 2 | Découpe de boucles | ⬜ |
-| Fruity Granulizer | Granulaire | ⬜ |
-| FL Keys, Plucked! | Piano, cordes pincées | ⬜ |
+| DirectWave, Sampler de canal | Sampler multi-échantillons | ✅ Sampler |
+| Slicex, Fruity Slicer 2 | Découpe de boucles | ✅ Découpeur |
+| Fruity Granulizer | Granulaire | ✅ Granulaire |
+| FL Keys, Plucked! | Piano, cordes pincées | ✅ Piano électrique, Cordes pincées |
 | Autogun | Lecteur de presets FM | ⬜ |
 | Layer, Patcher | Empiler des instruments, chaînes modulaires | ⬜ |
 | Loop Starter | Génère des boucles par genre dans le Channel Rack | ⬜ |
@@ -104,13 +104,13 @@ Les instruments propriétaires ne peuvent pas être copiés : Ponzik en fait ses
 | Instrument | Type | Équivalent Ponzik |
 |---|---|---|
 | Analog, Drift | Soustractif | 🟡 Pulse |
-| Operator | FM 4 opérateurs | ⬜ |
-| Wavetable | Wavetable | ⬜ |
+| Operator | FM 4 opérateurs | ✅ Ponzik FM |
+| Wavetable | Wavetable | ✅ Ponzik Wave |
 | Meld | Macro-oscillateurs, MPE | ⬜ |
-| Collision, Tension, Electric | Modélisation physique (percussions, cordes, piano électrique) | ⬜ |
-| Simpler, Sampler | Sampler simple et multi-échantillons | ⬜ |
+| Collision, Tension, Electric | Modélisation physique (percussions, cordes, piano électrique) | 🟡 Cordes pincées, Piano électrique |
+| Simpler, Sampler | Sampler simple et multi-échantillons | ✅ Sampler |
 | Drum Rack, Drum Sampler, Impulse | Batterie à pads | 🟡 DrumSynth |
-| Granulator III | Granulaire | ⬜ |
+| Granulator III | Granulaire | ✅ Granulaire |
 | Instrument Rack | Empiler des instruments, macros | ⬜ |
 | External Instrument, CV Instrument | Piloter du matériel | ⬜ |
 
@@ -118,20 +118,20 @@ Les instruments propriétaires ne peuvent pas être copiés : Ponzik en fait ses
 
 | Famille | FL Studio | Ableton Live | Ponzik |
 |---|---|---|---|
-| EQ | Parametric EQ 2, 7 Band EQ | EQ Eight, EQ Three, Channel EQ | ⬜ |
-| Compression | Compressor, Multiband Compressor, Maximus, Limiter | Compressor, Glue Compressor, Multiband Dynamics, Limiter, Gate | ⬜ |
-| Mastering et limitation | Emphasis, Emphasizer, Maximus, Soundgoodizer | Limiter, Glue Compressor | ⬜ |
-| Transitoires | Transient Processor | Drum Buss | ⬜ |
-| Saturation | Fast Dist, Blood Overdrive, Distructor, Hardcore, Squeeze, Waveshaper | Saturator, Roar, Overdrive, Pedal, Amp, Cabinet, Dynamic Tube, Erosion, Redux, Vinyl Distortion | ⬜ |
-| Réverbération | Reeverb 2, LuxeVerb, Convolver | Reverb, Hybrid Reverb, Convolution Reverb | ⬜ |
-| Délai | Delay 3, Delay Bank, Multiband Delay | Delay, Echo, Filter Delay, Grain Delay, Align Delay | ⬜ |
-| Modulation | Chorus, Vintage Chorus, Flanger, Flangus, Phaser, Vintage Phaser | Chorus-Ensemble, Phaser-Flanger, Auto Pan-Tremolo | ⬜ |
-| Filtres | Love Philter, Filter, Free Filter | Auto Filter, Spectral Resonator, Resonators, Corpus | ⬜ |
-| Hauteur et fréquence | Pitch Shifter, Frequency Shifter, Pitcher, Newtone | Shifter, Auto Shift | ⬜ |
-| Effets rythmiques | Gross Beat, Scratcher | Beat Repeat, Looper | ⬜ |
+| EQ | Parametric EQ 2, 7 Band EQ | EQ Eight, EQ Three, Channel EQ | ✅ EQ (courbe interactive) |
+| Compression | Compressor, Multiband Compressor, Maximus, Limiter | Compressor, Glue Compressor, Multiband Dynamics, Limiter, Gate | ✅ compresseur, multibande, limiteur, porte |
+| Mastering et limitation | Emphasis, Emphasizer, Maximus, Soundgoodizer | Limiter, Glue Compressor | 🟡 limiteur, multibande |
+| Transitoires | Transient Processor | Drum Buss | ✅ Transitoires |
+| Saturation | Fast Dist, Blood Overdrive, Distructor, Hardcore, Squeeze, Waveshaper | Saturator, Roar, Overdrive, Pedal, Amp, Cabinet, Dynamic Tube, Erosion, Redux, Vinyl Distortion | ✅ Saturateur, Bitcrusher |
+| Réverbération | Reeverb 2, LuxeVerb, Convolver | Reverb, Hybrid Reverb, Convolution Reverb | ✅ Réverbe, Shimmer |
+| Délai | Delay 3, Delay Bank, Multiband Delay | Delay, Echo, Filter Delay, Grain Delay, Align Delay | ✅ Délai synchronisé |
+| Modulation | Chorus, Vintage Chorus, Flanger, Flangus, Phaser, Vintage Phaser | Chorus-Ensemble, Phaser-Flanger, Auto Pan-Tremolo | ✅ Chorus, Phaser, Pompe |
+| Filtres | Love Philter, Filter, Free Filter | Auto Filter, Spectral Resonator, Resonators, Corpus | ✅ AutoFilter |
+| Hauteur et fréquence | Pitch Shifter, Frequency Shifter, Pitcher, Newtone | Shifter, Auto Shift | ✅ Transposeur |
+| Effets rythmiques | Gross Beat, Scratcher | Beat Repeat, Looper | ✅ Tranche |
 | Spectral | – | Spectral Time | ⬜ |
 | Vocodeur | Vocodex, Vocoder | Vocoder | ⬜ |
-| Stéréo et utilitaires | Stereo Shaper, Stereo Enhancer, Balance, Center, Phase Inverter, Mute 2, Frequency Splitter | Utility, Surround Panner | 🟡 gain et pan |
+| Stéréo et utilitaires | Stereo Shaper, Stereo Enhancer, Balance, Center, Phase Inverter, Mute 2, Frequency Splitter | Utility, Surround Panner | ✅ Utilitaire, Image stéréo |
 | Analyse | Wave Candy, Spectroman, dB Meter | Spectrum, Tuner | 🟡 oscilloscope et VU-mètres |
 | Contrôleurs de modulation | Peak Controller, Formula Controller, X-Y Controller, Envelope Controller, Keyboard Controller | LFO, Envelope Follower, Shaper, Expression Control | ⬜ |
 | Chaînes d'effets | Patcher, Effector | Audio Effect Rack (chaînes parallèles, 16 macros, variations, A/B d'appareil) | ⬜ |
@@ -143,13 +143,13 @@ Les instruments propriétaires ne peuvent pas être copiés : Ponzik en fait ses
 | Fonction | Où | Ponzik |
 |---|---|---|
 | Pistes de mixage : volume, pan, mute | FL · AB | ✅ |
-| Solo, armement, inversion de phase, séparation stéréo | FL · AB | ⬜ |
+| Solo, armement, inversion de phase, séparation stéréo | FL · AB | 🟡 solo ; pas d'inversion de phase |
 | VU-mètres crête | FL · AB | ✅ |
 | VU-mètres RMS / LUFS | FL · AB | 🟡 RMS sur la sortie |
-| Inserts d'effets par piste (10 slots dans FL) | FL · AB | ⬜ |
+| Inserts d'effets par piste (10 slots dans FL) | FL · AB | ✅ 8 inserts |
 | Pistes de mixage dynamiques (jusqu'à 500 dans FL) | FL | ⬜ |
-| Envois (sends) et pistes de retour | FL · AB | ⬜ |
-| Routage libre de n'importe quelle piste vers n'importe quelle autre | FL | ⬜ |
+| Envois (sends) et pistes de retour | FL · AB | ✅ 4 envois |
+| Routage libre de n'importe quelle piste vers n'importe quelle autre | FL | ✅ sans boucle |
 | Groupes de pistes | FL · AB | ⬜ |
 | Sidechain | FL · AB | ⬜ |
 | Compensation de latence des plugins (PDC), délai de piste | FL · AB | ⬜ |
@@ -161,7 +161,7 @@ Les instruments propriétaires ne peuvent pas être copiés : Ponzik en fait ses
 
 | Fonction | Où | Ponzik |
 |---|---|---|
-| Clips d'automation avec courbes (FL) / lanes d'automation (AB) | FL · AB | ⬜ |
+| Clips d'automation avec courbes (FL) / lanes d'automation (AB) | FL · AB | ✅ couloirs du morceau, courbes |
 | Enregistrement d'automation en direct | FL · AB | ⬜ |
 | Enveloppes de clip (modulation relative au clip) | AB | ⬜ |
 | Macros mappables, variations de macros, randomisation | AB | ⬜ |
@@ -172,7 +172,7 @@ Les instruments propriétaires ne peuvent pas être copiés : Ponzik en fait ses
 
 | Fonction | Où | Ponzik |
 |---|---|---|
-| Lancement de clips et de scènes quantifié | AB | ⬜ |
+| Lancement de clips et de scènes quantifié | AB | ✅ à la mesure |
 | Follow actions (enchaînements automatiques de clips) | AB | ⬜ |
 | Modes de lancement (trigger, gate, toggle, repeat), legato | AB | ⬜ |
 | Looper | AB | ⬜ |
@@ -189,7 +189,7 @@ Les instruments propriétaires ne peuvent pas être copiés : Ponzik en fait ses
 | Pont 32/64 bits, plugins isolés dans un processus séparé | FL · AB | ⬜ |
 | Export WAV | FL · AB | ✅ 16 bits |
 | Export MP3, FLAC, OGG, 24/32 bits, dithering, normalisation | FL · AB | ⬜ |
-| Export de stems (une piste par fichier) | FL · AB | ⬜ |
+| Export de stems (une piste par fichier) | FL · AB | ✅ |
 | Export vidéo | FL · AB | ⬜ |
 | Scripts de contrôleurs MIDI (Python dans FL, Remote Scripts dans AB) | FL · AB | ⬜ |
 | Intégration matérielle dédiée (Push, Move / FL Key, FLkey) | FL · AB | ⬜ |
@@ -201,7 +201,7 @@ Les instruments propriétaires ne peuvent pas être copiés : Ponzik en fait ses
 
 | Fonction | Où | Ponzik |
 |---|---|---|
-| Sauvegarde et chargement de projet | FL · AB | ⬜ |
+| Sauvegarde et chargement de projet | FL · AB | ✅ JSON |
 | Sauvegarde automatique, sauvegardes de secours | FL · AB | ⬜ |
 | Modèles de projet (templates) | FL · AB | ⬜ |
 | « Tout rassembler et enregistrer » (copier les samples dans le projet) | FL · AB | ⬜ |
@@ -222,6 +222,4 @@ Les instruments propriétaires ne peuvent pas être copiés : Ponzik en fait ses
 
 ## Ce que Ponzik a aujourd'hui
 
-Le moteur temps réel, les pilotes audio ALSA et WASAPI, la fenêtre et le rendu maison, un Channel Rack de 16 pas, un synthé soustractif (Pulse), une batterie synthétisée (DrumSynth), un mixer volume, pan et mute avec VU-mètres, un oscilloscope et l'export WAV.
-
-Sur les quelque 140 fonctions de cet inventaire, Ponzik en couvre une douzaine, en entier ou en ébauche.
+Moteur temps réel, pilotes ALSA et WASAPI maison, entrée MIDI, fenêtre et rendu maison. Channel Rack, piano roll, playlist (patterns, audio, automation), vue Session, mixer 33 pistes (inserts, envois, routage, solo), panneau d'appareils avec visuels. 11 instruments natifs (Pulse, DrumSynth, FM, Wave, Sampler, Acid 303, Kick, Découpeur, Granulaire, Cordes pincées, Piano électrique) et 19 effets (EQ, compresseur, limiteur, porte, multibande, pompe, transitoires, réverbe, shimmer, délai, chorus, phaser, saturateur, bitcrusher, autofilter, tranche, transposeur, image stéréo, utilitaire). Projets JSON, annulation, export WAV et stems.
