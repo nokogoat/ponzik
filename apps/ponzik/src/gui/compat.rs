@@ -124,3 +124,23 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
         }
     }
 }
+
+/// Rend une piste de mixer par fichier dans `Exports/<projet>/` ; renvoie le dossier et le nombre de fichiers.
+pub fn export_stems(
+    project: &Project,
+    sample_rate: u32,
+    loader: &dyn Fn(&str) -> Option<Arc<Sample>>,
+) -> Result<(PathBuf, usize), String> {
+    if project.clips.is_empty() && project.audio_clips.is_empty() {
+        return Err("La playlist est vide : place des patterns avant d'exporter".into());
+    }
+    let dir = projects_dir().join("Exports").join(file_name(&project.name));
+    std::fs::create_dir_all(&dir).map_err(|e| format!("{} : {e}", dir.display()))?;
+    let stems = ponzik_project::render_stems(project, sample_rate, loader, RenderMode::Song);
+    for (track, audio) in &stems {
+        let name = format!("{:02} {}.wav", track, file_name(&project.tracks[*track].name));
+        let path = dir.join(name);
+        ponzik_project::write_wav(&path, audio, sample_rate, BitDepth::Pcm24).map_err(|e| format!("{} : {e}", path.display()))?;
+    }
+    Ok((dir, stems.len()))
+}

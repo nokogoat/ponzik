@@ -105,6 +105,8 @@ impl App {
         add("Ouvrir un projet".into(), "Fichier", "Ctrl O", Action::OpenMenu);
         add("Nouveau projet".into(), "Fichier", "Ctrl N", Action::NewProject);
         add("Exporter en WAV".into(), "Fichier", "Ctrl R", Action::Export);
+        add("Exporter les pistes séparées (stems)".into(), "Fichier", "", Action::ExportStems);
+        add("Enregistrer sous".into(), "Fichier", "Ctrl Maj S", Action::SaveAs);
         add(
             "Renommer le projet".into(),
             "Fichier",

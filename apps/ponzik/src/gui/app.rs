@@ -80,6 +80,8 @@ pub enum Popup {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Rename {
     Project,
+    /// Nouveau nom puis enregistrement dans un nouveau fichier.
+    SaveAs,
     Channel(usize),
     Pattern(usize),
     Track(usize),
@@ -121,6 +123,8 @@ pub enum Action {
     LoadDemo(usize),
     SetTheme(usize),
     Automate(ponzik_engine::AutoTarget, f32),
+    SaveAs,
+    ExportStems,
     AssignSession(usize, usize, usize),
     RemoveAutomation(ponzik_engine::AutoTarget),
     SetParamValue(ponzik_engine::AutoTarget, f32),
@@ -267,6 +271,8 @@ pub struct App {
     pub keyboard_octave: i32,
     /// Enregistrement armé : les notes jouées pendant la lecture sont écrites.
     pub record: bool,
+    /// Piste en solo (non enregistrée) : les autres sont coupées dans le moteur.
+    pub solo: Option<usize>,
     /// État des colonnes de la vue Session (non enregistré).
     pub session_cols: [super::session::ColumnState; ponzik_project::SESSION_COLUMNS],
     /// Clavier d'ordinateur joué comme un piano (désactivé : les lettres sont des raccourcis).
@@ -351,6 +357,7 @@ impl App {
             record: false,
             typing_keyboard: false,
             session_cols: Default::default(),
+            solo: None,
             start_marker: 0.0,
             clipboard_notes: Vec::new(),
             clipboard_clip: None,
@@ -613,6 +620,45 @@ impl App {
         self.commit("Ajouter un effet");
         let name = self.project.tracks[track].name.clone();
         self.toast(&format!("{} ajouté sur {name}", info.name));
+    }
+
+    /// Solo d'une piste : elle, ses destinations jusqu'au master, et rien d'autre.
+    /// Un second appui (ou un autre solo) rétablit l'état muet du projet.
+    pub fn toggle_solo(&mut self, track: usize) {
+        self.solo = if self.solo == Some(track) { None } else { Some(track) };
+        let mut keep = vec![MASTER];
+        if let Some(mut t) = self.solo {
+            for _ in 0..TRACKS {
+                keep.push(t);
+                let out = self.project.tracks[t].output;
+                if out == t || out == MASTER {
+                    break;
+                }
+                t = out;
+            }
+            // Les pistes qui alimentent la piste en solo (canaux routés vers elle) restent aussi.
+            let solo = self.solo.unwrap_or(MASTER);
+            for (i, tr) in self.project.tracks.iter().enumerate() {
+                if tr.output == solo {
+                    keep.push(i);
+                }
+            }
+        }
+        for t in 0..TRACKS {
+            let muted = if self.solo.is_some() { !keep.contains(&t) } else { self.project.tracks[t].muted };
+            self.send(Command::SetTrackMute { track: t, muted: muted || self.project.tracks[t].muted });
+        }
+    }
+
+    pub fn export_stems(&mut self) {
+        let result = {
+            let loader = self.sample_loader();
+            compat::export_stems(&self.project, self.sample_rate, &loader)
+        };
+        match result {
+            Ok((dir, n)) => self.toast(&format!("{n} stems exportés dans {}", dir.display())),
+            Err(e) => self.toast(&e),
+        }
     }
 
     /// Arrête tous les clips de la vue Session.
@@ -891,6 +937,10 @@ impl App {
                 Key::Char('z') if mods.ctrl && mods.shift => self.redo(),
                 Key::Char('z') if mods.ctrl => self.undo(),
                 Key::Char('y') if mods.ctrl => self.redo(),
+                Key::Char('s') if mods.ctrl && mods.shift => {
+                    let text = self.project.name.clone();
+                    self.open_popup(Popup::Rename { target: Rename::SaveAs, text }, Rect::new(0.0, 0.0, 0.0, 0.0));
+                }
                 Key::Char('s') if mods.ctrl => self.save(),
                 Key::Char('o') if mods.ctrl => {
                     self.open_popup(Popup::OpenProject(compat::list_projects()), Rect::new(12.0, TOP_BAR, 0.0, 0.0))
@@ -1689,6 +1739,11 @@ impl App {
             }
             Action::SetTheme(i) => self.theme = THEMES[i.min(THEMES.len() - 1)],
             Action::Automate(target, value) => self.create_automation(target, value),
+            Action::SaveAs => {
+                let text = self.project.name.clone();
+                self.open_popup(Popup::Rename { target: Rename::SaveAs, text }, anchor);
+            }
+            Action::ExportStems => self.export_stems(),
             Action::AssignSession(col, row, p) => {
                 self.project.session_grid[col][row] = Some(p);
                 self.commit("Remplir une case");
@@ -1744,6 +1799,13 @@ impl App {
         }
         match target {
             Rename::Project => self.project.name = text.into(),
+            Rename::SaveAs => {
+                self.project.name = text.into();
+                self.project_path = None;
+                self.commit("Renommer");
+                self.save();
+                return;
+            }
             Rename::Channel(c) => {
                 let old = std::mem::replace(&mut self.project.channels[c].name, text.into());
                 let t = self.project.channels[c].track;
@@ -1791,7 +1853,8 @@ impl App {
             c.fill_rect(screen, Color::rgba(0, 0, 0, (110.0 * open) as u8));
             c.fill_rrect(r, 16.0, t.panel);
             c.stroke_rrect(r, 16.0, 1.0, t.hairline.alpha(1.6));
-            self.text(c, self.f.sans_med, 14.0, r.x + 20.0, r.y + 26.0, "Renommer", t.text);
+            let title = if *target == Rename::SaveAs { "Enregistrer sous" } else { "Renommer" };
+            self.text(c, self.f.sans_med, 14.0, r.x + 20.0, r.y + 26.0, title, t.text);
             let field = Rect::new(r.x + 16.0, r.y + 46.0, r.w - 32.0, 40.0);
             c.fill_rrect(field, 10.0, t.well);
             c.stroke_rrect(field, 10.0, 1.5, t.select.alpha(0.8));
