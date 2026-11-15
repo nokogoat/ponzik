@@ -38,6 +38,8 @@ pub struct Input {
     pub pressed: bool,
     pub released: bool,
     pub right_pressed: bool,
+    /// Bouton droit maintenu : efface ce que l'on balaie, comme dans FL Studio.
+    pub right_down: bool,
     /// Le clic de cette image est un double-clic.
     pub double: bool,
     pub wheel: f32,
@@ -77,7 +79,10 @@ impl Input {
                         self.down = true;
                         self.pressed = true;
                     }
-                    MouseButton::Right => self.right_pressed = true,
+                    MouseButton::Right => {
+                        self.right_pressed = true;
+                        self.right_down = true;
+                    }
                     MouseButton::Middle => {}
                 }
             }
@@ -85,6 +90,7 @@ impl Input {
                 self.down = false;
                 self.released = true;
             }
+            Event::MouseUp { button: MouseButton::Right, .. } => self.right_down = false,
             Event::MouseUp { .. } => {}
             Event::Wheel { x, y, delta, mods } => {
                 (self.x, self.y, self.mods) = (x, y, mods);
@@ -96,6 +102,7 @@ impl Input {
             Event::Physical { code, down } => self.physical.push((code, down)),
             Event::FocusLost => {
                 self.focus_lost = true;
+                self.right_down = false;
                 if self.down {
                     self.down = false;
                     self.released = true;

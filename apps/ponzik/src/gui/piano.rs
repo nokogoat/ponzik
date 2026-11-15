@@ -248,10 +248,11 @@ impl App {
                 }
             }
         }
-        if over_grid && input.right_pressed && let Some((i, _)) = hover_note {
+        // Clic droit maintenu : efface les notes balayées.
+        if over_grid && input.right_down && let Some((i, _)) = hover_note {
             self.notes_mut(ch).remove(i);
             self.piano.selected.clear();
-            self.commit("Effacer une note");
+            self.commit("Effacer des notes");
         }
 
         // Geste en cours.

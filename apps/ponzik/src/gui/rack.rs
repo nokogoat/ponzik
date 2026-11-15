@@ -264,7 +264,8 @@ impl App {
                 self.paint_step(ch, i, on);
             }
         }
-        if hov && input.right_pressed {
+        // Clic droit maintenu : efface tout ce que l'on balaie.
+        if over && input.right_down && self.drag.is_none() && note.is_some() {
             self.paint_step(ch, i, false);
         }
         let note = self.note_in_step(ch, i);

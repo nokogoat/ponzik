@@ -176,10 +176,10 @@ impl App {
                 }
             }
         }
-        if over && input.right_pressed && let Some((i, _)) = hover_clip {
+        if over && input.right_down && let Some((i, _)) = hover_clip {
             self.project.clips.remove(i);
             self.playlist.selected = None;
-            self.commit("Effacer un clip");
+            self.commit("Effacer des clips");
         }
         if self.is_dragging(grid_id) {
             match self.clip_drag {
