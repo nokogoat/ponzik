@@ -12,7 +12,11 @@ use ponzik_engine::{
     AudioClip, AutomationLane, Channel, Clip, Command, Effect, Engine, EngineHandle, Instrument, Note, Pattern,
     PlayMode, Sample, Sequence, TICKS_PER_BAR, TICKS_PER_STEP,
 };
-pub use ponzik_engine::{AutoPoint, AutoScope, AutoTarget};
+pub use ponzik_engine::{AutoPoint, AutoScope, AutoTarget, SessionSlot};
+
+/// Dimensions de la grille de la vue Session.
+pub const SESSION_COLUMNS: usize = 8;
+pub const SESSION_SCENES: usize = 8;
 
 mod breakcore;
 mod demo;
@@ -190,6 +194,10 @@ pub struct Project {
     pub current_pattern: usize,
     /// Boucle de lecture tirée dans une règle (non enregistrée dans le fichier).
     pub loop_range: Option<(u32, u32)>,
+    /// Grille de la vue Session : `session_grid[colonne][scène]` = pattern.
+    pub session_grid: Vec<Vec<Option<usize>>>,
+    /// Clips de session en cours de lecture (non enregistrés).
+    pub session_live: Vec<SessionSlot>,
     pub automation: Vec<AutomationDef>,
     pub audio_clips: Vec<AudioClipDef>,
 }
@@ -218,6 +226,8 @@ impl Project {
             mode: PlayMode::Pattern(0),
             current_pattern: 0,
             loop_range: None,
+            session_grid: vec![vec![None; SESSION_SCENES]; SESSION_COLUMNS],
+            session_live: Vec::new(),
             automation: Vec::new(),
             audio_clips: Vec::new(),
         }
@@ -263,6 +273,7 @@ impl Project {
             song_len: self.song_len(),
             swing: self.swing,
             loop_range: self.loop_range,
+            session: self.session_live.clone(),
             automation: self
                 .automation
                 .iter()

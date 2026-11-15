@@ -210,6 +210,15 @@ pub fn demo_breakcore() -> Project {
         p.add_automation_point(cutoff, AutoScope::Song, bar_at * bar, hz);
     }
 
+    // Vue Session : batterie, acide et respiration à lancer en direct.
+    for (row, pat) in [amen, chop, drill, amen].into_iter().enumerate() {
+        p.session_grid[0][row] = Some(pat);
+    }
+    p.session_grid[1][0] = Some(acid_p);
+    p.session_grid[1][1] = Some(acid_p);
+    p.session_grid[2][2] = Some(breath);
+    p.session_grid[2][3] = Some(breath);
+
     p.mode = PlayMode::Song;
     p.current_pattern = amen;
     p

@@ -155,6 +155,7 @@ pub fn save(project: &Project) -> String {
     let mode = match project.mode {
         PlayMode::Pattern(n) => obj(vec![("pattern", n.into())]),
         PlayMode::Song => "song".into(),
+        PlayMode::Session => "session".into(),
     };
     obj(vec![
         ("format", FORMAT.into()),
@@ -170,6 +171,16 @@ pub fn save(project: &Project) -> String {
         ("tracks", Json::Arr(project.tracks.iter().map(track_json).collect())),
         ("automation", Json::Arr(project.automation.iter().map(automation_json).collect())),
         ("audio_clips", Json::Arr(project.audio_clips.iter().map(audio_clip_json).collect())),
+        (
+            "session",
+            Json::Arr(
+                project
+                    .session_grid
+                    .iter()
+                    .map(|col| Json::Arr(col.iter().map(|c| c.map_or(Json::Null, |p| p.into())).collect()))
+                    .collect(),
+            ),
+        ),
     ])
     .pretty()
 }
@@ -460,10 +471,17 @@ pub fn load(text: &str) -> Result<Project, String> {
 
     p.mode = match root.get("mode") {
         Some(Json::Str(s)) if s == "song" => PlayMode::Song,
+        Some(Json::Str(s)) if s == "session" => PlayMode::Session,
         Some(m) => PlayMode::Pattern(usize_or(m.get("pattern"), 0).min(np - 1)),
         None => PlayMode::Pattern(0),
     };
     p.current_pattern = usize_or(root.get("current_pattern"), 0).min(np - 1);
+    // Grille de session : dimensions fixes, patterns hors limites oubliés.
+    for (c, col) in arr(root.get("session")).iter().take(crate::SESSION_COLUMNS).enumerate() {
+        for (r, cell) in arr(Some(col)).iter().take(crate::SESSION_SCENES).enumerate() {
+            p.session_grid[c][r] = cell.as_f64().map(|v| v as usize).filter(|&v| v < np);
+        }
+    }
 
     for a in arr(root.get("automation")).iter().filter_map(|a| load_automation(a, n, np)) {
         // Une seule courbe par cible et portée : la première gagne.
@@ -486,6 +504,17 @@ pub fn load_from_file(path: impl AsRef<Path>) -> Result<Project, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_grid_roundtrip() {
+        let mut p = crate::demo_project();
+        p.mode = PlayMode::Session;
+        p.session_grid[0][0] = Some(1);
+        p.session_grid[3][7] = Some(2);
+        let back = load(&save(&p)).unwrap();
+        assert_eq!(back.mode, PlayMode::Session);
+        assert_eq!(back.session_grid, p.session_grid);
+    }
     use crate::demo_project;
 
     #[test]
