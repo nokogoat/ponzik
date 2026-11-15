@@ -7,6 +7,7 @@
 mod app;
 mod compat;
 mod devices;
+mod keys;
 mod mixer;
 mod piano;
 mod playlist;
@@ -44,6 +45,10 @@ pub struct Input {
     pub keys: Vec<(Key, Modifiers)>,
     /// Texte saisi pendant cette image.
     pub text: String,
+    /// Touches physiques (code, enfoncée), dans l'ordre d'arrivée.
+    pub physical: Vec<(u16, bool)>,
+    /// La fenêtre a perdu le focus pendant cette image.
+    pub focus_lost: bool,
 }
 
 impl Input {
@@ -55,6 +60,8 @@ impl Input {
         self.wheel = 0.0;
         self.keys.clear();
         self.text.clear();
+        self.physical.clear();
+        self.focus_lost = false;
     }
 
     /// Renvoie vrai si l'événement change quelque chose à l'écran.
@@ -86,7 +93,9 @@ impl Input {
             Event::MouseLeave => self.inside = false,
             Event::KeyDown { key, mods } => self.keys.push((key, mods)),
             Event::Text(c) => self.text.push(c),
+            Event::Physical { code, down } => self.physical.push((code, down)),
             Event::FocusLost => {
+                self.focus_lost = true;
                 if self.down {
                     self.down = false;
                     self.released = true;

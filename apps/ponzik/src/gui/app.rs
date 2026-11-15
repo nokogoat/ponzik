@@ -224,6 +224,11 @@ pub struct App {
     pub clip_drag: Option<super::playlist::ClipDrag>,
     /// Note de pré-écoute à relâcher : (canal, note).
     pub preview: Option<(usize, u8)>,
+    /// Notes tenues au clavier d'ordinateur ou au contrôleur.
+    pub held: Vec<super::keys::HeldNote>,
+    pub keyboard_octave: i32,
+    /// Enregistrement armé : les notes jouées pendant la lecture sont écrites.
+    pub record: bool,
 }
 
 impl App {
@@ -286,6 +291,9 @@ impl App {
             piano_drag: None,
             clip_drag: None,
             preview: None,
+            held: Vec::new(),
+            keyboard_octave: 4,
+            record: false,
         }
     }
 
@@ -516,6 +524,7 @@ impl App {
     }
 
     pub fn stop(&mut self) {
+        self.release_all_held();
         self.playing = false;
         self.send(Command::Stop);
         self.send(Command::Stop);
@@ -649,6 +658,10 @@ impl App {
         } else if input.keys.iter().any(|(k, _)| *k == Key::Escape) {
             self.popup = None;
         }
+        if input.focus_lost {
+            self.release_all_held();
+        }
+        self.musical_keyboard(input);
 
         let t = self.theme;
         let (w, h) = (c.width() as f32, c.height() as f32);
@@ -710,7 +723,7 @@ impl App {
         let wordmark = self.text(c, self.f.sans_med, 18.0, 70.0, cy, "Ponzik", t.text);
 
         // Transport, centré.
-        let cluster = 40.0 + 6.0 + 40.0 + 14.0 + 196.0 + 10.0 + 188.0 + 10.0 + 116.0 + 10.0 + 132.0 + 6.0 + 36.0;
+        let cluster = 40.0 + 6.0 + 40.0 + 14.0 + 196.0 + 10.0 + 188.0 + 10.0 + 116.0 + 10.0 + 132.0 + 6.0 + 36.0 + 4.0 + 36.0;
         let mut x = ((r.w - cluster) * 0.5).round().max(70.0 + wordmark + 24.0);
         let start = x;
 
@@ -758,6 +771,20 @@ impl App {
             self.metronome = !self.metronome;
             let m = self.metronome;
             self.send(Command::SetMetronome(m));
+        }
+        x += 40.0;
+        let rec = Rect::new(x, cy - 18.0, 36.0, 36.0);
+        let rid = wid("tb-rec", 0, 0);
+        let rhov = self.hovered(input, rid, rec);
+        let rhv = self.hover_anim(rid, rhov);
+        let on = self.anim.to(wid("tb-rec-on", 0, 0), self.record as u8 as f32, T_HOVER);
+        c.fill_rrect(rec, 8.0, t.raised.alpha(rhv.max(on * 0.6)));
+        let (rx0, ry0) = rec.center();
+        let pulse = if self.record && self.playing { 0.75 + 0.25 * (self.time * 6.0).sin().abs() } else { 1.0 };
+        c.fill_circle(rx0, ry0, 6.0, t.muted.mix(t.text2, rhv).mix(t.negative, on).alpha(pulse));
+        if rhov && input.pressed {
+            self.record = !self.record;
+            self.toast(if self.record { "Enregistrement armé : joue au clavier pendant la lecture" } else { "Enregistrement désarmé" });
         }
         let cluster_end = x + 36.0;
 
