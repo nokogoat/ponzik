@@ -53,10 +53,46 @@ pub enum Focus {
 
 #[derive(Clone, Debug)]
 pub enum Popup {
-    AddInstrument,
+    /// Choix d'un instrument : nouveau canal, ou remplacement de celui d'un canal.
+    AddInstrument { replace: Option<usize> },
     AddEffect { track: usize },
     Patterns,
     OpenProject(Vec<PathBuf>),
+    ChannelMenu(usize),
+    TrackMenu(usize),
+    /// Destination de la sortie d'une piste.
+    Output(usize),
+    /// Destination d'un nouvel envoi.
+    Send(usize),
+    Rename { target: Rename, text: String },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Rename {
+    Project,
+    Channel(usize),
+    Pattern(usize),
+    Track(usize),
+}
+
+/// Ce que fait une ligne de menu.
+#[derive(Clone, Debug)]
+enum Action {
+    None,
+    AddInstrument(&'static str, Option<usize>),
+    AddEffect(usize, &'static str),
+    SelectPattern(usize),
+    NewPattern,
+    DuplicatePattern,
+    DeletePattern,
+    Open(PathBuf),
+    Popup(Popup),
+    DuplicateChannel(usize),
+    DeleteChannel(usize),
+    ChannelPianoRoll(usize),
+    SetOutput(usize, usize),
+    AddSend(usize, usize),
+    ResetTrack(usize),
 }
 
 pub struct PopupState {
@@ -575,10 +611,9 @@ impl App {
                 Key::Char('z') if mods.ctrl => self.undo(),
                 Key::Char('y') if mods.ctrl => self.redo(),
                 Key::Char('s') if mods.ctrl => self.save(),
-                Key::Char('o') if mods.ctrl => self.popup = Some(PopupState {
-                    kind: Popup::OpenProject(compat::list_projects()),
-                    anchor: Rect::new(0.0, TOP_BAR, 0.0, 0.0),
-                }),
+                Key::Char('o') if mods.ctrl => {
+                    self.open_popup(Popup::OpenProject(compat::list_projects()), Rect::new(12.0, TOP_BAR, 0.0, 0.0))
+                }
                 Key::Char('n') if mods.ctrl => {
                     self.replace_project(Project::empty(), None);
                     self.toast("Nouveau projet");
@@ -747,10 +782,7 @@ impl App {
                     Icon::Export => self.export(),
                     Icon::Save => self.save(),
                     Icon::Folder => {
-                        self.popup = Some(PopupState {
-                            kind: Popup::OpenProject(compat::list_projects()),
-                            anchor: Rect::new(rx, cy - 16.0, 32.0, 32.0),
-                        })
+                        self.open_popup(Popup::OpenProject(compat::list_projects()), Rect::new(rx, cy - 16.0, 32.0, 32.0))
                     }
                     Icon::Redo => self.redo(),
                     Icon::Undo => self.undo(),
@@ -770,8 +802,19 @@ impl App {
         let room = start - name_x - 20.0;
         if room > 80.0 {
             let name = self.project.name.clone();
-            let label = if self.modified { format!("{name} ·") } else { name };
-            self.text_fit(c, self.f.sans, 13.0, name_x, cy, &label, room, t.text2);
+            let label = if self.modified { format!("{name} ·") } else { name.clone() };
+            let w = self.fonts.measure(self.f.sans, 13.0, &label).min(room);
+            let area = Rect::new(name_x - 6.0, cy - 14.0, w + 12.0, 28.0);
+            let id = wid("tb-project", 0, 0);
+            let hov = self.hovered(input, id, area);
+            let hv = self.hover_anim(id, hov);
+            if hv > 0.01 {
+                c.fill_rrect(area, 8.0, t.raised.alpha(hv));
+            }
+            if hov && input.double {
+                self.open_popup(Popup::Rename { target: Rename::Project, text: name }, area);
+            }
+            self.text_fit(c, self.f.sans, 13.0, name_x, cy, &label, room, t.text2.mix(t.text, hv));
         }
     }
 
@@ -799,8 +842,8 @@ impl App {
         let id = wid("pat-name", 0, 0);
         let hov = self.hovered(input, id, mid);
         let hv = self.hover_anim(id, hov);
-        if hov && input.pressed {
-            self.popup = Some(PopupState { kind: Popup::Patterns, anchor: r });
+        if hov && (input.pressed || input.right_pressed) {
+            self.open_popup(Popup::Patterns, r);
         }
         let name = self.project.patterns[cur].name.clone();
         let (cx, cy) = mid.center();
@@ -970,53 +1013,299 @@ impl App {
     pub fn open_popup(&mut self, kind: Popup, anchor: Rect) {
         self.popup = Some(PopupState { kind, anchor });
         self.anim.set(wid("popup", 0, 0), 0.0);
+        self.anim.set(wid("popup-scroll", 0, 0), 0.0);
     }
 
-    fn popup_layer(&mut self, c: &mut Canvas, input: &Input, screen: Rect) {
-        let Some(state) = self.popup.take() else { return };
-        let t = self.theme;
-        let items: Vec<(String, String)> = match &state.kind {
-            Popup::AddInstrument => {
-                registry::instruments().iter().map(|k| (k.name.to_string(), k.description.to_string())).collect()
-            }
-            Popup::AddEffect { .. } => {
-                registry::effects().iter().map(|k| (k.name.to_string(), k.category.to_string())).collect()
-            }
+    /// Lignes d'un menu : (titre, détail, action).
+    fn menu_items(&self, kind: &Popup) -> (String, Vec<(String, String, Action)>) {
+        let p = &self.project;
+        let track_name = |t: usize| p.tracks[t].name.clone();
+        match kind {
+            Popup::AddInstrument { replace } => (
+                if replace.is_some() { "Remplacer l'instrument" } else { "Ajouter un instrument" }.into(),
+                registry::instruments()
+                    .iter()
+                    .map(|k| (k.name.to_string(), k.description.to_string(), Action::AddInstrument(k.id, *replace)))
+                    .collect(),
+            ),
+            Popup::AddEffect { track } => (
+                format!("Effet sur {}", track_name(*track)),
+                registry::effects()
+                    .iter()
+                    .map(|k| (k.name.to_string(), k.category.to_string(), Action::AddEffect(*track, k.id)))
+                    .collect(),
+            ),
             Popup::Patterns => {
-                let mut v: Vec<(String, String)> = self
-                    .project
+                let mut v: Vec<(String, String, Action)> = p
                     .patterns
                     .iter()
-                    .map(|p| (p.name.clone(), format!("{} mesure(s)", p.len.div_ceil(TICKS_PER_BAR))))
+                    .enumerate()
+                    .map(|(i, pat)| {
+                        (pat.name.clone(), format!("{} mesure(s)", pat.len.div_ceil(TICKS_PER_BAR)), Action::SelectPattern(i))
+                    })
                     .collect();
-                v.push(("Nouveau pattern".into(), String::new()));
-                v.push(("Dupliquer ce pattern".into(), String::new()));
-                v
+                v.push(("Nouveau pattern".into(), String::new(), Action::NewPattern));
+                v.push(("Dupliquer ce pattern".into(), String::new(), Action::DuplicatePattern));
+                let cur = p.current_pattern;
+                v.push((
+                    "Renommer ce pattern".into(),
+                    String::new(),
+                    Action::Popup(Popup::Rename { target: Rename::Pattern(cur), text: p.patterns[cur].name.clone() }),
+                ));
+                if p.patterns.len() > 1 {
+                    v.push(("Supprimer ce pattern".into(), "Retire aussi ses clips".into(), Action::DeletePattern));
+                }
+                ("Patterns".into(), v)
             }
             Popup::OpenProject(files) => {
-                if files.is_empty() {
-                    vec![("Aucun projet enregistré".into(), compat::projects_dir().display().to_string())]
+                let items = if files.is_empty() {
+                    vec![("Aucun projet enregistré".into(), compat::projects_dir().display().to_string(), Action::None)]
                 } else {
                     files
                         .iter()
-                        .map(|p| {
+                        .map(|f| {
                             (
-                                p.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned()),
-                                p.parent().map_or(String::new(), |d| d.display().to_string()),
+                                f.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned()),
+                                f.parent().map_or(String::new(), |d| d.display().to_string()),
+                                Action::Open(f.clone()),
                             )
                         })
                         .collect()
+                };
+                ("Ouvrir un projet".into(), items)
+            }
+            Popup::ChannelMenu(ch) => {
+                let ch = *ch;
+                let c = &p.channels[ch];
+                (
+                    c.name.clone(),
+                    vec![
+                        ("Ouvrir dans le piano roll".into(), String::new(), Action::ChannelPianoRoll(ch)),
+                        (
+                            "Renommer".into(),
+                            String::new(),
+                            Action::Popup(Popup::Rename { target: Rename::Channel(ch), text: c.name.clone() }),
+                        ),
+                        ("Remplacer l'instrument…".into(), String::new(), Action::Popup(Popup::AddInstrument { replace: Some(ch) })),
+                        ("Dupliquer".into(), "Mêmes réglages, sans les notes".into(), Action::DuplicateChannel(ch)),
+                        ("Supprimer".into(), "Retire aussi ses notes".into(), Action::DeleteChannel(ch)),
+                    ],
+                )
+            }
+            Popup::TrackMenu(t) => {
+                let t = *t;
+                let mut v = vec![(
+                    "Renommer".into(),
+                    String::new(),
+                    Action::Popup(Popup::Rename { target: Rename::Track(t), text: p.tracks[t].name.clone() }),
+                )];
+                if t != MASTER {
+                    v.push(("Sortie vers…".into(), format!("Actuellement : {}", track_name(p.tracks[t].output)), Action::Popup(Popup::Output(t))));
+                    v.push(("Ajouter un envoi…".into(), String::new(), Action::Popup(Popup::Send(t))));
+                }
+                v.push(("Ajouter un effet…".into(), String::new(), Action::Popup(Popup::AddEffect { track: t })));
+                v.push(("Réinitialiser volume et pan".into(), String::new(), Action::ResetTrack(t)));
+                (p.tracks[t].name.clone(), v)
+            }
+            Popup::Output(t) | Popup::Send(t) => {
+                let t = *t;
+                let send = matches!(kind, Popup::Send(_));
+                let v = (0..TRACKS)
+                    .filter(|&d| d != t && self.routing_ok(t, d, send))
+                    .filter(|&d| d == MASTER || self.track_in_use(d))
+                    .map(|d| {
+                        let action = if send { Action::AddSend(t, d) } else { Action::SetOutput(t, d) };
+                        (track_name(d), if d == MASTER { "Master".into() } else { format!("Piste {d}") }, action)
+                    })
+                    .collect();
+                (if send { "Envoyer vers" } else { "Sortie vers" }.into(), v)
+            }
+            Popup::Rename { .. } => ("Renommer".into(), Vec::new()),
+        }
+    }
+
+    pub fn track_in_use(&self, t: usize) -> bool {
+        self.project.channels.iter().any(|c| c.track == t)
+            || self.project.tracks[t].inserts.iter().any(Option::is_some)
+            || !self.project.tracks[t].name.starts_with("Piste ")
+    }
+
+    /// Vrai si router `from` vers `to` (sortie ou envoi) ne crée pas de boucle.
+    fn routing_ok(&self, from: usize, to: usize, send: bool) -> bool {
+        let mut p = self.project.clone();
+        if send {
+            if let Some(slot) = p.tracks[from].sends.iter().position(|s| s.1 <= 0.0) {
+                p.tracks[from].sends[slot] = (to, 0.5);
+            }
+        } else {
+            p.tracks[from].output = to;
+        }
+        p.routing_order().is_some()
+    }
+
+    fn run_action(&mut self, action: Action, anchor: Rect) {
+        match action {
+            Action::None => {}
+            Action::AddInstrument(kind, None) => self.add_instrument(kind),
+            Action::AddInstrument(kind, Some(ch)) => {
+                if let Some(info) = registry::instrument_kind(kind) {
+                    let c = &mut self.project.channels[ch];
+                    c.instrument = InstrumentDef::new(kind);
+                    if c.name.is_empty() || registry::instruments().iter().any(|k| k.name == c.name) {
+                        c.name = info.name.to_string();
+                    }
+                    self.commit("Remplacer l'instrument");
                 }
             }
-        };
-        let title = match &state.kind {
-            Popup::AddInstrument => "Ajouter un instrument",
-            Popup::AddEffect { .. } => "Ajouter un effet",
-            Popup::Patterns => "Patterns",
-            Popup::OpenProject(_) => "Ouvrir un projet",
-        };
+            Action::AddEffect(track, kind) => self.add_effect(track, kind),
+            Action::SelectPattern(i) => self.select_pattern(i),
+            Action::NewPattern => {
+                let p = self.project.add_pattern();
+                self.select_pattern(p);
+            }
+            Action::DuplicatePattern => {
+                let mut copy = self.project.patterns[self.project.current_pattern].clone();
+                copy.name = format!("{} (copie)", copy.name);
+                self.project.patterns.push(copy);
+                let p = self.project.patterns.len() - 1;
+                self.select_pattern(p);
+            }
+            Action::DeletePattern => self.delete_pattern(self.project.current_pattern),
+            Action::Open(path) => self.open_file(path),
+            Action::Popup(kind) => self.open_popup(kind, anchor),
+            Action::DuplicateChannel(ch) => {
+                let src = self.project.channels[ch].clone();
+                let idx = self.project.add_channel(format!("{} (copie)", src.name), src.instrument.clone(), src.root_note);
+                let c = &mut self.project.channels[idx];
+                c.gain = src.gain;
+                c.pan = src.pan;
+                self.focus = Focus::Channel(idx);
+                self.commit("Dupliquer un canal");
+            }
+            Action::DeleteChannel(ch) => {
+                let name = self.project.channels[ch].name.clone();
+                self.project.remove_channel(ch);
+                self.clamp_selection();
+                self.commit("Supprimer un canal");
+                self.toast(&format!("{name} supprimé · Ctrl+Z pour annuler"));
+            }
+            Action::ChannelPianoRoll(ch) => {
+                self.focus = Focus::Channel(ch);
+                self.set_view(View::Piano);
+            }
+            Action::SetOutput(t, d) => {
+                self.project.tracks[t].output = d;
+                self.commit("Sortie de piste");
+            }
+            Action::AddSend(t, d) => {
+                let sends = &mut self.project.tracks[t].sends;
+                match sends.iter().position(|s| s.0 == d && s.1 > 0.0).or_else(|| sends.iter().position(|s| s.1 <= 0.0)) {
+                    Some(slot) => {
+                        sends[slot] = (d, 0.5);
+                        self.commit("Ajouter un envoi");
+                    }
+                    None => self.toast("Plus d'envoi libre sur cette piste"),
+                }
+            }
+            Action::ResetTrack(t) => {
+                self.project.tracks[t].gain = 1.0;
+                self.project.tracks[t].pan = 0.0;
+                self.commit("Réinitialiser une piste");
+            }
+        }
+    }
 
+    fn delete_pattern(&mut self, p: usize) {
+        if self.project.patterns.len() <= 1 {
+            return;
+        }
+        self.project.patterns.remove(p);
+        self.project.clips.retain(|c| c.pattern != p);
+        for c in &mut self.project.clips {
+            if c.pattern > p {
+                c.pattern -= 1;
+            }
+        }
+        let n = self.project.patterns.len();
+        if let PlayMode::Pattern(x) = self.project.mode {
+            self.project.mode = PlayMode::Pattern(if x > p { x - 1 } else { x.min(n - 1) });
+        }
+        self.project.current_pattern = self.project.current_pattern.min(n - 1);
+        self.playlist.brush = self.playlist.brush.min(n - 1);
+        self.commit("Supprimer un pattern");
+    }
+
+    fn apply_rename(&mut self, target: Rename, text: &str) {
+        let text = text.trim();
+        if text.is_empty() {
+            return;
+        }
+        match target {
+            Rename::Project => self.project.name = text.into(),
+            Rename::Channel(c) => {
+                let old = std::mem::replace(&mut self.project.channels[c].name, text.into());
+                let t = self.project.channels[c].track;
+                if self.project.tracks[t].name == old {
+                    self.project.tracks[t].name = text.into();
+                }
+            }
+            Rename::Pattern(p) => self.project.patterns[p].name = text.into(),
+            Rename::Track(t) => self.project.tracks[t].name = text.into(),
+        }
+        self.commit("Renommer");
+    }
+
+    fn popup_layer(&mut self, c: &mut Canvas, input: &Input, screen: Rect) {
+        let Some(mut state) = self.popup.take() else { return };
+        let t = self.theme;
         let open = self.anim.to(wid("popup", 0, 0), 1.0, T_HOVER);
+
+        // Fenêtre de renommage : un champ texte.
+        if let Popup::Rename { target, text } = &mut state.kind {
+            text.push_str(&input.text);
+            let mut done = None;
+            for &(key, _) in &input.keys {
+                match key {
+                    Key::Backspace => {
+                        text.pop();
+                    }
+                    Key::Enter => done = Some(true),
+                    Key::Escape => done = Some(false),
+                    _ => {}
+                }
+            }
+            let w = 360.0;
+            let r = Rect::new((screen.w - w) * 0.5, screen.h * 0.32 + (1.0 - open) * 8.0, w, 132.0);
+            c.fill_rect(screen, Color::rgba(0, 0, 0, (110.0 * open) as u8));
+            c.fill_rrect(r, 16.0, t.panel);
+            c.stroke_rrect(r, 16.0, 1.0, t.hairline.alpha(1.6));
+            self.text(c, self.f.sans_med, 14.0, r.x + 20.0, r.y + 26.0, "Renommer", t.text);
+            let field = Rect::new(r.x + 16.0, r.y + 46.0, r.w - 32.0, 40.0);
+            c.fill_rrect(field, 10.0, t.well);
+            c.stroke_rrect(field, 10.0, 1.5, t.select.alpha(0.8));
+            let shown = self.fit(self.f.sans, 15.0, text, field.w - 30.0);
+            let tw = self.text(c, self.f.sans, 15.0, field.x + 12.0, field.y + 20.0, &shown, t.text);
+            if (self.time * 2.0).fract() < 0.6 {
+                c.fill_rect(Rect::new(field.x + 13.0 + tw, field.y + 10.0, 1.5, 20.0), t.select);
+            }
+            // Tient l'animation éveillée pour faire clignoter le curseur.
+            self.anim.set(wid("caret", 0, 0), self.time);
+            self.text(c, self.f.sans, 12.0, r.x + 20.0, r.y + 108.0, "Entrée pour valider · Échap pour annuler", t.muted);
+            if input.pressed && !r.contains(input.x, input.y) {
+                done = Some(false);
+            }
+            match done {
+                Some(true) => {
+                    let (target, text) = (*target, text.clone());
+                    self.apply_rename(target, &text);
+                }
+                Some(false) => {}
+                None => self.popup = Some(state),
+            }
+            return;
+        }
+
+        let (title, items) = self.menu_items(&state.kind);
         let w = 300.0;
         let row_h = 44.0;
         let h = (52.0 + items.len() as f32 * row_h + 8.0).min(screen.h - 80.0);
@@ -1032,14 +1321,25 @@ impl App {
         c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, Color::rgba(0, 0, 0, (90.0 * open) as u8));
         c.fill_rrect(r, 14.0, t.panel);
         c.stroke_rrect(r, 14.0, 1.0, t.hairline.alpha(1.6));
-        self.text(c, self.f.sans_med, 13.0, r.x + 16.0, r.y + 24.0, title, t.text2);
+        self.text_fit(c, self.f.sans_med, 13.0, r.x + 16.0, r.y + 24.0, &title, r.w - 32.0, t.text2);
+
+        // Défilement si le menu est plus long que l'écran.
+        let list_h = r.h - 52.0;
+        let content = items.len() as f32 * row_h;
+        let key = wid("popup-scroll", 0, 0);
+        let mut scroll = self.anim.get(key).unwrap_or(0.0);
+        if input.inside && r.contains(input.x, input.y) && input.wheel != 0.0 {
+            scroll -= input.wheel * 60.0;
+        }
+        scroll = scroll.clamp(0.0, (content - list_h).max(0.0));
+        self.anim.set(key, scroll);
 
         let mut chosen = None;
-        let prev = c.push_clip(r.inset(1.0));
-        for (i, (name, detail)) in items.iter().enumerate() {
-            let row = Rect::new(r.x + 6.0, r.y + 44.0 + i as f32 * row_h, r.w - 12.0, row_h - 4.0);
+        let prev = c.push_clip(Rect::new(r.x, r.y + 44.0, r.w, r.h - 48.0));
+        for (i, (name, detail, _)) in items.iter().enumerate() {
+            let row = Rect::new(r.x + 6.0, r.y + 44.0 + i as f32 * row_h - scroll, r.w - 12.0, row_h - 4.0);
             let id = wid("popup-row", i, 0);
-            let hov = input.inside && row.contains(input.x, input.y);
+            let hov = input.inside && row.contains(input.x, input.y) && r.contains(input.x, input.y);
             let hv = self.hover_anim(id, hov);
             let current = matches!(state.kind, Popup::Patterns) && i == self.project.current_pattern;
             if hv > 0.01 || current {
@@ -1048,53 +1348,24 @@ impl App {
             if current {
                 c.fill_rrect(Rect::new(row.x + 4.0, row.y + 12.0, 3.0, row.h - 24.0), 1.5, t.accent);
             }
-            self.text_fit(c, self.f.sans_med, 13.0, row.x + 14.0, row.y + (if detail.is_empty() { row.h * 0.5 } else { 13.0 }), name, row.w - 28.0, t.text);
+            let cy = if detail.is_empty() { row.y + row.h * 0.5 } else { row.y + 13.0 };
+            let danger = name.starts_with("Supprimer");
+            self.text_fit(c, self.f.sans_med, 13.0, row.x + 14.0, cy, name, row.w - 28.0, if danger { t.negative } else { t.text });
             if !detail.is_empty() {
                 self.text_fit(c, self.f.sans, 11.0, row.x + 14.0, row.y + 28.0, detail, row.w - 28.0, t.muted);
             }
             if hov && input.pressed {
-                chosen = Some(i);
+                chosen = Some((i, row));
             }
         }
         c.set_clip(Some(prev));
 
-        let clicked_outside = input.pressed && !r.contains(input.x, input.y);
-        let mut keep = !clicked_outside && chosen.is_none();
-        if let Some(i) = chosen {
-            match &state.kind {
-                Popup::AddInstrument => {
-                    let id = registry::instruments()[i].id;
-                    self.add_instrument(id);
-                }
-                Popup::AddEffect { track } => {
-                    let id = registry::effects()[i].id;
-                    self.add_effect(*track, id);
-                }
-                Popup::Patterns => {
-                    let n = self.project.patterns.len();
-                    if i < n {
-                        self.select_pattern(i);
-                    } else if i == n {
-                        let p = self.project.add_pattern();
-                        self.select_pattern(p);
-                    } else {
-                        let mut copy = self.project.patterns[self.project.current_pattern].clone();
-                        copy.name = format!("{} (copie)", copy.name);
-                        self.project.patterns.push(copy);
-                        let p = self.project.patterns.len() - 1;
-                        self.select_pattern(p);
-                    }
-                }
-                Popup::OpenProject(files) => {
-                    if let Some(path) = files.get(i).cloned() {
-                        self.open_file(path);
-                    } else {
-                        keep = true;
-                    }
-                }
-            }
-        }
-        if keep && self.popup.is_none() {
+        let clicked_outside = (input.pressed || input.right_pressed) && !r.contains(input.x, input.y);
+        if let Some((i, row)) = chosen {
+            self.anim.set(key, 0.0);
+            let action = items[i].2.clone();
+            self.run_action(action, Rect::new(r.x, row.y, r.w, row.h));
+        } else if !clicked_outside {
             self.popup = Some(state);
         }
     }

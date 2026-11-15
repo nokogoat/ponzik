@@ -147,7 +147,7 @@ impl App {
         }
         let add = Rect::new(rows.x, y + 4.0, 200.0, 36.0);
         if self.button(c, input, wid("rack-add", 0, 0), add, "+ Ajouter un instrument", Btn::Ghost) {
-            self.open_popup(Popup::AddInstrument, add);
+            self.open_popup(Popup::AddInstrument { replace: None }, add);
         }
         c.set_clip(Some(prev));
     }
@@ -196,6 +196,10 @@ impl App {
         let name_r = Rect::new(row.x + 46.0, row.y, LEFT - 46.0 - 12.0 - 64.0, row.h);
         let nid = wid("ch-name", ch, 0);
         let nhov = self.hovered(input, nid, name_r);
+        if nhov && input.right_pressed {
+            self.focus = Focus::Channel(ch);
+            self.open_popup(Popup::ChannelMenu(ch), Rect::new(input.x, input.y, 0.0, 0.0));
+        }
         if nhov && input.pressed {
             self.focus = Focus::Channel(ch);
             if input.double {

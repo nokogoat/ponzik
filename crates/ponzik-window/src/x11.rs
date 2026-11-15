@@ -135,9 +135,30 @@ struct Keymap {
 }
 
 impl Keymap {
+    fn sym(&self, keycode: u8, column: usize) -> Option<u32> {
+        let i = (keycode.checked_sub(self.min_keycode)? as usize) * self.per_keycode + column;
+        self.syms.get(i).copied().filter(|&s| s != 0 && column < self.per_keycode)
+    }
+
     fn key(&self, keycode: u8) -> Option<Key> {
-        let i = (keycode.checked_sub(self.min_keycode)? as usize) * self.per_keycode;
-        keysym_to_key(*self.syms.get(i)?)
+        keysym_to_key(self.sym(keycode, 0)?)
+    }
+
+    /// Caractère produit par la touche selon Maj, Verr. Maj et AltGr (Mod5).
+    fn text(&self, keycode: u8, state: u16) -> Option<char> {
+        let shift = state & 0x1 != 0;
+        let caps = state & 0x2 != 0;
+        let altgr = state & 0x80 != 0;
+        let base = if altgr { 4 } else { 0 };
+        let sym = if shift { self.sym(keycode, base + 1).or_else(|| self.sym(keycode, base)) } else { self.sym(keycode, base) }
+            .or_else(|| self.sym(keycode, 0))?;
+        let c = match sym {
+            0x20..=0x7e | 0xa0..=0xff => char::from_u32(sym)?,
+            0x0100_0000..=0x0110_ffff => char::from_u32(sym - 0x0100_0000)?,
+            0x20ac => '€',
+            _ => return None,
+        };
+        Some(if caps && !shift { c.to_uppercase().next()? } else { c })
     }
 }
 
@@ -233,6 +254,15 @@ fn reader_loop(mut stream: UnixStream, tx: Sender<Incoming>, ctx: ReaderCtx) {
                 if Some(code) == ctx.shm_event {
                     Some(Incoming::ShmCompletion)
                 } else {
+                    // Saisie de texte, sauf quand Ctrl ou Alt font un raccourci.
+                    let state = u16_at(&b, 28);
+                    if code == 2
+                        && state & 0xc == 0
+                        && let Some(ch) = ctx.keymap.text(b[1], state)
+                        && tx.send(Incoming::Event(Event::Text(ch))).is_err()
+                    {
+                        return;
+                    }
                     parse_event(code, &b, &ctx).map(Incoming::Event)
                 }
             }

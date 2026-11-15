@@ -42,6 +42,8 @@ pub struct Input {
     pub wheel: f32,
     pub mods: Modifiers,
     pub keys: Vec<(Key, Modifiers)>,
+    /// Texte saisi pendant cette image.
+    pub text: String,
 }
 
 impl Input {
@@ -52,6 +54,7 @@ impl Input {
         self.double = false;
         self.wheel = 0.0;
         self.keys.clear();
+        self.text.clear();
     }
 
     /// Renvoie vrai si l'événement change quelque chose à l'écran.
@@ -82,6 +85,7 @@ impl Input {
             }
             Event::MouseLeave => self.inside = false,
             Event::KeyDown { key, mods } => self.keys.push((key, mods)),
+            Event::Text(c) => self.text.push(c),
             Event::FocusLost => {
                 if self.down {
                     self.down = false;

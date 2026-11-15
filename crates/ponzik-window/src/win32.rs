@@ -183,6 +183,7 @@ const WM_ERASEBKGND: u32 = 0x0014;
 const WM_GETMINMAXINFO: u32 = 0x0024;
 const WM_KEYDOWN: u32 = 0x0100;
 const WM_KEYUP: u32 = 0x0101;
+const WM_CHAR: u32 = 0x0102;
 const WM_SYSKEYDOWN: u32 = 0x0104;
 const WM_MOUSEMOVE: u32 = 0x0200;
 const WM_LBUTTONDOWN: u32 = 0x0201;
@@ -312,6 +313,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
             WM_KEYUP => {
                 if let Some(key) = vk_to_key(w) {
                     push(Event::KeyUp { key });
+                }
+            }
+            WM_CHAR => {
+                if let Some(ch) = char::from_u32(w as u32).filter(|c| !c.is_control()) {
+                    push(Event::Text(ch));
                 }
             }
             WM_KILLFOCUS => push(Event::FocusLost),

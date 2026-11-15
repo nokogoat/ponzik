@@ -66,6 +66,8 @@ pub enum Event {
     MouseLeave,
     KeyDown { key: Key, mods: Modifiers },
     KeyUp { key: Key },
+    /// Caractère saisi (disposition du clavier, majuscules et AltGr compris).
+    Text(char),
     FocusLost,
 }
 

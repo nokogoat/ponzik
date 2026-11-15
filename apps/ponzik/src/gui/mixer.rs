@@ -106,9 +106,18 @@ impl App {
         // Nom : clic pour afficher la chaîne d'effets en bas.
         let name_r = Rect::new(inner.x, inner.y, inner.w, 28.0);
         let nid = wid("mx-name", tr, 0);
-        if self.hovered(input, nid, name_r) && input.pressed {
+        let nhov = self.hovered(input, nid, name_r);
+        if nhov && input.pressed {
             self.focus = Focus::Track(tr);
             self.panel = true;
+            if input.double {
+                let text = self.project.tracks[tr].name.clone();
+                self.open_popup(Popup::Rename { target: super::app::Rename::Track(tr), text }, name_r);
+            }
+        }
+        if nhov && input.right_pressed {
+            self.focus = Focus::Track(tr);
+            self.open_popup(Popup::TrackMenu(tr), Rect::new(input.x, input.y, 0.0, 0.0));
         }
         let name = self.project.tracks[tr].name.clone();
         let label = self.fit(self.f.sans_med, 13.0, &name, inner.w - 4.0);
@@ -153,8 +162,31 @@ impl App {
             y += 22.0;
         }
 
+        // Envois actifs : destination et niveau. Hauteur fixe, pour que les
+        // faders restent alignés d'une tranche à l'autre.
+        y += 4.0;
+        let sends_top = y;
+        let mut shown = 0;
+        for slot in 0..ponzik_engine::mixer::SEND_SLOTS {
+            let (target, amount) = self.project.tracks[tr].sends[slot];
+            if amount <= 0.0 || target == tr || shown == 2 {
+                continue;
+            }
+            shown += 1;
+            let row = Rect::new(inner.x, y, inner.w, 24.0);
+            let label = format!("→ {}", self.project.tracks[target].name);
+            self.text_fit(c, self.f.sans, 11.0, row.x + 2.0, row.y + 12.0, &label, row.w - 30.0, t.text2);
+            if let Some(v) = self.mini_knob(c, input, wid("mx-send", tr, slot), (row.right() - 11.0, row.y + 12.0), amount, false) {
+                // Un envoi ramené à zéro se libère.
+                self.project.tracks[tr].sends[slot].1 = if v < 0.01 { 0.0 } else { v };
+                self.commit("Niveau d'envoi");
+            }
+            y += 26.0;
+        }
+        y = sends_top + 52.0;
+
         // Pan.
-        let pan_y = y + 22.0;
+        let pan_y = y + 20.0;
         let pan = self.project.tracks[tr].pan;
         if let Some(v) = self.mini_knob(c, input, wid("mx-pan", tr, 0), (inner.x + 18.0, pan_y), (pan + 1.0) * 0.5, true) {
             self.project.tracks[tr].pan = ((v * 2.0 - 1.0) * 100.0).round() / 100.0;
@@ -167,15 +199,30 @@ impl App {
         };
         self.text_right(c, self.f.mono, 11.0, inner.right(), pan_y, &pan_text, t.text2);
 
-        // Mute en bas, valeur au-dessus, fader au milieu.
+        // Bas : sortie, mute ; valeur au-dessus ; fader au milieu.
         let mute = Rect::new(inner.x, inner.bottom() - 26.0, inner.w, 26.0);
-        let readout_y = mute.y - 14.0;
-        let fader = Rect::new(inner.x, pan_y + 24.0, inner.w, readout_y - 14.0 - pan_y - 24.0);
+        let out_r = Rect::new(inner.x, mute.y - 28.0, inner.w, 24.0);
+        let readout_y = out_r.y - 12.0;
+        let fader = Rect::new(inner.x, pan_y + 22.0, inner.w, readout_y - 12.0 - pan_y - 22.0);
         if fader.h > 40.0 {
             self.track_fader(c, input, fader, tr);
         }
         let gain = self.project.tracks[tr].gain;
         self.text_center(c, self.f.mono, 12.0, inner.x + inner.w * 0.5, readout_y, &fmt_db(gain), t.text2);
+
+        let oid = wid("mx-out", tr, 0);
+        let ohov = self.hovered(input, oid, out_r) && tr != MASTER;
+        let ohv = self.hover_anim(oid, ohov);
+        if ohv > 0.01 {
+            c.fill_rrect(out_r, 6.0, t.raised.alpha(ohv));
+        }
+        let out_label = if tr == MASTER { "Sortie audio".to_string() } else { format!("→ {}", self.project.tracks[self.project.tracks[tr].output].name) };
+        let lw = self.fit(self.f.sans, 11.0, &out_label, out_r.w - 8.0);
+        self.text_center(c, self.f.sans, 11.0, out_r.x + out_r.w * 0.5, out_r.y + 12.0, &lw, t.muted.mix(t.text2, ohv));
+        if ohov && input.pressed {
+            self.open_popup(Popup::Output(tr), out_r);
+        }
+
         let muted = self.project.tracks[tr].muted;
         let mid = wid("mx-mute", tr, 0);
         let hov = self.hovered(input, mid, mute);
