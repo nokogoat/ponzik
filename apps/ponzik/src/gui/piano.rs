@@ -101,7 +101,7 @@ impl App {
         }
         let hint_room = snap_box.x - chan_box.right() - 32.0;
         if hint_room > 200.0 {
-            let hint = "Clic : poser · Glisser : déplacer · Bord : durée · Clic droit : effacer";
+            let hint = "Clic : poser · Bord : durée · Clic droit : effacer · Ctrl+B dupliquer · Ctrl+Q quantifier";
             self.text_fit(c, self.f.sans, 12.0, chan_box.right() + 16.0, header.y + header.h * 0.5, hint, hint_room, t.muted);
         }
 
@@ -349,7 +349,7 @@ impl App {
         c.set_clip(Some(prev));
 
         // Raccourcis d'édition.
-        if self.popup.is_none() {
+        if self.popup.is_none() && !self.sidebar_focus {
             self.piano_keys(input, ch);
         }
 
@@ -455,8 +455,13 @@ impl App {
         self.text(c, self.f.sans, 11.0, inner.x + 4.0, vel_lane.y + 12.0, "Vélocité", t.muted);
     }
 
+    /// Raccourcis d'édition du piano roll, ceux de FL Studio.
     fn piano_keys(&mut self, input: &Input, ch: usize) {
+        let snap = self.piano.snap;
         for &(key, mods) in &input.keys {
+            // Sélection explicite, sinon tout le canal.
+            let targets: Vec<usize> =
+                if self.piano.selected.is_empty() { (0..self.notes(ch).len()).collect() } else { self.piano.selected.clone() };
             match key {
                 Key::Delete | Key::Backspace if !self.piano.selected.is_empty() => {
                     let mut sel = std::mem::take(&mut self.piano.selected);
@@ -469,23 +474,59 @@ impl App {
                     }
                     self.commit("Effacer des notes");
                 }
-                Key::Char('a') if mods.ctrl => {
-                    self.piano.selected = (0..self.notes(ch).len()).collect();
+                Key::Char('a') if mods.ctrl => self.piano.selected = (0..self.notes(ch).len()).collect(),
+                Key::Char('d') if mods.ctrl => self.piano.selected.clear(),
+                Key::Char('c') if mods.ctrl => {
+                    let notes: Vec<Note> = targets.iter().filter_map(|&i| self.notes(ch).get(i).copied()).collect();
+                    let first = notes.iter().map(|n| n.start).min().unwrap_or(0);
+                    self.clipboard_notes = notes.into_iter().map(|n| Note { start: n.start - first, ..n }).collect();
+                    let n = self.clipboard_notes.len();
+                    self.toast(&format!("{n} note(s) copiée(s)"));
                 }
-                Key::Char('d') if mods.ctrl && !self.piano.selected.is_empty() => {
-                    let sel: Vec<Note> = self.piano.selected.iter().filter_map(|&i| self.notes(ch).get(i).copied()).collect();
-                    let span = sel.iter().map(|n| n.start + n.len).max().unwrap_or(0) - sel.iter().map(|n| n.start).min().unwrap_or(0);
-                    let span = span.div_ceil(self.piano.snap) * self.piano.snap;
+                Key::Char('v') if mods.ctrl && !self.clipboard_notes.is_empty() => {
+                    let at = ((self.start_marker as u32) / snap) * snap;
+                    let clip = self.clipboard_notes.clone();
+                    let notes = self.notes_mut(ch);
+                    let base = notes.len();
+                    for n in &clip {
+                        notes.push(Note { start: n.start + at, ..*n });
+                    }
+                    self.piano.selected = (base..base + clip.len()).collect();
+                    self.finish_note_edit(ch, "Coller des notes");
+                }
+                Key::Char('b') if mods.ctrl && !targets.is_empty() => {
+                    let sel: Vec<Note> = targets.iter().filter_map(|&i| self.notes(ch).get(i).copied()).collect();
+                    // Durée dupliquée : la sélection de temps si elle existe, sinon l'étendue des notes.
+                    let span = match self.time_selection {
+                        Some((View::Piano, a, b)) => b - a,
+                        _ => {
+                            let lo = sel.iter().map(|n| n.start).min().unwrap_or(0);
+                            let hi = sel.iter().map(|n| n.start + n.len).max().unwrap_or(0);
+                            (hi - lo).div_ceil(snap) * snap
+                        }
+                    };
                     let notes = self.notes_mut(ch);
                     let base = notes.len();
                     for n in &sel {
                         notes.push(Note { start: n.start + span, ..*n });
                     }
                     self.piano.selected = (base..base + sel.len()).collect();
+                    if let Some((View::Piano, a, b)) = self.time_selection {
+                        self.time_selection = Some((View::Piano, a + span, b + span));
+                    }
                     self.finish_note_edit(ch, "Dupliquer des notes");
                 }
+                Key::Char('q') if mods.ctrl && !targets.is_empty() => {
+                    for &i in &targets {
+                        if let Some(n) = self.notes_mut(ch).get_mut(i) {
+                            n.start = ((n.start + snap / 2) / snap) * snap;
+                        }
+                    }
+                    self.finish_note_edit(ch, "Quantifier");
+                    self.toast("Notes quantifiées");
+                }
                 Key::Up | Key::Down if !self.piano.selected.is_empty() => {
-                    let d: i32 = if mods.shift { 12 } else { 1 } * if key == Key::Up { 1 } else { -1 };
+                    let d: i32 = if mods.ctrl { 12 } else { 1 } * if key == Key::Up { 1 } else { -1 };
                     let sel = self.piano.selected.clone();
                     for i in sel {
                         if let Some(n) = self.notes_mut(ch).get_mut(i) {
@@ -495,8 +536,7 @@ impl App {
                     self.finish_note_edit(ch, "Transposer");
                 }
                 Key::Left | Key::Right if !self.piano.selected.is_empty() => {
-                    let snap = self.piano.snap as i64;
-                    let d = if key == Key::Right { snap } else { -snap };
+                    let d = if key == Key::Right { snap as i64 } else { -(snap as i64) };
                     let sel = self.piano.selected.clone();
                     for i in sel {
                         if let Some(n) = self.notes_mut(ch).get_mut(i) {

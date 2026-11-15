@@ -255,6 +255,9 @@ pub struct App {
     pub typing_keyboard: bool,
     /// Marqueur de départ de la lecture, en ticks (cliqué dans une règle).
     pub start_marker: f64,
+    /// Presse-papiers : notes (débuts relatifs) et clip de playlist.
+    pub clipboard_notes: Vec<ponzik_engine::Note>,
+    pub clipboard_clip: Option<ponzik_project::ClipDef>,
     /// Sélection de temps tirée dans une règle : vue, début, fin (ticks).
     pub time_selection: Option<(View, u32, u32)>,
     pub midi_inputs: Vec<ponzik_midi::MidiInput>,
@@ -328,6 +331,8 @@ impl App {
             record: false,
             typing_keyboard: false,
             start_marker: 0.0,
+            clipboard_notes: Vec::new(),
+            clipboard_clip: None,
             time_selection: None,
             midi_inputs: ponzik_midi::open_all_inputs(),
             midi_events: Vec::new(),

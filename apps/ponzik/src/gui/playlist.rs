@@ -205,14 +205,40 @@ impl App {
                 self.clip_drag = None;
             }
         }
-        if self.popup.is_none() {
-            for &(key, _) in &input.keys {
-                if matches!(key, Key::Delete | Key::Backspace)
-                    && let Some(i) = self.playlist.selected.take()
-                    && i < self.project.clips.len()
-                {
-                    self.project.clips.remove(i);
-                    self.commit("Effacer un clip");
+        if self.popup.is_none() && !self.sidebar_focus {
+            for &(key, mods) in &input.keys {
+                let sel = self.playlist.selected.filter(|&i| i < self.project.clips.len());
+                match key {
+                    Key::Delete | Key::Backspace if sel.is_some() => {
+                        self.project.clips.remove(sel.unwrap_or(0));
+                        self.playlist.selected = None;
+                        self.commit("Effacer un clip");
+                    }
+                    Key::Char('c') if mods.ctrl => {
+                        if let Some(i) = sel {
+                            self.clipboard_clip = Some(self.project.clips[i]);
+                            self.toast("Clip copié");
+                        }
+                    }
+                    Key::Char('v') if mods.ctrl => {
+                        if let Some(mut clip) = self.clipboard_clip {
+                            clip.start = ((self.start_marker as f32 / snap).round() * snap) as u32;
+                            self.project.clips.push(clip);
+                            self.playlist.selected = Some(self.project.clips.len() - 1);
+                            self.commit("Coller un clip");
+                        }
+                    }
+                    Key::Char('b') if mods.ctrl => {
+                        if let Some(i) = sel {
+                            let mut clip = self.project.clips[i];
+                            clip.start += clip.len;
+                            self.project.clips.push(clip);
+                            self.playlist.selected = Some(self.project.clips.len() - 1);
+                            self.commit("Dupliquer un clip");
+                        }
+                    }
+                    Key::Char('d') if mods.ctrl => self.playlist.selected = None,
+                    _ => {}
                 }
             }
         }
