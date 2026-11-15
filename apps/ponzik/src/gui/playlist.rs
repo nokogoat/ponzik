@@ -19,6 +19,9 @@ const EDGE: f32 = 8.0;
 pub enum ClipDrag {
     Move { clip: usize, orig: ClipDef, tick0: f32, lane0: f32 },
     Resize { clip: usize, orig: ClipDef, tick0: f32 },
+    /// Clip audio : (indice, début, ligne ou durée d'origine, point de départ).
+    AudioMove { clip: usize, start: u32, lane: usize, tick0: f32, lane0: f32 },
+    AudioResize { clip: usize, len: u32, tick0: f32 },
 }
 
 /// Couleur d'un pattern : une famille vert-sarcelle, une teinte par pattern.
@@ -85,7 +88,14 @@ impl App {
         let ruler = Rect::new(area.x, area.y, area.w, RULER);
         let lanes_r = Rect::new(area.x, area.y + RULER + 4.0, area.w, area.h - RULER - 4.0);
         c.fill_rrect(Rect::new(area.x - 1.0, area.y, area.w + 1.0, area.h), 12.0, t.well);
-        let lanes_used = self.project.clips.iter().map(|c| c.lane + 1).max().unwrap_or(0);
+        let lanes_used = self
+            .project
+            .clips
+            .iter()
+            .map(|c| c.lane + 1)
+            .chain(self.project.audio_clips.iter().map(|c| c.lane + 1))
+            .max()
+            .unwrap_or(0);
         let autos = self.project.automation.iter().filter(|a| a.scope == ponzik_engine::AutoScope::Song).count();
         let fit = ((lanes_r.h - autos as f32 * super::automation::AUTO_LANE_H) / LANE_H).floor().max(1.0) as usize;
         let lanes = (lanes_used + 1).max(fit).min(64);
@@ -144,6 +154,63 @@ impl App {
             })
         };
         let hover_clip = if over { hit(self, input.x, input.y) } else { None };
+
+        // Clips audio : prioritaires sur les clips de pattern.
+        let audio_id = wid("pl-audio", 0, 0);
+        let over_audio = input.inside && clip_zone.contains(input.x, input.y) && (self.drag.is_none() || self.is_dragging(audio_id));
+        let hover_audio = if over_audio {
+            let lane = lane_at(input.y) as usize;
+            self.project.audio_clips.iter().enumerate().rev().find_map(|(i, cl)| {
+                let (x0, x1) = (x_of(cl.start as f32), x_of((cl.start + cl.len) as f32));
+                (cl.lane == lane && input.x >= x0 && input.x <= x1).then_some((i, x1 - input.x <= EDGE))
+            })
+        } else {
+            None
+        };
+        if let Some((i, edge)) = hover_audio {
+            if input.pressed && self.drag.is_none() {
+                self.begin_drag(audio_id, input, 0.0);
+                let cl = &self.project.audio_clips[i];
+                let tick0 = tick_at(input.x);
+                self.clip_drag = Some(if edge {
+                    ClipDrag::AudioResize { clip: i, len: cl.len, tick0 }
+                } else {
+                    ClipDrag::AudioMove { clip: i, start: cl.start, lane: cl.lane, tick0, lane0: lane_at(input.y) }
+                });
+                self.focus = super::app::Focus::Track(cl.track);
+            }
+            if input.right_down && self.drag.is_none() {
+                self.project.audio_clips.remove(i);
+                self.commit("Effacer un clip audio");
+            }
+        }
+        if self.is_dragging(audio_id) {
+            match self.clip_drag {
+                Some(ClipDrag::AudioMove { clip, start, lane, tick0, lane0 }) if clip < self.project.audio_clips.len() => {
+                    let dt = ((tick_at(input.x) - tick0) / snap).round() * snap;
+                    let cl = &mut self.project.audio_clips[clip];
+                    let new_start = (start as f32 + dt).max(0.0) as u32;
+                    let new_lane = (lane as f32 + lane_at(input.y) - lane0).clamp(0.0, 63.0) as usize;
+                    if (cl.start, cl.lane) != (new_start, new_lane) {
+                        cl.start = new_start;
+                        cl.lane = new_lane;
+                        self.commit("Déplacer un clip audio");
+                    }
+                }
+                Some(ClipDrag::AudioResize { clip, len, tick0 }) if clip < self.project.audio_clips.len() => {
+                    let dt = ((tick_at(input.x) - tick0) / 24.0).round() * 24.0;
+                    let new_len = (len as f32 + dt).max(24.0) as u32;
+                    if self.project.audio_clips[clip].len != new_len {
+                        self.project.audio_clips[clip].len = new_len;
+                        self.commit("Longueur du clip audio");
+                    }
+                }
+                _ => {}
+            }
+            if input.released {
+                self.clip_drag = None;
+            }
+        }
 
         if over && input.pressed && self.drag.is_none() {
             self.begin_drag(grid_id, input, 0.0);
@@ -294,6 +361,54 @@ impl App {
             }
             c.set_clip(Some(prev_clip));
             if hover_clip.is_some_and(|(h, e)| h == i && e) {
+                c.fill_rrect(Rect::new(r.right() - 5.0, r.y + 8.0, 2.0, r.h - 16.0), 1.0, t.text.alpha(0.7));
+            }
+        }
+
+        // Clips audio, avec leur forme d'onde.
+        let bpm = self.project.bpm as f64;
+        for (i, cl) in self.project.audio_clips.clone().iter().enumerate() {
+            let r = Rect::new(
+                x_of(cl.start as f32) + 1.0,
+                lanes_r.y + cl.lane as f32 * LANE_H + 3.0,
+                (cl.len as f32 * ppt - 2.0).max(4.0),
+                LANE_H - 6.0,
+            );
+            if r.right() < area.x || r.x > area.right() || r.y > area.bottom() {
+                continue;
+            }
+            let hov = hover_audio.is_some_and(|(h, _)| h == i);
+            let hv = self.hover_anim(wid("pl-aclip", i, 0), hov);
+            c.fill_rrect(r, 8.0, t.select.mix(t.panel, 0.78 - hv * 0.08));
+            c.fill_rect(Rect::new(r.x + 1.0, r.y + 1.0, r.w - 2.0, 18.0), t.select.mix(t.panel, 0.5).alpha(0.9));
+            let prev_clip = c.push_clip(r);
+            let name = std::path::Path::new(&cl.path).file_stem().map_or(String::new(), |n| n.to_string_lossy().into_owned());
+            self.text_fit(c, self.f.sans_med, 11.0, r.x + 8.0, r.y + 10.0, &name, r.w - 12.0, t.text);
+            let sr = self.samples.get(&cl.path).map_or(48_000.0, |s| s.sample_rate as f64);
+            if let Some(peaks) = self.waveform(&cl.path) {
+                let mid = r.y + 22.0 + (r.h - 24.0) * 0.5;
+                let amp = (r.h - 26.0) * 0.5;
+                let x0 = r.x.max(area.x) as i32;
+                let x1 = r.right().min(area.right()) as i32;
+                for px in x0..x1 {
+                    let tick_a = tick_at(px as f32) as f64 - cl.start as f64;
+                    let tick_b = tick_a + 1.0 / ppt as f64;
+                    let secs = |tk: f64| tk / ponzik_engine::PPQ as f64 * 60.0 / bpm + cl.offset;
+                    let (ba, bb) = ((secs(tick_a) * sr) as usize / super::app::WAVE_BUCKET, (secs(tick_b) * sr) as usize / super::app::WAVE_BUCKET);
+                    let (mut lo, mut hi) = (0.0f32, 0.0f32);
+                    for b in ba..=bb.max(ba) {
+                        if let Some(&(l, h)) = peaks.get(b) {
+                            lo = lo.min(l);
+                            hi = hi.max(h);
+                        }
+                    }
+                    if hi > lo {
+                        c.fill_rect(Rect::new(px as f32, mid - hi * amp, 1.0, ((hi - lo) * amp).max(1.0)), t.text.alpha(0.6));
+                    }
+                }
+            }
+            c.set_clip(Some(prev_clip));
+            if hover_audio.is_some_and(|(h, e)| h == i && e) {
                 c.fill_rrect(Rect::new(r.right() - 5.0, r.y + 8.0, 2.0, r.h - 16.0), 1.0, t.text.alpha(0.7));
             }
         }

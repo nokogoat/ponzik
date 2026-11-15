@@ -17,6 +17,8 @@ use super::theme::*;
 use super::widgets::{Icon, draw_icon, wid};
 
 const SCOPE_LEN: usize = 8_192;
+/// Échantillons par paquet de crêtes des formes d'onde.
+pub const WAVE_BUCKET: usize = 256;
 const HISTORY_CAP: usize = 200;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -227,6 +229,8 @@ pub struct App {
     pub chain_scroll: f32,
     pub mixer_scroll: f32,
     pub samples: HashMap<String, Arc<Sample>>,
+    /// Crêtes (min, max) par paquets d'échantillons, pour dessiner les formes d'onde.
+    waveforms: HashMap<String, Arc<Vec<(f32, f32)>>>,
     pub sample_files: Vec<PathBuf>,
 
     pub playing: bool,
@@ -311,6 +315,7 @@ impl App {
             chain_scroll: 0.0,
             mixer_scroll: 0.0,
             samples: HashMap::new(),
+            waveforms: HashMap::new(),
             sample_files: compat::scan_samples(),
             playing: false,
             metronome: false,
@@ -426,10 +431,14 @@ impl App {
 
     /// Remplace tout le projet (ouverture, nouveau) : le moteur est resynchronisé.
     pub fn replace_project(&mut self, project: Project, path: Option<PathBuf>) {
-        for ch in &project.channels {
-            if let Some(path) = &ch.instrument.sample {
-                self.ensure_sample(path);
-            }
+        let paths: Vec<String> = project
+            .channels
+            .iter()
+            .filter_map(|c| c.instrument.sample.clone())
+            .chain(project.audio_clips.iter().map(|c| c.path.clone()))
+            .collect();
+        for path in paths {
+            self.ensure_sample(&path);
         }
         self.project = project;
         self.past.clear();
@@ -490,6 +499,53 @@ impl App {
         if let Some((channel, note)) = self.preview.take() {
             self.send(Command::NoteOff { channel, note });
         }
+    }
+
+    /// Forme d'onde d'un fichier chargé : crêtes par paquets de [`WAVE_BUCKET`] échantillons.
+    pub fn waveform(&mut self, path: &str) -> Option<Arc<Vec<(f32, f32)>>> {
+        if let Some(w) = self.waveforms.get(path) {
+            return Some(w.clone());
+        }
+        let s = self.samples.get(path)?;
+        let peaks: Vec<(f32, f32)> = s
+            .left
+            .chunks(WAVE_BUCKET)
+            .zip(s.right.chunks(WAVE_BUCKET))
+            .map(|(l, r)| {
+                l.iter().chain(r).fold((0.0f32, 0.0f32), |(lo, hi), &v| (lo.min(v), hi.max(v)))
+            })
+            .collect();
+        let w = Arc::new(peaks);
+        self.waveforms.insert(path.to_string(), w.clone());
+        Some(w)
+    }
+
+    /// Pose un fichier audio dans la playlist, au marqueur de départ, sur une nouvelle ligne.
+    pub fn add_audio_clip(&mut self, path: &str) {
+        if !self.ensure_sample(path) {
+            return;
+        }
+        let secs = self.samples[path].duration() as f64;
+        let ticks = (secs * self.project.bpm as f64 / 60.0 * ponzik_engine::PPQ as f64).round().max(24.0) as u32;
+        let name = std::path::Path::new(path).file_stem().map_or("Audio".to_string(), |s| s.to_string_lossy().into_owned());
+        let used: Vec<usize> = self.project.channels.iter().map(|c| c.track).collect();
+        let track = (1..TRACKS).find(|t| !used.contains(t) && !self.track_in_use(*t)).unwrap_or(1);
+        self.project.tracks[track].name = name.clone();
+        let lane = self.project.clips.iter().map(|c| c.lane + 1).chain(self.project.audio_clips.iter().map(|c| c.lane + 1)).max().unwrap_or(0);
+        let start = (self.start_marker.max(0.0) as u32 / 96) * 96;
+        self.project.audio_clips.push(ponzik_project::AudioClipDef {
+            path: path.to_string(),
+            lane,
+            track,
+            start,
+            len: ticks,
+            offset: 0.0,
+            gain: 1.0,
+            fade_in: 0.002,
+            fade_out: 0.002,
+        });
+        self.commit("Poser un clip audio");
+        self.toast(&format!("{name} posé dans la playlist (piste {track})"));
     }
 
     pub fn selected_channel(&self) -> Option<usize> {
@@ -1305,7 +1361,8 @@ impl App {
         for (i, name, folder) in &wavs {
             let row = Rect::new(inner_x, y, w, 40.0);
             if self.browser_row(c, input, wid("br-wav", *i, 0), row, name, folder) {
-                self.add_sample_channel(&files[*i].to_string_lossy());
+                let path = files[*i].to_string_lossy().into_owned();
+                if self.view == View::Playlist { self.add_audio_clip(&path) } else { self.add_sample_channel(&path) }
             }
             y += 42.0;
         }
