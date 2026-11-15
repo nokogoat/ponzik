@@ -52,8 +52,8 @@ pub fn render_song(project: &Project, sample_rate: u32, loader: SampleLoader, mo
     let (ticks, play_mode) = span(project, mode);
     let mut project = project.clone();
     project.mode = play_mode;
+    // La séquence initiale du moteur est déjà complète (clips audio compris).
     let (mut engine, mut handle) = project.build_engine(sample_rate as f32, loader);
-    let _ = handle.send(Command::SetSequence(Box::new(project.sequence())));
     let _ = handle.send(Command::Play);
 
     let frames = ticks_to_frames(ticks, project.bpm, sample_rate);
@@ -61,15 +61,28 @@ pub fn render_song(project: &Project, sample_rate: u32, loader: SampleLoader, mo
     let hold = (SILENCE_HOLD * sample_rate as f64) as usize;
     let mut out = Vec::with_capacity(2 * (frames + max_tail.min(sample_rate as usize * 2)));
 
-    // Corps : des blocs qui tombent pile sur la fin, pour ne jamais reboucler.
-    let mut done = 0;
     let mut block = [0.0f32; 2 * BLOCK];
-    while done < frames {
-        let n = (frames - done).min(BLOCK);
-        engine.process(&mut block[..2 * n], 2);
-        out.extend_from_slice(&block[..2 * n]);
-        done += n;
-        handle.collect_garbage();
+    if play_mode == PlayMode::Song {
+        // Corps : le moteur s'arrête lui-même à la fin du morceau, ce qui tient
+        // compte de l'automation du tempo.
+        loop {
+            let n = engine.process_to_loop_end(&mut block, 2);
+            out.extend_from_slice(&block[..2 * n]);
+            handle.collect_garbage();
+            if n < BLOCK {
+                break;
+            }
+        }
+    } else {
+        // Corps : des blocs qui tombent pile sur la fin.
+        let mut done = 0;
+        while done < frames {
+            let n = (frames - done).min(BLOCK);
+            engine.process(&mut block[..2 * n], 2);
+            out.extend_from_slice(&block[..2 * n]);
+            done += n;
+            handle.collect_garbage();
+        }
     }
 
     // Queue : plus aucune note (pas de pattern, pas de boucle), les voix s'éteignent.
@@ -95,8 +108,9 @@ pub fn render_song(project: &Project, sample_rate: u32, loader: SampleLoader, mo
     out
 }
 
-/// Une piste par piste de mixer utilisée par un canal audible : (piste, rendu).
-/// Chaque stem est rendu en coupant les autres canaux ; tous ont la même longueur.
+/// Une piste par piste de mixer utilisée par un canal audible ou (morceau) un
+/// clip audio : (piste, rendu). Chaque stem est rendu en coupant les autres
+/// canaux et clips audio ; tous ont la même longueur.
 pub fn render_stems(
     project: &Project,
     sample_rate: u32,
@@ -104,6 +118,9 @@ pub fn render_stems(
     mode: RenderMode,
 ) -> Vec<(usize, Vec<f32>)> {
     let mut tracks: Vec<usize> = project.channels.iter().filter(|c| !c.muted).map(|c| c.track).collect();
+    if matches!(mode, RenderMode::Song) {
+        tracks.extend(project.audio_clips.iter().map(|c| c.track));
+    }
     tracks.sort_unstable();
     tracks.dedup();
     let mut stems: Vec<(usize, Vec<f32>)> = tracks
@@ -112,6 +129,10 @@ pub fn render_stems(
             let mut p = project.clone();
             for c in &mut p.channels {
                 c.muted |= c.track != track;
+            }
+            // Gain nul plutôt que retrait : la longueur du morceau ne change pas.
+            for c in p.audio_clips.iter_mut().filter(|c| c.track != track) {
+                c.gain = 0.0;
             }
             (track, render_song(&p, sample_rate, loader, mode))
         })
@@ -216,7 +237,7 @@ mod tests {
     use ponzik_engine::{Note, Sample, TICKS_PER_STEP};
 
     use super::*;
-    use crate::{InstrumentDef, demo_project};
+    use crate::{AudioClipDef, AutoScope, AutoTarget, InstrumentDef, demo_project};
 
     const SR: u32 = 22_050;
 
@@ -281,6 +302,43 @@ mod tests {
             let sum: f32 = stems.iter().map(|(_, s)| s.get(i).copied().unwrap_or(0.0)).sum();
             assert!((v - sum).abs() < 1e-4, "{i}: {v} ≠ {sum}");
         }
+    }
+
+    #[test]
+    fn song_render_includes_audio_clips_and_automation() {
+        let mut p = Project::empty();
+        p.bpm = 120.0;
+        // Un clip audio de deux mesures à la mesure 2, sur la piste 2 dont le gain est automatisé.
+        p.audio_clips.push(AudioClipDef {
+            path: "dc.wav".into(),
+            lane: 0,
+            track: 2,
+            start: TICKS_PER_BAR,
+            len: TICKS_PER_BAR * 2,
+            offset: 0.0,
+            gain: 0.5,
+            fade_in: 0.0,
+            fade_out: 0.0,
+        });
+        p.add_automation_point(AutoTarget::TrackGain(2), AutoScope::Song, 0, 1.0);
+        p.add_automation_point(AutoTarget::TrackGain(2), AutoScope::Song, TICKS_PER_BAR * 2, 1.0);
+        p.add_automation_point(AutoTarget::TrackGain(2), AutoScope::Song, TICKS_PER_BAR * 2 + 1, 0.5);
+        assert_eq!(p.song_len(), TICKS_PER_BAR * 3);
+        // 4 s à 11 025 Hz, joués à 22 050 Hz.
+        let dc = vec![1.0; 44_100];
+        let sample = Arc::new(Sample { name: "dc".into(), sample_rate: 11_025.0, left: dc.clone(), right: dc });
+        let loader = |path: &str| (path == "dc.wav").then(|| sample.clone());
+        let out = render_song(&p, SR, &loader, RenderMode::Song);
+        // Mesure = 2 s à 120 BPM ; le clip commence pile à 2 s et finit avec le morceau.
+        let bar = 2 * SR as usize;
+        assert_eq!(out.len() / 2, 3 * bar, "pas de queue après un clip audio sec");
+        assert_eq!(peak(&out[..2 * bar]), 0.0);
+        assert!(out[2 * bar] > 0.0 && out[2 * (3 * bar - 1)] > 0.0);
+        assert!((out[2 * (bar + SR as usize / 2)] - 0.5).abs() < 1e-5);
+        // Après l'automation : gain de piste 0,5.
+        assert!((out[2 * (2 * bar + SR as usize / 2)] - 0.25).abs() < 1e-5);
+        // Sans chargeur, le clip est ignoré.
+        assert_eq!(peak(&render_song(&p, SR, &no_samples, RenderMode::Song)), 0.0);
     }
 
     fn u16_at(b: &[u8], i: usize) -> u16 {

@@ -10,7 +10,10 @@ use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS, TRACKS};
 use ponzik_engine::{Note, PlayMode, TICKS_PER_BAR};
 
 use crate::json::{self, Json};
-use crate::{ChannelDef, ClipDef, EffectDef, InstrumentDef, PatternDef, Project, TrackDef};
+use crate::{
+    AudioClipDef, AutoPoint, AutoScope, AutoTarget, AutomationDef, ChannelDef, ClipDef, EffectDef, InstrumentDef,
+    PatternDef, Project, TrackDef,
+};
 
 pub const FORMAT: &str = "ponzik-project";
 /// Version majeure du format : une version supérieure est refusée.
@@ -103,6 +106,50 @@ fn track_json(t: &TrackDef) -> Json {
     ])
 }
 
+fn target_json(t: AutoTarget) -> Json {
+    let kind = |k: &str, rest: Vec<(&str, Json)>| {
+        let mut pairs = vec![("kind", k.into())];
+        pairs.extend(rest);
+        obj(pairs)
+    };
+    match t {
+        AutoTarget::InstrumentParam { channel, id } => {
+            kind("instrument_param", vec![("channel", channel.into()), ("id", id.into())])
+        }
+        AutoTarget::EffectParam { track, slot, id } => {
+            kind("effect_param", vec![("track", track.into()), ("slot", slot.into()), ("id", id.into())])
+        }
+        AutoTarget::ChannelGain(c) => kind("channel_gain", vec![("channel", c.into())]),
+        AutoTarget::ChannelPan(c) => kind("channel_pan", vec![("channel", c.into())]),
+        AutoTarget::TrackGain(t) => kind("track_gain", vec![("track", t.into())]),
+        AutoTarget::TrackPan(t) => kind("track_pan", vec![("track", t.into())]),
+        AutoTarget::Tempo => kind("tempo", Vec::new()),
+    }
+}
+
+fn automation_json(a: &AutomationDef) -> Json {
+    let scope = match a.scope {
+        AutoScope::Song => "song".into(),
+        AutoScope::Pattern(n) => obj(vec![("pattern", n.into())]),
+    };
+    let points = a.points.iter().map(|p| Json::Arr(vec![p.tick.into(), p.value.into(), p.curve.into()])).collect();
+    obj(vec![("target", target_json(a.target)), ("scope", scope), ("points", Json::Arr(points))])
+}
+
+fn audio_clip_json(c: &AudioClipDef) -> Json {
+    obj(vec![
+        ("path", c.path.as_str().into()),
+        ("lane", c.lane.into()),
+        ("track", c.track.into()),
+        ("start", c.start.into()),
+        ("len", c.len.into()),
+        ("offset", c.offset.into()),
+        ("gain", c.gain.into()),
+        ("fade_in", c.fade_in.into()),
+        ("fade_out", c.fade_out.into()),
+    ])
+}
+
 /// Projet → texte JSON indenté.
 pub fn save(project: &Project) -> String {
     let mode = match project.mode {
@@ -121,6 +168,8 @@ pub fn save(project: &Project) -> String {
         ("patterns", Json::Arr(project.patterns.iter().map(pattern_json).collect())),
         ("clips", Json::Arr(project.clips.iter().map(clip_json).collect())),
         ("tracks", Json::Arr(project.tracks.iter().map(track_json).collect())),
+        ("automation", Json::Arr(project.automation.iter().map(automation_json).collect())),
+        ("audio_clips", Json::Arr(project.audio_clips.iter().map(audio_clip_json).collect())),
     ])
     .pretty()
 }
@@ -291,6 +340,72 @@ fn load_track(v: &Json, index: usize) -> TrackDef {
     t
 }
 
+/// Indice entier dans [0, `limit`).
+fn index(v: Option<&Json>, limit: usize) -> Option<usize> {
+    let n = num(v)?;
+    (n >= 0.0 && n.fract() == 0.0 && n < limit as f64).then_some(n as usize)
+}
+
+fn load_target(v: &Json, channels: usize) -> Option<AutoTarget> {
+    let channel = || index(v.get("channel"), channels);
+    let track = || index(v.get("track"), TRACKS);
+    let id = || num(v.get("id")).filter(|n| *n >= 0.0 && n.fract() == 0.0 && *n <= u32::MAX as f64).map(|n| n as u32);
+    Some(match v.get("kind")?.as_str()? {
+        "instrument_param" => AutoTarget::InstrumentParam { channel: channel()?, id: id()? },
+        "effect_param" => {
+            AutoTarget::EffectParam { track: track()?, slot: index(v.get("slot"), INSERT_SLOTS)?, id: id()? }
+        }
+        "channel_gain" => AutoTarget::ChannelGain(channel()?),
+        "channel_pan" => AutoTarget::ChannelPan(channel()?),
+        "track_gain" => AutoTarget::TrackGain(track()?),
+        "track_pan" => AutoTarget::TrackPan(track()?),
+        "tempo" => AutoTarget::Tempo,
+        _ => return None,
+    })
+}
+
+/// Courbe valide (cible et pattern existants, au moins un point), points triés,
+/// un seul par tick (le dernier lu gagne).
+fn load_automation(v: &Json, channels: usize, patterns: usize) -> Option<AutomationDef> {
+    let target = load_target(v.get("target")?, channels)?;
+    let scope = match v.get("scope") {
+        None => AutoScope::Song,
+        Some(Json::Str(s)) if s == "song" => AutoScope::Song,
+        Some(s) => AutoScope::Pattern(index(s.get("pattern"), patterns)?),
+    };
+    let mut points: Vec<AutoPoint> = Vec::new();
+    for p in arr(v.get("points")) {
+        let p = arr(Some(p));
+        let Some(value) = num(p.get(1)) else { continue };
+        let point = AutoPoint {
+            tick: u32_or(p.first(), 0),
+            value: (value as f32).clamp(f32::MIN, f32::MAX),
+            curve: f32_or(p.get(2), 0.0).clamp(-1.0, 1.0),
+        };
+        match points.iter_mut().find(|q| q.tick == point.tick) {
+            Some(q) => *q = point,
+            None => points.push(point),
+        }
+    }
+    points.sort_by_key(|p| p.tick);
+    (!points.is_empty()).then_some(AutomationDef { target, scope, points })
+}
+
+fn load_audio_clip(v: &Json) -> Option<AudioClipDef> {
+    let path = v.get("path")?.as_str().filter(|p| !p.is_empty())?.to_string();
+    Some(AudioClipDef {
+        path,
+        lane: usize_or(v.get("lane"), 0),
+        track: usize_or(v.get("track"), 1).min(TRACKS - 1),
+        start: u32_or(v.get("start"), 0),
+        len: u32_or(v.get("len"), TICKS_PER_BAR).max(1),
+        offset: num(v.get("offset")).unwrap_or(0.0).max(0.0),
+        gain: gain(v.get("gain"), 1.0),
+        fade_in: f32_or(v.get("fade_in"), 0.0).max(0.0),
+        fade_out: f32_or(v.get("fade_out"), 0.0).max(0.0),
+    })
+}
+
 /// Texte JSON → projet.
 pub fn load(text: &str) -> Result<Project, String> {
     let root = json::parse(text).map_err(|e| format!("fichier de projet illisible : {e}"))?;
@@ -349,6 +464,14 @@ pub fn load(text: &str) -> Result<Project, String> {
         None => PlayMode::Pattern(0),
     };
     p.current_pattern = usize_or(root.get("current_pattern"), 0).min(np - 1);
+
+    for a in arr(root.get("automation")).iter().filter_map(|a| load_automation(a, n, np)) {
+        // Une seule courbe par cible et portée : la première gagne.
+        if p.automation_lane(a.target, a.scope).is_none() {
+            p.automation.push(a);
+        }
+    }
+    p.audio_clips = arr(root.get("audio_clips")).iter().filter_map(load_audio_clip).collect();
     Ok(p)
 }
 
@@ -460,6 +583,76 @@ mod tests {
         assert_eq!(p.mode, PlayMode::Pattern(1));
         assert_eq!(p.current_pattern, 0);
         // Un projet chargé se construit et se sauvegarde sans erreur.
+        assert_eq!(load(&save(&p)).unwrap(), p);
+    }
+
+    #[test]
+    fn automation_and_audio_clips_round_trip() {
+        let mut p = demo_project();
+        let song = AutoScope::Song;
+        p.add_automation_point(AutoTarget::Tempo, song, 0, 124.0);
+        p.add_automation_point(AutoTarget::Tempo, song, 384, 130.5);
+        p.add_automation_point(AutoTarget::TrackGain(3), AutoScope::Pattern(1), 96, 0.25);
+        p.add_automation_point(AutoTarget::InstrumentParam { channel: 4, id: 7 }, song, 10, 1_234.5);
+        p.add_automation_point(AutoTarget::EffectParam { track: 10, slot: 0, id: 2 }, song, 0, 2.4);
+        p.add_automation_point(AutoTarget::ChannelGain(1), song, 0, 0.5);
+        p.add_automation_point(AutoTarget::ChannelPan(2), song, 0, -0.75);
+        p.add_automation_point(AutoTarget::TrackPan(0), AutoScope::Pattern(2), 5, 0.1);
+        p.automation[0].points[0].curve = -0.35;
+        p.audio_clips.push(AudioClipDef {
+            path: "voix/« refrain ».wav".into(),
+            lane: 3,
+            track: 7,
+            start: 1_536,
+            len: 768,
+            offset: 0.123_456_789_012,
+            gain: 0.8,
+            fade_in: 0.01,
+            fade_out: 0.25,
+        });
+        let text = save(&p);
+        let back = load(&text).unwrap();
+        assert_eq!(back, p);
+        assert_eq!(save(&back), text);
+        // Champs absents (projet d'une version précédente) : vides.
+        let old = load(r#"{"format": "ponzik-project", "version": 1}"#).unwrap();
+        assert!(old.automation.is_empty() && old.audio_clips.is_empty());
+    }
+
+    #[test]
+    fn automation_and_audio_clips_are_validated() {
+        let text = r#"{
+          "format": "ponzik-project",
+          "channels": [{}],
+          "automation": [
+            {"target": {"kind": "channel_gain", "channel": 0},
+             "points": [[384, 1], [0, 0.5, 9], ["x"], [96, null], [0, 0.25, -0.5]]},
+            {"target": {"kind": "channel_gain", "channel": 0}, "points": [[0, 1]]},
+            {"target": {"kind": "channel_pan", "channel": 1}, "points": [[0, 1]]},
+            {"target": {"kind": "effect_param", "track": 2, "slot": 8, "id": 0}, "points": [[0, 1]]},
+            {"target": {"kind": "track_gain", "track": 99}, "points": [[0, 1]]},
+            {"target": {"kind": "tempo"}, "scope": {"pattern": 3}, "points": [[0, 140]]},
+            {"target": {"kind": "tempo"}, "scope": {"pattern": 0}, "points": []},
+            {"target": {"kind": "inconnu"}, "points": [[0, 1]]},
+            {"target": {"kind": "tempo"}, "scope": {"pattern": 0}, "points": [[0, 140]]}
+          ],
+          "audio_clips": [
+            {"path": "a.wav", "track": 50, "len": 0, "offset": -2, "gain": 99, "fade_in": -1},
+            {"path": ""}, {"track": 2}
+          ]
+        }"#;
+        let p = load(text).unwrap();
+        assert_eq!(p.automation.len(), 2, "{:?}", p.automation);
+        let gain = &p.automation[0];
+        assert_eq!((gain.target, gain.scope), (AutoTarget::ChannelGain(0), AutoScope::Song));
+        assert_eq!(
+            gain.points,
+            [AutoPoint { tick: 0, value: 0.25, curve: -0.5 }, AutoPoint { tick: 384, value: 1.0, curve: 0.0 }]
+        );
+        assert_eq!((p.automation[1].target, p.automation[1].scope), (AutoTarget::Tempo, AutoScope::Pattern(0)));
+        assert_eq!(p.audio_clips.len(), 1);
+        let c = &p.audio_clips[0];
+        assert_eq!((c.track, c.len, c.offset, c.gain, c.fade_in), (TRACKS - 1, 1, 0.0, 16.0, 0.0));
         assert_eq!(load(&save(&p)).unwrap(), p);
     }
 

@@ -1,5 +1,10 @@
-//! Données de séquence : notes, patterns, clips de playlist. Le moteur en reçoit
-//! un instantané complet à chaque modification et y cherche les notes à jouer.
+//! Données de séquence : notes, patterns, clips de playlist, automation et clips
+//! audio. Le moteur en reçoit un instantané complet à chaque modification et y
+//! cherche les notes à jouer.
+
+use std::sync::Arc;
+
+use crate::sample::Sample;
 
 /// Résolution : ticks par noire.
 pub const PPQ: u32 = 96;
@@ -58,6 +63,100 @@ pub enum PlayMode {
     Song,
 }
 
+/// Ce que pilote une courbe d'automation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AutoTarget {
+    InstrumentParam { channel: usize, id: u32 },
+    EffectParam { track: usize, slot: usize, id: u32 },
+    ChannelGain(usize),
+    ChannelPan(usize),
+    TrackGain(usize),
+    TrackPan(usize),
+    /// En BPM.
+    Tempo,
+}
+
+/// Portée d'une courbe d'automation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AutoScope {
+    /// Sur la ligne de temps du morceau, en mode morceau seulement.
+    Song,
+    /// Relative au pattern : boucle avec lui en mode pattern et suit chacun de
+    /// ses clips en mode morceau (automation de pattern façon FL Studio).
+    Pattern(usize),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AutoPoint {
+    pub tick: u32,
+    /// En unités réelles du paramètre.
+    pub value: f32,
+    /// Tension du segment qui part de ce point, dans [-1, 1] ; 0 = linéaire.
+    pub curve: f32,
+}
+
+/// Courbe d'automation : points triés par tick, valeur tenue avant le premier
+/// et après le dernier.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AutomationLane {
+    pub target: AutoTarget,
+    pub scope: AutoScope,
+    pub points: Vec<AutoPoint>,
+}
+
+impl AutomationLane {
+    pub fn value_at(&self, tick: f64) -> Option<f32> {
+        automation_value(&self.points, tick)
+    }
+}
+
+/// Mise en forme d'un segment : `t` dans [0, 1], tension dans [-1, 1].
+/// Tension positive : départ lent (courbe creusée) ; négative : départ rapide.
+pub fn shape_curve(t: f64, curve: f32) -> f64 {
+    let t = t.clamp(0.0, 1.0);
+    let c = curve.clamp(-1.0, 1.0) as f64;
+    if c.abs() < 1e-6 {
+        return t;
+    }
+    // Courbe de puissance, exposant de 1/5 à 5.
+    t.powf(5f64.powf(c))
+}
+
+/// Valeur d'une suite de points triés à `tick` ; `None` sans point.
+pub fn automation_value(points: &[AutoPoint], tick: f64) -> Option<f32> {
+    let first = points.first()?;
+    let next = points.partition_point(|p| p.tick as f64 <= tick);
+    if next == 0 {
+        return Some(first.value);
+    }
+    let a = points[next - 1];
+    let Some(b) = points.get(next) else { return Some(a.value) };
+    let span = b.tick as f64 - a.tick as f64;
+    if span <= 0.0 {
+        return Some(b.value);
+    }
+    let t = shape_curve((tick - a.tick as f64) / span, a.curve);
+    Some((a.value as f64 + (b.value as f64 - a.value as f64) * t) as f32)
+}
+
+/// Échantillon posé dans la playlist, joué à sa vitesse d'origine.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AudioClip {
+    pub sample: Arc<Sample>,
+    /// Piste de mixer de destination.
+    pub track: usize,
+    /// Début en ticks.
+    pub start: u32,
+    /// Durée en ticks.
+    pub len: u32,
+    /// Décalage dans l'échantillon au début du clip, en secondes.
+    pub offset: f64,
+    pub gain: f32,
+    /// Fondus en secondes (au moins 2 ms, contre les clics).
+    pub fade_in: f32,
+    pub fade_out: f32,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sequence {
     pub patterns: Vec<Pattern>,
@@ -67,11 +166,22 @@ pub struct Sequence {
     pub song_len: u32,
     /// Retard des doubles-croches paires, dans [0, 1] (1 = un demi-pas).
     pub swing: f32,
+    pub automation: Vec<AutomationLane>,
+    /// Joués en mode morceau seulement.
+    pub audio_clips: Vec<AudioClip>,
 }
 
 impl Default for Sequence {
     fn default() -> Self {
-        Self { patterns: Vec::new(), clips: Vec::new(), mode: PlayMode::Pattern(0), song_len: TICKS_PER_BAR, swing: 0.0 }
+        Self {
+            patterns: Vec::new(),
+            clips: Vec::new(),
+            mode: PlayMode::Pattern(0),
+            song_len: TICKS_PER_BAR,
+            swing: 0.0,
+            automation: Vec::new(),
+            audio_clips: Vec::new(),
+        }
     }
 }
 
@@ -99,6 +209,27 @@ impl Sequence {
         match self.mode {
             PlayMode::Song => self.song_len.max(TICKS_PER_BAR),
             PlayMode::Pattern(p) => self.patterns.get(p).map_or(TICKS_PER_BAR, |p| p.len.max(1)),
+        }
+    }
+
+    /// Position locale d'une courbe de portée `scope` quand le transport est à
+    /// `pos`, ou `None` si elle ne s'applique pas ici. En mode morceau, une
+    /// courbe de pattern suit le dernier clip de ce pattern qui couvre `pos`.
+    pub fn automation_tick(&self, scope: AutoScope, pos: f64) -> Option<f64> {
+        let pattern_len = |p: usize| Some(self.patterns.get(p)?.len.max(1) as f64);
+        match (scope, self.mode) {
+            (AutoScope::Song, PlayMode::Song) => Some(pos),
+            (AutoScope::Song, PlayMode::Pattern(_)) => None,
+            (AutoScope::Pattern(p), PlayMode::Pattern(cur)) if p == cur => Some(pos.rem_euclid(pattern_len(p)?)),
+            (AutoScope::Pattern(_), PlayMode::Pattern(_)) => None,
+            (AutoScope::Pattern(p), PlayMode::Song) => {
+                let len = pattern_len(p)?;
+                let clip = self
+                    .clips
+                    .iter()
+                    .rfind(|c| c.pattern == p && pos >= c.start as f64 && pos < c.start as f64 + c.len as f64)?;
+                Some((pos - clip.start as f64 + clip.offset as f64).rem_euclid(len))
+            }
         }
     }
 
@@ -198,7 +329,7 @@ mod tests {
             ],
             mode: PlayMode::Song,
             song_len: 768,
-            swing: 0.0,
+            ..Default::default()
         };
         assert_eq!(ticks(&seq, 0.0, 768.0), [0.0, 48.0, 96.0, 144.0, 384.0]);
         assert_eq!(seq.loop_end(), Some(768.0));
@@ -210,5 +341,76 @@ mod tests {
         assert_eq!(ticks(&seq, 0.0, 96.0), [0.0, 36.0, 48.0]);
         // La note décalée reste trouvée même si la fenêtre commence après son pas.
         assert_eq!(ticks(&seq, 30.0, 40.0), [36.0]);
+    }
+
+    fn pt(tick: u32, value: f32, curve: f32) -> AutoPoint {
+        AutoPoint { tick, value, curve }
+    }
+
+    #[test]
+    fn automation_interpolates_with_curves_and_edges() {
+        let lane = AutomationLane {
+            target: AutoTarget::Tempo,
+            scope: AutoScope::Song,
+            points: vec![pt(96, 1.0, 0.0), pt(192, 3.0, 0.5), pt(288, 1.0, -0.5), pt(384, 5.0, 0.0)],
+        };
+        let v = |t: f64| lane.value_at(t).unwrap();
+        // Avant le premier point et après le dernier : valeurs tenues.
+        assert_eq!(v(0.0), 1.0);
+        assert_eq!(v(-5.0), 1.0);
+        assert_eq!(v(1_000.0), 5.0);
+        assert_eq!(v(96.0), 1.0);
+        assert_eq!(v(192.0), 3.0);
+        assert_eq!(v(384.0), 5.0);
+        // Linéaire.
+        assert!((v(144.0) - 2.0).abs() < 1e-6);
+        // Tension positive : départ lent, la descente 3 → 1 reste au-dessus de la droite.
+        let slow = 0.5f64.powf(5f64.sqrt()) as f32;
+        assert!((v(240.0) - (3.0 - 2.0 * slow)).abs() < 1e-5);
+        assert!(v(240.0) > 2.0);
+        // Tension négative : départ rapide, la montée 1 → 5 passe au-dessus de la droite.
+        let fast = 0.5f64.powf(1.0 / 5f64.sqrt()) as f32;
+        assert!((v(336.0) - (1.0 + 4.0 * fast)).abs() < 1e-5);
+        assert!(v(336.0) > 3.0);
+        // Monotone sur un segment courbé.
+        let mut last = v(288.0);
+        for t in 289..=384 {
+            let x = v(t as f64);
+            assert!(x >= last - 1e-6);
+            last = x;
+        }
+        assert_eq!(shape_curve(0.0, 1.0), 0.0);
+        assert_eq!(shape_curve(1.0, -1.0), 1.0);
+        assert!((shape_curve(0.5, 1.0) - 0.5f64.powi(5)).abs() < 1e-12);
+
+        let empty = AutomationLane { points: Vec::new(), ..lane.clone() };
+        assert_eq!(empty.value_at(10.0), None);
+        let single = AutomationLane { points: vec![pt(50, 0.3, 0.9)], ..lane };
+        assert_eq!(single.value_at(0.0), Some(0.3));
+        assert_eq!(single.value_at(99.0), Some(0.3));
+    }
+
+    #[test]
+    fn automation_scopes() {
+        let mut seq = Sequence {
+            patterns: vec![pattern(&[], 96), pattern(&[], 192)],
+            clips: vec![
+                Clip { pattern: 1, start: 384, len: 384, offset: 48 },
+                Clip { pattern: 0, start: 0, len: 96, offset: 0 },
+            ],
+            mode: PlayMode::Pattern(1),
+            ..Default::default()
+        };
+        assert_eq!(seq.automation_tick(AutoScope::Song, 10.0), None);
+        assert_eq!(seq.automation_tick(AutoScope::Pattern(0), 10.0), None);
+        assert_eq!(seq.automation_tick(AutoScope::Pattern(1), 200.0), Some(8.0));
+        seq.mode = PlayMode::Song;
+        assert_eq!(seq.automation_tick(AutoScope::Song, 500.0), Some(500.0));
+        // Relatif au clip, décalage compris, et en boucle dans le clip.
+        assert_eq!(seq.automation_tick(AutoScope::Pattern(1), 384.0), Some(48.0));
+        assert_eq!(seq.automation_tick(AutoScope::Pattern(1), 384.0 + 150.0), Some(6.0));
+        assert_eq!(seq.automation_tick(AutoScope::Pattern(1), 300.0), None, "hors clip");
+        assert_eq!(seq.automation_tick(AutoScope::Pattern(0), 50.0), Some(50.0));
+        assert_eq!(seq.automation_tick(AutoScope::Pattern(7), 50.0), None);
     }
 }

@@ -9,9 +9,10 @@ use std::sync::Arc;
 use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS, TRACKS, routing_order};
 use ponzik_engine::registry;
 use ponzik_engine::{
-    Channel, Clip, Command, Effect, Engine, EngineHandle, Instrument, Note, Pattern, PlayMode, Sample, Sequence,
-    TICKS_PER_BAR, TICKS_PER_STEP,
+    AudioClip, AutomationLane, Channel, Clip, Command, Effect, Engine, EngineHandle, Instrument, Note, Pattern,
+    PlayMode, Sample, Sequence, TICKS_PER_BAR, TICKS_PER_STEP,
 };
+pub use ponzik_engine::{AutoPoint, AutoScope, AutoTarget};
 
 mod breakcore;
 mod demo;
@@ -116,6 +117,38 @@ pub struct ClipDef {
     pub offset: u32,
 }
 
+/// Courbe d'automation : points triés par tick, un seul point par tick.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AutomationDef {
+    pub target: AutoTarget,
+    pub scope: AutoScope,
+    pub points: Vec<AutoPoint>,
+}
+
+impl AutomationDef {
+    pub fn value_at(&self, tick: f64) -> Option<f32> {
+        ponzik_engine::sequence::automation_value(&self.points, tick)
+    }
+}
+
+/// Fichier audio posé dans la playlist.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AudioClipDef {
+    pub path: String,
+    /// Ligne de la playlist (affichage).
+    pub lane: usize,
+    /// Piste de mixer.
+    pub track: usize,
+    pub start: u32,
+    pub len: u32,
+    /// Décalage dans le fichier, en secondes.
+    pub offset: f64,
+    pub gain: f32,
+    /// Fondus en secondes.
+    pub fade_in: f32,
+    pub fade_out: f32,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct TrackDef {
     pub name: String,
@@ -155,6 +188,8 @@ pub struct Project {
     pub tracks: Vec<TrackDef>,
     pub mode: PlayMode,
     pub current_pattern: usize,
+    pub automation: Vec<AutomationDef>,
+    pub audio_clips: Vec<AudioClipDef>,
 }
 
 /// Fonction de chargement de fichiers audio (fournie par l'application).
@@ -180,17 +215,28 @@ impl Project {
             tracks,
             mode: PlayMode::Pattern(0),
             current_pattern: 0,
+            automation: Vec::new(),
+            audio_clips: Vec::new(),
         }
     }
 
-    /// Fin du morceau : fin du dernier clip, arrondie à la mesure.
+    /// Fin du morceau : fin du dernier clip (pattern ou audio), arrondie à la mesure.
     pub fn song_len(&self) -> u32 {
-        let end = self.clips.iter().map(|c| c.start + c.len).max().unwrap_or(0);
-        end.div_ceil(TICKS_PER_BAR).max(1) * TICKS_PER_BAR
+        let patterns = self.clips.iter().map(|c| c.start.saturating_add(c.len));
+        let audio = self.audio_clips.iter().map(|c| c.start.saturating_add(c.len));
+        let end = patterns.chain(audio).max().unwrap_or(0);
+        end.div_ceil(TICKS_PER_BAR).max(1).saturating_mul(TICKS_PER_BAR)
     }
 
-    /// Instantané de séquence pour le moteur.
+    /// Instantané de séquence pour le moteur, sans les clips audio (aucun
+    /// échantillon chargé) ; voir [`Project::sequence_with`].
     pub fn sequence(&self) -> Sequence {
+        self.sequence_with(&|_| None)
+    }
+
+    /// Instantané de séquence complet : les clips audio dont le fichier ne se
+    /// charge pas sont ignorés.
+    pub fn sequence_with(&self, loader: SampleLoader) -> Sequence {
         let n = self.channels.len();
         let patterns = self
             .patterns
@@ -213,7 +259,66 @@ impl Project {
             mode: self.mode,
             song_len: self.song_len(),
             swing: self.swing,
+            automation: self
+                .automation
+                .iter()
+                .filter(|a| !a.points.is_empty())
+                .map(|a| AutomationLane { target: a.target, scope: a.scope, points: a.points.clone() })
+                .collect(),
+            audio_clips: self
+                .audio_clips
+                .iter()
+                .filter_map(|c| {
+                    Some(AudioClip {
+                        sample: loader(&c.path)?,
+                        track: c.track.min(TRACKS - 1),
+                        start: c.start,
+                        len: c.len,
+                        offset: c.offset,
+                        gain: c.gain,
+                        fade_in: c.fade_in,
+                        fade_out: c.fade_out,
+                    })
+                })
+                .collect(),
         }
+    }
+
+    // --- Automation ---
+
+    pub fn automation_lane(&self, target: AutoTarget, scope: AutoScope) -> Option<&AutomationDef> {
+        self.automation.iter().find(|a| a.target == target && a.scope == scope)
+    }
+
+    pub fn automation_lane_mut(&mut self, target: AutoTarget, scope: AutoScope) -> Option<&mut AutomationDef> {
+        self.automation.iter_mut().find(|a| a.target == target && a.scope == scope)
+    }
+
+    /// Pose un point (courbe créée au besoin) ; un point au même tick prend la
+    /// nouvelle valeur et garde sa tension. Renvoie l'indice du point.
+    pub fn add_automation_point(&mut self, target: AutoTarget, scope: AutoScope, tick: u32, value: f32) -> usize {
+        if self.automation_lane(target, scope).is_none() {
+            self.automation.push(AutomationDef { target, scope, points: Vec::new() });
+        }
+        let points = &mut self.automation_lane_mut(target, scope).expect("courbe créée").points;
+        let at = points.partition_point(|p| p.tick < tick);
+        match points.get_mut(at) {
+            Some(p) if p.tick == tick => p.value = value,
+            _ => points.insert(at, AutoPoint { tick, value, curve: 0.0 }),
+        }
+        at
+    }
+
+    /// Retire le point posé à `tick` ; une courbe vidée disparaît.
+    pub fn remove_automation_point(&mut self, target: AutoTarget, scope: AutoScope, tick: u32) -> Option<AutoPoint> {
+        let i = self.automation.iter().position(|a| a.target == target && a.scope == scope)?;
+        let points = &mut self.automation[i].points;
+        let at = points.iter().position(|p| p.tick == tick)?;
+        let removed = points.remove(at);
+        if points.is_empty() {
+            self.automation.remove(i);
+        }
+        Some(removed)
     }
 
     /// Ordre de traitement du mixer, ou `None` si le routage boucle.
@@ -278,7 +383,7 @@ impl Project {
     /// Moteur complet dans l'état du projet.
     pub fn build_engine(&self, sample_rate: f32, loader: SampleLoader) -> (Engine, EngineHandle) {
         let channels = (0..self.channels.len()).map(|i| self.make_channel(i, sample_rate, loader)).collect();
-        let (mut engine, mut handle) = Engine::new(sample_rate, channels, self.sequence());
+        let (mut engine, mut handle) = Engine::new(sample_rate, channels, self.sequence_with(loader));
         let mixer = engine.mixer_mut();
         for (i, def) in self.tracks.iter().enumerate().take(TRACKS) {
             let t = &mut mixer.tracks[i];
@@ -385,6 +490,22 @@ impl Project {
                 p.notes.remove(idx);
             }
         }
+        // Les courbes du canal disparaissent, celles des suivants suivent leur canal.
+        self.automation.retain_mut(|a| {
+            let channel = match &mut a.target {
+                AutoTarget::InstrumentParam { channel, .. }
+                | AutoTarget::ChannelGain(channel)
+                | AutoTarget::ChannelPan(channel) => channel,
+                _ => return true,
+            };
+            if *channel == idx {
+                return false;
+            }
+            if *channel > idx {
+                *channel -= 1;
+            }
+            true
+        });
     }
 
     pub fn add_pattern(&mut self) -> usize {
@@ -442,5 +563,87 @@ mod tests {
         p.tracks[1].output = 2;
         p.tracks[2].output = 1;
         assert!(p.routing_order().is_none());
+    }
+
+    fn audio(path: &str, start: u32, len: u32) -> AudioClipDef {
+        AudioClipDef {
+            path: path.into(),
+            lane: 0,
+            track: 2,
+            start,
+            len,
+            offset: 0.0,
+            gain: 1.0,
+            fade_in: 0.0,
+            fade_out: 0.0,
+        }
+    }
+
+    #[test]
+    fn audio_clips_extend_the_song_and_need_their_sample() {
+        let mut p = Project::empty();
+        p.clips.push(ClipDef { pattern: 0, lane: 0, start: 0, len: TICKS_PER_BAR, offset: 0 });
+        p.audio_clips.push(audio("a.wav", TICKS_PER_BAR * 4, 10));
+        p.audio_clips.push(audio("absent.wav", 0, 10));
+        assert_eq!(p.song_len(), TICKS_PER_BAR * 5);
+        assert!(p.sequence().audio_clips.is_empty());
+        let sample =
+            Arc::new(Sample { name: "a".into(), sample_rate: 48_000.0, left: vec![0.5; 4], right: vec![0.5; 4] });
+        let loader = |path: &str| (path == "a.wav").then(|| sample.clone());
+        let seq = p.sequence_with(&loader);
+        assert_eq!(seq.audio_clips.len(), 1);
+        assert_eq!(seq.audio_clips[0].start, TICKS_PER_BAR * 4);
+        assert!(Arc::ptr_eq(&seq.audio_clips[0].sample, &sample));
+        assert_eq!(seq.song_len, TICKS_PER_BAR * 5);
+    }
+
+    #[test]
+    fn automation_points_stay_sorted_and_unique() {
+        let mut p = Project::empty();
+        let (t, s) = (AutoTarget::TrackGain(1), AutoScope::Song);
+        assert!(p.automation_lane(t, s).is_none());
+        assert_eq!(p.add_automation_point(t, s, 96, 0.5), 0);
+        assert_eq!(p.add_automation_point(t, s, 0, 1.0), 0);
+        assert_eq!(p.add_automation_point(t, s, 192, 0.0), 2);
+        p.automation_lane_mut(t, s).unwrap().points[1].curve = 0.4;
+        // Même tick : la valeur change, la tension reste.
+        assert_eq!(p.add_automation_point(t, s, 96, 0.7), 1);
+        let lane = p.automation_lane(t, s).unwrap();
+        assert_eq!(
+            lane.points.iter().map(|p| (p.tick, p.value)).collect::<Vec<_>>(),
+            [(0, 1.0), (96, 0.7), (192, 0.0)]
+        );
+        assert_eq!(lane.points[1].curve, 0.4);
+        assert_eq!(lane.value_at(500.0), Some(0.0));
+        // Autre portée : autre courbe.
+        p.add_automation_point(t, AutoScope::Pattern(0), 0, 0.3);
+        assert_eq!(p.automation.len(), 2);
+        assert_eq!(p.sequence().automation.len(), 2);
+
+        assert_eq!(p.remove_automation_point(t, s, 50), None);
+        assert_eq!(p.remove_automation_point(t, s, 96).map(|p| p.value), Some(0.7));
+        p.remove_automation_point(t, s, 0);
+        p.remove_automation_point(t, s, 192);
+        assert!(p.automation_lane(t, s).is_none(), "courbe vide retirée");
+        assert_eq!(p.automation.len(), 1);
+    }
+
+    #[test]
+    fn removing_a_channel_updates_automation() {
+        let mut p = Project::empty();
+        for name in ["A", "B", "C"] {
+            p.add_channel(name, InstrumentDef::new("pulse"), 60);
+        }
+        let s = AutoScope::Song;
+        p.add_automation_point(AutoTarget::ChannelGain(0), s, 0, 1.0);
+        p.add_automation_point(AutoTarget::ChannelPan(1), s, 0, 1.0);
+        p.add_automation_point(AutoTarget::InstrumentParam { channel: 2, id: 3 }, s, 0, 1.0);
+        p.add_automation_point(AutoTarget::TrackGain(1), s, 0, 1.0);
+        p.remove_channel(1);
+        let targets: Vec<AutoTarget> = p.automation.iter().map(|a| a.target).collect();
+        assert_eq!(
+            targets,
+            [AutoTarget::ChannelGain(0), AutoTarget::InstrumentParam { channel: 1, id: 3 }, AutoTarget::TrackGain(1)]
+        );
     }
 }

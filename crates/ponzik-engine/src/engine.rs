@@ -10,10 +10,15 @@ use crate::meter::{PeakMeter, peak};
 use crate::mixer::{INSERT_SLOTS, MASTER, Mixer, SEND_SLOTS, TRACKS};
 use crate::rack::Channel;
 use crate::ring::{self, Consumer, Producer};
-use crate::sequence::{PPQ, SeqEvent, Sequence};
+use crate::sequence::{AutoTarget, PPQ, PlayMode, SeqEvent, Sequence};
 
-/// Taille max d'un bloc de traitement.
+/// Taille max d'un bloc de traitement (l'automation est évaluée à chaque bloc).
 const MAX_BLOCK: usize = 256;
+/// Clips audio suivis d'un bloc à l'autre ; au-delà, la position est recalculée
+/// depuis le tick à chaque bloc.
+const MAX_AUDIO_VOICES: usize = 4_096;
+/// Fondu minimal des clips audio, en secondes.
+const MIN_FADE: f32 = 0.002;
 const COMMAND_QUEUE: usize = 4_096;
 const GARBAGE_QUEUE: usize = 1_024;
 const MAX_EVENTS: usize = 8_192;
@@ -198,6 +203,21 @@ pub struct Engine {
     events: Vec<SeqEvent>,
     scratch_l: Vec<f32>,
     scratch_r: Vec<f32>,
+    /// Lecture des clips audio, un par clip de la séquence.
+    voices: Vec<AudioVoice>,
+    /// Tick de fin du dernier bloc joué (NaN à l'arrêt) : un bloc qui commence
+    /// ailleurs (saut, boucle) relance les clips audio depuis leur position.
+    audio_next: f64,
+}
+
+/// État de lecture d'un clip audio entre deux blocs.
+#[derive(Clone, Copy, Debug, Default)]
+struct AudioVoice {
+    active: bool,
+    /// Position dans l'échantillon, en images de la source.
+    src: f64,
+    /// Échantillons joués depuis le (re)démarrage, pour le fondu d'entrée.
+    run: f64,
 }
 
 impl Engine {
@@ -216,6 +236,8 @@ impl Engine {
             track_peaks: (0..TRACKS).map(|_| PeakMeter::default()).collect(),
             load: AtomicU32::new(0),
         });
+        let mut voices = Vec::with_capacity(MAX_AUDIO_VOICES);
+        voices.resize(sequence.audio_clips.len().min(MAX_AUDIO_VOICES), AudioVoice::default());
         let engine = Engine {
             sample_rate,
             channels,
@@ -239,6 +261,8 @@ impl Engine {
             events: Vec::with_capacity(MAX_EVENTS),
             scratch_l: vec![0.0; MAX_BLOCK],
             scratch_r: vec![0.0; MAX_BLOCK],
+            voices,
+            audio_next: f64::NAN,
         };
         let handle = EngineHandle { commands: tx, state, scope: scope_rx, garbage: trash_rx, sample_rate };
         (engine, handle)
@@ -270,6 +294,17 @@ impl Engine {
 
     /// Remplit `out` (entrelacé, `channels` canaux) — appelé par le thread audio.
     pub fn process(&mut self, out: &mut [f32], channels: usize) {
+        self.run(out, channels, false);
+    }
+
+    /// Comme [`Engine::process`], mais s'arrête pile à la fin de la boucle du
+    /// morceau au lieu de reboucler (export) ; renvoie le nombre d'images écrites,
+    /// le reste de `out` n'est pas touché.
+    pub fn process_to_loop_end(&mut self, out: &mut [f32], channels: usize) -> usize {
+        self.run(out, channels, true)
+    }
+
+    fn run(&mut self, out: &mut [f32], channels: usize, stop_at_end: bool) -> usize {
         let started = Instant::now();
         self.drain_commands();
         let channels = channels.max(1);
@@ -277,16 +312,26 @@ impl Engine {
         let mut done = 0;
         while done < frames {
             let mut n = (frames - done).min(MAX_BLOCK);
-            if self.playing
-                && let Some(end) = self.sequence.loop_end()
-            {
-                // On coupe le bloc à la fin de la boucle du morceau.
-                if self.pos >= end - 1e-9 {
+            if self.playing {
+                let end = self.sequence.loop_end();
+                if let Some(end) = end
+                    && self.pos >= end - 1e-9
+                {
+                    if stop_at_end {
+                        break;
+                    }
                     self.pos = 0.0;
                     self.anchor();
                 }
-                let left = ((end - self.pos) * self.spt()).ceil().max(1.0) as usize;
-                n = n.min(left);
+                // Avant de couper le bloc : l'automation peut changer le tempo.
+                self.apply_automation();
+                if let Some(end) = end {
+                    // On coupe le bloc à la fin de la boucle du morceau.
+                    // Tolérance : une position calculée un rien avant la fin ne doit pas
+                    // ajouter un échantillon.
+                    let left = ((end - self.pos) * self.spt() - 1e-6).ceil().max(1.0) as usize;
+                    n = n.min(left);
+                }
             }
             self.process_chunk(n);
             let (l, r) = self.mixer.master(n);
@@ -298,6 +343,67 @@ impl Engine {
             let budget = frames as f32 / self.sample_rate;
             let load = started.elapsed().as_secs_f32() / budget;
             self.state.load.fetch_max(load.to_bits(), Ordering::Relaxed);
+        }
+        done
+    }
+
+    /// Applique les courbes actives à la position courante (début de bloc).
+    fn apply_automation(&mut self) {
+        let pos = self.pos;
+        let mut tempo = None;
+        for lane in &self.sequence.automation {
+            let Some(v) = self.sequence.automation_tick(lane.scope, pos).and_then(|t| lane.value_at(t)) else {
+                continue;
+            };
+            if !v.is_finite() {
+                continue;
+            }
+            match lane.target {
+                AutoTarget::InstrumentParam { channel, id } => {
+                    if let Some(ch) = self.channels.get_mut(channel)
+                        && ch.instrument.get_param(id) != v
+                    {
+                        ch.instrument.set_param(id, v);
+                    }
+                }
+                AutoTarget::EffectParam { track, slot, id } => {
+                    if let Some(Some(fx)) = self.mixer.tracks.get_mut(track).and_then(|t| t.inserts.get_mut(slot))
+                        && fx.get_param(id) != v
+                    {
+                        fx.set_param(id, v);
+                    }
+                }
+                AutoTarget::ChannelGain(c) => {
+                    if let Some(ch) = self.channels.get_mut(c) {
+                        ch.gain = v.max(0.0);
+                    }
+                }
+                AutoTarget::ChannelPan(c) => {
+                    if let Some(ch) = self.channels.get_mut(c) {
+                        ch.pan = v.clamp(-1.0, 1.0);
+                    }
+                }
+                AutoTarget::TrackGain(t) => {
+                    if let Some(t) = self.mixer.tracks.get_mut(t) {
+                        t.gain = v.max(0.0);
+                    }
+                }
+                AutoTarget::TrackPan(t) => {
+                    if let Some(t) = self.mixer.tracks.get_mut(t) {
+                        t.pan = v.clamp(-1.0, 1.0);
+                    }
+                }
+                AutoTarget::Tempo => tempo = Some(v),
+            }
+        }
+        if let Some(bpm) = tempo {
+            let bpm = (bpm as f64).clamp(20.0, 999.0);
+            if bpm != self.bpm {
+                // Nouvelle ancre à la position courante : pas de saut.
+                self.anchor();
+                self.bpm = bpm;
+                self.mixer.set_tempo(bpm as f32);
+            }
         }
     }
 
@@ -345,12 +451,79 @@ impl Engine {
             i = end;
         }
 
+        self.render_audio_clips(pos_start, n, spt);
         self.metronome_click(pos_start, n, spt);
         self.mixer.process(n, &self.state.track_peaks);
         self.feed_scope(n);
         self.clock += n as u64;
         if self.playing {
             self.pos = self.anchor_tick + (self.clock - self.anchor_clock) as f64 / spt;
+            self.audio_next = self.pos;
+        } else {
+            self.audio_next = f64::NAN;
+        }
+    }
+
+    /// Clips audio (mode morceau) : lecture à la fréquence de l'échantillon,
+    /// interpolation linéaire, début à l'échantillon près, fondus aux bords.
+    fn render_audio_clips(&mut self, pos_start: f64, n: usize, spt: f64) {
+        let song = self.playing && self.sequence.mode == PlayMode::Song;
+        // Bloc dans la continuité du précédent : les clips reprennent où ils étaient
+        // (même si le tempo a changé entre-temps).
+        let contiguous = (pos_start - self.audio_next).abs() < 1e-6;
+        let sr = self.sample_rate as f64;
+        let to = pos_start + n as f64 / spt;
+        let first = |tick: f64| (((tick - pos_start) * spt - 1e-6).ceil().max(0.0) as usize).min(n);
+        for (idx, clip) in self.sequence.audio_clips.iter().enumerate() {
+            let prev = self.voices.get(idx).copied().unwrap_or_default();
+            let mut voice = AudioVoice::default();
+            let sample = &*clip.sample;
+            let len = sample.len();
+            let (start, end) = (clip.start as f64, clip.start as f64 + clip.len as f64);
+            if song && len > 0 && end > pos_start && start < to {
+                let (k0, k1) = (first(start), first(end));
+                let src_rate = sample.sample_rate.max(1.0) as f64;
+                let ratio = src_rate / sr;
+                let resume = prev.active && contiguous && k0 == 0;
+                let (mut p, mut run) = if resume {
+                    (prev.src, prev.run)
+                } else {
+                    let tick = pos_start + k0 as f64 / spt;
+                    let secs = clip.offset.max(0.0) + (tick - start).max(0.0) * spt / sr;
+                    // Après un saut, petit fondu d'entrée ; sinon (nouvelle séquence,
+                    // début du clip) seul le fondu du clip compte.
+                    (secs * src_rate, if contiguous { f64::MAX / 2.0 } else { 0.0 })
+                };
+                let origin = clip.offset.max(0.0) * src_rate;
+                let fade_in = clip.fade_in.max(MIN_FADE) as f64 * sr;
+                let fade_out = clip.fade_out.max(MIN_FADE) as f64 * sr;
+                let end_at = (end - pos_start) * spt;
+                let right = if sample.right.len() == len { &sample.right } else { &sample.left };
+                let (tl, tr) = self.mixer.input(clip.track, n);
+                for k in k0..k1 {
+                    if p >= len as f64 {
+                        break;
+                    }
+                    let i = p as usize;
+                    let j = (i + 1).min(len - 1);
+                    let frac = (p - i as f64) as f32;
+                    let l = sample.left[i] + (sample.left[j] - sample.left[i]) * frac;
+                    let r = right[i] + (right[j] - right[i]) * frac;
+                    // En échantillons de sortie ; +1 : le premier échantillon n'est pas nul.
+                    let since_start = (p - origin) / ratio + 1.0;
+                    let until_end = (end_at - k as f64).min((len as f64 - p) / ratio);
+                    let fade = (since_start.min(run + 1.0) / fade_in).min(1.0) * (until_end / fade_out).min(1.0);
+                    let g = clip.gain * fade.max(0.0) as f32;
+                    tl[k] += l * g;
+                    tr[k] += r * g;
+                    p += ratio;
+                    run += 1.0;
+                }
+                voice = AudioVoice { active: k1 == n && p < len as f64, src: p, run };
+            }
+            if let Some(v) = self.voices.get_mut(idx) {
+                *v = voice;
+            }
         }
     }
 
@@ -460,6 +633,10 @@ impl Engine {
                 self.mixer.set_tempo(self.bpm as f32);
             }
             Command::SetSequence(seq) => {
+                // Dans la capacité réservée : pas d'allocation.
+                self.voices.clear();
+                let voices = seq.audio_clips.len().min(self.voices.capacity());
+                self.voices.resize(voices, AudioVoice::default());
                 let old = std::mem::replace(&mut self.sequence, seq);
                 self.trash(Garbage::Sequence(old));
             }
@@ -620,7 +797,8 @@ fn write_interleaved(out: &mut [f32], channels: usize, left: &[f32], right: &[f3
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sequence::{Clip, Note, Pattern, PlayMode, TICKS_PER_STEP};
+    use crate::sample::Sample;
+    use crate::sequence::{AudioClip, AutoPoint, AutoScope, AutomationLane, Clip, Note, Pattern, TICKS_PER_STEP};
     use std::sync::Mutex;
     use std::sync::atomic::AtomicUsize;
 
@@ -729,7 +907,7 @@ mod tests {
             clips: vec![Clip { pattern: 0, start: 0, len: 96, offset: 0 }],
             mode: PlayMode::Song,
             song_len: 384,
-            swing: 0.0,
+            ..Default::default()
         };
         handle.send(Command::SetSequence(Box::new(seq))).unwrap();
         handle.send(Command::Play).unwrap();
@@ -796,5 +974,198 @@ mod tests {
         let mut buf = vec![0.0; 2 * 2_000];
         engine.process(&mut buf, 2);
         assert!(buf.iter().any(|s| s.abs() > 0.05), "clic au premier temps");
+    }
+
+    fn lane(target: AutoTarget, scope: AutoScope, points: &[(u32, f32)]) -> AutomationLane {
+        AutomationLane {
+            target,
+            scope,
+            points: points.iter().map(|&(tick, value)| AutoPoint { tick, value, curve: 0.0 }).collect(),
+        }
+    }
+
+    /// Crête de la piste sur les `256` échantillons qui suivent l'échantillon `at`.
+    fn track_peak_at(engine: &mut Engine, handle: &EngineHandle, done: &mut usize, at: usize, track: usize) -> f32 {
+        run(engine, at - *done, 256);
+        handle.take_track_peak(track);
+        run(engine, 256, 256);
+        *done = at + 256;
+        handle.take_track_peak(track)[0]
+    }
+
+    #[test]
+    fn track_gain_lane_is_applied() {
+        let (mut engine, mut handle, _) = setup(&[]);
+        let seq = Sequence {
+            mode: PlayMode::Song,
+            song_len: 4 * 384,
+            automation: vec![lane(AutoTarget::TrackGain(1), AutoScope::Song, &[(96, 1.0), (192, 0.2)])],
+            ..Default::default()
+        };
+        handle.send(Command::SetSequence(Box::new(seq))).unwrap();
+        handle.send(Command::Play).unwrap();
+        // 250 échantillons par tick ; le canal sonde sort 0,25 en continu.
+        let mut done = 0;
+        assert!((track_peak_at(&mut engine, &handle, &mut done, 0, 1) - 0.25).abs() < 1e-6);
+        assert!((track_peak_at(&mut engine, &handle, &mut done, 250 * 300, 1) - 0.05).abs() < 1e-6);
+        // À l'arrêt, la dernière valeur reste.
+        handle.send(Command::Stop).unwrap();
+        handle.send(Command::Locate(0.0)).unwrap();
+        run(&mut engine, 512, 256);
+        handle.take_track_peak(1);
+        run(&mut engine, 256, 256);
+        assert!((handle.take_track_peak(1)[0] - 0.05).abs() < 1e-6);
+    }
+
+    #[test]
+    fn pattern_automation_loops_with_the_pattern() {
+        let (mut engine, mut handle, _) = setup(&[]);
+        // Pattern d'une mesure (384 ticks) : plein volume puis silence à mi-mesure.
+        let seq = Sequence {
+            patterns: vec![pattern(&[])],
+            automation: vec![lane(
+                AutoTarget::TrackGain(1),
+                AutoScope::Pattern(0),
+                &[(0, 1.0), (180, 1.0), (192, 0.0)],
+            )],
+            ..Default::default()
+        };
+        handle.send(Command::SetSequence(Box::new(seq))).unwrap();
+        handle.send(Command::Play).unwrap();
+        let mut done = 0;
+        for bar in 0..3 {
+            let base = bar * 384 * 250;
+            let loud = track_peak_at(&mut engine, &handle, &mut done, base + 250 * 100, 1);
+            let quiet = track_peak_at(&mut engine, &handle, &mut done, base + 250 * 300, 1);
+            assert!((loud - 0.25).abs() < 1e-6, "mesure {bar} : {loud}");
+            assert_eq!(quiet, 0.0, "mesure {bar}");
+        }
+    }
+
+    #[test]
+    fn tempo_lane_changes_note_timing() {
+        let (mut engine, mut handle, probe) = setup(&[0, 4, 8]);
+        let seq = Sequence {
+            patterns: vec![pattern(&[0, 4, 8])],
+            clips: vec![Clip { pattern: 0, start: 0, len: 384, offset: 0 }],
+            mode: PlayMode::Song,
+            song_len: 384,
+            automation: vec![lane(AutoTarget::Tempo, AutoScope::Song, &[(0, 120.0), (48, 120.0), (49, 240.0)])],
+            ..Default::default()
+        };
+        handle.send(Command::SetSequence(Box::new(seq))).unwrap();
+        handle.send(Command::Play).unwrap();
+        run(&mut engine, 40_000, 256);
+        let on = ons(&probe);
+        assert_eq!(on.len(), 3, "{on:?}");
+        assert_eq!(on[0], 0);
+        // 48 ticks à 120 BPM (12 000 échantillons), une rampe d'un tick évaluée par blocs
+        // de 256, puis le reste à 240 BPM (au lieu de 24 000 sans automation).
+        assert!((17_875..=18_200).contains(&on[1]), "{on:?}");
+        // Ensuite tempo constant à 240 BPM : 96 ticks × 125 échantillons.
+        assert!(on[2].abs_diff(on[1] + 12_000) <= 1, "{on:?}");
+        assert!((handle.position() - (192.0 + (40_000 - on[2]) as f64 / 125.0)).abs() < 0.01);
+    }
+
+    fn audio_clip(sample: Sample, start: u32, offset: f64, gain: f32) -> AudioClip {
+        AudioClip { sample: Arc::new(sample), track: 2, start, len: 384 * 4, offset, gain, fade_in: 0.0, fade_out: 0.0 }
+    }
+
+    /// Moteur en mode morceau avec ces clips audio, canal sonde coupé ; rend `frames` (gauche seulement).
+    fn render_audio(clips: Vec<AudioClip>, frames: usize, block: usize) -> Vec<f32> {
+        let (mut engine, mut handle, _) = setup(&[]);
+        let seq = Sequence { mode: PlayMode::Song, song_len: 384 * 8, audio_clips: clips, ..Default::default() };
+        handle.send(Command::SetChannelMute { channel: 0, muted: true }).unwrap();
+        handle.send(Command::SetSequence(Box::new(seq))).unwrap();
+        handle.send(Command::Play).unwrap();
+        let mut out = Vec::with_capacity(frames);
+        let mut buf = vec![0.0; 2 * block];
+        while out.len() < frames {
+            let n = (frames - out.len()).min(block);
+            engine.process(&mut buf[..2 * n], 2);
+            out.extend(buf[..2 * n].iter().step_by(2));
+        }
+        out
+    }
+
+    #[test]
+    fn audio_clip_starts_on_the_sample_with_offset_and_gain() {
+        // Rampe : la valeur dit quelle image de la source est jouée.
+        let n = 4_800;
+        let left: Vec<f32> = (0..n).map(|i| i as f32 / n as f32).collect();
+        let sample = Sample { name: "rampe".into(), sample_rate: SR, right: left.clone(), left };
+        for block in [64, 300, 1024] {
+            // Début au tick 96 = échantillon 24 000 ; décalage 10 ms = 480 images.
+            let out = render_audio(vec![audio_clip(sample.clone(), 96, 0.01, 0.5)], 30_000, block);
+            assert!(out[..24_000].iter().all(|&s| s == 0.0), "bloc {block}");
+            assert!(out[24_000] > 0.0, "bloc {block}");
+            // Après le fondu de 2 ms (96 échantillons).
+            for k in [200, 1_000, 3_000] {
+                let want = 0.5 * (480 + k) as f32 / n as f32;
+                assert!((out[24_000 + k] - want).abs() < 1e-5, "bloc {block}, {k} : {} ≠ {want}", out[24_000 + k]);
+            }
+            // L'échantillon s'arrête à sa fin : 4 800 − 480 images.
+            assert!(out[24_000 + 4_319] > 0.0);
+            assert!(out[24_000 + 4_320..].iter().all(|&s| s == 0.0), "bloc {block}");
+        }
+    }
+
+    #[test]
+    fn audio_clip_is_resampled_to_the_engine_rate() {
+        let sample =
+            Sample { name: "dc".into(), sample_rate: 24_000.0, left: vec![1.0; 1_000], right: vec![1.0; 1_000] };
+        let out = render_audio(vec![audio_clip(sample, 0, 0.0, 1.0)], 4_000, 256);
+        // 1 000 images à 24 kHz = 2 000 échantillons à 48 kHz.
+        let audible: Vec<usize> = (0..out.len()).filter(|&i| out[i] != 0.0).collect();
+        assert_eq!(audible.len(), 2_000);
+        assert_eq!((audible[0], audible[1_999]), (0, 1_999));
+        assert!((out[1_000] - 1.0).abs() < 1e-6);
+        assert!(out[0] < 0.05 && out[1_999] < 0.05, "fondus aux bords");
+    }
+
+    #[test]
+    fn audio_clip_follows_locate_and_clip_end() {
+        let sample = Sample { name: "dc".into(), sample_rate: SR, left: vec![1.0; 96_000], right: vec![1.0; 96_000] };
+        let mut clip = audio_clip(sample, 0, 0.0, 1.0);
+        clip.len = 96;
+        let (mut engine, mut handle, _) = setup(&[]);
+        let seq = Sequence { mode: PlayMode::Song, song_len: 384, audio_clips: vec![clip], ..Default::default() };
+        handle.send(Command::SetChannelMute { channel: 0, muted: true }).unwrap();
+        handle.send(Command::SetSequence(Box::new(seq))).unwrap();
+        handle.send(Command::Play).unwrap();
+        let mut buf = vec![0.0; 2 * 30_000];
+        engine.process(&mut buf, 2);
+        // Le clip dure 96 ticks = 24 000 échantillons, fondu de sortie compris.
+        assert!(buf[2 * 23_999] > 0.0 && buf[2 * 23_999] < 0.05);
+        assert!(buf[2 * 24_000..].iter().all(|&s| s == 0.0));
+        assert!((buf[2 * 12_000] - 1.0).abs() < 1e-6);
+        // Saut au milieu du clip : reprise immédiate avec un fondu court.
+        handle.send(Command::Locate(48.0)).unwrap();
+        engine.process(&mut buf[..2 * 512], 2);
+        assert!(buf[0] > 0.0 && buf[0] < 0.05);
+        assert!((buf[2 * 200] - 1.0).abs() < 1e-6);
+        // En mode pattern, les clips audio se taisent.
+        let silent = Sequence { patterns: vec![pattern(&[])], ..Default::default() };
+        handle.send(Command::SetSequence(Box::new(silent))).unwrap();
+        engine.process(&mut buf[..2 * 512], 2);
+        assert!(buf[..2 * 512].iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn process_to_loop_end_stops_at_song_end() {
+        let (mut engine, mut handle, _) = setup(&[]);
+        let seq = Sequence { mode: PlayMode::Song, song_len: 384, ..Default::default() };
+        handle.send(Command::SetSequence(Box::new(seq))).unwrap();
+        handle.send(Command::Play).unwrap();
+        let mut buf = vec![0.0; 2 * 1_000];
+        let mut total = 0;
+        loop {
+            let n = engine.process_to_loop_end(&mut buf, 2);
+            total += n;
+            if n < 1_000 {
+                break;
+            }
+        }
+        assert_eq!(total, 96_000);
     }
 }
