@@ -14,6 +14,7 @@ mod palette;
 mod piano;
 mod playlist;
 mod rack;
+mod session;
 mod sync;
 mod visuals;
 mod theme;
@@ -226,6 +227,7 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
         "piano" => View::Piano,
         "playlist" => View::Playlist,
         "mixer" => View::Mixer,
+        "session" => View::Session,
         _ => View::Rack,
     };
     app.set_view(view);
@@ -243,7 +245,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
         app.add_audio_clip(&path);
         app.add_sample_channel(&path);
     }
-    app.toggle_play();
+    if view == View::Session {
+        app.launch_scene(0);
+    } else {
+        app.toggle_play();
+    }
     let _ = Command::Play;
 
     let mut canvas = Canvas::new(width, height);

@@ -26,17 +26,19 @@ pub enum View {
     Rack,
     Piano,
     Playlist,
+    Session,
     Mixer,
 }
 
 impl View {
-    pub const ALL: [View; 4] = [View::Rack, View::Piano, View::Playlist, View::Mixer];
+    pub const ALL: [View; 5] = [View::Rack, View::Piano, View::Playlist, View::Session, View::Mixer];
 
     pub fn label(self) -> &'static str {
         match self {
             View::Rack => "Channel Rack",
             View::Piano => "Piano roll",
             View::Playlist => "Playlist",
+            View::Session => "Session",
             View::Mixer => "Mixer",
         }
     }
@@ -69,6 +71,8 @@ pub enum Popup {
     Rename { target: Rename, text: String },
     /// Palette touche-à-tout (Ctrl+K).
     Palette { query: String, selected: usize },
+    /// Choix du pattern d'une case vide de la vue Session.
+    SessionAssign { col: usize, row: usize },
     /// Menu d'un paramètre (clic droit sur un potard).
     Param { target: ponzik_engine::AutoTarget, value: f32, default: f32 },
 }
@@ -117,6 +121,7 @@ pub enum Action {
     LoadDemo(usize),
     SetTheme(usize),
     Automate(ponzik_engine::AutoTarget, f32),
+    AssignSession(usize, usize, usize),
     RemoveAutomation(ponzik_engine::AutoTarget),
     SetParamValue(ponzik_engine::AutoTarget, f32),
 }
@@ -260,6 +265,8 @@ pub struct App {
     pub keyboard_octave: i32,
     /// Enregistrement armé : les notes jouées pendant la lecture sont écrites.
     pub record: bool,
+    /// État des colonnes de la vue Session (non enregistré).
+    pub session_cols: [super::session::ColumnState; ponzik_project::SESSION_COLUMNS],
     /// Clavier d'ordinateur joué comme un piano (désactivé : les lettres sont des raccourcis).
     pub typing_keyboard: bool,
     /// Marqueur de départ de la lecture, en ticks (cliqué dans une règle).
@@ -340,6 +347,7 @@ impl App {
             keyboard_octave: 4,
             record: false,
             typing_keyboard: false,
+            session_cols: Default::default(),
             start_marker: 0.0,
             clipboard_notes: Vec::new(),
             clipboard_clip: None,
@@ -440,7 +448,9 @@ impl App {
         for path in paths {
             self.ensure_sample(&path);
         }
+        self.session_cols = Default::default();
         self.project = project;
+        self.project.session_live.clear();
         self.past.clear();
         self.future.clear();
         self.last_edit = None;
@@ -602,7 +612,19 @@ impl App {
         self.toast(&format!("{} ajouté sur {name}", info.name));
     }
 
+    /// Arrête tous les clips de la vue Session.
+    pub fn clear_session(&mut self) {
+        self.session_cols = Default::default();
+        if !self.project.session_live.is_empty() {
+            self.project.session_live.clear();
+            self.sync_engine();
+        }
+    }
+
     pub fn set_mode(&mut self, mode: PlayMode) {
+        if self.project.mode == PlayMode::Session && mode != PlayMode::Session {
+            self.clear_session();
+        }
         if self.project.mode != mode {
             self.project.mode = mode;
             self.commit("Mode de lecture");
@@ -640,6 +662,7 @@ impl App {
 
     pub fn stop(&mut self) {
         self.release_all_held();
+        self.clear_session();
         self.playing = false;
         self.send(Command::Stop);
         self.send(Command::Locate(self.start_marker));
@@ -705,6 +728,11 @@ impl App {
             c.fill_path(&p, t.text);
         }
         changed
+    }
+
+    /// Envoie les clips de session au moteur, sans étape d'annulation.
+    pub fn sync_session(&mut self) {
+        self.sync_engine();
     }
 
     /// La sélection de temps fait boucler la lecture quand elle correspond au mode
@@ -812,7 +840,7 @@ impl App {
                 let len = self.project.patterns.get(p).map_or(TICKS_PER_BAR, |p| p.len.max(1)) as f64;
                 self.position.rem_euclid(len)
             }
-            PlayMode::Song => self.position,
+            PlayMode::Song | PlayMode::Session => self.position,
         }
     }
 
@@ -849,7 +877,7 @@ impl App {
                     self.toast("Nouveau pattern");
                 }
                 Key::Tab => {
-                    let next = View::ALL[(self.view.index() + 1) % 4];
+                    let next = View::ALL[(self.view.index() + 1) % View::ALL.len()];
                     self.set_view(next);
                 }
                 Key::Char('+') => {
@@ -884,7 +912,7 @@ impl App {
                 Key::Char('l') => {
                     let mode = match self.project.mode {
                         PlayMode::Pattern(_) => PlayMode::Song,
-                        PlayMode::Song => PlayMode::Pattern(self.project.current_pattern),
+                        PlayMode::Song | PlayMode::Session => PlayMode::Pattern(self.project.current_pattern),
                     };
                     self.set_mode(mode);
                 }
@@ -992,7 +1020,7 @@ impl App {
         let wordmark = self.text(c, self.f.sans_med, 18.0, 70.0, cy, "Ponzik", t.text);
 
         // Transport, centré.
-        let cluster = 40.0 + 6.0 + 40.0 + 14.0 + 196.0 + 10.0 + 188.0 + 10.0 + 116.0 + 10.0 + 132.0 + 6.0 + 36.0 + 4.0 + 36.0 + 4.0 + 36.0;
+        let cluster = 40.0 + 6.0 + 40.0 + 14.0 + 264.0 + 10.0 + 188.0 + 10.0 + 116.0 + 10.0 + 132.0 + 6.0 + 36.0 + 4.0 + 36.0 + 4.0 + 36.0;
         let mut x = ((r.w - cluster) * 0.5).round().max(70.0 + wordmark + 24.0);
         let start = x;
 
@@ -1016,12 +1044,22 @@ impl App {
         let mode = match self.project.mode {
             PlayMode::Pattern(_) => 0,
             PlayMode::Song => 1,
+            PlayMode::Session => 2,
         };
-        if let Some(m) = self.segmented(c, input, wid("tb-mode", 0, 0), Rect::new(x, cy - 18.0, 196.0, 36.0), &["Pattern", "Morceau"], mode) {
+        if let Some(m) =
+            self.segmented(c, input, wid("tb-mode", 0, 0), Rect::new(x, cy - 18.0, 264.0, 36.0), &["Pattern", "Morceau", "Session"], mode)
+        {
             let cur = self.project.current_pattern;
-            self.set_mode(if m == 0 { PlayMode::Pattern(cur) } else { PlayMode::Song });
+            self.set_mode(match m {
+                0 => PlayMode::Pattern(cur),
+                1 => PlayMode::Song,
+                _ => PlayMode::Session,
+            });
+            if m == 2 {
+                self.set_view(View::Session);
+            }
         }
-        x += 206.0;
+        x += 274.0;
         self.pattern_selector(c, input, Rect::new(x, cy - 18.0, 188.0, 36.0));
         x += 198.0;
 
@@ -1176,7 +1214,7 @@ impl App {
 
     fn main_area(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
         let t = self.theme;
-        let tabs = Rect::new(r.x + PAD, r.y + 12.0, 480.0f32.min(r.w - 2.0 * PAD), 36.0);
+        let tabs = Rect::new(r.x + PAD, r.y + 12.0, 580.0f32.min(r.w - 2.0 * PAD), 36.0);
         let labels: Vec<&str> = View::ALL.iter().map(|v| v.label()).collect();
         if let Some(i) = self.segmented(c, input, wid("tabs", 0, 0), tabs, &labels, self.view.index()) {
             self.set_view(View::ALL[i]);
@@ -1196,6 +1234,7 @@ impl App {
             View::Rack => self.rack_view(c, input, header, body_shifted),
             View::Piano => self.piano_view(c, input, header, body_shifted),
             View::Playlist => self.playlist_view(c, input, header, body_shifted),
+            View::Session => self.session_view(c, input, header, body_shifted),
             View::Mixer => self.mixer_view(c, input, header, body_shifted),
         }
         if enter < 0.999 {
@@ -1508,6 +1547,14 @@ impl App {
                 v.push(("Valeur par défaut".into(), String::new(), Action::SetParamValue(*target, *default)));
                 (label, v)
             }
+            Popup::SessionAssign { col, row } => (
+                format!("Piste {} · scène {}", col + 1, row + 1),
+                p.patterns
+                    .iter()
+                    .enumerate()
+                    .map(|(i, pat)| (pat.name.clone(), format!("{} mesure(s)", pat.len.div_ceil(TICKS_PER_BAR)), Action::AssignSession(*col, *row, i)))
+                    .collect(),
+            ),
             Popup::Rename { .. } | Popup::Palette { .. } => (String::new(), Vec::new()),
         }
     }
@@ -1604,7 +1651,7 @@ impl App {
             Action::ToggleMode => {
                 let mode = match self.project.mode {
                     PlayMode::Pattern(_) => PlayMode::Song,
-                    PlayMode::Song => PlayMode::Pattern(self.project.current_pattern),
+                    PlayMode::Song | PlayMode::Session => PlayMode::Pattern(self.project.current_pattern),
                 };
                 self.set_mode(mode);
             }
@@ -1639,6 +1686,10 @@ impl App {
             }
             Action::SetTheme(i) => self.theme = THEMES[i.min(THEMES.len() - 1)],
             Action::Automate(target, value) => self.create_automation(target, value),
+            Action::AssignSession(col, row, p) => {
+                self.project.session_grid[col][row] = Some(p);
+                self.commit("Remplir une case");
+            }
             Action::RemoveAutomation(target) => {
                 self.project.automation.retain(|a| a.target != target);
                 self.commit("Retirer une automation");
