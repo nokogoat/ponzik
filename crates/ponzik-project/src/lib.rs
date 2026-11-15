@@ -23,12 +23,14 @@ mod demo;
 pub mod history;
 pub mod io;
 pub mod json;
+pub mod midi_file;
 pub mod render;
 
 pub use breakcore::demo_breakcore;
 pub use demo::demo_project;
 pub use history::History;
 pub use io::{load, load_from_file, save, save_to_file};
+pub use midi_file::{MidiFile, MidiTrack, import_midi, read_smf, write_smf};
 pub use render::{BitDepth, RenderMode, render_song, render_stems, write_wav};
 
 /// Un instrument et l'état de ses paramètres.
