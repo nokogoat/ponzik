@@ -503,6 +503,105 @@ impl App {
     }
 }
 
+/// Signal de test d'une réponse d'effet.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Probe {
+    /// Impulsion : queues de réverbe, échos.
+    Impulse,
+    /// Signal constant : gains rythmiques (pompe, tranche).
+    Constant,
+}
+
+/// Effets dont on montre la réponse temporelle, avec le signal et la durée.
+pub fn response_kind(kind: &str) -> Option<(Probe, f32)> {
+    match kind {
+        "reverb" | "shimmer" => Some((Probe::Impulse, 4.0)),
+        "delay" => Some((Probe::Impulse, 2.5)),
+        "pompe" | "tranche" => Some((Probe::Constant, 0.0)),
+        _ => None,
+    }
+}
+
+const PROBE_SR: f32 = 16_000.0;
+
+impl App {
+    /// Enveloppe de la réponse de l'effet (crête par colonne), mise en cache par réglages.
+    fn effect_response(&mut self, kind: &str, params: &'static [ParamInfo], device: Device, cols: usize) -> Option<std::sync::Arc<Vec<f32>>> {
+        let (probe, secs) = response_kind(kind)?;
+        // Les effets rythmiques sont montrés sur une mesure au tempo du projet.
+        let secs = if secs > 0.0 { secs } else { 4.0 * 60.0 / self.project.bpm };
+        let values: Vec<f32> = params.iter().map(|p| self.param_value(device, p)).collect();
+        let key = format!("{kind}|{cols}|{}|{:?}", self.project.bpm, values);
+        if let Some(r) = self.responses.get(&key) {
+            return Some(r.clone());
+        }
+        let mut fx = ponzik_engine::registry::create_effect(kind)?;
+        fx.set_sample_rate(PROBE_SR);
+        fx.set_tempo(self.project.bpm);
+        for (p, v) in params.iter().zip(&values) {
+            fx.set_param(p.id, *v);
+        }
+        fx.reset();
+        let n = (secs * PROBE_SR) as usize;
+        let per_col = (n / cols.max(1)).max(1);
+        let mut env = vec![0.0f32; cols];
+        let (mut l, mut r) = (vec![0.0f32; 256], vec![0.0f32; 256]);
+        let mut done = 0;
+        while done < n {
+            let m = 256.min(n - done);
+            for k in 0..m {
+                let x = match probe {
+                    Probe::Impulse => (done + k == 0) as u8 as f32,
+                    Probe::Constant => 0.5,
+                };
+                l[k] = x;
+                r[k] = x;
+            }
+            fx.process(&mut l[..m], &mut r[..m]);
+            for k in 0..m {
+                let col = ((done + k) / per_col).min(cols - 1);
+                env[col] = env[col].max(l[k].abs().max(r[k].abs()));
+            }
+            done += m;
+        }
+        if probe == Probe::Constant {
+            for v in &mut env {
+                *v = (*v / 0.5).min(1.2);
+            }
+        }
+        if self.responses.len() > 64 {
+            self.responses.clear();
+        }
+        let env = std::sync::Arc::new(env);
+        self.responses.insert(key, env.clone());
+        Some(env)
+    }
+
+    /// Réponse temporelle : queue en dB pour une impulsion, gain linéaire pour un signal constant.
+    pub(super) fn response_graph(&mut self, c: &mut Canvas, r: Rect, device: Device, kind: &str, params: &'static [ParamInfo]) {
+        let t = self.theme;
+        c.fill_rrect(r, 10.0, t.well);
+        let g = r.inset_xy(10.0, 12.0);
+        let cols = (g.w / 2.0) as usize;
+        let Some(env) = self.effect_response(kind, params, device, cols) else { return };
+        let Some((probe, _)) = response_kind(kind) else { return };
+        let y_of = |v: f32| match probe {
+            Probe::Impulse => {
+                let db = 20.0 * v.max(1e-6).log10();
+                g.bottom() - ((db + 60.0) / 60.0).clamp(0.0, 1.0) * g.h
+            }
+            Probe::Constant => g.bottom() - (v / 1.2).clamp(0.0, 1.0) * g.h,
+        };
+        let pts: Vec<(f32, f32)> = env.iter().enumerate().map(|(i, &v)| (g.x + i as f32 * 2.0, y_of(v))).collect();
+        filled_curve(c, &pts, g.bottom(), t.accent.alpha(0.14), t.accent);
+        let label = match probe {
+            Probe::Impulse => "Réponse à une impulsion (dB)",
+            Probe::Constant => "Gain sur une mesure",
+        };
+        self.text(c, self.f.sans, 10.0, g.x, r.y + 9.0, label, t.muted);
+    }
+}
+
 /// Clé stable d'un appareil pour les identifiants de widgets.
 pub fn device_key(d: Device) -> usize {
     match d {

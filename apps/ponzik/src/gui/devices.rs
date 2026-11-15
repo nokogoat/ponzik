@@ -103,6 +103,7 @@ fn sample_kind(kind: &str) -> bool {
     matches!(kind, "sampler" | "slicer" | "granular")
 }
 const SAMPLE_W: f32 = 320.0;
+const RESPONSE_W: f32 = 260.0;
 
 fn transfer_kind(kind: &str) -> bool {
     matches!(kind, "compressor" | "limiter" | "gate" | "saturator")
@@ -121,6 +122,8 @@ fn card_width(kind: &str, params: &'static [ParamInfo]) -> f32 {
         TRANSFER + GROUP_GAP
     } else if sample_kind(kind) {
         SAMPLE_W + GROUP_GAP
+    } else if super::visuals::response_kind(kind).is_some() {
+        RESPONSE_W + GROUP_GAP
     } else {
         0.0
     };
@@ -277,6 +280,9 @@ impl App {
         } else if sample_kind(&kind) {
             self.sample_view(c, input, Rect::new(x, body.y + 4.0, SAMPLE_W, body.h - 10.0), device, params);
             x += SAMPLE_W + GROUP_GAP;
+        } else if super::visuals::response_kind(&kind).is_some() {
+            self.response_graph(c, Rect::new(x, body.y + 4.0, RESPONSE_W, body.h - 10.0), device, &kind, params);
+            x += RESPONSE_W + GROUP_GAP;
         }
         let key = device_key(device);
         for (gi, g) in groups(params).into_iter().enumerate() {

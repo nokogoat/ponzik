@@ -236,6 +236,8 @@ pub struct App {
     pub samples: HashMap<String, Arc<Sample>>,
     /// Crêtes (min, max) par paquets d'échantillons, pour dessiner les formes d'onde.
     waveforms: HashMap<String, Arc<Vec<(f32, f32)>>>,
+    /// Réponses d'effets déjà calculées, par réglages.
+    pub responses: HashMap<String, Arc<Vec<f32>>>,
     pub sample_files: Vec<PathBuf>,
 
     pub playing: bool,
@@ -323,6 +325,7 @@ impl App {
             mixer_scroll: 0.0,
             samples: HashMap::new(),
             waveforms: HashMap::new(),
+            responses: HashMap::new(),
             sample_files: compat::scan_samples(),
             playing: false,
             metronome: false,
