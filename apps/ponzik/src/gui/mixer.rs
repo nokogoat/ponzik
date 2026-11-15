@@ -224,17 +224,33 @@ impl App {
         }
 
         let muted = self.project.tracks[tr].muted;
+        let half = (mute.w - 4.0) * 0.5;
+        let mute_r = Rect::new(mute.x, mute.y, if tr == MASTER { mute.w } else { half }, mute.h);
         let mid = wid("mx-mute", tr, 0);
-        let hov = self.hovered(input, mid, mute);
+        let hov = self.hovered(input, mid, mute_r);
         if hov && input.pressed {
             self.project.tracks[tr].muted = !muted;
             self.commit("Muet de piste");
         }
         let hv = self.hover_anim(mid, hov);
         let (fill, ink) = if muted { (t.text.mix(WHITE, hv * 0.2), t.bg_deep) } else { (t.raised.mix(t.raised_hi, hv), t.text2) };
-        c.fill_rrect(mute, 8.0, fill);
-        let (mx, my) = mute.center();
-        self.text_center(c, self.f.sans_med, 12.0, mx, my, "Mute", ink);
+        c.fill_rrect(mute_r, 8.0, fill);
+        let (mx, my) = mute_r.center();
+        self.text_center(c, self.f.sans_med, 12.0, mx, my, if tr == MASTER { "Mute" } else { "M" }, ink);
+        if tr != MASTER {
+            let solo_r = Rect::new(mute.x + half + 4.0, mute.y, half, mute.h);
+            let sid = wid("mx-solo", tr, 0);
+            let shov = self.hovered(input, sid, solo_r);
+            if shov && input.pressed {
+                self.toggle_solo(tr);
+            }
+            let shv = self.hover_anim(sid, shov);
+            let on = self.solo == Some(tr);
+            let (fill, ink) = if on { (t.select, t.bg_deep) } else { (t.raised.mix(t.raised_hi, shv), t.text2) };
+            c.fill_rrect(solo_r, 8.0, fill);
+            let (sx, sy) = solo_r.center();
+            self.text_center(c, self.f.sans_med, 12.0, sx, sy, "S", ink);
+        }
     }
 
     fn track_fader(&mut self, c: &mut Canvas, input: &Input, area: Rect, tr: usize) {
