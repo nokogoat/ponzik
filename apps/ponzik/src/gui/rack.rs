@@ -268,6 +268,18 @@ impl App {
         if over && input.right_down && self.drag.is_none() && note.is_some() {
             self.paint_step(ch, i, false);
         }
+        // Molette sur un pas allumé : sa vélocité (Maj : réglage fin).
+        if hov && input.wheel != 0.0 && self.note_in_step(ch, i).is_some() {
+            let pat = self.project.current_pattern;
+            let (lo, hi) = (i as u32 * TICKS_PER_STEP, (i as u32 + 1) * TICKS_PER_STEP);
+            let step = if input.mods.shift { 0.01 } else { 0.05 };
+            if let Some(n) = self.project.patterns[pat].notes.get_mut(ch).and_then(|v| v.iter_mut().find(|n| n.start >= lo && n.start < hi)) {
+                n.vel = (n.vel + input.wheel * step).clamp(0.05, 1.0);
+                let vel = n.vel;
+                self.commit("Vélocité du pas");
+                self.toast(&format!("Vélocité {:.0} %", vel * 100.0));
+            }
+        }
         let note = self.note_in_step(ch, i);
 
         let hv = self.hover_anim(wid("pad", ch, i), hov);
