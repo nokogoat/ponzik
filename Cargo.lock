@@ -28,6 +28,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ponzik-project"
+version = "0.1.0"
+dependencies = [
+ "ponzik-dsp",
+ "ponzik-engine",
+]
+
+[[package]]
 name = "ponzik-ui"
 version = "0.1.0"
 

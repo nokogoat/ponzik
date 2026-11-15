@@ -224,4 +224,4 @@ Les instruments propriétaires ne peuvent pas être copiés : Ponzik en fait ses
 
 Le moteur temps réel, les pilotes audio ALSA et WASAPI, la fenêtre et le rendu maison, un Channel Rack de 16 pas, un synthé soustractif (Pulse), une batterie synthétisée (DrumSynth), un mixer volume, pan et mute avec VU-mètres, un oscilloscope et l'export WAV.
 
-Sur les quelque 200 lignes de cet inventaire, Ponzik en couvre une douzaine, en entier ou en ébauche.
+Sur les quelque 140 fonctions de cet inventaire, Ponzik en couvre une douzaine, en entier ou en ébauche.

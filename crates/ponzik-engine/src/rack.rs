@@ -1,28 +1,18 @@
-//! Channel Rack : chaque canal = un instrument + une rangée de pas (à la FL Studio).
+//! Channel Rack : chaque canal = un instrument, son volume, son pan et sa piste
+//! de mixer. Les notes vivent dans les patterns ([`crate::sequence`]).
 
 use crate::Instrument;
 
-pub const MAX_STEPS: usize = 64;
-const MAX_PENDING_OFFS: usize = 32;
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Step {
-    pub note: u8,
-    /// Dans [0, 1].
-    pub velocity: f32,
-    /// Durée en pas (1.0 = une double-croche).
-    pub length: f32,
-}
+const MAX_PENDING_OFFS: usize = 64;
 
 pub struct Channel {
     pub name: String,
     pub instrument: Box<dyn Instrument>,
-    pub steps: Vec<Option<Step>>,
-    /// Note utilisée quand on active un pas d'un simple clic.
-    pub root_note: u8,
     pub gain: f32,
     pub pan: f32,
     pub muted: bool,
+    /// Piste de mixer de destination.
+    pub track: usize,
     /// (note, échantillon absolu de fin).
     pending_offs: Vec<(u8, u64)>,
 }
@@ -32,18 +22,12 @@ impl Channel {
         Self {
             name: name.into(),
             instrument,
-            steps: vec![None; MAX_STEPS],
-            root_note: 60,
             gain: 1.0,
             pan: 0.0,
             muted: false,
+            track: 0,
             pending_offs: Vec::with_capacity(MAX_PENDING_OFFS),
         }
-    }
-
-    pub fn with_root_note(mut self, note: u8) -> Self {
-        self.root_note = note;
-        self
     }
 
     pub fn with_gain(mut self, gain: f32) -> Self {
@@ -56,29 +40,9 @@ impl Channel {
         self
     }
 
-    /// Active les pas donnés avec la note racine.
-    pub fn with_hits(mut self, steps: &[usize], velocity: f32) -> Self {
-        for &i in steps {
-            self.steps[i] = Some(Step { note: self.root_note, velocity, length: 1.0 });
-        }
+    pub fn with_track(mut self, track: usize) -> Self {
+        self.track = track;
         self
-    }
-
-    /// Place des notes : `(pas, note, durée en pas)`.
-    pub fn with_notes(mut self, notes: &[(usize, u8, f32)], velocity: f32) -> Self {
-        for &(i, note, length) in notes {
-            self.steps[i] = Some(Step { note, velocity, length });
-        }
-        self
-    }
-
-    pub fn toggle_step(&mut self, index: usize) {
-        if let Some(slot) = self.steps.get_mut(index) {
-            *slot = match slot {
-                Some(_) => None,
-                None => Some(Step { note: self.root_note, velocity: 0.8, length: 1.0 }),
-            };
-        }
     }
 
     pub(crate) fn trigger(&mut self, note: u8, velocity: f32, off_at: u64) {

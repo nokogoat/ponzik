@@ -1,12 +1,16 @@
+use std::sync::Arc;
+
+use crate::param::Params;
+use crate::sample::Sample;
+
 /// Un générateur de son piloté par des notes : synthé, boîte à rythmes, sampler…
 ///
-/// Toutes les méthodes sont appelées depuis le thread audio :
-/// elles ne doivent ni allouer, ni bloquer.
-pub trait Instrument: Send {
-    /// Nom affiché dans l'interface.
-    fn name(&self) -> &'static str {
-        "Instrument"
-    }
+/// Les méthodes de jeu sont appelées depuis le thread audio : elles ne doivent
+/// ni allouer, ni bloquer. `set_sample_rate` et `set_sample` sont appelés par
+/// l'interface avant l'envoi au moteur, ils peuvent allouer.
+pub trait Instrument: Params + Send {
+    /// Identifiant stable dans le registre (sauvegarde des projets).
+    fn kind(&self) -> &'static str;
 
     /// Vrai si l'instrument joue des hauteurs (synthé), faux pour une percussion.
     fn is_melodic(&self) -> bool {
@@ -14,6 +18,9 @@ pub trait Instrument: Send {
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32);
+
+    /// Échantillon à jouer, pour les instruments qui en utilisent un.
+    fn set_sample(&mut self, _sample: Arc<Sample>) {}
 
     /// `velocity` dans [0, 1].
     fn note_on(&mut self, note: u8, velocity: f32);

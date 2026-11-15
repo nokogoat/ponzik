@@ -4,6 +4,7 @@ use ponzik_dsp::osc::{Oscillator, Waveform};
 use ponzik_dsp::util::midi_to_hz;
 
 use crate::Instrument;
+use crate::param::{ParamInfo, Params, Unit};
 
 const VOICES: usize = 8;
 
@@ -21,6 +22,92 @@ pub struct PulseParams {
     pub filter_env: AdsrParams,
     pub gain: f32,
 }
+
+const WAVES: &[&str] = &["Sinus", "Scie", "Carré", "Triangle"];
+const P_WAVE: u32 = 0;
+const P_DETUNE: u32 = 1;
+const P_CUTOFF: u32 = 2;
+const P_RESO: u32 = 3;
+const P_FENV: u32 = 4;
+const P_FDECAY: u32 = 5;
+const P_ATTACK: u32 = 6;
+const P_DECAY: u32 = 7;
+const P_SUSTAIN: u32 = 8;
+const P_RELEASE: u32 = 9;
+const P_VOLUME: u32 = 10;
+
+static PARAMS: [ParamInfo; 11] = [
+    ParamInfo::choice(P_WAVE, "Onde", WAVES, 1).group("Oscillateurs"),
+    ParamInfo::new(P_DETUNE, "Désaccord", 0.0, 50.0, 7.0, Unit::Cents).group("Oscillateurs"),
+    ParamInfo::new(P_CUTOFF, "Coupure", 40.0, 16_000.0, 400.0, Unit::Hz).log().group("Filtre"),
+    ParamInfo::new(P_RESO, "Résonance", 0.5, 10.0, 1.2, Unit::None).log().group("Filtre"),
+    ParamInfo::new(P_FENV, "Enveloppe", 0.0, 10_000.0, 3_000.0, Unit::Hz).group("Filtre"),
+    ParamInfo::new(P_FDECAY, "Déclin filtre", 0.01, 4.0, 0.25, Unit::Seconds).log().group("Filtre"),
+    ParamInfo::new(P_ATTACK, "Attaque", 0.001, 2.0, 0.004, Unit::Seconds).log().group("Amplitude"),
+    ParamInfo::new(P_DECAY, "Déclin", 0.005, 4.0, 0.2, Unit::Seconds).log().group("Amplitude"),
+    ParamInfo::new(P_SUSTAIN, "Maintien", 0.0, 1.0, 0.6, Unit::Percent).group("Amplitude"),
+    ParamInfo::new(P_RELEASE, "Relâche", 0.005, 4.0, 0.12, Unit::Seconds).log().group("Amplitude"),
+    ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -8.0, Unit::Db).group("Amplitude"),
+];
+
+impl Default for Pulse {
+    fn default() -> Self {
+        Self::new(PulseParams::default())
+    }
+}
+
+impl Params for Pulse {
+    fn params(&self) -> &'static [ParamInfo] {
+        &PARAMS
+    }
+
+    fn get_param(&self, id: u32) -> f32 {
+        let p = &self.params;
+        match id {
+            P_WAVE => WAVEFORMS.iter().position(|w| *w == p.waveform).unwrap_or(1) as f32,
+            P_DETUNE => p.detune_cents,
+            P_CUTOFF => p.cutoff_hz,
+            P_RESO => p.resonance,
+            P_FENV => p.filter_env_hz,
+            P_FDECAY => p.filter_env.decay,
+            P_ATTACK => p.amp_env.attack,
+            P_DECAY => p.amp_env.decay,
+            P_SUSTAIN => p.amp_env.sustain,
+            P_RELEASE => p.amp_env.release,
+            P_VOLUME => ponzik_dsp::util::gain_to_db(p.gain),
+            _ => 0.0,
+        }
+    }
+
+    fn set_param(&mut self, id: u32, value: f32) {
+        let Some(info) = PARAMS.iter().find(|i| i.id == id) else { return };
+        let v = info.clamp(value);
+        let p = &mut self.params;
+        match id {
+            P_WAVE => p.waveform = WAVEFORMS[v as usize],
+            P_DETUNE => p.detune_cents = v,
+            P_CUTOFF => p.cutoff_hz = v,
+            P_RESO => p.resonance = v,
+            P_FENV => p.filter_env_hz = v,
+            P_FDECAY => p.filter_env.decay = v,
+            P_ATTACK => p.amp_env.attack = v,
+            P_DECAY => p.amp_env.decay = v,
+            P_SUSTAIN => p.amp_env.sustain = v,
+            P_RELEASE => p.amp_env.release = v,
+            P_VOLUME => p.gain = ponzik_dsp::util::db_to_gain(v),
+            _ => {}
+        }
+        let (amp, filt, wave) = (p.amp_env, p.filter_env, p.waveform);
+        for voice in &mut self.voices {
+            voice.amp_env.params = amp;
+            voice.filter_env.params = filt;
+            voice.osc1.waveform = wave;
+            voice.osc2.waveform = wave;
+        }
+    }
+}
+
+const WAVEFORMS: [Waveform; 4] = [Waveform::Sine, Waveform::Saw, Waveform::Square, Waveform::Triangle];
 
 impl Default for PulseParams {
     fn default() -> Self {
@@ -75,8 +162,8 @@ impl Pulse {
 }
 
 impl Instrument for Pulse {
-    fn name(&self) -> &'static str {
-        "Pulse"
+    fn kind(&self) -> &'static str {
+        "pulse"
     }
 
     fn is_melodic(&self) -> bool {

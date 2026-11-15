@@ -1,0 +1,11 @@
+[package]
+name = "ponzik-project"
+description = "Modèle de projet Ponzik : canaux, patterns, playlist, mixer, sauvegarde"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ponzik-dsp.workspace = true
+ponzik-engine.workspace = true

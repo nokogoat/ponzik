@@ -5,6 +5,7 @@ use ponzik_dsp::noise::WhiteNoise;
 use ponzik_dsp::util::decay_coef;
 
 use crate::Instrument;
+use crate::param::{ParamInfo, Params, Unit};
 
 const SILENCE: f32 = 1e-3;
 
@@ -16,6 +17,21 @@ pub enum DrumKind {
     ClosedHat,
     OpenHat,
 }
+
+const KINDS: [DrumKind; 5] = [DrumKind::Kick, DrumKind::Snare, DrumKind::Clap, DrumKind::ClosedHat, DrumKind::OpenHat];
+const P_KIND: u32 = 0;
+const P_TUNE: u32 = 1;
+const P_DECAY: u32 = 2;
+const P_TONE: u32 = 3;
+const P_VOLUME: u32 = 4;
+
+static PARAMS: [ParamInfo; 5] = [
+    ParamInfo::choice(P_KIND, "Type", &["Kick", "Caisse claire", "Clap", "Charleston fermée", "Charleston ouverte"], 0),
+    ParamInfo::new(P_TUNE, "Accord", -24.0, 24.0, 0.0, Unit::Semitones),
+    ParamInfo::new(P_DECAY, "Longueur", 0.25, 4.0, 1.0, Unit::None).log(),
+    ParamInfo::new(P_TONE, "Brillance", 0.0, 1.0, 0.5, Unit::Percent),
+    ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, 0.0, Unit::Db),
+];
 
 /// Percussion synthétisée façon 808/909, monophonique.
 /// La note règle l'accord : 60 = hauteur d'origine.
@@ -35,6 +51,10 @@ pub struct DrumSynth {
     tone_coef: f32,
     pitch_env: f32,
     pitch_coef: f32,
+    tune_st: f32,
+    decay_scale: f32,
+    tone: f32,
+    level: f32,
 }
 
 impl DrumSynth {
@@ -55,17 +75,26 @@ impl DrumSynth {
             tone_coef: 0.0,
             pitch_env: 0.0,
             pitch_coef: 0.0,
+            tune_st: 0.0,
+            decay_scale: 1.0,
+            tone: 0.5,
+            level: 1.0,
         };
         d.set_sample_rate(48_000.0);
         d
     }
 
-    pub fn kind(&self) -> DrumKind {
+    pub fn drum_kind(&self) -> DrumKind {
         self.kind
     }
 
     /// Constantes de temps (s) : amplitude, ton, enveloppe de hauteur.
     fn taus(&self) -> (f32, f32, f32) {
+        let (a, t, p) = self.base_taus();
+        (a * self.decay_scale, t * self.decay_scale, p)
+    }
+
+    fn base_taus(&self) -> (f32, f32, f32) {
         match self.kind {
             DrumKind::Kick => (0.35, 0.0, 0.03),
             DrumKind::Snare => (0.12, 0.06, 0.01),
@@ -76,9 +105,42 @@ impl DrumSynth {
     }
 }
 
+impl Params for DrumSynth {
+    fn params(&self) -> &'static [ParamInfo] {
+        &PARAMS
+    }
+
+    fn get_param(&self, id: u32) -> f32 {
+        match id {
+            P_KIND => KINDS.iter().position(|k| *k == self.kind).unwrap_or(0) as f32,
+            P_TUNE => self.tune_st,
+            P_DECAY => self.decay_scale,
+            P_TONE => self.tone,
+            P_VOLUME => ponzik_dsp::util::gain_to_db(self.level),
+            _ => 0.0,
+        }
+    }
+
+    fn set_param(&mut self, id: u32, value: f32) {
+        let Some(info) = PARAMS.iter().find(|i| i.id == id) else { return };
+        let v = info.clamp(value);
+        match id {
+            P_KIND => self.kind = KINDS[v as usize],
+            P_TUNE => self.tune_st = v,
+            P_DECAY => self.decay_scale = v,
+            P_TONE => self.tone = v,
+            P_VOLUME => self.level = ponzik_dsp::util::db_to_gain(v),
+            _ => return,
+        }
+        if id != P_TUNE && id != P_VOLUME {
+            self.set_sample_rate(self.sample_rate);
+        }
+    }
+}
+
 impl Instrument for DrumSynth {
-    fn name(&self) -> &'static str {
-        "DrumSynth"
+    fn kind(&self) -> &'static str {
+        "drumsynth"
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
@@ -93,13 +155,14 @@ impl Instrument for DrumSynth {
             DrumKind::Clap => (FilterMode::BandPass, 1_200.0, 1.5),
             DrumKind::ClosedHat | DrumKind::OpenHat => (FilterMode::HighPass, 7_000.0, 0.9),
         };
-        self.filter = Svf::new(mode, cutoff, q, sample_rate);
+        let bright = 2f32.powf((self.tone - 0.5) * 2.0);
+        self.filter = Svf::new(mode, cutoff * bright, q, sample_rate);
     }
 
     fn note_on(&mut self, note: u8, velocity: f32) {
         self.active = true;
         self.velocity = velocity.clamp(0.0, 1.0);
-        self.tune = 2f32.powf((note as f32 - 60.0) / 12.0);
+        self.tune = 2f32.powf((note as f32 - 60.0 + self.tune_st) / 12.0);
         self.elapsed = 0;
         self.phase = 0.0;
         self.amp = 1.0;
@@ -144,7 +207,8 @@ impl Instrument for DrumSynth {
                 DrumKind::ClosedHat | DrumKind::OpenHat => {
                     self.filter.process(self.noise.next_sample()) * self.amp * 0.5
                 }
-            } * self.velocity;
+            } * self.velocity
+                * self.level;
 
             let in_burst = self.kind == DrumKind::Clap && (self.elapsed as f32) < 0.03 * sr;
             if !in_burst {
