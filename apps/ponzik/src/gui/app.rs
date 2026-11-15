@@ -229,6 +229,8 @@ pub struct App {
     pub keyboard_octave: i32,
     /// Enregistrement armé : les notes jouées pendant la lecture sont écrites.
     pub record: bool,
+    pub midi_inputs: Vec<ponzik_midi::MidiInput>,
+    midi_events: Vec<ponzik_midi::MidiEvent>,
 }
 
 impl App {
@@ -294,6 +296,8 @@ impl App {
             held: Vec::new(),
             keyboard_octave: 4,
             record: false,
+            midi_inputs: ponzik_midi::open_all_inputs(),
+            midi_events: Vec::new(),
         }
     }
 
@@ -528,6 +532,29 @@ impl App {
         self.playing = false;
         self.send(Command::Stop);
         self.send(Command::Stop);
+    }
+
+    /// Notes des contrôleurs MIDI : même chemin que le clavier d'ordinateur.
+    /// Appelé à chaque tour de boucle, hors rendu ; renvoie vrai s'il s'est passé quelque chose.
+    pub fn poll_midi(&mut self) -> bool {
+        use ponzik_midi::MidiEvent;
+        let mut events = std::mem::take(&mut self.midi_events);
+        for input in &self.midi_inputs {
+            input.poll(&mut events);
+        }
+        let any = !events.is_empty();
+        for ev in events.drain(..) {
+            // Codes réservés aux notes MIDI, hors de l'espace des touches physiques.
+            match ev {
+                MidiEvent::NoteOn { channel, key, velocity } => {
+                    self.live_note_on(0x1000 + channel as u16 * 128 + key as u16, key, velocity as f32 / 127.0);
+                }
+                MidiEvent::NoteOff { channel, key, .. } => self.live_note_off(0x1000 + channel as u16 * 128 + key as u16),
+                _ => {}
+            }
+        }
+        self.midi_events = events;
+        any
     }
 
     // --- Fichiers ---

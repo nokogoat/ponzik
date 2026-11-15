@@ -144,6 +144,9 @@ pub fn run() -> Result<(), String> {
 
     let mut window = Window::open("Ponzik", 1600, 960).map_err(|e| e.to_string())?;
     let mut app = App::new(handle, project, config.sample_rate);
+    for m in &app.midi_inputs {
+        eprintln!("MIDI : {}", m.name());
+    }
     let (w, h) = window.size();
     eprintln!("Ponzik · {} · {} Hz · {}", window.backend_name(), config.sample_rate, output_name);
     let mut canvas = Canvas::new(w as usize, h as usize);
@@ -162,7 +165,9 @@ pub fn run() -> Result<(), String> {
                 window.wait_events(left, &mut events);
             }
         } else {
-            window.wait_events(Duration::from_millis(500), &mut events);
+            // Avec un contrôleur MIDI branché, on se réveille souvent pour ses notes.
+            let idle = if app.midi_inputs.is_empty() { 500 } else { 4 };
+            window.wait_events(Duration::from_millis(idle), &mut events);
         }
         window.poll_events(&mut events);
 
@@ -174,6 +179,7 @@ pub fn run() -> Result<(), String> {
             dirty |= input.apply(&ev);
         }
         clicks.check(&mut input);
+        dirty |= app.poll_midi();
         if !stream.is_running() {
             return Err("le pilote audio s'est arrêté".into());
         }
