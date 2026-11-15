@@ -3,7 +3,7 @@
 
 use crate::effect::Effect;
 use crate::instrument::Instrument;
-use crate::instruments::{DrumKind, DrumSynth, Pulse};
+use crate::instruments::{Bass303, DrumKind, DrumSynth, FmSynth, Pulse, Sampler, WaveSynth};
 
 pub struct InstrumentKind {
     pub id: &'static str,
@@ -36,6 +36,34 @@ pub fn instruments() -> &'static [InstrumentKind] {
             category: "Batterie",
             description: "Percussions synthétisées façon 808 et 909",
             create: || Box::new(DrumSynth::new(DrumKind::Kick)),
+        },
+        InstrumentKind {
+            id: "fm",
+            name: "Ponzik FM",
+            category: "Synthés",
+            description: "Synthé FM à quatre opérateurs et huit algorithmes",
+            create: || Box::new(FmSynth::new()),
+        },
+        InstrumentKind {
+            id: "wavetable",
+            name: "Ponzik Wave",
+            category: "Synthés",
+            description: "Synthé à tables d'ondes avec unisson et sous-oscillateur",
+            create: || Box::new(WaveSynth::new()),
+        },
+        InstrumentKind {
+            id: "sampler",
+            name: "Sampler",
+            category: "Échantillonneurs",
+            description: "Lecteur d'échantillons, mélodique ou one-shot, avec boucle",
+            create: || Box::new(Sampler::new()),
+        },
+        InstrumentKind {
+            id: "bass303",
+            name: "Acid 303",
+            category: "Basses",
+            description: "Basse acide monophonique avec accent et glissé",
+            create: || Box::new(Bass303::new()),
         },
     ]
 }

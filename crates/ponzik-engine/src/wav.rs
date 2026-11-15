@@ -1,8 +1,10 @@
-//! Écriture WAV PCM 16 bits, sans dépendance.
+//! Lecture et écriture WAV, sans dépendance.
 
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
+
+use crate::sample::Sample;
 
 /// `samples` entrelacés, dans [-1, 1].
 pub fn write_wav_i16(path: impl AsRef<Path>, sample_rate: u32, channels: u16, samples: &[f32]) -> io::Result<()> {
@@ -34,9 +36,209 @@ pub fn encode_wav_i16(w: &mut impl Write, sample_rate: u32, channels: u16, sampl
     Ok(())
 }
 
+/// Charge un fichier WAV ; l'échantillon prend le nom du fichier sans extension.
+pub fn load_wav(path: impl AsRef<Path>) -> Result<Sample, String> {
+    let path = path.as_ref();
+    let bytes = std::fs::read(path).map_err(|e| format!("{} : {e}", path.display()))?;
+    let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    decode_wav(&bytes, &name)
+}
+
+/// Décode un WAV : PCM entier 8/16/24/32 bits, flottant 32/64 bits, y compris
+/// WAVE_FORMAT_EXTENSIBLE. Au-delà de deux canaux, seuls les deux premiers sont gardés.
+pub fn decode_wav(bytes: &[u8], name: &str) -> Result<Sample, String> {
+    if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return Err("ce n'est pas un fichier WAV".into());
+    }
+    let mut format = None;
+    let mut data = None;
+    let mut pos = 12;
+    while pos + 8 <= bytes.len() {
+        let size = u32_at(bytes, pos + 4) as usize;
+        let start = pos + 8;
+        let body = &bytes[start..start.saturating_add(size).min(bytes.len())];
+        match &bytes[pos..pos + 4] {
+            b"fmt " => format = Some(Format::parse(body)?),
+            b"data" => data = Some(body),
+            _ => {}
+        }
+        // Un bloc de taille impaire est suivi d'un octet de bourrage.
+        pos = start.saturating_add(size).saturating_add(size & 1);
+    }
+    let f = format.ok_or("bloc « fmt » manquant")?;
+    let data = data.ok_or("bloc « data » manquant")?;
+
+    let width = f.bits as usize / 8;
+    let frame = width * f.channels;
+    let frames = data.len() / frame;
+    let read = |o: usize| -> f32 {
+        let b = &data[o..o + width];
+        let v = match (f.float, f.bits) {
+            (false, 8) => (b[0] as f32 - 128.0) / 128.0,
+            (false, 16) => i16::from_le_bytes([b[0], b[1]]) as f32 / 32_768.0,
+            (false, 24) => (i32::from_le_bytes([0, b[0], b[1], b[2]]) >> 8) as f32 / 8_388_608.0,
+            (false, _) => i32::from_le_bytes([b[0], b[1], b[2], b[3]]) as f32 / 2_147_483_648.0,
+            (true, 32) => f32::from_le_bytes([b[0], b[1], b[2], b[3]]),
+            (true, _) => f64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]) as f32,
+        };
+        if v.is_finite() { v } else { 0.0 }
+    };
+    let mut left = Vec::with_capacity(frames);
+    let mut right = Vec::with_capacity(frames);
+    for i in 0..frames {
+        let o = i * frame;
+        let l = read(o);
+        left.push(l);
+        right.push(if f.channels > 1 { read(o + width) } else { l });
+    }
+    Ok(Sample { name: name.to_string(), sample_rate: f.sample_rate as f32, left, right })
+}
+
+struct Format {
+    float: bool,
+    channels: usize,
+    sample_rate: u32,
+    bits: u16,
+}
+
+impl Format {
+    fn parse(b: &[u8]) -> Result<Self, String> {
+        if b.len() < 16 {
+            return Err("bloc « fmt » trop court".into());
+        }
+        let mut tag = u16_at(b, 0);
+        if tag == 0xFFFE {
+            // WAVE_FORMAT_EXTENSIBLE : le vrai format ouvre le GUID SubFormat.
+            if b.len() < 26 {
+                return Err("bloc « fmt » étendu trop court".into());
+            }
+            tag = u16_at(b, 24);
+        }
+        let float = match tag {
+            1 => false,
+            3 => true,
+            t => return Err(format!("format WAV non géré ({t:#06x})")),
+        };
+        let bits = u16_at(b, 14);
+        if !matches!((float, bits), (false, 8 | 16 | 24 | 32) | (true, 32 | 64)) {
+            return Err(format!("profondeur non gérée : {bits} bits"));
+        }
+        let channels = u16_at(b, 2) as usize;
+        let sample_rate = u32_at(b, 4);
+        if channels == 0 || sample_rate == 0 {
+            return Err("en-tête WAV invalide".into());
+        }
+        Ok(Self { float, channels, sample_rate, bits })
+    }
+}
+
+fn u16_at(b: &[u8], o: usize) -> u16 {
+    u16::from_le_bytes([b[o], b[o + 1]])
+}
+
+fn u32_at(b: &[u8], o: usize) -> u32 {
+    u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// WAV synthétique, avec un bloc inconnu de taille impaire avant les données.
+    fn build(tag: u16, channels: u16, bits: u16, extensible: bool, payload: &[u8]) -> Vec<u8> {
+        let mut fmt = Vec::new();
+        fmt.extend_from_slice(&(if extensible { 0xFFFE } else { tag }).to_le_bytes());
+        fmt.extend_from_slice(&channels.to_le_bytes());
+        fmt.extend_from_slice(&44_100u32.to_le_bytes());
+        let align = channels * bits / 8;
+        fmt.extend_from_slice(&(44_100 * align as u32).to_le_bytes());
+        fmt.extend_from_slice(&align.to_le_bytes());
+        fmt.extend_from_slice(&bits.to_le_bytes());
+        if extensible {
+            fmt.extend_from_slice(&22u16.to_le_bytes());
+            fmt.extend_from_slice(&bits.to_le_bytes());
+            fmt.extend_from_slice(&3u32.to_le_bytes());
+            fmt.extend_from_slice(&tag.to_le_bytes());
+            fmt.extend_from_slice(&[0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xAA, 0, 0x38, 0x9B, 0x71]);
+        }
+        let mut out = b"RIFF\0\0\0\0WAVE".to_vec();
+        for (id, body) in [(b"fmt ", &fmt[..]), (b"LIST", &b"abc"[..]), (b"data", payload)] {
+            out.extend_from_slice(id);
+            out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            out.extend_from_slice(body);
+            if body.len() % 2 == 1 {
+                out.push(0);
+            }
+        }
+        let riff = (out.len() - 8) as u32;
+        out[4..8].copy_from_slice(&riff.to_le_bytes());
+        out
+    }
+
+    #[test]
+    fn roundtrip_16_bits_stereo() {
+        let mut buf = Vec::new();
+        encode_wav_i16(&mut buf, 48_000, 2, &[0.0, 0.5, -0.5, 1.0]).unwrap();
+        let s = decode_wav(&buf, "test").unwrap();
+        assert_eq!(s.name, "test");
+        assert_eq!(s.sample_rate, 48_000.0);
+        assert_eq!(s.len(), 2);
+        assert!((s.left[1] + 0.5).abs() < 1e-4 && (s.right[0] - 0.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn integer_depths() {
+        let s = decode_wav(&build(1, 1, 8, false, &[128, 255, 0]), "").unwrap();
+        assert_eq!(s.left, [0.0, 127.0 / 128.0, -1.0]);
+        assert_eq!(s.right, s.left);
+        let s = decode_wav(&build(1, 1, 24, false, &[0xFF, 0xFF, 0x7F, 0, 0, 0x80, 0, 0, 0]), "").unwrap();
+        assert!((s.left[0] - 1.0).abs() < 1e-6 && s.left[1] == -1.0 && s.left[2] == 0.0);
+        let mut p = Vec::new();
+        p.extend_from_slice(&i32::MIN.to_le_bytes());
+        p.extend_from_slice(&(1i32 << 30).to_le_bytes());
+        let s = decode_wav(&build(1, 1, 32, true, &p), "").unwrap();
+        assert_eq!(s.left, [-1.0, 0.5]);
+    }
+
+    #[test]
+    fn float_and_extra_channels() {
+        let mut p = Vec::new();
+        for v in [0.25f32, -0.75] {
+            p.extend_from_slice(&v.to_le_bytes());
+        }
+        let s = decode_wav(&build(3, 2, 32, true, &p), "").unwrap();
+        assert_eq!((s.left[0], s.right[0]), (0.25, -0.75));
+
+        let mut p = Vec::new();
+        for v in [0.1f64, 0.2, 0.3, f64::NAN, 0.5, 0.6] {
+            p.extend_from_slice(&v.to_le_bytes());
+        }
+        let s = decode_wav(&build(3, 3, 64, false, &p), "").unwrap();
+        assert_eq!(s.left, [0.1, 0.0]);
+        assert_eq!(s.right, [0.2, 0.5]);
+    }
+
+    #[test]
+    fn rejects_bad_input() {
+        assert!(decode_wav(b"pas un wav du tout", "").is_err());
+        assert!(decode_wav(&build(1, 1, 12, false, &[0, 0]), "").is_err());
+        assert!(decode_wav(&build(2, 1, 16, false, &[0, 0]), "").is_err());
+        let mut no_data = build(1, 1, 16, false, &[]);
+        no_data.truncate(12 + 8 + 16);
+        assert!(decode_wav(&no_data, "").is_err());
+    }
+
+    #[test]
+    fn loads_from_disk() {
+        let path = std::env::temp_dir().join(format!("ponzik-wav-{}.wav", std::process::id()));
+        write_wav_i16(&path, 22_050, 1, &[0.0, 0.5]).unwrap();
+        let s = load_wav(&path);
+        std::fs::remove_file(&path).ok();
+        let s = s.unwrap();
+        assert_eq!(s.sample_rate, 22_050.0);
+        assert!(s.name.starts_with("ponzik-wav-"));
+        assert_eq!(s.len(), 2);
+    }
 
     #[test]
     fn header_and_payload() {
