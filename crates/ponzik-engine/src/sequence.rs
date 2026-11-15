@@ -61,6 +61,17 @@ pub enum PlayMode {
     Pattern(usize),
     /// Joue la playlist.
     Song,
+    /// Vue Session : les clips lancés bouclent chacun depuis leur départ.
+    Session,
+}
+
+/// Clip lancé en vue Session : un pattern qui boucle de `start` à `end` (ticks),
+/// `end` = `u32::MAX` tant qu'il n'est pas remplacé ou arrêté.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SessionSlot {
+    pub pattern: usize,
+    pub start: u32,
+    pub end: u32,
 }
 
 /// Ce que pilote une courbe d'automation.
@@ -171,6 +182,8 @@ pub struct Sequence {
     pub audio_clips: Vec<AudioClip>,
     /// Boucle de lecture (début, fin) en ticks, tirée dans une règle.
     pub loop_range: Option<(u32, u32)>,
+    /// Clips lancés en vue Session.
+    pub session: Vec<SessionSlot>,
 }
 
 impl Default for Sequence {
@@ -184,6 +197,7 @@ impl Default for Sequence {
             automation: Vec::new(),
             audio_clips: Vec::new(),
             loop_range: None,
+            session: Vec::new(),
         }
     }
 }
@@ -217,7 +231,7 @@ impl Sequence {
         }
         match self.mode {
             PlayMode::Song => Some(self.song_len.max(TICKS_PER_BAR) as f64),
-            PlayMode::Pattern(_) => None,
+            PlayMode::Pattern(_) | PlayMode::Session => None,
         }
     }
 
@@ -226,6 +240,7 @@ impl Sequence {
         match self.mode {
             PlayMode::Song => self.song_len.max(TICKS_PER_BAR),
             PlayMode::Pattern(p) => self.patterns.get(p).map_or(TICKS_PER_BAR, |p| p.len.max(1)),
+            PlayMode::Session => TICKS_PER_BAR,
         }
     }
 
@@ -236,7 +251,11 @@ impl Sequence {
         let pattern_len = |p: usize| Some(self.patterns.get(p)?.len.max(1) as f64);
         match (scope, self.mode) {
             (AutoScope::Song, PlayMode::Song) => Some(pos),
-            (AutoScope::Song, PlayMode::Pattern(_)) => None,
+            (AutoScope::Song, PlayMode::Pattern(_) | PlayMode::Session) => None,
+            (AutoScope::Pattern(p), PlayMode::Session) => {
+                let slot = self.session.iter().rfind(|s| s.pattern == p && pos >= s.start as f64 && pos < s.end as f64)?;
+                Some((pos - slot.start as f64).rem_euclid(pattern_len(p)?))
+            }
             (AutoScope::Pattern(p), PlayMode::Pattern(cur)) if p == cur => Some(pos.rem_euclid(pattern_len(p)?)),
             (AutoScope::Pattern(_), PlayMode::Pattern(_)) => None,
             (AutoScope::Pattern(p), PlayMode::Song) => {
@@ -274,6 +293,16 @@ impl Sequence {
                     let b = to.min((clip.start + clip.len) as f64);
                     if a < b {
                         self.collect_looped(pat, clip.start as f64 - clip.offset as f64, a, b, out);
+                    }
+                }
+            }
+            PlayMode::Session => {
+                for slot in &self.session {
+                    let Some(pat) = self.patterns.get(slot.pattern) else { continue };
+                    let a = from.max(slot.start as f64);
+                    let b = to.min(slot.end as f64);
+                    if a < b {
+                        self.collect_looped(pat, slot.start as f64, a, b, out);
                     }
                 }
             }
@@ -350,6 +379,21 @@ mod tests {
         };
         assert_eq!(ticks(&seq, 0.0, 768.0), [0.0, 48.0, 96.0, 144.0, 384.0]);
         assert_eq!(seq.loop_end(), Some(768.0));
+    }
+
+    #[test]
+    fn session_slots_loop_from_their_start() {
+        let seq = Sequence {
+            patterns: vec![pattern(&[0], 96), pattern(&[48], 96)],
+            mode: PlayMode::Session,
+            session: vec![
+                SessionSlot { pattern: 0, start: 0, end: 288 },
+                SessionSlot { pattern: 1, start: 192, end: u32::MAX },
+            ],
+            ..Default::default()
+        };
+        assert_eq!(ticks(&seq, 0.0, 384.0), [0.0, 96.0, 192.0, 240.0, 336.0]);
+        assert_eq!(seq.loop_end(), None);
     }
 
     #[test]

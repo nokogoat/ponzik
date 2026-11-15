@@ -27,6 +27,6 @@ pub use param::{ParamInfo, Params, Unit};
 pub use rack::Channel;
 pub use sample::Sample;
 pub use sequence::{
-    AudioClip, AutoPoint, AutoScope, AutoTarget, AutomationLane, Clip, Note, PPQ, Pattern, PlayMode, Sequence,
+    AudioClip, AutoPoint, AutoScope, AutoTarget, AutomationLane, Clip, Note, PPQ, Pattern, PlayMode, Sequence, SessionSlot,
     TICKS_PER_BAR, TICKS_PER_STEP,
 };
