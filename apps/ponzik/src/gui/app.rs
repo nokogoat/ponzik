@@ -233,8 +233,8 @@ pub struct App {
     pub typing_keyboard: bool,
     /// Marqueur de départ de la lecture, en ticks (cliqué dans une règle).
     pub start_marker: f64,
-    /// Sélection de temps (début, fin) en ticks, tirée dans une règle.
-    pub time_selection: Option<(u32, u32)>,
+    /// Sélection de temps tirée dans une règle : vue, début, fin (ticks).
+    pub time_selection: Option<(View, u32, u32)>,
     pub midi_inputs: Vec<ponzik_midi::MidiInput>,
     midi_events: Vec<ponzik_midi::MidiEvent>,
 }
@@ -553,6 +553,66 @@ impl App {
         self.playing = false;
         self.send(Command::Stop);
         self.send(Command::Locate(self.start_marker));
+    }
+
+    /// Règle commune au piano roll et à la playlist : un clic place le marqueur de
+    /// départ, un glisser tire une sélection de temps. Renvoie la sélection si elle
+    /// vient d'être tirée ou modifiée.
+    pub fn ruler(
+        &mut self,
+        c: &mut Canvas,
+        input: &Input,
+        view: View,
+        ruler: Rect,
+        grid: Rect,
+        snap: f32,
+        x_of: &dyn Fn(f32) -> f32,
+        tick_at: &dyn Fn(f32) -> f32,
+    ) -> Option<(u32, u32)> {
+        let t = self.theme;
+        let id = wid("ruler", view as usize, 0);
+        let hov = self.hovered(input, id, ruler);
+        let snap_t = |x: f32| ((tick_at(x).max(0.0) / snap).round() * snap) as u32;
+        let mut changed = None;
+        if hov && input.pressed {
+            self.begin_drag(id, input, snap_t(input.x) as f32);
+        }
+        if let Some(d) = self.drag.filter(|d| d.id == id) {
+            let (a, b) = (d.v0 as u32, snap_t(input.x));
+            if a != b {
+                let sel = (a.min(b), a.max(b));
+                self.time_selection = Some((view, sel.0, sel.1));
+                changed = Some(sel);
+            } else if input.released {
+                // Simple clic : marqueur de départ, sélection effacée.
+                self.time_selection = None;
+                self.set_start_marker(a as f64);
+            }
+            if input.released && a != b {
+                self.set_start_marker(a.min(b) as f64);
+            }
+        }
+        // Sélection de temps.
+        if let Some((v, a, b)) = self.time_selection
+            && v == view
+        {
+            let (xa, xb) = (x_of(a as f32), x_of(b as f32));
+            c.fill_rect(Rect::new(xa, ruler.y, xb - xa, ruler.h), t.select.alpha(0.28));
+            c.fill_rect(Rect::new(xa, grid.y, xb - xa, grid.h), t.select.alpha(0.07));
+            c.fill_rect(Rect::new(xa.round(), grid.y, 1.0, grid.h), t.select.alpha(0.6));
+            c.fill_rect(Rect::new(xb.round(), grid.y, 1.0, grid.h), t.select.alpha(0.6));
+        }
+        // Marqueur de départ : triangle dans la règle, ligne discrète à l'arrêt.
+        let mx = x_of(self.start_marker as f32);
+        if mx >= ruler.x - 6.0 && mx <= ruler.right() + 6.0 {
+            if !self.playing {
+                c.fill_rect(Rect::new(mx.round(), grid.y, 1.0, grid.h), t.text.alpha(0.35));
+            }
+            let mut p = ponzik_ui::Path::new();
+            p.polygon(&[(mx - 6.0, ruler.y + 2.0), (mx + 6.0, ruler.y + 2.0), (mx, ruler.y + 11.0)]);
+            c.fill_path(&p, t.text);
+        }
+        changed
     }
 
     /// Place le marqueur de départ (clic dans une règle).

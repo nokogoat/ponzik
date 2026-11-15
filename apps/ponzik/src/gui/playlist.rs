@@ -1,6 +1,6 @@
 //! Playlist : les patterns posés dans le temps pour construire le morceau.
 
-use ponzik_engine::{Command, PlayMode, TICKS_PER_BAR};
+use ponzik_engine::{PlayMode, TICKS_PER_BAR};
 use ponzik_project::ClipDef;
 use ponzik_ui::{Canvas, Color, Rect};
 use ponzik_window::Key;
@@ -125,12 +125,9 @@ impl App {
         let end_x = x_of(song_end);
         c.fill_rect(Rect::new(end_x.round(), ruler.y + 6.0, 2.0, area.h - 6.0), t.text2.alpha(0.5));
 
-        // Règle : clic pour se placer.
-        let rid = wid("pl-ruler", 0, 0);
-        if self.hovered(input, rid, ruler) && input.pressed {
-            let tick = tick_at(input.x).max(0.0);
-            let snapped = (tick / 96.0).floor() * 96.0;
-            self.send(Command::Locate(snapped as f64));
+        // Règle : clic = marqueur de départ, glisser = sélection de temps.
+        if let Some((a, b)) = self.ruler(c, input, View::Playlist, ruler, lanes_r, snap.min(96.0), &x_of, &tick_at) {
+            self.playlist.selected = self.project.clips.iter().position(|cl| cl.start >= a && cl.start < b);
         }
 
         // Clips.

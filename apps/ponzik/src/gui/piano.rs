@@ -1,11 +1,11 @@
 //! Piano roll : notes du canal sélectionné dans le pattern courant.
 
-use ponzik_engine::{Command, Note, PlayMode, TICKS_PER_BAR, TICKS_PER_STEP};
+use ponzik_engine::{Note, PlayMode, TICKS_PER_BAR, TICKS_PER_STEP};
 use ponzik_ui::{Canvas, Rect};
 use ponzik_window::Key;
 
 use super::Input;
-use super::app::{App, Focus};
+use super::app::{App, Focus, View};
 use super::rack::note_name;
 use super::theme::*;
 use super::widgets::{Icon, wid};
@@ -389,23 +389,29 @@ impl App {
         c.fill_rect(Rect::new(keys.right() - 1.0, keys.y, 1.0, keys.h), t.bg_deep);
         c.set_clip(Some(prev));
 
-        // Règle : mesures, clic pour se placer.
-        let prev = c.push_clip(ruler);
-        let rid = wid("pr-ruler", 0, 0);
-        if self.hovered(input, rid, ruler) && input.pressed {
-            let tick = tick_at(input.x).clamp(0.0, pat_len);
-            self.send(Command::Locate(tick as f64));
-        }
+        // Règle : mesures ; clic = marqueur de départ, glisser = sélection de temps.
+        let prev = c.push_clip(Rect::new(ruler.x, ruler.y, ruler.w, grid.bottom() - ruler.y));
         let bar_first = (sx / TICKS_PER_BAR as f32).floor() as u32;
         let bar_last = ((sx + grid.w / zoom) / TICKS_PER_BAR as f32).ceil() as u32;
         for b in bar_first..=bar_last {
             let x = x_of((b * TICKS_PER_BAR) as f32);
             c.fill_rect(Rect::new(x.round(), ruler.y + 14.0, 1.0, 14.0), t.hairline.alpha(3.0));
-            self.text(c, self.f.mono, 11.0, x + 6.0, ruler.y + 14.0, &(b + 1).to_string(), t.text2);
+            self.text(c, self.f.mono, 11.0, x + 6.0, ruler.y + 18.0, &(b + 1).to_string(), t.text2);
             for beat in 1..4 {
                 let bx = x_of((b * TICKS_PER_BAR + beat * 96) as f32).round();
                 c.fill_rect(Rect::new(bx, ruler.y + 22.0, 1.0, 6.0), t.hairline.alpha(2.0));
             }
+        }
+        let snap = self.piano.snap as f32;
+        if let Some((a, b)) = self.ruler(c, input, View::Piano, ruler, grid, snap, &x_of, &tick_at) {
+            // La sélection de temps sélectionne aussi les notes qui y commencent.
+            self.piano.selected = self
+                .notes(ch)
+                .iter()
+                .enumerate()
+                .filter(|(_, n)| n.start >= a && n.start < b)
+                .map(|(i, _)| i)
+                .collect();
         }
         c.set_clip(Some(prev));
 
