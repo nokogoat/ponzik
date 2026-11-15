@@ -254,6 +254,13 @@ fn reader_loop(mut stream: UnixStream, tx: Sender<Incoming>, ctx: ReaderCtx) {
                 if Some(code) == ctx.shm_event {
                     Some(Incoming::ShmCompletion)
                 } else {
+                    // Position physique de la touche (code X11 = code evdev + 8).
+                    if (code == 2 || code == 3)
+                        && b[1] >= 8
+                        && tx.send(Incoming::Event(Event::Physical { code: b[1] as u16 - 8, down: code == 2 })).is_err()
+                    {
+                        return;
+                    }
                     // Saisie de texte, sauf quand Ctrl ou Alt font un raccourci.
                     let state = u16_at(&b, 28);
                     if code == 2

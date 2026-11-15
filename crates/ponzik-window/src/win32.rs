@@ -302,6 +302,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
                 push(Event::Wheel { x: pt.x as f32, y: pt.y as f32, delta, mods: modifiers() });
             }
             WM_KEYDOWN | WM_SYSKEYDOWN => {
+                // Bit 30 : la touche était déjà enfoncée (répétition automatique).
+                if (l >> 30) & 1 == 0 {
+                    push(Event::Physical { code: ((l >> 16) & 0xff) as u16, down: true });
+                }
                 if let Some(key) = vk_to_key(w) {
                     push(Event::KeyDown { key, mods: modifiers() });
                 }
@@ -311,6 +315,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
                 }
             }
             WM_KEYUP => {
+                push(Event::Physical { code: ((l >> 16) & 0xff) as u16, down: false });
                 if let Some(key) = vk_to_key(w) {
                     push(Event::KeyUp { key });
                 }

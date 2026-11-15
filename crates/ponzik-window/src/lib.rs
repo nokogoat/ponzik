@@ -68,6 +68,9 @@ pub enum Event {
     KeyUp { key: Key },
     /// Caractère saisi (disposition du clavier, majuscules et AltGr compris).
     Text(char),
+    /// Touche physique enfoncée ou relâchée, par position (code evdev, identique
+    /// au code de balayage PC sous Windows) : indépendant de la disposition.
+    Physical { code: u16, down: bool },
     FocusLost,
 }
 
