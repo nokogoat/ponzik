@@ -1,0 +1,13 @@
+[package]
+name = "ponzik"
+description = "Ponzik — le DAW libre. No more gatekeeping."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ponzik-audio.workspace = true
+ponzik-engine.workspace = true
+ponzik-ui.workspace = true
+ponzik-window.workspace = true

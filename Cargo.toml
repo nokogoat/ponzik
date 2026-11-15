@@ -1,0 +1,24 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/ponzik"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+rust-version = "1.85"
+
+[workspace.dependencies]
+ponzik-dsp = { path = "crates/ponzik-dsp" }
+ponzik-engine = { path = "crates/ponzik-engine" }
+ponzik-audio = { path = "crates/ponzik-audio" }
+ponzik-window = { path = "crates/ponzik-window" }
+ponzik-ui = { path = "crates/ponzik-ui" }
+
+[profile.dev]
+# L'audio temps réel a besoin d'un minimum d'optimisation même en debug.
+opt-level = 1
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

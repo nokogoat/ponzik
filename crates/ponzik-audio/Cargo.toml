@@ -1,0 +1,9 @@
+[package]
+name = "ponzik-audio"
+description = "Pilotes audio maison de Ponzik (ALSA sous Linux, WASAPI sous Windows)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]

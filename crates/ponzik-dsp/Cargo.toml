@@ -1,0 +1,9 @@
+[package]
+name = "ponzik-dsp"
+description = "Briques DSP de Ponzik : oscillateurs, enveloppes, filtres"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]

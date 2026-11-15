@@ -1,0 +1,9 @@
+[package]
+name = "ponzik-ui"
+description = "Rendu 2D maison de Ponzik : formes anti-aliasées, polices TrueType, animations"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
