@@ -9,5 +9,6 @@ rust-version.workspace = true
 [dependencies]
 ponzik-audio.workspace = true
 ponzik-engine.workspace = true
+ponzik-project.workspace = true
 ponzik-ui.workspace = true
 ponzik-window.workspace = true

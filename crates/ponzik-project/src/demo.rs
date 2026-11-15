@@ -27,6 +27,8 @@ pub fn demo_project() -> Project {
     p.channels[hat].gain = 0.7;
     p.channels[open].pan = 0.3;
     p.channels[open].gain = 0.55;
+    // Marge au master : la démo crête autour de −3 dBFS.
+    p.tracks[0].gain = 0.6;
 
     let hits = |p: &mut Project, pat: usize, ch: usize, steps: &[u32], vel: f32| {
         for &s in steps {

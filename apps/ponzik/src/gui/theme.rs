@@ -1,53 +1,137 @@
-//! Direction visuelle : matériel de studio la nuit. Neutres graphite, un seul
-//! accent ambre (les LED des pads), la couleur réservée à ce qui joue.
+//! Thèmes de couleur. « Ponzik » est le thème maison : nuit sarcelle profonde,
+//! vert vif pour ce qui joue, sarcelle glacée pour la sélection.
 
 use ponzik_ui::Color;
 
-pub const BG_DEEP: Color = Color::hex(0x0f0f10);
-pub const BG: Color = Color::hex(0x141415);
-pub const CARD: Color = Color::hex(0x19191b);
-pub const STRIP: Color = Color::hex(0x1d1d1f);
-pub const RAISED: Color = Color::hex(0x232325);
-pub const RAISED_HI: Color = Color::hex(0x2c2c2f);
-pub const WELL: Color = Color::hex(0x111112);
-/// Texte principal à 8 %.
-pub const HAIRLINE: Color = Color::rgba(237, 237, 237, 20);
+#[derive(Clone, Copy, Debug)]
+pub struct Theme {
+    pub name: &'static str,
+    pub bg_deep: Color,
+    pub bg: Color,
+    pub panel: Color,
+    pub strip: Color,
+    pub raised: Color,
+    pub raised_hi: Color,
+    pub well: Color,
+    pub hairline: Color,
+    pub text: Color,
+    pub text2: Color,
+    pub muted: Color,
+    /// Ce qui joue : pads allumés, notes, lecture.
+    pub accent: Color,
+    pub accent_deep: Color,
+    pub accent_hot: Color,
+    pub on_accent: Color,
+    /// Sélection et repères (tête de lecture, rectangles de sélection).
+    pub select: Color,
+    pub negative: Color,
+    pub meter: Color,
+    pub pad_a: Color,
+    pub pad_b: Color,
+    pub pad_head: Color,
+}
 
-pub const TEXT: Color = Color::hex(0xededed);
-pub const TEXT2: Color = Color::hex(0xa1a1a6);
-pub const MUTED: Color = Color::hex(0x85858b);
+const fn hairline(text: Color) -> Color {
+    Color::rgba(text.r, text.g, text.b, 20)
+}
 
-pub const AMBER: Color = Color::hex(0xf5a524);
-pub const AMBER_DEEP: Color = Color::hex(0xe38d14);
-pub const AMBER_HOT: Color = Color::hex(0xffd68a);
-pub const ON_AMBER: Color = Color::hex(0x1f1406);
-pub const NEGATIVE: Color = Color::hex(0xe5484d);
-pub const METER: Color = Color::hex(0xcfcfd2);
+pub const PONZIK: Theme = {
+    let text = Color::hex(0xe6efec);
+    Theme {
+        name: "Ponzik",
+        bg_deep: Color::hex(0x090c0c),
+        bg: Color::hex(0x0e1212),
+        panel: Color::hex(0x131817),
+        strip: Color::hex(0x171d1c),
+        raised: Color::hex(0x1c2322),
+        raised_hi: Color::hex(0x26302f),
+        well: Color::hex(0x0a0d0d),
+        hairline: hairline(text),
+        text,
+        text2: Color::hex(0x98a7a3),
+        muted: Color::hex(0x7a8a86),
+        accent: Color::hex(0x3fd45a),
+        accent_deep: Color::hex(0x23a83a),
+        accent_hot: Color::hex(0xc2ffb9),
+        on_accent: Color::hex(0x04230b),
+        select: Color::hex(0x3ccfc4),
+        negative: Color::hex(0xe5484d),
+        meter: Color::hex(0xcfd8d5),
+        pad_a: Color::hex(0x192020),
+        pad_b: Color::hex(0x1f2827),
+        pad_head: Color::hex(0x2e3b39),
+    }
+};
 
-pub const PAD_A: Color = Color::hex(0x202022);
-pub const PAD_B: Color = Color::hex(0x27272a);
-pub const PAD_HEAD: Color = Color::hex(0x3a3a3e);
+pub const GLACE: Theme = {
+    let text = Color::hex(0xe8eef2);
+    Theme {
+        name: "Glace",
+        bg_deep: Color::hex(0x0a0c10),
+        bg: Color::hex(0x0e1116),
+        panel: Color::hex(0x13171d),
+        strip: Color::hex(0x171c23),
+        raised: Color::hex(0x1c222a),
+        raised_hi: Color::hex(0x262e38),
+        well: Color::hex(0x0a0c10),
+        hairline: hairline(text),
+        text,
+        text2: Color::hex(0x9ba5b3),
+        muted: Color::hex(0x7c8696),
+        accent: Color::hex(0x3ccfe0),
+        accent_deep: Color::hex(0x1f9fb3),
+        accent_hot: Color::hex(0xc4f6ff),
+        on_accent: Color::hex(0x032029),
+        select: Color::hex(0x9b8cff),
+        negative: Color::hex(0xe5484d),
+        meter: Color::hex(0xd2d8e0),
+        pad_a: Color::hex(0x181d24),
+        pad_b: Color::hex(0x1e242c),
+        pad_head: Color::hex(0x2e3744),
+    }
+};
+
+pub const AMBRE: Theme = {
+    let text = Color::hex(0xededed);
+    Theme {
+        name: "Ambre",
+        bg_deep: Color::hex(0x0f0f10),
+        bg: Color::hex(0x141415),
+        panel: Color::hex(0x19191b),
+        strip: Color::hex(0x1d1d1f),
+        raised: Color::hex(0x232325),
+        raised_hi: Color::hex(0x2c2c2f),
+        well: Color::hex(0x111112),
+        hairline: hairline(text),
+        text,
+        text2: Color::hex(0xa1a1a6),
+        muted: Color::hex(0x85858b),
+        accent: Color::hex(0xf5a524),
+        accent_deep: Color::hex(0xe38d14),
+        accent_hot: Color::hex(0xffd68a),
+        on_accent: Color::hex(0x1f1406),
+        select: Color::hex(0x7cb7ff),
+        negative: Color::hex(0xe5484d),
+        meter: Color::hex(0xcfcfd2),
+        pad_a: Color::hex(0x202022),
+        pad_b: Color::hex(0x27272a),
+        pad_head: Color::hex(0x3a3a3e),
+    }
+};
+
+pub const THEMES: [Theme; 3] = [PONZIK, GLACE, AMBRE];
+
 pub const WHITE: Color = Color::hex(0xffffff);
 
-pub const TOP_BAR: f32 = 64.0;
-pub const PAGE: f32 = 24.0;
-pub const CARD_PAD: f32 = 20.0;
-pub const CARD_RADIUS: f32 = 16.0;
-pub const SECTION_GAP: f32 = 16.0;
+pub const TOP_BAR: f32 = 56.0;
+pub const SIDEBAR: f32 = 248.0;
+pub const PANEL: f32 = 272.0;
+pub const PAD: f32 = 16.0;
 
-pub const NAME_COL: f32 = 200.0;
-pub const ROW_H: f32 = 56.0;
-pub const ROW_GAP: f32 = 8.0;
-pub const PAD_H: f32 = 48.0;
-pub const PAD_GAP: f32 = 6.0;
-pub const GROUP_GAP: f32 = 16.0;
-
-pub const STRIP_W: f32 = 112.0;
-pub const MASTER_W: f32 = 136.0;
-pub const STRIP_GAP: f32 = 12.0;
-
-/// Constantes de temps des animations (s) : retour visuel, survol, flash de pas.
+/// Constantes de temps des animations (s).
 pub const T_PRESS: f32 = 0.04;
 pub const T_HOVER: f32 = 0.05;
 pub const T_HEAD: f32 = 0.07;
 pub const T_FLASH: f32 = 0.11;
+/// Changements de vue et ouverture des panneaux.
+pub const T_LAYOUT: f32 = 0.075;

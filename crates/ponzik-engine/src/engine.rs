@@ -754,7 +754,7 @@ mod tests {
         handle.drain_scope(|_| n += 1);
         assert_eq!(n, 128);
 
-        handle.send(Command::SetSequence(Box::new(Sequence::default()))).unwrap();
+        handle.send(Command::SetSequence(Box::default())).unwrap();
         engine.process(&mut buf, 2);
         assert!(handle.garbage.pop().is_some(), "l'ancienne séquence revient à l'interface");
     }

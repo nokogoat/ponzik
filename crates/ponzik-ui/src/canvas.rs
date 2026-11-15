@@ -190,6 +190,19 @@ impl Canvas {
         };
     }
 
+    /// Zone de découpe courante.
+    pub fn clip_rect(&self) -> Rect {
+        let (x0, y0, x1, y1) = self.clip;
+        Rect::new(x0 as f32, y0 as f32, (x1 - x0) as f32, (y1 - y0) as f32)
+    }
+
+    /// Restreint la découpe à son intersection avec `r` ; renvoie l'ancienne.
+    pub fn push_clip(&mut self, r: Rect) -> Rect {
+        let prev = self.clip_rect();
+        self.set_clip(Some(prev.intersect(&r)));
+        prev
+    }
+
     pub fn clear(&mut self, c: Color) {
         self.pixels.fill(c.rgb_u32());
     }

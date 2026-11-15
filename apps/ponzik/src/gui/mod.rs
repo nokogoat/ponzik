@@ -1,23 +1,32 @@
 //! Interface graphique : boucle fenêtre ↔ rendu, à 60 images/s quand quelque
+
 //! chose bouge, au repos complet sinon.
 
 mod app;
+mod compat;
+mod devices;
+mod mixer;
+mod piano;
+mod playlist;
+mod rack;
+mod sync;
 mod theme;
+mod widgets;
 
 use std::time::{Duration, Instant};
 
-use ponzik_engine::{Command, Engine};
+use ponzik_engine::Command;
+use ponzik_project::demo_project;
 use ponzik_ui::{Canvas, encode_png};
 use ponzik_window::{Event, Key, Modifiers, MouseButton, Window};
 
-use crate::demo;
-use app::{App, ChannelView};
+use app::{App, View};
 
 const FRAME: Duration = Duration::from_micros(16_667);
-const PROJECT: &str = "Groove house en La mineur";
+const DOUBLE_CLICK: f32 = 0.35;
 
 /// État souris/clavier d'une image.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Input {
     pub x: f32,
     pub y: f32,
@@ -26,6 +35,8 @@ pub struct Input {
     pub pressed: bool,
     pub released: bool,
     pub right_pressed: bool,
+    /// Le clic de cette image est un double-clic.
+    pub double: bool,
     pub wheel: f32,
     pub mods: Modifiers,
     pub keys: Vec<(Key, Modifiers)>,
@@ -36,6 +47,7 @@ impl Input {
         self.pressed = false;
         self.released = false;
         self.right_pressed = false;
+        self.double = false;
         self.wheel = 0.0;
         self.keys.clear();
     }
@@ -81,28 +93,47 @@ impl Input {
     }
 }
 
-fn demo_views() -> (Vec<ponzik_engine::Channel>, Vec<ChannelView>) {
-    let rack = demo::rack();
-    let views = rack.iter().map(ChannelView::from_channel).collect();
-    (rack, views)
+/// Repère les doubles-clics : deux pressions proches dans le temps et l'espace.
+#[derive(Default)]
+struct ClickTracker {
+    last: Option<(Instant, f32, f32)>,
+}
+
+impl ClickTracker {
+    fn check(&mut self, input: &mut Input) {
+        if !input.pressed {
+            return;
+        }
+        let now = Instant::now();
+        if let Some((t, x, y)) = self.last
+            && now.duration_since(t).as_secs_f32() < DOUBLE_CLICK
+            && (x - input.x).abs() < 5.0
+            && (y - input.y).abs() < 5.0
+        {
+            input.double = true;
+            self.last = None;
+        } else {
+            self.last = Some((now, input.x, input.y));
+        }
+    }
 }
 
 pub fn run() -> Result<(), String> {
     let output = ponzik_audio::open_default().map_err(|e| e.to_string())?;
     let config = output.config();
-    let (rack, views) = demo_views();
-    let (mut engine, mut handle) = Engine::new(config.sample_rate as f32, rack);
-    let _ = handle.send(Command::SetBpm(demo::BPM));
+    let project = demo_project();
+    let none = |_: &str| None;
+    let (mut engine, handle) = project.build_engine(config.sample_rate as f32, &none);
     let output_name = output.device_name().to_string();
-    let device = output_name.split(' ').next().unwrap_or("audio").to_string();
     let stream = output.start(move |out, ch| engine.process(out, ch)).map_err(|e| e.to_string())?;
 
     let mut window = Window::open("Ponzik", 1600, 960).map_err(|e| e.to_string())?;
-    let mut app = App::new(handle, views, demo::BPM, config.sample_rate, device, PROJECT.into());
+    let mut app = App::new(handle, project, config.sample_rate);
     let (w, h) = window.size();
     eprintln!("Ponzik · {} · {} Hz · {}", window.backend_name(), config.sample_rate, output_name);
     let mut canvas = Canvas::new(w as usize, h as usize);
     let mut input = Input::default();
+    let mut clicks = ClickTracker::default();
     let mut events = Vec::new();
     let mut dirty = true;
     let mut last_frame = Instant::now() - FRAME;
@@ -127,6 +158,7 @@ pub fn run() -> Result<(), String> {
             }
             dirty |= input.apply(&ev);
         }
+        clicks.check(&mut input);
         if !stream.is_running() {
             return Err("le pilote audio s'est arrêté".into());
         }
@@ -148,13 +180,27 @@ pub fn run() -> Result<(), String> {
 }
 
 /// Rend l'interface hors écran, en pleine lecture, dans un PNG.
-pub fn screenshot(path: &str, width: usize, height: usize) -> Result<(), String> {
+pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result<(), String> {
     const SR: u32 = 48_000;
-    let (rack, views) = demo_views();
-    let (mut engine, mut handle) = Engine::new(SR as f32, rack);
-    let _ = handle.send(Command::SetBpm(demo::BPM));
-    let mut app = App::new(handle, views, demo::BPM, SR, "ALSA".into(), PROJECT.into());
+    let project = demo_project();
+    let none = |_: &str| None;
+    let (mut engine, handle) = project.build_engine(SR as f32, &none);
+    let mut app = App::new(handle, project, SR);
+    let view = match view {
+        "piano" => View::Piano,
+        "playlist" => View::Playlist,
+        "mixer" => View::Mixer,
+        _ => View::Rack,
+    };
+    app.set_view(view);
+    if view == View::Piano {
+        app.focus = app::Focus::Channel(4);
+    }
+    if view == View::Playlist {
+        app.set_mode(ponzik_engine::PlayMode::Song);
+    }
     app.toggle_play();
+    let _ = Command::Play;
 
     let mut canvas = Canvas::new(width, height);
     let input = Input::default();

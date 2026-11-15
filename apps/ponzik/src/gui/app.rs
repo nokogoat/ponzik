@@ -1,54 +1,83 @@
-//! Écran principal : transport, Channel Rack, mixer, sortie.
+//! État de l'interface, navigation, barre de transport, navigateur, menus.
 
-#![allow(clippy::too_many_arguments)]
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
 
-use std::f32::consts::PI;
-
-use ponzik_engine::{Channel, Command, EngineHandle, Step};
-use ponzik_ui::{Anim, Canvas, Color, FontId, Fonts, Path, Rect, embedded};
+use ponzik_engine::mixer::{MASTER, TRACKS};
+use ponzik_engine::registry;
+use ponzik_engine::{Command, EngineHandle, PlayMode, Sample, TICKS_PER_BAR, TICKS_PER_STEP};
+use ponzik_project::{EffectDef, InstrumentDef, Project};
+use ponzik_ui::{Anim, Canvas, Color, FontId, Fonts, Rect, embedded};
 use ponzik_window::Key;
 
 use super::Input;
+use super::compat;
 use super::theme::*;
+use super::widgets::{Icon, draw_icon, wid};
 
-const STEPS: usize = 16;
 const SCOPE_LEN: usize = 8_192;
-/// Fenêtre affichée par l'oscilloscope, en échantillons à 24 kHz (≈ 43 ms).
-const SCOPE_WINDOW: usize = 1_024;
-const DB_TICKS: [f32; 6] = [6.0, 0.0, -6.0, -12.0, -24.0, -48.0];
+const HISTORY_CAP: usize = 200;
 
-/// Copie, côté interface, de l'état d'un canal du moteur.
-pub struct ChannelView {
-    pub name: String,
-    pub instrument: &'static str,
-    pub melodic: bool,
-    pub steps: Vec<Option<Step>>,
-    pub root_note: u8,
-    pub gain: f32,
-    pub pan: f32,
-    pub muted: bool,
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum View {
+    Rack,
+    Piano,
+    Playlist,
+    Mixer,
 }
 
-impl ChannelView {
-    pub fn from_channel(c: &Channel) -> Self {
-        Self {
-            name: c.name.clone(),
-            instrument: c.instrument.name(),
-            melodic: c.instrument.is_melodic(),
-            steps: c.steps[..STEPS].to_vec(),
-            root_note: c.root_note,
-            gain: c.gain,
-            pan: c.pan,
-            muted: c.muted,
+impl View {
+    pub const ALL: [View; 4] = [View::Rack, View::Piano, View::Playlist, View::Mixer];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            View::Rack => "Channel Rack",
+            View::Piano => "Piano roll",
+            View::Playlist => "Playlist",
+            View::Mixer => "Mixer",
         }
     }
+
+    fn index(self) -> usize {
+        View::ALL.iter().position(|v| *v == self).unwrap_or(0)
+    }
+}
+
+/// Ce que montre le panneau d'appareils du bas.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Focus {
+    Channel(usize),
+    Track(usize),
+}
+
+#[derive(Clone, Debug)]
+pub enum Popup {
+    AddInstrument,
+    AddEffect { track: usize },
+    Patterns,
+    OpenProject(Vec<PathBuf>),
+}
+
+pub struct PopupState {
+    pub kind: Popup,
+    pub anchor: Rect,
+}
+
+/// Geste en cours : widget saisi et valeurs de départ.
+#[derive(Clone, Copy, Debug)]
+pub struct Drag {
+    pub id: u64,
+    pub y0: f32,
+    pub v0: f32,
+    pub fine: bool,
 }
 
 /// VU-mètre crête : montée instantanée, retombée à 20 dB/s, maintien 1,2 s.
 #[derive(Default, Clone, Copy)]
-struct Meter {
-    level: [f32; 2],
-    hold: [f32; 2],
+pub struct Meter {
+    pub level: [f32; 2],
+    pub hold: [f32; 2],
     hold_age: [f32; 2],
 }
 
@@ -68,136 +97,101 @@ impl Meter {
         }
     }
 
-    fn active(&self) -> bool {
+    pub fn active(&self) -> bool {
         self.level.iter().chain(&self.hold).any(|&v| v > 1e-4)
     }
 
-    fn peak(&self) -> f32 {
+    pub fn peak(&self) -> f32 {
         self.level[0].max(self.level[1])
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
-enum Target {
-    Channel(usize),
-    Master,
+pub struct FontSet {
+    pub sans: FontId,
+    pub sans_med: FontId,
+    pub mono: FontId,
+    pub mono_med: FontId,
 }
 
-#[derive(Clone, Copy, PartialEq)]
-enum Drag {
-    None,
-    Paint { channel: usize, on: bool },
-    Fader { target: Target, grab: f32 },
-    Pan { channel: usize, start_y: f32, start: f32 },
-    Bpm { start_y: f32, start: f32 },
+struct Toast {
+    text: String,
+    age: f32,
 }
 
-struct FontSet {
-    sans: FontId,
-    sans_med: FontId,
-    mono: FontId,
-    mono_med: FontId,
+/// État du piano roll.
+pub struct PianoState {
+    /// Tick au bord gauche.
+    pub scroll_x: f32,
+    /// Note MIDI en haut de la vue.
+    pub scroll_y: f32,
+    /// Pixels par tick.
+    pub zoom: f32,
+    pub snap: u32,
+    /// Dernière durée posée, réutilisée au clic suivant.
+    pub last_len: u32,
+    pub selected: Vec<usize>,
+    pub fitted_for: Option<(usize, usize)>,
 }
 
-// Familles d'identifiants d'animation.
-const A_PLAY_HOVER: u64 = 1;
-const A_PLAY_PRESS: u64 = 2;
-const A_BPM_HOVER: u64 = 3;
-const A_BEAT_LED: u64 = 4;
-const A_STEP_LED: u64 = 5;
-const A_PAD_HOVER: u64 = 6;
-const A_PAD_HEAD: u64 = 7;
-const A_FLASH: u64 = 8;
-const A_MUTE_HOVER: u64 = 9;
-const A_CAP_HOVER: u64 = 10;
-const A_KNOB_HOVER: u64 = 11;
-const A_STRIP_MUTE: u64 = 12;
-
-fn id(kind: u64, a: usize, b: usize) -> u64 {
-    kind << 48 | (a as u64) << 24 | b as u64
-}
-
-/// Position de fader (0..1) ↔ gain linéaire, loi cubique : 0 dB vers 79 %, +6 dB en haut.
-fn pos_to_gain(pos: f32) -> f32 {
-    2.0 * pos.clamp(0.0, 1.0).powi(3)
-}
-
-fn gain_to_pos(gain: f32) -> f32 {
-    (gain.max(0.0) / 2.0).cbrt().min(1.0)
-}
-
-fn db(gain: f32) -> f32 {
-    20.0 * gain.max(1e-9).log10()
-}
-
-/// « −3,1 dB », signe moins typographique, virgule décimale.
-fn fmt_db(gain: f32) -> String {
-    let d = db(gain);
-    if d < -90.0 {
-        return "−∞ dB".into();
-    }
-    let s = format!("{:.1}", d.abs()).replace('.', ",");
-    if d < -0.05 {
-        format!("−{s} dB")
-    } else if d > 0.05 {
-        format!("+{s} dB")
-    } else {
-        "0,0 dB".into()
-    }
-}
-
-fn fmt_tick(d: f32) -> String {
-    match d {
-        d if d > 0.0 => format!("+{d:.0}"),
-        d if d < 0.0 => format!("−{:.0}", -d),
-        _ => "0".into(),
-    }
-}
-
-fn note_name(note: u8) -> String {
-    const NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-    format!("{}{}", NAMES[note as usize % 12], note as i32 / 12 - 1)
-}
-
-fn fmt_pan(pan: f32) -> String {
-    let v = (pan * 100.0).round() as i32;
-    match v {
-        0 => "C".into(),
-        v if v < 0 => format!("G {}", -v),
-        v => format!("D {v}"),
-    }
+pub struct PlaylistState {
+    pub scroll_x: f32,
+    /// Pixels par mesure.
+    pub zoom: f32,
+    pub brush: usize,
+    pub selected: Option<usize>,
 }
 
 pub struct App {
-    engine: EngineHandle,
-    channels: Vec<ChannelView>,
-    bpm: f32,
-    master_gain: f32,
-    playing: bool,
-    playhead: Option<usize>,
-    meters: Vec<Meter>,
-    master_meter: Meter,
-    scope: Vec<f32>,
-    scope_at: usize,
-    load: f32,
-    anim: Anim,
-    drag: Drag,
-    fonts: Fonts,
-    f: FontSet,
-    sample_rate: u32,
-    device: String,
-    project: String,
+    pub engine: EngineHandle,
+    pub project: Project,
+    /// État que le moteur a reçu : sert de base aux différences et à l'annulation.
+    synced: Project,
+    past: Vec<(String, Project)>,
+    future: Vec<(String, Project)>,
+    last_edit: Option<(String, f32)>,
+    pub modified: bool,
+    pub project_path: Option<PathBuf>,
+
+    pub view: View,
+    pub focus: Focus,
+    pub sidebar: bool,
+    pub panel: bool,
+    pub popup: Option<PopupState>,
+    toasts: Vec<Toast>,
+    pub piano: PianoState,
+    pub playlist: PlaylistState,
+    pub sidebar_scroll: f32,
+    pub chain_scroll: f32,
+    pub mixer_scroll: f32,
+    pub samples: HashMap<String, Arc<Sample>>,
+    pub sample_files: Vec<PathBuf>,
+
+    pub playing: bool,
+    pub metronome: bool,
+    /// Position de lecture en ticks.
+    pub position: f64,
+    pub channel_meters: Vec<Meter>,
+    pub track_meters: Vec<Meter>,
+    pub scope: Vec<f32>,
+    pub scope_at: usize,
+    pub load: f32,
+
+    pub anim: Anim,
+    pub drag: Option<Drag>,
+    pub fonts: Fonts,
+    pub f: FontSet,
+    pub theme: Theme,
+    pub sample_rate: u32,
+    pub time: f32,
+    melodic: HashMap<String, bool>,
+    pub piano_drag: Option<super::piano::PianoDrag>,
+    pub clip_drag: Option<super::playlist::ClipDrag>,
+    /// Note de pré-écoute à relâcher : (canal, note).
+    pub preview: Option<(usize, u8)>,
 }
 
 impl App {
-    pub fn new(
-        engine: EngineHandle,
-        channels: Vec<ChannelView>,
-        bpm: f32,
-        sample_rate: u32,
-        device: String,
-        project: String,
-    ) -> Self {
+    pub fn new(engine: EngineHandle, project: Project, sample_rate: u32) -> Self {
         let mut fonts = Fonts::new();
         let mut load = |data| fonts.add(data).expect("police embarquée invalide");
         let f = FontSet {
@@ -206,116 +200,339 @@ impl App {
             mono: load(embedded::MONO_REGULAR),
             mono_med: load(embedded::MONO_MEDIUM),
         };
+        let channels = project.channels.len();
         Self {
             engine,
-            meters: vec![Meter::default(); channels.len()],
-            channels,
-            bpm,
-            master_gain: 0.5,
+            synced: project.clone(),
+            project,
+            past: Vec::new(),
+            future: Vec::new(),
+            last_edit: None,
+            modified: false,
+            project_path: None,
+            view: View::Rack,
+            focus: Focus::Channel(0),
+            sidebar: true,
+            panel: true,
+            popup: None,
+            toasts: Vec::new(),
+            piano: PianoState {
+                scroll_x: 0.0,
+                scroll_y: 72.0,
+                zoom: 1.0,
+                snap: TICKS_PER_STEP,
+                last_len: TICKS_PER_STEP,
+                selected: Vec::new(),
+                fitted_for: None,
+            },
+            playlist: PlaylistState { scroll_x: 0.0, zoom: 44.0, brush: 0, selected: None },
+            sidebar_scroll: 0.0,
+            chain_scroll: 0.0,
+            mixer_scroll: 0.0,
+            samples: HashMap::new(),
+            sample_files: compat::scan_samples(),
             playing: false,
-            playhead: None,
-            master_meter: Meter::default(),
+            metronome: false,
+            position: 0.0,
+            channel_meters: vec![Meter::default(); channels],
+            track_meters: vec![Meter::default(); TRACKS],
             scope: vec![0.0; SCOPE_LEN],
             scope_at: 0,
             load: 0.0,
             anim: Anim::new(),
-            drag: Drag::None,
+            drag: None,
             fonts,
             f,
+            theme: PONZIK,
             sample_rate,
-            device,
-            project,
+            time: 0.0,
+            melodic: HashMap::new(),
+            piano_drag: None,
+            clip_drag: None,
+            preview: None,
         }
     }
 
-    fn send(&mut self, cmd: Command) {
-        if self.engine.send(cmd).is_err() {
+    // --- Projet, moteur, historique ---
+
+    pub fn send(&mut self, cmd: Command) {
+        if let Err(cmd) = self.engine.send(cmd) {
             eprintln!("file de commandes pleine : {cmd:?}");
         }
+    }
+
+    fn sample_loader(&self) -> impl Fn(&str) -> Option<Arc<Sample>> + '_ {
+        |path: &str| self.samples.get(path).cloned()
+    }
+
+    /// Envoie au moteur la différence entre ce qu'il a et le projet courant.
+    fn sync_engine(&mut self) {
+        let cmds = {
+            let loader = self.sample_loader();
+            super::sync::diff(&self.synced, &self.project, self.sample_rate as f32, &loader)
+        };
+        for cmd in cmds {
+            self.send(cmd);
+        }
+        self.synced = self.project.clone();
+        self.channel_meters.resize(self.project.channels.len(), Meter::default());
+    }
+
+    /// À appeler après chaque modification du projet. Les gestes continus (même
+    /// libellé à moins d'une seconde) forment une seule étape d'annulation.
+    pub fn commit(&mut self, label: &str) {
+        if self.project == self.synced {
+            return;
+        }
+        let merge = self.last_edit.as_ref().is_some_and(|(l, t)| l == label && self.time - t < 1.0);
+        if !merge {
+            self.past.push((label.to_string(), self.synced.clone()));
+            if self.past.len() > HISTORY_CAP {
+                self.past.remove(0);
+            }
+        }
+        self.future.clear();
+        self.last_edit = Some((label.to_string(), self.time));
+        self.modified = true;
+        self.sync_engine();
+    }
+
+    pub fn undo(&mut self) {
+        if let Some((label, prev)) = self.past.pop() {
+            let current = std::mem::replace(&mut self.project, prev);
+            self.future.push((label.clone(), current));
+            self.after_history(&format!("Annulé : {label}"));
+        }
+    }
+
+    pub fn redo(&mut self) {
+        if let Some((label, next)) = self.future.pop() {
+            let current = std::mem::replace(&mut self.project, next);
+            self.past.push((label.clone(), current));
+            self.after_history(&format!("Rétabli : {label}"));
+        }
+    }
+
+    fn after_history(&mut self, msg: &str) {
+        self.last_edit = None;
+        self.modified = true;
+        self.clamp_selection();
+        self.sync_engine();
+        self.toast(msg);
+    }
+
+    fn clamp_selection(&mut self) {
+        let n = self.project.channels.len();
+        if let Focus::Channel(c) = self.focus
+            && c >= n
+        {
+            self.focus = if n > 0 { Focus::Channel(n - 1) } else { Focus::Track(MASTER) };
+        }
+        self.project.current_pattern = self.project.current_pattern.min(self.project.patterns.len().saturating_sub(1));
+        self.piano.selected.clear();
+        self.playlist.selected = None;
+    }
+
+    /// Remplace tout le projet (ouverture, nouveau) : le moteur est resynchronisé.
+    pub fn replace_project(&mut self, project: Project, path: Option<PathBuf>) {
+        for ch in &project.channels {
+            if let Some(path) = &ch.instrument.sample {
+                self.ensure_sample(path);
+            }
+        }
+        self.project = project;
+        self.past.clear();
+        self.future.clear();
+        self.last_edit = None;
+        self.project_path = path;
+        self.modified = false;
+        self.focus = Focus::Channel(0);
+        self.clamp_selection();
+        self.piano.fitted_for = None;
+        self.send(Command::Stop);
+        self.send(Command::Stop);
+        self.playing = false;
+        self.sync_engine();
+    }
+
+    pub fn toast(&mut self, text: &str) {
+        self.toasts.push(Toast { text: text.to_string(), age: 0.0 });
+        if self.toasts.len() > 3 {
+            self.toasts.remove(0);
+        }
+    }
+
+    pub fn ensure_sample(&mut self, path: &str) -> bool {
+        if self.samples.contains_key(path) {
+            return true;
+        }
+        match compat::load_sample(path) {
+            Ok(s) => {
+                self.samples.insert(path.to_string(), Arc::new(s));
+                true
+            }
+            Err(e) => {
+                self.toast(&e);
+                false
+            }
+        }
+    }
+
+    /// Vrai si ce type d'instrument joue des hauteurs (mis en cache).
+    pub fn is_melodic(&mut self, kind: &str) -> bool {
+        if let Some(&m) = self.melodic.get(kind) {
+            return m;
+        }
+        let m = registry::create_instrument(kind).is_some_and(|i| i.is_melodic());
+        self.melodic.insert(kind.to_string(), m);
+        m
+    }
+
+    /// Joue une note de pré-écoute, relâchée au prochain relâchement de souris.
+    pub fn preview_note(&mut self, ch: usize, note: u8) {
+        self.release_preview();
+        self.send(Command::NoteOn { channel: ch, note, velocity: 0.8 });
+        self.preview = Some((ch, note));
+    }
+
+    pub fn release_preview(&mut self) {
+        if let Some((channel, note)) = self.preview.take() {
+            self.send(Command::NoteOff { channel, note });
+        }
+    }
+
+    pub fn selected_channel(&self) -> Option<usize> {
+        match self.focus {
+            Focus::Channel(c) if c < self.project.channels.len() => Some(c),
+            _ => None,
+        }
+    }
+
+    /// Piste de mixer concernée par le focus.
+    pub fn focused_track(&self) -> usize {
+        match self.focus {
+            Focus::Channel(c) => self.project.channels.get(c).map_or(MASTER, |ch| ch.track),
+            Focus::Track(t) => t,
+        }
+    }
+
+    pub fn add_instrument(&mut self, kind: &str) {
+        let Some(info) = registry::instrument_kind(kind) else { return };
+        let idx = self.project.add_channel(info.name, InstrumentDef::new(kind), 60);
+        self.focus = Focus::Channel(idx);
+        self.commit("Ajouter un canal");
+        self.toast(&format!("{} ajouté au rack", info.name));
+    }
+
+    pub fn add_sample_channel(&mut self, path: &str) {
+        if !self.ensure_sample(path) {
+            return;
+        }
+        let name = std::path::Path::new(path)
+            .file_stem()
+            .map_or("Échantillon".to_string(), |s| s.to_string_lossy().into_owned());
+        let mut def = InstrumentDef::new("sampler");
+        def.sample = Some(path.to_string());
+        if registry::instrument_kind("sampler").is_none() {
+            self.toast("Le sampler n'est pas encore disponible");
+            return;
+        }
+        let idx = self.project.add_channel(name.clone(), def, 60);
+        self.focus = Focus::Channel(idx);
+        self.commit("Ajouter un échantillon");
+        self.toast(&format!("{name} ajouté au rack"));
+    }
+
+    pub fn add_effect(&mut self, track: usize, kind: &str) {
+        let Some(info) = registry::effect_kind(kind) else { return };
+        let Some(slot) = self.project.tracks[track].inserts.iter().position(Option::is_none) else {
+            self.toast("Plus d'emplacement libre sur cette piste");
+            return;
+        };
+        self.project.tracks[track].inserts[slot] = Some(EffectDef::new(kind));
+        self.commit("Ajouter un effet");
+        let name = self.project.tracks[track].name.clone();
+        self.toast(&format!("{} ajouté sur {name}", info.name));
+    }
+
+    pub fn set_mode(&mut self, mode: PlayMode) {
+        if self.project.mode != mode {
+            self.project.mode = mode;
+            self.commit("Mode de lecture");
+            self.send(Command::Locate(0.0));
+        }
+    }
+
+    pub fn select_pattern(&mut self, p: usize) {
+        let p = p.min(self.project.patterns.len() - 1);
+        self.project.current_pattern = p;
+        self.playlist.brush = p;
+        self.piano.selected.clear();
+        if let PlayMode::Pattern(_) = self.project.mode {
+            self.project.mode = PlayMode::Pattern(p);
+        }
+        self.commit("Changer de pattern");
     }
 
     pub fn toggle_play(&mut self) {
         self.playing = !self.playing;
         self.send(if self.playing { Command::Play } else { Command::Stop });
-        if !self.playing {
-            self.playhead = None;
-        }
     }
 
-    fn set_bpm(&mut self, bpm: f32) {
-        let bpm = (bpm * 10.0).round() / 10.0;
-        let bpm = bpm.clamp(40.0, 300.0);
-        if bpm != self.bpm {
-            self.bpm = bpm;
-            self.send(Command::SetBpm(bpm));
-        }
+    pub fn stop(&mut self) {
+        self.playing = false;
+        self.send(Command::Stop);
+        self.send(Command::Stop);
     }
 
-    fn set_step(&mut self, ch: usize, step: usize, on: bool) {
-        let c = &mut self.channels[ch];
-        let value = on.then_some(Step { note: c.root_note, velocity: 0.8, length: 1.0 });
-        if c.steps[step].is_some() == on {
-            return;
-        }
-        c.steps[step] = value;
-        self.send(Command::SetStep { channel: ch, step, value });
-    }
+    // --- Fichiers ---
 
-    fn toggle_mute(&mut self, ch: usize) {
-        let muted = !self.channels[ch].muted;
-        self.channels[ch].muted = muted;
-        self.send(Command::SetChannelMute { channel: ch, muted });
-    }
-
-    fn set_gain(&mut self, target: Target, gain: f32) {
-        match target {
-            Target::Channel(ch) => {
-                self.channels[ch].gain = gain;
-                self.send(Command::SetChannelGain { channel: ch, gain });
+    pub fn save(&mut self) {
+        let path = self.project_path.clone().unwrap_or_else(|| compat::default_project_path(&self.project.name));
+        match compat::save_project(&self.project, &path) {
+            Ok(()) => {
+                self.project_path = Some(path.clone());
+                self.modified = false;
+                self.toast(&format!("Enregistré dans {}", path.display()));
             }
-            Target::Master => {
-                self.master_gain = gain;
-                self.send(Command::SetMasterGain(gain));
+            Err(e) => self.toast(&e),
+        }
+    }
+
+    pub fn open_file(&mut self, path: PathBuf) {
+        match compat::load_project(&path) {
+            Ok(p) => {
+                let name = p.name.clone();
+                self.replace_project(p, Some(path));
+                self.toast(&format!("{name} ouvert"));
             }
+            Err(e) => self.toast(&e),
         }
     }
 
-    fn gain_of(&self, target: Target) -> f32 {
-        match target {
-            Target::Channel(ch) => self.channels[ch].gain,
-            Target::Master => self.master_gain,
+    pub fn export(&mut self) {
+        let path = compat::default_export_path(&self.project.name);
+        let result = {
+            let loader = self.sample_loader();
+            compat::export_song(&self.project, self.sample_rate, &loader, &path)
+        };
+        match result {
+            Ok(secs) => self.toast(&format!("Exporté : {} ({secs:.1} s)", path.display())),
+            Err(e) => self.toast(&e),
         }
     }
 
-    /// Faux quand tout est immobile : la boucle peut dormir.
-    pub fn needs_redraw(&self) -> bool {
-        self.playing
-            || self.anim.is_moving()
-            || self.drag != Drag::None
-            || self.master_meter.active()
-            || self.meters.iter().any(Meter::active)
-    }
-
-    fn hover(&self, input: &Input, r: Rect) -> bool {
-        self.drag == Drag::None && input.inside && r.contains(input.x, input.y)
-    }
+    // --- Image ---
 
     fn poll_engine(&mut self, dt: f32) {
-        let head = if self.playing { self.engine.playhead() } else { None };
-        if head != self.playhead {
-            if let Some(i) = head {
-                for (ci, ch) in self.channels.iter().enumerate() {
-                    if !ch.muted && ch.steps[i].is_some() {
-                        self.anim.set(id(A_FLASH, ci, i), 1.0);
-                    }
-                }
-            }
-            self.playhead = head;
-        }
-        for (i, m) in self.meters.iter_mut().enumerate() {
+        self.engine.collect_garbage();
+        self.position = self.engine.position();
+        for (i, m) in self.channel_meters.iter_mut().enumerate() {
             m.feed(self.engine.take_channel_peak(i), dt);
         }
-        self.master_meter.feed(self.engine.take_master_peak(), dt);
+        for (i, m) in self.track_meters.iter_mut().enumerate() {
+            m.feed(self.engine.take_track_peak(i), dt);
+        }
         let load = self.engine.take_load();
         self.load += (load - self.load) * (1.0 - (-dt / 0.4).exp());
         let (scope, at) = (&mut self.scope, &mut self.scope_at);
@@ -325,572 +542,584 @@ impl App {
         });
     }
 
-    fn handle_keys(&mut self, input: &Input) {
+    /// Position dans la boucle courante, en ticks.
+    pub fn cycle_position(&self) -> f64 {
+        match self.project.mode {
+            PlayMode::Pattern(p) => {
+                let len = self.project.patterns.get(p).map_or(TICKS_PER_BAR, |p| p.len.max(1)) as f64;
+                self.position.rem_euclid(len)
+            }
+            PlayMode::Song => self.position,
+        }
+    }
+
+    pub fn needs_redraw(&self) -> bool {
+        self.playing
+            || self.anim.is_moving()
+            || self.drag.is_some()
+            || !self.toasts.is_empty()
+            || self.track_meters.iter().any(Meter::active)
+            || self.channel_meters.iter().any(Meter::active)
+    }
+
+    fn shortcuts(&mut self, input: &Input) {
         for &(key, mods) in &input.keys {
             match key {
+                Key::Escape => {
+                    self.popup = None;
+                    self.piano.selected.clear();
+                    self.playlist.selected = None;
+                }
                 Key::Space => self.toggle_play(),
-                Key::Up => self.set_bpm(self.bpm + if mods.shift { 0.1 } else { 1.0 }),
-                Key::Down => self.set_bpm(self.bpm - if mods.shift { 0.1 } else { 1.0 }),
+                Key::Char('z') if mods.ctrl && mods.shift => self.redo(),
+                Key::Char('z') if mods.ctrl => self.undo(),
+                Key::Char('y') if mods.ctrl => self.redo(),
+                Key::Char('s') if mods.ctrl => self.save(),
+                Key::Char('o') if mods.ctrl => self.popup = Some(PopupState {
+                    kind: Popup::OpenProject(compat::list_projects()),
+                    anchor: Rect::new(0.0, TOP_BAR, 0.0, 0.0),
+                }),
+                Key::Char('n') if mods.ctrl => {
+                    self.replace_project(Project::empty(), None);
+                    self.toast("Nouveau projet");
+                }
+                Key::Char('e') if mods.ctrl => self.export(),
+                Key::Char('b') if mods.ctrl => self.sidebar = !self.sidebar,
+                Key::Char('1') if mods.alt => self.set_view(View::Rack),
+                Key::Char('2') if mods.alt => self.set_view(View::Piano),
+                Key::Char('3') if mods.alt => self.set_view(View::Playlist),
+                Key::Char('4') if mods.alt => self.set_view(View::Mixer),
+                Key::Tab => {
+                    let next = View::ALL[(self.view.index() + 1) % 4];
+                    self.set_view(next);
+                }
                 _ => {}
             }
         }
     }
 
+    pub fn set_view(&mut self, v: View) {
+        if v != self.view {
+            self.view = v;
+            self.anim.set(wid("view-enter", 0, 0), 0.0);
+        }
+    }
+
     pub fn frame(&mut self, c: &mut Canvas, input: &Input, dt: f32) {
         self.anim.begin_frame(dt);
+        self.time += dt;
         self.poll_engine(dt);
-        self.handle_keys(input);
+        if self.popup.is_none() {
+            self.shortcuts(input);
+        } else if input.keys.iter().any(|(k, _)| *k == Key::Escape) {
+            self.popup = None;
+        }
 
+        let t = self.theme;
         let (w, h) = (c.width() as f32, c.height() as f32);
         c.set_clip(None);
-        c.clear(BG);
-        self.top_bar(c, input, Rect::new(0.0, 0.0, w, TOP_BAR));
+        c.clear(t.bg);
 
-        let content = Rect::new(PAGE, TOP_BAR + PAGE, w - 2.0 * PAGE, h - TOP_BAR - 2.0 * PAGE);
-        let (rack, rest) = content.take_top(self.rack_height());
-        self.rack(c, input, rack);
+        let sb = self.anim.to(wid("sidebar", 0, 0), if self.sidebar { SIDEBAR } else { 0.0 }, T_LAYOUT).round();
+        let pn = self.anim.to(wid("panel", 0, 0), if self.panel { PANEL } else { 0.0 }, T_LAYOUT).round();
 
-        let bottom = rest.take_top(SECTION_GAP).1;
-        let n = self.channels.len() as f32;
-        let mixer_w = 2.0 * CARD_PAD + n * STRIP_W + (n - 1.0) * STRIP_GAP + 24.0 + MASTER_W;
-        if bottom.w - mixer_w - SECTION_GAP >= 300.0 {
-            let (mixer, rest) = bottom.take_left(mixer_w);
-            self.mixer(c, input, mixer);
-            self.output(c, rest.take_left(SECTION_GAP).1);
+        // Un menu ouvert capte la souris : le reste de l'écran ne réagit plus.
+        let masked;
+        let ui = if self.popup.is_some() {
+            masked = Input {
+                inside: false,
+                pressed: false,
+                right_pressed: false,
+                wheel: 0.0,
+                double: false,
+                keys: Vec::new(),
+                ..input.clone()
+            };
+            &masked
         } else {
-            self.mixer(c, input, bottom);
+            input
+        };
+
+        let main = Rect::new(sb, TOP_BAR, w - sb, h - TOP_BAR - pn);
+        self.main_area(c, ui, main);
+        if pn > 1.0 {
+            self.panel_area(c, ui, Rect::new(sb, h - pn, w - sb, pn));
         }
+        if sb > 1.0 {
+            self.sidebar_area(c, ui, Rect::new(0.0, TOP_BAR, sb, h - TOP_BAR));
+        }
+        self.top_bar(c, ui, Rect::new(0.0, 0.0, w, TOP_BAR));
+        self.popup_layer(c, input, Rect::new(0.0, 0.0, w, h));
+        self.toast_layer(c, dt, Rect::new(sb, TOP_BAR, w - sb, h - TOP_BAR - pn));
 
         if !input.down {
-            self.drag = Drag::None;
+            self.drag = None;
+            self.release_preview();
         }
     }
 
-    // --- Texte ---
-
-    fn text(&mut self, c: &mut Canvas, f: FontId, size: f32, x: f32, cy: f32, s: &str, col: Color) -> f32 {
-        let baseline = cy + self.fonts.cap_height(f, size) * 0.5;
-        self.fonts.draw(c, f, size, x, baseline, s, col)
-    }
-
-    fn text_right(&mut self, c: &mut Canvas, f: FontId, size: f32, right: f32, cy: f32, s: &str, col: Color) -> f32 {
-        let w = self.fonts.measure(f, size, s);
-        self.text(c, f, size, right - w, cy, s, col);
-        right - w
-    }
-
-    fn text_center(&mut self, c: &mut Canvas, f: FontId, size: f32, cx: f32, cy: f32, s: &str, col: Color) {
-        let w = self.fonts.measure(f, size, s);
-        self.text(c, f, size, cx - w * 0.5, cy, s, col);
-    }
-
-    fn card(c: &mut Canvas, r: Rect) {
-        c.fill_rrect(r, CARD_RADIUS, CARD);
-        c.stroke_rrect(r, CARD_RADIUS, 1.0, HAIRLINE);
-    }
-
-    /// En-tête de carte : titre à gauche, méta à droite ; renvoie le corps.
-    fn card_header(&mut self, c: &mut Canvas, inner: Rect, title: &str, meta: &str) -> Rect {
-        let cy = inner.y + 12.0;
-        self.text(c, self.f.sans_med, 15.0, inner.x, cy, title, TEXT);
-        self.text_right(c, self.f.mono, 12.0, inner.right(), cy, meta, MUTED);
-        inner.take_top(24.0 + 16.0).1
-    }
-
-    // --- Barre de transport ---
+    // --- Barre du haut ---
 
     fn top_bar(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
-        c.fill_rect(r, BG_DEEP);
-        c.fill_rect(Rect::new(r.x, r.bottom() - 1.0, r.w, 1.0), HAIRLINE);
+        let t = self.theme;
+        c.fill_rect(r, t.bg_deep);
+        c.fill_rect(Rect::new(r.x, r.bottom() - 1.0, r.w, 1.0), t.hairline);
         let cy = r.y + r.h * 0.5;
 
-        let cluster = 48.0 + 12.0 + 136.0 + 12.0 + 164.0;
-        let cluster_x = ((r.w - cluster) * 0.5).round();
-
-        // Les textes latéraux s'effacent plutôt que de passer sous le transport.
-        let wordmark = self.text(c, self.f.sans_med, 18.0, PAGE, cy, "Ponzik", TEXT);
-        let div = PAGE + wordmark + 16.0;
-        let project = self.project.clone();
-        if div + 16.0 + self.fonts.measure(self.f.sans, 14.0, &project) + 24.0 <= cluster_x {
-            c.fill_rect(Rect::new(div, cy - 10.0, 1.0, 20.0), HAIRLINE);
-            self.text(c, self.f.sans, 14.0, div + 16.0, cy, &project, TEXT2);
+        if self.icon_button(c, input, wid("tb-sidebar", 0, 0), Rect::new(12.0, cy - 16.0, 32.0, 32.0), Icon::Sidebar, self.sidebar) {
+            self.sidebar = !self.sidebar;
         }
+        // Marque : le nom et sa LED, qui s'allume quand ça joue.
+        let led = self.anim.to(wid("brand-led", 0, 0), self.playing as u8 as f32, T_HEAD);
+        c.fill_circle(58.0, cy, 4.0, t.raised_hi.mix(t.accent, led.max(0.35)));
+        let wordmark = self.text(c, self.f.sans_med, 18.0, 70.0, cy, "Ponzik", t.text);
 
-        let mut x = cluster_x;
-        self.play_button(c, input, Rect::new(x, cy - 20.0, 48.0, 40.0));
-        x += 48.0 + 12.0;
-        self.bpm_field(c, input, Rect::new(x, cy - 20.0, 136.0, 40.0));
-        x += 136.0 + 12.0;
-        self.position_field(c, Rect::new(x, cy - 20.0, 164.0, 40.0));
-        let free_from = cluster_x + cluster + 24.0;
+        // Transport, centré.
+        let cluster = 40.0 + 6.0 + 40.0 + 14.0 + 196.0 + 10.0 + 188.0 + 10.0 + 116.0 + 10.0 + 132.0 + 6.0 + 36.0;
+        let mut x = ((r.w - cluster) * 0.5).round().max(70.0 + wordmark + 24.0);
+        let start = x;
 
-        let device = format!("{} kHz · {}", self.sample_rate / 1000, self.device);
-        let dsp = format!("DSP {:>2.0} %", (self.load * 100.0).min(999.0));
-        let device_w = self.fonts.measure(self.f.sans, 13.0, &device);
-        let dsp_w = self.fonts.measure(self.f.mono, 13.0, &dsp);
-        let right = r.w - PAGE;
-        if right - device_w - 24.0 - dsp_w >= free_from {
-            let left = self.text_right(c, self.f.sans, 13.0, right, cy, &device, MUTED);
-            self.text_right(c, self.f.mono, 13.0, left - 24.0, cy, &dsp, MUTED);
-        } else if right - dsp_w >= free_from {
-            self.text_right(c, self.f.mono, 13.0, right, cy, &dsp, MUTED);
-        }
-    }
-
-    fn play_button(&mut self, c: &mut Canvas, input: &Input, b: Rect) {
-        let hov = self.hover(input, b);
+        let play = Rect::new(x, cy - 18.0, 40.0, 36.0);
+        let hov = self.hovered(input, wid("tb-play", 0, 0), play);
         if hov && input.pressed {
             self.toggle_play();
         }
-        let hv = self.anim.to(id(A_PLAY_HOVER, 0, 0), hov as u8 as f32, T_HOVER);
-        let scale = self.anim.to(id(A_PLAY_PRESS, 0, 0), if hov && input.down { 0.96 } else { 1.0 }, T_PRESS);
-        let r = b.scale(scale);
-        let fill = if self.playing { AMBER } else { TEXT };
-        c.fill_rrect(r, 10.0, fill.mix(WHITE, 0.12 * hv));
-        c.fill_rect(Rect::new(r.x + 8.0, r.y + 1.0, r.w - 16.0, 1.0), WHITE.alpha(0.35));
-        let (cx, cy) = r.center();
-        if self.playing {
-            c.fill_rrect(Rect::new(cx - 6.5, cy - 6.5, 13.0, 13.0), 2.0, ON_AMBER);
-        } else {
-            let mut p = Path::new();
-            p.polygon(&[(cx - 5.0, cy - 8.0), (cx + 8.5, cy), (cx - 5.0, cy + 8.0)]);
-            c.fill_path(&p, BG_DEEP);
+        let hv = self.hover_anim(wid("tb-play", 0, 0), hov);
+        let on = self.anim.to(wid("tb-play-on", 0, 0), self.playing as u8 as f32, T_HOVER);
+        c.fill_rrect(play, 10.0, t.text.mix(t.accent, on).mix(WHITE, 0.12 * hv));
+        c.fill_rect(Rect::new(play.x + 8.0, play.y + 1.0, play.w - 16.0, 1.0), WHITE.alpha(0.3));
+        let (px, py) = play.center();
+        draw_icon(c, if self.playing { Icon::Pause } else { Icon::Play }, px, py, 16.0, t.bg_deep.mix(t.on_accent, on));
+        x += 46.0;
+        if self.icon_button(c, input, wid("tb-stop", 0, 0), Rect::new(x, cy - 18.0, 40.0, 36.0), Icon::Stop, false) {
+            self.stop();
+        }
+        x += 54.0;
+
+        let mode = match self.project.mode {
+            PlayMode::Pattern(_) => 0,
+            PlayMode::Song => 1,
+        };
+        if let Some(m) = self.segmented(c, input, wid("tb-mode", 0, 0), Rect::new(x, cy - 18.0, 196.0, 36.0), &["Pattern", "Morceau"], mode) {
+            let cur = self.project.current_pattern;
+            self.set_mode(if m == 0 { PlayMode::Pattern(cur) } else { PlayMode::Song });
+        }
+        x += 206.0;
+        self.pattern_selector(c, input, Rect::new(x, cy - 18.0, 188.0, 36.0));
+        x += 198.0;
+
+        let bpm_text = format!("{:.1}", self.project.bpm).replace('.', ",");
+        if let Some(bpm) = self.drag_field(c, input, wid("tb-bpm", 0, 0), Rect::new(x, cy - 18.0, 116.0, 36.0), self.project.bpm, 0.25, 1.0, &bpm_text, "BPM") {
+            let bpm = ((bpm * 10.0).round() / 10.0).clamp(40.0, 300.0);
+            if bpm != self.project.bpm {
+                self.project.bpm = bpm;
+                self.commit("Tempo");
+            }
+        }
+        x += 126.0;
+        self.position_field(c, Rect::new(x, cy - 18.0, 132.0, 36.0));
+        x += 138.0;
+        if self.icon_button(c, input, wid("tb-metro", 0, 0), Rect::new(x, cy - 18.0, 36.0, 36.0), Icon::Metronome, self.metronome) {
+            self.metronome = !self.metronome;
+            let m = self.metronome;
+            self.send(Command::SetMetronome(m));
+        }
+        let cluster_end = x + 36.0;
+
+        // Droite : fichier et historique, puis la charge DSP si la place le permet.
+        let mut rx = r.w - 12.0 - 32.0;
+        let buttons = [
+            (Icon::Panel, "tb-panel"),
+            (Icon::Export, "tb-export"),
+            (Icon::Save, "tb-save"),
+            (Icon::Folder, "tb-open"),
+            (Icon::Redo, "tb-redo"),
+            (Icon::Undo, "tb-undo"),
+        ];
+        for (icon, name) in buttons {
+            if rx < cluster_end + 8.0 {
+                break;
+            }
+            let on = icon == Icon::Panel && self.panel;
+            if self.icon_button(c, input, wid(name, 0, 0), Rect::new(rx, cy - 16.0, 32.0, 32.0), icon, on) {
+                match icon {
+                    Icon::Panel => self.panel = !self.panel,
+                    Icon::Export => self.export(),
+                    Icon::Save => self.save(),
+                    Icon::Folder => {
+                        self.popup = Some(PopupState {
+                            kind: Popup::OpenProject(compat::list_projects()),
+                            anchor: Rect::new(rx, cy - 16.0, 32.0, 32.0),
+                        })
+                    }
+                    Icon::Redo => self.redo(),
+                    Icon::Undo => self.undo(),
+                    _ => {}
+                }
+            }
+            rx -= 36.0;
+        }
+        let dsp = format!("DSP {:>2.0} %", (self.load * 100.0).min(999.0));
+        let dsp_w = self.fonts.measure(self.f.mono, 12.0, &dsp);
+        if rx + 32.0 - 16.0 - dsp_w > cluster_end + 16.0 {
+            self.text_right(c, self.f.mono, 12.0, rx + 32.0 - 12.0, cy, &dsp, t.muted);
+        }
+
+        // Nom du projet entre la marque et le transport.
+        let name_x = 70.0 + wordmark + 20.0;
+        let room = start - name_x - 20.0;
+        if room > 80.0 {
+            let name = self.project.name.clone();
+            let label = if self.modified { format!("{name} ·") } else { name };
+            self.text_fit(c, self.f.sans, 13.0, name_x, cy, &label, room, t.text2);
         }
     }
 
-    fn bpm_field(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
-        let hov = self.hover(input, r);
+    fn pattern_selector(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
+        let t = self.theme;
+        c.fill_rrect(r, 10.0, t.raised);
+        c.stroke_rrect(r, 10.0, 1.0, t.hairline);
+        let n = self.project.patterns.len();
+        let cur = self.project.current_pattern;
+        let prev = Rect::new(r.x + 2.0, r.y + 2.0, 28.0, r.h - 4.0);
+        let next = Rect::new(r.right() - 30.0, r.y + 2.0, 28.0, r.h - 4.0);
+        if self.icon_button(c, input, wid("pat-prev", 0, 0), prev, Icon::ChevronLeft, false) && cur > 0 {
+            self.select_pattern(cur - 1);
+        }
+        if self.icon_button(c, input, wid("pat-next", 0, 0), next, Icon::ChevronRight, false) {
+            if cur + 1 < n {
+                self.select_pattern(cur + 1);
+            } else {
+                let p = self.project.add_pattern();
+                self.select_pattern(p);
+                self.toast("Nouveau pattern");
+            }
+        }
+        let mid = Rect::new(prev.right(), r.y, next.x - prev.right(), r.h);
+        let id = wid("pat-name", 0, 0);
+        let hov = self.hovered(input, id, mid);
+        let hv = self.hover_anim(id, hov);
         if hov && input.pressed {
-            self.drag = Drag::Bpm { start_y: input.y, start: self.bpm };
+            self.popup = Some(PopupState { kind: Popup::Patterns, anchor: r });
         }
-        if let Drag::Bpm { start_y, start } = self.drag {
-            let per_px = if input.mods.shift { 0.02 } else { 0.25 };
-            self.set_bpm(start + (start_y - input.y) * per_px);
-        }
-        if hov && input.wheel != 0.0 {
-            self.set_bpm(self.bpm + input.wheel * if input.mods.shift { 0.1 } else { 1.0 });
-        }
-        let active = hov || matches!(self.drag, Drag::Bpm { .. });
-        let hv = self.anim.to(id(A_BPM_HOVER, 0, 0), active as u8 as f32, T_HOVER);
-        c.fill_rrect(r, 10.0, RAISED.mix(RAISED_HI, hv));
-        c.stroke_rrect(r, 10.0, 1.0, HAIRLINE);
-        let (_, cy) = r.center();
-        let bpm = format!("{:.1}", self.bpm).replace('.', ",");
-        self.text(c, self.f.mono_med, 20.0, r.x + 16.0, cy, &bpm, TEXT);
-        self.text_right(c, self.f.sans, 12.0, r.right() - 14.0, cy, "BPM", MUTED);
+        let name = self.project.patterns[cur].name.clone();
+        let (cx, cy) = mid.center();
+        let label = self.fit(self.f.sans_med, 13.0, &name, mid.w - 8.0);
+        self.text_center(c, self.f.sans_med, 13.0, cx, cy, &label, t.text2.mix(t.text, 0.6 + 0.4 * hv));
     }
 
     fn position_field(&mut self, c: &mut Canvas, r: Rect) {
-        c.fill_rrect(r, 10.0, RAISED);
-        c.stroke_rrect(r, 10.0, 1.0, HAIRLINE);
+        let t = self.theme;
+        c.fill_rrect(r, 10.0, t.raised);
+        c.stroke_rrect(r, 10.0, 1.0, t.hairline);
         let (_, cy) = r.center();
-        for beat in 0..4 {
-            let lit = self.playhead.is_some_and(|s| s / 4 == beat);
-            let v = self.anim.to(id(A_BEAT_LED, beat, 0), lit as u8 as f32, T_HEAD);
-            let x = r.x + 18.0 + beat as f32 * 16.0;
-            c.fill_circle(x, cy, 4.0, RAISED_HI.mix(AMBER, v));
+        let pos = self.cycle_position();
+        let beat_in_bar = ((pos % TICKS_PER_BAR as f64) / 96.0).floor() as usize;
+        for b in 0..4 {
+            let lit = self.playing && b == beat_in_bar;
+            let v = self.anim.to(wid("beat-led", b, 0), lit as u8 as f32, T_HEAD);
+            c.fill_circle(r.x + 14.0 + b as f32 * 11.0, cy, 3.0, t.raised_hi.mix(t.accent, v));
         }
-        let pos = match self.playhead {
-            Some(s) => format!("{:02} / {STEPS}", s + 1),
-            None => format!("–– / {STEPS}"),
+        let bar = (pos / TICKS_PER_BAR as f64).floor() as u32 + 1;
+        let beat = beat_in_bar + 1;
+        let step = ((pos % 96.0) / TICKS_PER_STEP as f64).floor() as u32 + 1;
+        let text = format!("{bar}.{beat}.{step}");
+        self.text_right(c, self.f.mono_med, 15.0, r.right() - 12.0, cy, &text, if self.playing { t.text } else { t.text2 });
+    }
+
+    // --- Zone principale ---
+
+    fn main_area(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
+        let t = self.theme;
+        let tabs = Rect::new(r.x + PAD, r.y + 12.0, 480.0f32.min(r.w - 2.0 * PAD), 36.0);
+        let labels: Vec<&str> = View::ALL.iter().map(|v| v.label()).collect();
+        if let Some(i) = self.segmented(c, input, wid("tabs", 0, 0), tabs, &labels, self.view.index()) {
+            self.set_view(View::ALL[i]);
+        }
+        let header = Rect::new(tabs.right() + 16.0, r.y + 12.0, r.right() - PAD - tabs.right() - 16.0, 36.0);
+        let body = Rect::new(r.x + PAD, r.y + 60.0, r.w - 2.0 * PAD, r.h - 60.0 - PAD);
+        if body.h < 40.0 || body.w < 100.0 {
+            return;
+        }
+
+        // Entrée de vue : fondu et légère montée.
+        let enter = self.anim.to(wid("view-enter", 0, 0), 1.0, T_LAYOUT);
+        let rise = ((1.0 - enter) * 10.0).round();
+        let body_shifted = body.translate(0.0, rise);
+        let prev = c.push_clip(Rect::new(r.x, header.y, r.w, r.bottom() - header.y));
+        match self.view {
+            View::Rack => self.rack_view(c, input, header, body_shifted),
+            View::Piano => self.piano_view(c, input, header, body_shifted),
+            View::Playlist => self.playlist_view(c, input, header, body_shifted),
+            View::Mixer => self.mixer_view(c, input, header, body_shifted),
+        }
+        if enter < 0.999 {
+            c.fill_rect(Rect::new(r.x, header.y - 2.0, r.w, r.bottom() - header.y + 2.0), t.bg.alpha(1.0 - enter));
+        }
+        c.set_clip(Some(prev));
+    }
+
+    // --- Panneau d'appareils ---
+
+    fn panel_area(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
+        let t = self.theme;
+        c.fill_rect(r, t.bg_deep);
+        c.fill_rect(Rect::new(r.x, r.y, r.w, 1.0), t.hairline);
+        let prev = c.push_clip(r);
+        self.device_panel(c, input, Rect::new(r.x, r.y + 1.0, r.w, PANEL - 1.0));
+        c.set_clip(Some(prev));
+    }
+
+    // --- Navigateur ---
+
+    fn sidebar_area(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
+        let t = self.theme;
+        c.fill_rect(r, t.bg_deep);
+        c.fill_rect(Rect::new(r.right() - 1.0, r.y, 1.0, r.h), t.hairline);
+        let prev = c.push_clip(r);
+        let inner_x = r.right() - SIDEBAR + 12.0;
+        let w = SIDEBAR - 24.0;
+
+        // Thème, en bas, fixe.
+        let theme_box = Rect::new(inner_x, r.bottom() - 52.0, w, 36.0);
+        let names: Vec<&str> = THEMES.iter().map(|t| t.name).collect();
+        let cur = THEMES.iter().position(|x| x.name == self.theme.name).unwrap_or(0);
+        if let Some(i) = self.segmented(c, input, wid("theme", 0, 0), theme_box, &names, cur) {
+            self.theme = THEMES[i];
+        }
+        let list = Rect::new(r.x, r.y, r.w, theme_box.y - 12.0 - r.y);
+        c.fill_rect(Rect::new(r.x, theme_box.y - 12.0, r.w - 1.0, 1.0), t.hairline);
+
+        let hov_list = input.inside && list.contains(input.x, input.y);
+        if hov_list && input.wheel != 0.0 {
+            self.sidebar_scroll = (self.sidebar_scroll - input.wheel * 60.0).max(0.0);
+        }
+        let scroll = self.anim.to(wid("sb-scroll", 0, 0), self.sidebar_scroll, T_LAYOUT);
+        let inner = c.push_clip(list);
+        let mut y = list.y + 16.0 - scroll;
+
+        let section = |app: &mut App, c: &mut Canvas, y: &mut f32, title: &str| {
+            app.text(c, app.f.sans_med, 12.0, inner_x + 4.0, *y + 8.0, title, t.muted);
+            *y += 24.0;
         };
-        let col = if self.playing { TEXT } else { TEXT2 };
-        self.text_right(c, self.f.mono, 15.0, r.right() - 14.0, cy, &pos, col);
-    }
 
-    // --- Channel Rack ---
-
-    fn rack_height(&self) -> f32 {
-        let n = self.channels.len() as f32;
-        2.0 * CARD_PAD + 24.0 + 16.0 + 28.0 + 8.0 + n * ROW_H + (n - 1.0).max(0.0) * ROW_GAP
-    }
-
-    fn pad_x(pads: Rect, i: usize) -> (f32, f32) {
-        let gaps = 12.0 * PAD_GAP + 3.0 * GROUP_GAP;
-        let w = ((pads.w - gaps) / STEPS as f32).floor();
-        let group = i / 4;
-        let x = pads.x + i as f32 * w + (i - group) as f32 * PAD_GAP + group as f32 * GROUP_GAP;
-        (x, w)
-    }
-
-    fn rack(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
-        Self::card(c, r);
-        let inner = r.inset(CARD_PAD);
-        let meta = format!("{} canaux · {STEPS} pas", self.channels.len());
-        let body = self.card_header(c, inner, "Channel Rack", &meta);
-        let pads = Rect::new(body.x + NAME_COL, body.y, body.w - NAME_COL, body.h);
-
-        // Numéros de pas, et la LED qui court au-dessus.
-        for i in 0..STEPS {
-            let (x, w) = Self::pad_x(pads, i);
-            let cx = x + w * 0.5;
-            let here = self.playhead == Some(i);
-            let led = self.anim.to(id(A_STEP_LED, i, 0), here as u8 as f32, T_HEAD);
-            if led > 0.01 {
-                c.fill_circle(cx, body.y + 4.0, 3.0, AMBER.alpha(led));
+        section(self, c, &mut y, "Instruments");
+        for (i, k) in registry::instruments().iter().enumerate() {
+            let row = Rect::new(inner_x, y, w, 40.0);
+            if self.browser_row(c, input, wid("br-inst", i, 0), row, k.name, k.description) {
+                self.add_instrument(k.id);
             }
-            let col = if here {
-                TEXT
-            } else if i % 4 == 0 {
-                TEXT2
-            } else {
-                MUTED
-            };
-            self.text_center(c, self.f.mono, 12.0, cx, body.y + 20.0, &(i + 1).to_string(), col);
+            y += 42.0;
         }
-
-        let mut y = body.y + 28.0 + 8.0;
-        for ci in 0..self.channels.len() {
-            self.channel_row(c, input, Rect::new(body.x, y, body.w, ROW_H), pads, ci);
-            y += ROW_H + ROW_GAP;
+        y += 16.0;
+        section(self, c, &mut y, "Effets");
+        if registry::effects().is_empty() {
+            self.text(c, self.f.sans, 12.0, inner_x + 4.0, y + 10.0, "Aucun effet installé", t.muted);
+            y += 28.0;
         }
+        for (i, k) in registry::effects().iter().enumerate() {
+            let row = Rect::new(inner_x, y, w, 40.0);
+            if self.browser_row(c, input, wid("br-fx", i, 0), row, k.name, k.description) {
+                let track = self.focused_track();
+                self.add_effect(track, k.id);
+            }
+            y += 42.0;
+        }
+        y += 16.0;
+        section(self, c, &mut y, "Échantillons");
+        if self.sample_files.is_empty() {
+            self.text(c, self.f.sans, 12.0, inner_x + 4.0, y + 10.0, "Aucun fichier WAV trouvé", t.muted);
+            y += 28.0;
+        }
+        let files = self.sample_files.clone();
+        for (i, path) in files.iter().enumerate() {
+            let name = path.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
+            let folder = path
+                .parent()
+                .and_then(|p| p.file_name())
+                .map_or(String::new(), |s| s.to_string_lossy().into_owned());
+            let row = Rect::new(inner_x, y, w, 40.0);
+            if self.browser_row(c, input, wid("br-wav", i, 0), row, &name, &folder) {
+                self.add_sample_channel(&path.to_string_lossy());
+            }
+            y += 42.0;
+        }
+        let content_h = y + scroll - list.y + 16.0;
+        self.sidebar_scroll = self.sidebar_scroll.min((content_h - list.h).max(0.0));
+        c.set_clip(Some(inner));
+        c.set_clip(Some(prev));
     }
 
-    fn channel_row(&mut self, c: &mut Canvas, input: &Input, row: Rect, pads: Rect, ci: usize) {
-        let cy = row.y + row.h * 0.5;
-
-        // Interrupteur du canal : la LED est allumée quand le canal joue.
-        let mb = Rect::new(row.x, cy - 16.0, 32.0, 32.0);
-        let hov = self.hover(input, mb);
-        if hov && input.pressed {
-            self.toggle_mute(ci);
+    fn browser_row(&mut self, c: &mut Canvas, input: &Input, id: u64, row: Rect, title: &str, detail: &str) -> bool {
+        let t = self.theme;
+        let hov = self.hovered(input, id, row);
+        let hv = self.hover_anim(id, hov);
+        if hv > 0.01 {
+            c.fill_rrect(row, 8.0, t.raised.alpha(hv));
         }
-        let hv = self.anim.to(id(A_MUTE_HOVER, ci, 0), hov as u8 as f32, T_HOVER);
-        c.fill_rrect(mb, 8.0, RAISED.mix(RAISED_HI, hv));
-        let (mx, my) = mb.center();
-        if self.channels[ci].muted {
-            c.stroke_circle(mx, my, 5.0, 1.5, MUTED);
-        } else {
-            c.fill_circle(mx, my, 5.0, TEXT);
+        self.text_fit(c, self.f.sans_med, 13.0, row.x + 10.0, row.y + 13.0, title, row.w - 40.0, t.text);
+        self.text_fit(c, self.f.sans, 11.0, row.x + 10.0, row.y + 28.0, detail, row.w - 40.0, t.muted);
+        if hv > 0.01 {
+            draw_icon(c, Icon::Plus, row.right() - 16.0, row.y + row.h * 0.5, 14.0, t.accent.alpha(hv));
         }
-
-        let (name, instrument, muted) = {
-            let ch = &self.channels[ci];
-            (ch.name.clone(), ch.instrument, ch.muted)
-        };
-        self.text(c, self.f.sans_med, 15.0, row.x + 48.0, cy - 8.0, &name, if muted { TEXT2 } else { TEXT });
-        self.text(c, self.f.sans, 12.0, row.x + 48.0, cy + 11.0, instrument, MUTED);
-
-        for i in 0..STEPS {
-            let (x, w) = Self::pad_x(pads, i);
-            let pad = Rect::new(x, cy - PAD_H * 0.5, w, PAD_H);
-            self.pad(c, input, pad, ci, i);
-        }
+        hov && input.pressed
     }
 
-    fn pad(&mut self, c: &mut Canvas, input: &Input, pad: Rect, ci: usize, i: usize) {
-        let over = input.inside && pad.contains(input.x, input.y);
-        let hov = over && (self.drag == Drag::None || matches!(self.drag, Drag::Paint { channel, .. } if channel == ci));
-        if hov && input.pressed && self.drag == Drag::None {
-            let on = self.channels[ci].steps[i].is_none();
-            self.set_step(ci, i, on);
-            self.drag = Drag::Paint { channel: ci, on };
-        } else if let Drag::Paint { channel, on } = self.drag
-            && channel == ci
-            && hov
-            && input.down
-        {
-            // Peindre en glissant, comme sur une boîte à rythmes.
-            self.set_step(ci, i, on);
-        }
-        if hov && input.right_pressed {
-            self.set_step(ci, i, false);
-        }
+    // --- Menus ---
 
-        let hv = self.anim.to(id(A_PAD_HOVER, ci, i), hov as u8 as f32, T_HOVER);
-        let head = self.anim.to(id(A_PAD_HEAD, ci, i), (self.playhead == Some(i)) as u8 as f32, T_HEAD);
-        let flash = self.anim.to(id(A_FLASH, ci, i), 0.0, T_FLASH);
-        let ch = &self.channels[ci];
+    pub fn open_popup(&mut self, kind: Popup, anchor: Rect) {
+        self.popup = Some(PopupState { kind, anchor });
+        self.anim.set(wid("popup", 0, 0), 0.0);
+    }
 
-        match ch.steps[i] {
-            Some(step) => {
-                let (mut top, mut bottom) = (AMBER, AMBER_DEEP);
-                if ch.muted {
-                    top = top.mix(RAISED_HI, 0.72);
-                    bottom = bottom.mix(RAISED_HI, 0.72);
+    fn popup_layer(&mut self, c: &mut Canvas, input: &Input, screen: Rect) {
+        let Some(state) = self.popup.take() else { return };
+        let t = self.theme;
+        let items: Vec<(String, String)> = match &state.kind {
+            Popup::AddInstrument => {
+                registry::instruments().iter().map(|k| (k.name.to_string(), k.description.to_string())).collect()
+            }
+            Popup::AddEffect { .. } => {
+                registry::effects().iter().map(|k| (k.name.to_string(), k.category.to_string())).collect()
+            }
+            Popup::Patterns => {
+                let mut v: Vec<(String, String)> = self
+                    .project
+                    .patterns
+                    .iter()
+                    .map(|p| (p.name.clone(), format!("{} mesure(s)", p.len.div_ceil(TICKS_PER_BAR))))
+                    .collect();
+                v.push(("Nouveau pattern".into(), String::new()));
+                v.push(("Dupliquer ce pattern".into(), String::new()));
+                v
+            }
+            Popup::OpenProject(files) => {
+                if files.is_empty() {
+                    vec![("Aucun projet enregistré".into(), compat::projects_dir().display().to_string())]
+                } else {
+                    files
+                        .iter()
+                        .map(|p| {
+                            (
+                                p.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned()),
+                                p.parent().map_or(String::new(), |d| d.display().to_string()),
+                            )
+                        })
+                        .collect()
                 }
-                top = top.mix(AMBER_HOT, (flash * 0.9 + hv * 0.18).min(1.0));
-                bottom = bottom.mix(AMBER_HOT, (flash * 0.6 + hv * 0.12).min(1.0));
-                c.fill_rrect_vgrad(pad, 8.0, top, bottom);
-                c.fill_rect(Rect::new(pad.x + 8.0, pad.y + 1.0, pad.w - 16.0, 1.0), WHITE.alpha(0.32));
-                if ch.melodic {
-                    let label = note_name(step.note);
-                    let ink = if ch.muted { TEXT2 } else { ON_AMBER };
-                    let (cx, cy) = pad.center();
-                    self.text_center(c, self.f.mono_med, 12.0, cx, cy, &label, ink);
-                }
             }
-            None => {
-                let base = if (i / 4) % 2 == 0 { PAD_A } else { PAD_B };
-                c.fill_rrect(pad, 8.0, base.mix(RAISED_HI, hv * 0.8).mix(PAD_HEAD, head * 0.6));
-            }
-        }
-    }
-
-    // --- Mixer ---
-
-    fn mixer(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
-        Self::card(c, r);
-        let inner = r.inset(CARD_PAD);
-        let meta = format!("{} pistes · master", self.channels.len());
-        let body = self.card_header(c, inner, "Mixer", &meta);
-        let mut x = body.x;
-        for ci in 0..self.channels.len() {
-            self.strip(c, input, Rect::new(x, body.y, STRIP_W, body.h), Target::Channel(ci));
-            x += STRIP_W + STRIP_GAP;
-        }
-        x += 24.0 - STRIP_GAP;
-        self.strip(c, input, Rect::new(x, body.y, MASTER_W, body.h), Target::Master);
-    }
-
-    fn strip(&mut self, c: &mut Canvas, input: &Input, r: Rect, target: Target) {
-        c.fill_rrect(r, 12.0, STRIP);
-        c.stroke_rrect(r, 12.0, 1.0, HAIRLINE);
-        let inner = r.inset(12.0);
-        let name = match target {
-            Target::Channel(ci) => self.channels[ci].name.clone(),
-            Target::Master => "Master".into(),
         };
-        self.text_center(c, self.f.sans_med, 14.0, inner.x + inner.w * 0.5, inner.y + 8.0, &name, TEXT);
+        let title = match &state.kind {
+            Popup::AddInstrument => "Ajouter un instrument",
+            Popup::AddEffect { .. } => "Ajouter un effet",
+            Popup::Patterns => "Patterns",
+            Popup::OpenProject(_) => "Ouvrir un projet",
+        };
 
-        let knob_row = Rect::new(inner.x, inner.y + 28.0, inner.w, 44.0);
-        match target {
-            Target::Channel(ci) => self.pan_knob(c, input, knob_row, ci),
-            Target::Master => {
-                let (_, cy) = knob_row.center();
-                self.text(c, self.f.sans, 12.0, knob_row.x, cy, "Crête", MUTED);
-                let peak = fmt_db(self.master_meter.peak());
-                let peak = peak.trim_end_matches(" dB");
-                self.text_right(c, self.f.mono_med, 15.0, knob_row.right(), cy, peak, TEXT);
-            }
+        let open = self.anim.to(wid("popup", 0, 0), 1.0, T_HOVER);
+        let w = 300.0;
+        let row_h = 44.0;
+        let h = (52.0 + items.len() as f32 * row_h + 8.0).min(screen.h - 80.0);
+        let mut x = state.anchor.x;
+        let mut y = state.anchor.bottom() + 8.0;
+        if x + w > screen.right() - 12.0 {
+            x = screen.right() - 12.0 - w;
         }
+        if y + h > screen.bottom() - 12.0 {
+            y = (state.anchor.y - 8.0 - h).max(TOP_BAR);
+        }
+        let r = Rect::new(x.max(12.0), y + (1.0 - open) * 6.0, w, h);
+        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, Color::rgba(0, 0, 0, (90.0 * open) as u8));
+        c.fill_rrect(r, 14.0, t.panel);
+        c.stroke_rrect(r, 14.0, 1.0, t.hairline.alpha(1.6));
+        self.text(c, self.f.sans_med, 13.0, r.x + 16.0, r.y + 24.0, title, t.text2);
 
-        let mute = Rect::new(inner.x, inner.bottom() - 28.0, inner.w, 28.0);
-        let readout_cy = mute.y - 8.0 - 8.0;
-        let fader = Rect::new(inner.x, knob_row.bottom() + 16.0, inner.w, readout_cy - 8.0 - 12.0 - knob_row.bottom() - 16.0);
-        self.fader(c, input, fader, target);
-
-        let gain = self.gain_of(target);
-        self.text_center(c, self.f.mono, 13.0, inner.x + inner.w * 0.5, readout_cy, &fmt_db(gain), TEXT2);
-
-        if let Target::Channel(ci) = target {
-            let hov = self.hover(input, mute);
+        let mut chosen = None;
+        let prev = c.push_clip(r.inset(1.0));
+        for (i, (name, detail)) in items.iter().enumerate() {
+            let row = Rect::new(r.x + 6.0, r.y + 44.0 + i as f32 * row_h, r.w - 12.0, row_h - 4.0);
+            let id = wid("popup-row", i, 0);
+            let hov = input.inside && row.contains(input.x, input.y);
+            let hv = self.hover_anim(id, hov);
+            let current = matches!(state.kind, Popup::Patterns) && i == self.project.current_pattern;
+            if hv > 0.01 || current {
+                c.fill_rrect(row, 10.0, t.raised.mix(t.raised_hi, hv * 0.6).alpha(hv.max(current as u8 as f32 * 0.7)));
+            }
+            if current {
+                c.fill_rrect(Rect::new(row.x + 4.0, row.y + 12.0, 3.0, row.h - 24.0), 1.5, t.accent);
+            }
+            self.text_fit(c, self.f.sans_med, 13.0, row.x + 14.0, row.y + (if detail.is_empty() { row.h * 0.5 } else { 13.0 }), name, row.w - 28.0, t.text);
+            if !detail.is_empty() {
+                self.text_fit(c, self.f.sans, 11.0, row.x + 14.0, row.y + 28.0, detail, row.w - 28.0, t.muted);
+            }
             if hov && input.pressed {
-                self.toggle_mute(ci);
+                chosen = Some(i);
             }
-            let hv = self.anim.to(id(A_STRIP_MUTE, ci, 0), hov as u8 as f32, T_HOVER);
-            let muted = self.channels[ci].muted;
-            let (fill, ink) = if muted { (TEXT.mix(WHITE, hv * 0.2), BG_DEEP) } else { (RAISED.mix(RAISED_HI, hv), TEXT2) };
-            c.fill_rrect(mute, 8.0, fill);
-            if !muted {
-                c.stroke_rrect(mute, 8.0, 1.0, HAIRLINE);
+        }
+        c.set_clip(Some(prev));
+
+        let clicked_outside = input.pressed && !r.contains(input.x, input.y);
+        let mut keep = !clicked_outside && chosen.is_none();
+        if let Some(i) = chosen {
+            match &state.kind {
+                Popup::AddInstrument => {
+                    let id = registry::instruments()[i].id;
+                    self.add_instrument(id);
+                }
+                Popup::AddEffect { track } => {
+                    let id = registry::effects()[i].id;
+                    self.add_effect(*track, id);
+                }
+                Popup::Patterns => {
+                    let n = self.project.patterns.len();
+                    if i < n {
+                        self.select_pattern(i);
+                    } else if i == n {
+                        let p = self.project.add_pattern();
+                        self.select_pattern(p);
+                    } else {
+                        let mut copy = self.project.patterns[self.project.current_pattern].clone();
+                        copy.name = format!("{} (copie)", copy.name);
+                        self.project.patterns.push(copy);
+                        let p = self.project.patterns.len() - 1;
+                        self.select_pattern(p);
+                    }
+                }
+                Popup::OpenProject(files) => {
+                    if let Some(path) = files.get(i).cloned() {
+                        self.open_file(path);
+                    } else {
+                        keep = true;
+                    }
+                }
             }
-            let (mx, my) = mute.center();
-            self.text_center(c, self.f.sans_med, 13.0, mx, my, "Mute", ink);
+        }
+        if keep && self.popup.is_none() {
+            self.popup = Some(state);
         }
     }
 
-    fn pan_knob(&mut self, c: &mut Canvas, input: &Input, row: Rect, ci: usize) {
-        let (cx, cy) = (row.x + 22.0, row.y + row.h * 0.5);
-        let hit = Rect::new(row.x, row.y, 44.0, 44.0);
-        let hov = self.hover(input, hit);
-        if hov && input.pressed {
-            if input.mods.ctrl || input.mods.alt {
-                self.set_pan(ci, 0.0);
-            } else {
-                self.drag = Drag::Pan { channel: ci, start_y: input.y, start: self.channels[ci].pan };
+    fn toast_layer(&mut self, c: &mut Canvas, dt: f32, area: Rect) {
+        let t = self.theme;
+        let mut y = area.bottom() - 16.0;
+        let mut i = self.toasts.len();
+        while i > 0 {
+            i -= 1;
+            self.toasts[i].age += dt;
+            let age = self.toasts[i].age;
+            let alpha = (age / 0.18).min(1.0) * ((3.2 - age) / 0.3).clamp(0.0, 1.0);
+            if alpha <= 0.0 && age > 3.0 {
+                self.toasts.remove(i);
+                continue;
             }
-        }
-        if let Drag::Pan { channel, start_y, start } = self.drag
-            && channel == ci
-        {
-            let per_px = if input.mods.shift { 0.002 } else { 0.01 };
-            self.set_pan(ci, start + (start_y - input.y) * per_px);
-        }
-        if hov && input.wheel != 0.0 {
-            self.set_pan(ci, self.channels[ci].pan + input.wheel * 0.05);
-        }
-        let active = hov || matches!(self.drag, Drag::Pan { channel, .. } if channel == ci);
-        let hv = self.anim.to(id(A_KNOB_HOVER, ci, 0), active as u8 as f32, T_HOVER);
-
-        // Course de 270° : de 135° (bas gauche) à 405° (bas droite), centre en haut.
-        let pan = self.channels[ci].pan;
-        let (a_min, a_mid) = (0.75 * PI, 1.5 * PI);
-        let a = a_mid + pan * 0.75 * PI;
-        c.stroke_arc(cx, cy, 19.0, a_min, a_min + 1.5 * PI, 3.0, RAISED_HI);
-        if pan.abs() > 0.005 {
-            c.stroke_arc(cx, cy, 19.0, a_mid.min(a), a_mid.max(a), 3.0, TEXT2);
-        }
-        c.fill_circle(cx, cy, 13.0, RAISED_HI.mix(Color::hex(0x36363a), hv));
-        c.stroke_circle(cx, cy, 13.0, 1.0, HAIRLINE);
-        let (dx, dy) = (a.cos(), a.sin());
-        c.stroke_polyline(&[(cx + dx * 4.0, cy + dy * 4.0), (cx + dx * 10.0, cy + dy * 10.0)], 2.0, TEXT);
-
-        let label = fmt_pan(pan);
-        self.text_right(c, self.f.mono, 12.0, row.right(), cy, &label, TEXT2);
-    }
-
-    fn set_pan(&mut self, ci: usize, pan: f32) {
-        let pan = (pan.clamp(-1.0, 1.0) * 100.0).round() / 100.0;
-        if pan != self.channels[ci].pan {
-            self.channels[ci].pan = pan;
-            self.send(Command::SetChannelPan { channel: ci, pan });
-        }
-    }
-
-    fn fader(&mut self, c: &mut Canvas, input: &Input, area: Rect, target: Target) {
-        const CAP_W: f32 = 36.0;
-        const CAP_H: f32 = 20.0;
-        let travel = (area.h - CAP_H).max(1.0);
-        let y_of = |pos: f32| area.bottom() - CAP_H * 0.5 - pos * travel;
-        let master = target == Target::Master;
-        let track_x = area.x + 46.0;
-
-        let gain = self.gain_of(target);
-        let pos = gain_to_pos(gain);
-        let cap = Rect::new(track_x + 2.0 - CAP_W * 0.5, y_of(pos) - CAP_H * 0.5, CAP_W, CAP_H);
-        let zone = Rect::new(area.x + 28.0, area.y, 40.0, area.h);
-        debug_assert!(zone.contains(track_x, area.y + 1.0));
-
-        let hov_zone = self.hover(input, zone);
-        if hov_zone && input.pressed {
-            if input.mods.ctrl || input.mods.alt {
-                self.set_gain(target, 1.0);
-            } else {
-                // Clic sur le capuchon : on le saisit ; ailleurs : il saute sous la souris.
-                let grab = if cap.contains(input.x, input.y) { input.y - y_of(pos) } else { 0.0 };
-                self.drag = Drag::Fader { target, grab };
-            }
-        }
-        if let Drag::Fader { target: t, grab } = self.drag
-            && t == target
-        {
-            let p = ((area.bottom() - CAP_H * 0.5 - (input.y - grab)) / travel).clamp(0.0, 1.0);
-            self.set_gain(target, pos_to_gain(p));
-        }
-        if hov_zone && input.wheel != 0.0 {
-            self.set_gain(target, pos_to_gain((pos + input.wheel * 0.02).clamp(0.0, 1.0)));
-        }
-
-        // Graduations.
-        for d in DB_TICKS {
-            let y = y_of(gain_to_pos(10f32.powf(d / 20.0)));
-            c.fill_rect(Rect::new(track_x - 10.0, y.round(), 5.0, 1.0), HAIRLINE.alpha(2.0));
-            let label = fmt_tick(d);
-            self.text_right(c, self.f.mono, 11.0, area.x + 24.0, y, &label, MUTED);
-        }
-
-        // Rail.
-        c.fill_rrect(Rect::new(track_x, area.y + CAP_H * 0.5, 4.0, travel), 2.0, WELL);
-
-        // VU-mètre stéréo, à la même échelle que le fader.
-        let meter = match target {
-            Target::Channel(ci) => self.meters[ci],
-            Target::Master => self.master_meter,
-        };
-        let (bar_w, bar_gap) = if master { (6.0, 3.0) } else { (4.0, 2.0) };
-        let warn = y_of(gain_to_pos(10f32.powf(-6.0 / 20.0)));
-        let bottom = y_of(0.0);
-        for side in 0..2 {
-            let x = track_x + 22.0 + side as f32 * (bar_w + bar_gap);
-            c.fill_rrect(Rect::new(x, area.y + CAP_H * 0.5, bar_w, travel), 2.0, WELL);
-            let top = y_of(gain_to_pos(meter.level[side]));
-            if bottom - top > 0.5 {
-                c.set_clip(Some(Rect::new(x, warn, bar_w, bottom - warn)));
-                c.fill_rrect(Rect::new(x, top, bar_w, bottom - top), 2.0, METER);
-                c.set_clip(Some(Rect::new(x, area.y, bar_w, warn - area.y)));
-                c.fill_rrect(Rect::new(x, top, bar_w, bottom - top), 2.0, AMBER);
-                c.set_clip(None);
-            }
-            let hold = meter.hold[side];
-            if hold > 1e-4 {
-                let col = if hold >= 0.999 { NEGATIVE } else { TEXT2 };
-                c.fill_rect(Rect::new(x, y_of(gain_to_pos(hold)).round() - 1.0, bar_w, 2.0), col);
-            }
-        }
-
-        // Capuchon de fader, façon console.
-        let active = hov_zone && cap.contains(input.x, input.y) || matches!(self.drag, Drag::Fader { target: t, .. } if t == target);
-        let key = match target {
-            Target::Channel(ci) => ci,
-            Target::Master => usize::MAX >> 40,
-        };
-        let hv = self.anim.to(id(A_CAP_HOVER, key, 0), active as u8 as f32, T_HOVER);
-        c.fill_rrect_vgrad(cap, 6.0, TEXT.mix(WHITE, hv * 0.5), Color::hex(0xc4c4c8).mix(WHITE, hv * 0.3));
-        c.fill_rect(Rect::new(cap.x + 6.0, cap.y + CAP_H * 0.5 - 1.0, CAP_W - 12.0, 2.0), BG_DEEP.alpha(0.55));
-    }
-
-    // --- Sortie ---
-
-    fn output(&mut self, c: &mut Canvas, r: Rect) {
-        Self::card(c, r);
-        let inner = r.inset(CARD_PAD);
-        let meta = format!("{} kHz · stéréo", self.sample_rate / 1000);
-        let body = self.card_header(c, inner, "Sortie", &meta);
-        let (scope, stats) = body.take_top(body.h - 48.0 - SECTION_GAP);
-        let stats = stats.take_top(SECTION_GAP).1;
-
-        c.fill_rrect(scope, 12.0, WELL);
-        c.stroke_rrect(scope, 12.0, 1.0, HAIRLINE);
-        let (_, mid) = scope.center();
-        let plot = scope.inset_xy(12.0, 12.0);
-        let amp = plot.h * 0.5;
-        c.fill_rect(Rect::new(plot.x, mid.round(), plot.w, 1.0), HAIRLINE);
-        for q in [-0.5, 0.5] {
-            c.fill_rect(Rect::new(plot.x, (mid + q * amp).round(), plot.w, 1.0), HAIRLINE.alpha(0.5));
-        }
-
-        // Déclenchement sur un passage par zéro montant : la forme d'onde reste stable.
-        let end = self.scope_at + SCOPE_LEN;
-        let at = |i: usize| self.scope[i % SCOPE_LEN];
-        let latest = end - SCOPE_WINDOW;
-        let mut start = latest;
-        for i in (latest - 2_048..latest).rev() {
-            if at(i - 1) < 0.0 && at(i) >= 0.0 {
-                start = i;
-                break;
-            }
-        }
-        let cols = plot.w.max(1.0) as usize;
-        let mut top = Vec::with_capacity(cols);
-        let mut bottom = Vec::with_capacity(cols);
-        for col in 0..cols {
-            let a = start + col * SCOPE_WINDOW / cols;
-            let b = (start + (col + 1) * SCOPE_WINDOW / cols).max(a + 1);
-            let (mut lo, mut hi) = (f32::MAX, f32::MIN);
-            for i in a..b {
-                lo = lo.min(at(i));
-                hi = hi.max(at(i));
-            }
-            let (mut y_hi, mut y_lo) = (mid - hi.clamp(-1.0, 1.0) * amp, mid - lo.clamp(-1.0, 1.0) * amp);
-            if y_lo - y_hi < 1.4 {
-                let m = (y_lo + y_hi) * 0.5;
-                (y_hi, y_lo) = (m - 0.7, m + 0.7);
-            }
-            let x = plot.x + col as f32 + 0.5;
-            top.push((x, y_hi));
-            bottom.push((x, y_lo));
-        }
-        let mut wave = Path::new();
-        let outline: Vec<(f32, f32)> = top.into_iter().chain(bottom.into_iter().rev()).collect();
-        wave.polygon(&outline);
-        c.set_clip(Some(scope.inset(1.0)));
-        c.fill_path(&wave, TEXT.alpha(0.9));
-        c.set_clip(None);
-
-        // Chiffres : crête, RMS sur ~300 ms, charge DSP.
-        let n = 7_200;
-        let rms = ((0..n).map(|k| at(end - 1 - k).powi(2)).sum::<f32>() / n as f32).sqrt();
-        let figures = [
-            ("Crête", fmt_db(self.master_meter.peak())),
-            ("RMS", fmt_db(rms)),
-            ("DSP", format!("{:.1} %", self.load * 100.0).replace('.', ",")),
-        ];
-        let col_w = stats.w / 3.0;
-        for (k, (label, value)) in figures.iter().enumerate() {
-            let x = stats.x + k as f32 * col_w;
-            self.text(c, self.f.sans, 12.0, x, stats.y + 6.0, label, MUTED);
-            self.text(c, self.f.mono_med, 20.0, x, stats.y + 34.0, value, TEXT);
+            let text = self.toasts[i].text.clone();
+            let tw = self.fonts.measure(self.f.sans, 13.0, &text).min(area.w - 80.0);
+            let r = Rect::new(area.right() - 16.0 - tw - 40.0, y - 40.0 + (1.0 - alpha) * 8.0, tw + 40.0, 40.0);
+            c.fill_rrect(r, 12.0, t.raised_hi.alpha(alpha));
+            c.stroke_rrect(r, 12.0, 1.0, t.hairline.alpha(alpha));
+            c.fill_circle(r.x + 16.0, r.y + 20.0, 3.0, t.accent.alpha(alpha));
+            self.text_fit(c, self.f.sans, 13.0, r.x + 28.0, r.y + 20.0, &text, tw, t.text.alpha(alpha));
+            y -= 48.0;
         }
     }
 }
