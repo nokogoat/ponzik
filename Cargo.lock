@@ -29,6 +29,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ponzik-midi"
+version = "0.1.0"
+
+[[package]]
 name = "ponzik-project"
 version = "0.1.0"
 dependencies = [

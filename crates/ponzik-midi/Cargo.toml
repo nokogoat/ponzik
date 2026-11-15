@@ -1,0 +1,9 @@
+[package]
+name = "ponzik-midi"
+description = "Entrées MIDI maison de Ponzik (ALSA rawmidi sous Linux, WinMM sous Windows)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
