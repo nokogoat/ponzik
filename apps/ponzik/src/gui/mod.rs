@@ -1,6 +1,8 @@
 //! Interface graphique : boucle fenêtre ↔ rendu, à 60 images/s quand quelque
-
 //! chose bouge, au repos complet sinon.
+
+// Les fonctions de dessin prennent naturellement position, taille et couleur.
+#![allow(clippy::too_many_arguments)]
 
 mod app;
 mod compat;
