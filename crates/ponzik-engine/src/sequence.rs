@@ -169,6 +169,8 @@ pub struct Sequence {
     pub automation: Vec<AutomationLane>,
     /// Joués en mode morceau seulement.
     pub audio_clips: Vec<AudioClip>,
+    /// Boucle de lecture (début, fin) en ticks, tirée dans une règle.
+    pub loop_range: Option<(u32, u32)>,
 }
 
 impl Default for Sequence {
@@ -181,6 +183,7 @@ impl Default for Sequence {
             swing: 0.0,
             automation: Vec::new(),
             audio_clips: Vec::new(),
+            loop_range: None,
         }
     }
 }
@@ -196,8 +199,22 @@ pub struct SeqEvent {
 }
 
 impl Sequence {
-    /// Fin de boucle du transport : la playlist boucle, un pattern est infini.
+    /// Boucle explicite valide (non vide).
+    fn active_loop(&self) -> Option<(u32, u32)> {
+        self.loop_range.filter(|(a, b)| b > a)
+    }
+
+    /// Début de la boucle du transport.
+    pub fn loop_start(&self) -> f64 {
+        self.active_loop().map_or(0.0, |(a, _)| a as f64)
+    }
+
+    /// Fin de boucle du transport : la boucle tirée dans la règle s'il y en a une,
+    /// sinon la playlist boucle et un pattern est infini.
     pub fn loop_end(&self) -> Option<f64> {
+        if let Some((_, b)) = self.active_loop() {
+            return Some(b as f64);
+        }
         match self.mode {
             PlayMode::Song => Some(self.song_len.max(TICKS_PER_BAR) as f64),
             PlayMode::Pattern(_) => None,

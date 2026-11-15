@@ -320,7 +320,7 @@ impl Engine {
                     if stop_at_end {
                         break;
                     }
-                    self.pos = 0.0;
+                    self.pos = self.sequence.loop_start();
                     self.anchor();
                 }
                 // Avant de couper le bloc : l'automation peut changer le tempo.
@@ -950,6 +950,18 @@ mod tests {
         engine.process(&mut buf, 2);
         assert_eq!(engine.channels.len(), 1);
         assert_eq!(engine.channels[0].name, "b");
+    }
+
+    #[test]
+    fn loop_range_wraps_playback() {
+        let (mut engine, mut handle, probe) = setup(&[0, 1, 4]);
+        let seq = Sequence { patterns: vec![pattern(&[0, 1, 4])], loop_range: Some((24, 72)), ..Default::default() };
+        handle.send(Command::SetSequence(Box::new(seq))).unwrap();
+        handle.send(Command::Locate(24.0)).unwrap();
+        handle.send(Command::Play).unwrap();
+        // Boucle de 48 ticks (12 000 échantillons) qui ne contient que le pas 1.
+        run(&mut engine, 30_000, 256);
+        assert_eq!(ons(&probe), [0, 12_000, 24_000]);
     }
 
     #[test]

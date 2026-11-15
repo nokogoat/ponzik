@@ -52,6 +52,8 @@ pub fn render_song(project: &Project, sample_rate: u32, loader: SampleLoader, mo
     let (ticks, play_mode) = span(project, mode);
     let mut project = project.clone();
     project.mode = play_mode;
+    // L'export ignore la boucle de travail.
+    project.loop_range = None;
     // La séquence initiale du moteur est déjà complète (clips audio compris).
     let (mut engine, mut handle) = project.build_engine(sample_rate as f32, loader);
     let _ = handle.send(Command::Play);

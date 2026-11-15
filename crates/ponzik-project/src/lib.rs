@@ -188,6 +188,8 @@ pub struct Project {
     pub tracks: Vec<TrackDef>,
     pub mode: PlayMode,
     pub current_pattern: usize,
+    /// Boucle de lecture tirée dans une règle (non enregistrée dans le fichier).
+    pub loop_range: Option<(u32, u32)>,
     pub automation: Vec<AutomationDef>,
     pub audio_clips: Vec<AudioClipDef>,
 }
@@ -215,6 +217,7 @@ impl Project {
             tracks,
             mode: PlayMode::Pattern(0),
             current_pattern: 0,
+            loop_range: None,
             automation: Vec::new(),
             audio_clips: Vec::new(),
         }
@@ -259,6 +262,7 @@ impl Project {
             mode: self.mode,
             song_len: self.song_len(),
             swing: self.swing,
+            loop_range: self.loop_range,
             automation: self
                 .automation
                 .iter()
