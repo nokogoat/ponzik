@@ -229,6 +229,12 @@ pub struct App {
     pub keyboard_octave: i32,
     /// Enregistrement armé : les notes jouées pendant la lecture sont écrites.
     pub record: bool,
+    /// Clavier d'ordinateur joué comme un piano (désactivé : les lettres sont des raccourcis).
+    pub typing_keyboard: bool,
+    /// Marqueur de départ de la lecture, en ticks (cliqué dans une règle).
+    pub start_marker: f64,
+    /// Sélection de temps (début, fin) en ticks, tirée dans une règle.
+    pub time_selection: Option<(u32, u32)>,
     pub midi_inputs: Vec<ponzik_midi::MidiInput>,
     midi_events: Vec<ponzik_midi::MidiEvent>,
 }
@@ -296,6 +302,9 @@ impl App {
             held: Vec::new(),
             keyboard_octave: 4,
             record: false,
+            typing_keyboard: false,
+            start_marker: 0.0,
+            time_selection: None,
             midi_inputs: ponzik_midi::open_all_inputs(),
             midi_events: Vec::new(),
         }
@@ -522,16 +531,34 @@ impl App {
         self.commit("Changer de pattern");
     }
 
+    /// Lecture / pause : la pause garde la position.
     pub fn toggle_play(&mut self) {
         self.playing = !self.playing;
         self.send(if self.playing { Command::Play } else { Command::Stop });
+    }
+
+    /// Lecture / arrêt façon FL Studio (Espace) : l'arrêt revient au marqueur de départ.
+    pub fn play_stop(&mut self) {
+        if self.playing {
+            self.stop();
+        } else {
+            self.send(Command::Locate(self.start_marker));
+            self.playing = true;
+            self.send(Command::Play);
+        }
     }
 
     pub fn stop(&mut self) {
         self.release_all_held();
         self.playing = false;
         self.send(Command::Stop);
-        self.send(Command::Stop);
+        self.send(Command::Locate(self.start_marker));
+    }
+
+    /// Place le marqueur de départ (clic dans une règle).
+    pub fn set_start_marker(&mut self, tick: f64) {
+        self.start_marker = tick.max(0.0);
+        self.send(Command::Locate(self.start_marker));
     }
 
     /// Notes des contrôleurs MIDI : même chemin que le clavier d'ordinateur.
@@ -634,6 +661,7 @@ impl App {
             || self.channel_meters.iter().any(Meter::active)
     }
 
+    /// Raccourcis globaux, ceux de FL Studio.
     fn shortcuts(&mut self, input: &Input) {
         for &(key, mods) in &input.keys {
             match key {
@@ -641,8 +669,28 @@ impl App {
                     self.popup = None;
                     self.piano.selected.clear();
                     self.playlist.selected = None;
+                    self.time_selection = None;
                 }
-                Key::Space => self.toggle_play(),
+                Key::Space => self.play_stop(),
+                Key::F(5) => self.set_view(View::Playlist),
+                Key::F(6) => self.set_view(View::Rack),
+                Key::F(7) => self.set_view(View::Piano),
+                Key::F(9) => self.set_view(View::Mixer),
+                Key::F(8) if mods.alt => self.sidebar = !self.sidebar,
+                Key::F(4) => {
+                    let p = self.project.add_pattern();
+                    self.select_pattern(p);
+                    self.toast("Nouveau pattern");
+                }
+                Key::Tab => {
+                    let next = View::ALL[(self.view.index() + 1) % 4];
+                    self.set_view(next);
+                }
+                Key::Char('+') => {
+                    let next = (self.project.current_pattern + 1).min(self.project.patterns.len() - 1);
+                    self.select_pattern(next);
+                }
+                Key::Char('-') => self.select_pattern(self.project.current_pattern.saturating_sub(1)),
                 Key::Char('z') if mods.ctrl && mods.shift => self.redo(),
                 Key::Char('z') if mods.ctrl => self.undo(),
                 Key::Char('y') if mods.ctrl => self.redo(),
@@ -654,19 +702,38 @@ impl App {
                     self.replace_project(Project::empty(), None);
                     self.toast("Nouveau projet");
                 }
-                Key::Char('e') if mods.ctrl => self.export(),
-                Key::Char('b') if mods.ctrl => self.sidebar = !self.sidebar,
-                Key::Char('1') if mods.alt => self.set_view(View::Rack),
-                Key::Char('2') if mods.alt => self.set_view(View::Piano),
-                Key::Char('3') if mods.alt => self.set_view(View::Playlist),
-                Key::Char('4') if mods.alt => self.set_view(View::Mixer),
-                Key::Tab => {
-                    let next = View::ALL[(self.view.index() + 1) % 4];
-                    self.set_view(next);
+                Key::Char('r') if mods.ctrl => self.export(),
+                Key::Char('m') if mods.ctrl => {
+                    self.metronome = !self.metronome;
+                    let m = self.metronome;
+                    self.send(Command::SetMetronome(m));
+                }
+                Key::Char('t') if mods.ctrl => self.toggle_typing_keyboard(),
+                _ if mods.ctrl || mods.alt || self.typing_keyboard => {}
+                Key::Char('l') => {
+                    let mode = match self.project.mode {
+                        PlayMode::Pattern(_) => PlayMode::Song,
+                        PlayMode::Song => PlayMode::Pattern(self.project.current_pattern),
+                    };
+                    self.set_mode(mode);
+                }
+                Key::Char('r') => {
+                    self.record = !self.record;
+                    self.toast(if self.record { "Enregistrement armé" } else { "Enregistrement désarmé" });
                 }
                 _ => {}
             }
         }
+    }
+
+    pub fn toggle_typing_keyboard(&mut self) {
+        self.typing_keyboard = !self.typing_keyboard;
+        self.release_all_held();
+        self.toast(if self.typing_keyboard {
+            "Clavier musical activé : les lettres jouent des notes (Ctrl+T pour revenir)"
+        } else {
+            "Clavier musical désactivé"
+        });
     }
 
     pub fn set_view(&mut self, v: View) {
@@ -750,7 +817,7 @@ impl App {
         let wordmark = self.text(c, self.f.sans_med, 18.0, 70.0, cy, "Ponzik", t.text);
 
         // Transport, centré.
-        let cluster = 40.0 + 6.0 + 40.0 + 14.0 + 196.0 + 10.0 + 188.0 + 10.0 + 116.0 + 10.0 + 132.0 + 6.0 + 36.0 + 4.0 + 36.0;
+        let cluster = 40.0 + 6.0 + 40.0 + 14.0 + 196.0 + 10.0 + 188.0 + 10.0 + 116.0 + 10.0 + 132.0 + 6.0 + 36.0 + 4.0 + 36.0 + 4.0 + 36.0;
         let mut x = ((r.w - cluster) * 0.5).round().max(70.0 + wordmark + 24.0);
         let start = x;
 
@@ -812,6 +879,10 @@ impl App {
         if rhov && input.pressed {
             self.record = !self.record;
             self.toast(if self.record { "Enregistrement armé : joue au clavier pendant la lecture" } else { "Enregistrement désarmé" });
+        }
+        x += 40.0;
+        if self.icon_button(c, input, wid("tb-keys", 0, 0), Rect::new(x, cy - 18.0, 36.0, 36.0), Icon::Keyboard, self.typing_keyboard) {
+            self.toggle_typing_keyboard();
         }
         let cluster_end = x + 36.0;
 

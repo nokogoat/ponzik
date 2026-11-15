@@ -102,7 +102,7 @@ impl App {
     }
 
     pub(super) fn musical_keyboard(&mut self, input: &Input) {
-        if self.popup.is_some() || input.mods.ctrl || input.mods.alt {
+        if !self.typing_keyboard || self.popup.is_some() || input.mods.ctrl || input.mods.alt {
             return;
         }
         let events = &input.physical;

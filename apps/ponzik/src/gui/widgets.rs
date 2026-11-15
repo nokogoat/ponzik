@@ -50,6 +50,7 @@ pub enum Icon {
     #[allow(dead_code)]
     ChevronDown,
     Power,
+    Keyboard,
 }
 
 /// Dessine une icône au trait, dans un carré de `size` centré sur (`cx`, `cy`).
@@ -121,6 +122,12 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
         Icon::ChevronLeft => c.stroke_polyline(&[p(2.5, -5.0), p(-2.5, 0.0), p(2.5, 5.0)], stroke, col),
         Icon::ChevronRight => c.stroke_polyline(&[p(-2.5, -5.0), p(2.5, 0.0), p(-2.5, 5.0)], stroke, col),
         Icon::ChevronDown => c.stroke_polyline(&[p(-5.0, -2.5), p(0.0, 2.5), p(5.0, -2.5)], stroke, col),
+        Icon::Keyboard => {
+            c.stroke_rrect(Rect::new(cx - 7.5 * s, cy - 5.5 * s, 15.0 * s, 11.0 * s), 2.0 * s, stroke, col);
+            for i in 0..3 {
+                c.fill_rect(Rect::new(cx + (-3.5 + i as f32 * 3.5) * s - 0.75, cy - 5.5 * s, 1.5, 6.0 * s), col);
+            }
+        }
         Icon::Power => {
             c.stroke_arc(cx, cy + 0.5 * s, 5.5 * s, -PI * 0.5 + 0.7, PI * 1.5 - 0.7, stroke, col);
             c.stroke_polyline(&[p(0.0, -7.0), p(0.0, -1.0)], stroke, col);
