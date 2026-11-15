@@ -80,9 +80,11 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: &dyn Fn(&str
         || old.clips != new.clips
         || old.mode != new.mode
         || old.swing != new.swing
+        || old.automation != new.automation
+        || old.audio_clips != new.audio_clips
         || n_old != n_new
     {
-        cmds.push(Command::SetSequence(Box::new(new.sequence())));
+        cmds.push(Command::SetSequence(Box::new(new.sequence_with(loader))));
     }
 
     // Mixer.
