@@ -174,6 +174,13 @@ fn keysym_to_key(sym: u32) -> Option<Key> {
         0xff52 => Key::Up,
         0xff53 => Key::Right,
         0xff54 => Key::Down,
+        0xffbe..=0xffc9 => Key::F((sym - 0xffbe + 1) as u8),
+        0xff55 => Key::PageUp,
+        0xff56 => Key::PageDown,
+        0xff50 => Key::Home,
+        0xff57 => Key::End,
+        0xffab => Key::Char('+'),
+        0xffad => Key::Char('-'),
         0x21..=0x7e | 0xa0..=0xff => Key::Char(char::from_u32(sym)?.to_lowercase().next()?),
         _ => return None,
     })

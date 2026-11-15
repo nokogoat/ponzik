@@ -233,6 +233,13 @@ fn vk_to_key(vk: usize) -> Option<Key> {
         0x26 => Key::Up,
         0x27 => Key::Right,
         0x28 => Key::Down,
+        0x70..=0x7B => Key::F((vk - 0x70 + 1) as u8),
+        0x21 => Key::PageUp,
+        0x22 => Key::PageDown,
+        0x24 => Key::Home,
+        0x23 => Key::End,
+        0x6B => Key::Char('+'),
+        0x6D => Key::Char('-'),
         0x30..=0x39 | 0x41..=0x5A => Key::Char((vk as u8 as char).to_ascii_lowercase()),
         _ => return None,
     })

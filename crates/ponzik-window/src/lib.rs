@@ -48,6 +48,12 @@ pub enum Key {
     Right,
     Up,
     Down,
+    /// Touche de fonction F1 à F12.
+    F(u8),
+    PageUp,
+    PageDown,
+    Home,
+    End,
     /// Caractère imprimable, en minuscule.
     Char(char),
 }
