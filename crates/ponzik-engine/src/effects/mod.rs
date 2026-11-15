@@ -11,10 +11,17 @@ mod compressor;
 mod delay;
 mod eq;
 mod gate;
+mod imager;
 mod limiter;
+mod ott;
 mod phaser;
+mod pitch;
+mod pompe;
 mod reverb;
 mod saturator;
+mod shimmer;
+mod tranche;
+mod transient;
 mod utility;
 
 pub use autofilter::AutoFilter;
@@ -24,11 +31,20 @@ pub use compressor::Compressor;
 pub use delay::Delay;
 pub use eq::Eq;
 pub use gate::Gate;
+pub use imager::Imager;
 pub use limiter::Limiter;
+pub use ott::Ott;
 pub use phaser::Phaser;
+pub use pitch::PitchShifter;
+pub use pompe::Pompe;
 pub use reverb::Reverb;
 pub use saturator::Saturator;
+pub use shimmer::Shimmer;
+pub use tranche::Tranche;
+pub use transient::Transient;
 pub use utility::Utility;
+
+use ponzik_dsp::biquad::{Biquad, BiquadCoefs};
 
 use crate::param::ParamInfo;
 
@@ -56,6 +72,69 @@ pub(crate) fn division_beats(index: f32) -> Option<f32> {
             let base = [0.125, 0.25, 0.5, 1.0, 2.0][(i - 1) / 3];
             Some(base * [2.0 / 3.0, 1.0, 1.5][(i - 1) % 3])
         }
+    }
+}
+
+/// Séparation Linkwitz-Riley d'ordre 4 : graves + aigus = passe-tout d'ordre 2 (Q = 0,707).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Lr4 {
+    low: [Biquad; 2],
+    high: [Biquad; 2],
+}
+
+impl Lr4 {
+    pub fn set(&mut self, hz: f32, sample_rate: f32) {
+        let q = std::f32::consts::FRAC_1_SQRT_2;
+        let (lp, hp) = (BiquadCoefs::lowpass(hz, q, sample_rate), BiquadCoefs::highpass(hz, q, sample_rate));
+        self.low.iter_mut().for_each(|f| f.coefs = lp);
+        self.high.iter_mut().for_each(|f| f.coefs = hp);
+    }
+
+    pub fn reset(&mut self) {
+        self.low.iter_mut().chain(&mut self.high).for_each(Biquad::reset);
+    }
+
+    #[inline]
+    pub fn split(&mut self, x: f32) -> (f32, f32) {
+        let [l0, l1] = &mut self.low;
+        let [h0, h1] = &mut self.high;
+        (l1.process(l0.process(x)), h1.process(h0.process(x)))
+    }
+}
+
+/// Passe-tout équivalent à la somme d'un [`Lr4`] à `hz` : aligne la phase d'un signal non séparé.
+pub(crate) fn lr4_allpass(hz: f32, sample_rate: f32) -> BiquadCoefs {
+    BiquadCoefs::allpass(hz, std::f32::consts::FRAC_1_SQRT_2, sample_rate)
+}
+
+/// Trois bandes Linkwitz-Riley d'ordre 4 ; la somme des bandes est un passe-tout (spectre plat).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ThreeBand {
+    first: Lr4,
+    second: Lr4,
+    /// Compense dans les graves la phase de la seconde séparation.
+    low_phase: Biquad,
+}
+
+impl ThreeBand {
+    pub fn set(&mut self, low_hz: f32, high_hz: f32, sample_rate: f32) {
+        self.first.set(low_hz, sample_rate);
+        self.second.set(high_hz, sample_rate);
+        self.low_phase.coefs = lr4_allpass(high_hz, sample_rate);
+    }
+
+    pub fn reset(&mut self) {
+        self.first.reset();
+        self.second.reset();
+        self.low_phase.reset();
+    }
+
+    /// `[graves, médiums, aigus]`.
+    #[inline]
+    pub fn split(&mut self, x: f32) -> [f32; 3] {
+        let (low, rest) = self.first.split(x);
+        let (mid, high) = self.second.split(rest);
+        [self.low_phase.process(low), mid, high]
     }
 }
 
@@ -185,5 +264,21 @@ mod tests {
         assert_eq!(division_beats(12.0), Some(1.5));
         assert!((division_beats(10.0).unwrap() - 2.0 / 3.0).abs() < 1e-6);
         assert_eq!(division_beats(16.0), Some(4.0));
+    }
+
+    #[test]
+    fn three_bands_sum_to_an_allpass() {
+        let mut b = ThreeBand::default();
+        b.set(120.0, 2_500.0, testing::SR);
+        let y: Vec<f32> = testing::impulse(48_000).iter().map(|&x| b.split(x).iter().sum()).collect();
+        let energy: f32 = y.iter().map(|s| s * s).sum();
+        assert!((energy - 1.0).abs() < 1e-3, "{energy}");
+        for hz in [40.0, 120.0, 800.0, 2_500.0, 9_000.0] {
+            b.reset();
+            let x = testing::sine(hz, 0.5, 48_000);
+            let y: Vec<f32> = x.iter().map(|&x| b.split(x).iter().sum()).collect();
+            let ratio = testing::rms(&y[24_000..]) / testing::rms(&x[24_000..]);
+            assert!((ratio - 1.0).abs() < 0.01, "{hz} Hz : {ratio}");
+        }
     }
 }

@@ -3,7 +3,8 @@
 
 use crate::effect::Effect;
 use crate::effects::{
-    AutoFilter, Bitcrusher, Chorus, Compressor, Delay, Eq, Gate, Limiter, Phaser, Reverb, Saturator, Utility,
+    AutoFilter, Bitcrusher, Chorus, Compressor, Delay, Eq, Gate, Imager, Limiter, Ott, Phaser, PitchShifter, Pompe,
+    Reverb, Saturator, Shimmer, Tranche, Transient, Utility,
 };
 use crate::instrument::Instrument;
 use crate::instruments::{Bass303, DrumKind, DrumSynth, FmSynth, Pulse, Sampler, WaveSynth};
@@ -109,6 +110,41 @@ pub fn effects() -> &'static [EffectKind] {
             create: || Box::new(Gate::default()),
         },
         EffectKind {
+            id: "ott",
+            name: "Multibande",
+            category: "Dynamique",
+            description: "Compression trois bandes vers le haut et vers le bas, dosée par la profondeur",
+            create: || Box::new(Ott::default()),
+        },
+        EffectKind {
+            id: "pompe",
+            name: "Pompe",
+            category: "Dynamique",
+            description: "Volume qui plonge à chaque temps, façon compression latérale, synchronisé au tempo",
+            create: || Box::new(Pompe::default()),
+        },
+        EffectKind {
+            id: "transient",
+            name: "Transitoires",
+            category: "Dynamique",
+            description: "Renforce ou adoucit l'attaque et le maintien des sons",
+            create: || Box::new(Transient::default()),
+        },
+        EffectKind {
+            id: "tranche",
+            name: "Tranche",
+            category: "Rythme",
+            description: "Hachoir, répétition de tranches et arrêt de bande synchronisés au tempo",
+            create: || Box::new(Tranche::default()),
+        },
+        EffectKind {
+            id: "pitch",
+            name: "Transposeur",
+            category: "Hauteur",
+            description: "Transposition granulaire de ±24 demi-tons",
+            create: || Box::new(PitchShifter::default()),
+        },
+        EffectKind {
             id: "reverb",
             name: "Réverb",
             category: "Espace",
@@ -121,6 +157,13 @@ pub fn effects() -> &'static [EffectKind] {
             category: "Espace",
             description: "Écho stéréo synchronisé au tempo, ping-pong",
             create: || Box::new(Delay::default()),
+        },
+        EffectKind {
+            id: "shimmer",
+            name: "Shimmer",
+            category: "Espace",
+            description: "Réverbération ample dont la queue monte d'une octave à chaque passage",
+            create: || Box::new(Shimmer::default()),
         },
         EffectKind {
             id: "chorus",
@@ -156,6 +199,13 @@ pub fn effects() -> &'static [EffectKind] {
             category: "Utilitaires",
             description: "Gain, balance, largeur, graves mono, phase",
             create: || Box::new(Utility::default()),
+        },
+        EffectKind {
+            id: "imager",
+            name: "Image stéréo",
+            category: "Utilitaires",
+            description: "Largeur stéréo sur trois bandes et graves en mono",
+            create: || Box::new(Imager::default()),
         },
     ]
 }
