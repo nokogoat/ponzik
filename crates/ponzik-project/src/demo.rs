@@ -48,8 +48,9 @@ pub fn demo_project() -> Project {
         let t = p.channels[ch].track;
         p.tracks[t].sends[0] = (reverb_bus, if ch == clap { 0.35 } else { 0.2 });
     }
-    p.tracks[0].inserts[0] = fx("compressor", &[(0, -14.0), (1, 2.5), (4, 0.02), (6, 2.0)]);
-    p.tracks[0].inserts[1] = fx("limiter", &[(1, -0.5)]);
+    p.tracks[0].inserts[0] = fx("eq", &[(0, 1.0), (1, 30.0), (5, 120.0), (6, 2.0), (7, 0.8), (11, 3_500.0), (12, -1.5), (13, 1.2), (15, 2.0)]);
+    p.tracks[0].inserts[1] = fx("compressor", &[(0, -14.0), (1, 2.5), (4, 0.02), (6, 2.0)]);
+    p.tracks[0].inserts[2] = fx("limiter", &[(1, -0.5)]);
 
     let hits = |p: &mut Project, pat: usize, ch: usize, steps: &[u32], vel: f32| {
         for &s in steps {
