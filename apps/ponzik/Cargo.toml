@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 ponzik-audio.workspace = true
+ponzik-dsp.workspace = true
 ponzik-engine.workspace = true
 ponzik-midi.workspace = true
 ponzik-project.workspace = true

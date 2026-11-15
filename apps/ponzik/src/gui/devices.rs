@@ -1,4 +1,9 @@
 //! Panneau d'appareils : l'instrument du canal et les effets de sa piste, en chaîne.
+//! Chaque appareil montre un visuel (courbe d'EQ, transfert, enveloppe, filtre)
+//! en plus de ses réglages.
+
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 use ponzik_engine::mixer::{INSERT_SLOTS, MASTER};
 use ponzik_engine::{ParamInfo, Unit, registry};
@@ -8,48 +13,116 @@ use super::Input;
 use super::app::{App, Focus, Popup};
 use super::playlist::pattern_color;
 use super::theme::*;
+use super::visuals::device_key;
 use super::widgets::{Icon, draw_icon, wid};
 
 const CELL_W: f32 = 72.0;
 const CELL_H: f32 = 76.0;
 const GROUP_GAP: f32 = 18.0;
 const CARD_GAP: f32 = 10.0;
+const TRANSFER: f32 = 168.0;
+const EQ_W: f32 = 640.0;
 
 /// Ce que montre une carte d'appareil.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Device {
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Device {
     Instrument(usize),
     Effect { track: usize, slot: usize },
 }
 
-/// Groupes de paramètres dans l'ordre d'apparition.
-fn groups(params: &'static [ParamInfo]) -> Vec<(&'static str, Vec<&'static ParamInfo>)> {
-    let mut out: Vec<(&'static str, Vec<&'static ParamInfo>)> = Vec::new();
+/// Visuel d'un groupe de paramètres, déduit des noms.
+#[derive(Clone, Copy)]
+enum GroupVisual {
+    None,
+    Envelope([&'static ParamInfo; 4]),
+    Filter { cutoff: &'static ParamInfo, reso: Option<&'static ParamInfo>, highpass: bool },
+}
+
+struct Group {
+    name: &'static str,
+    params: Vec<&'static ParamInfo>,
+    visual: GroupVisual,
+    width: f32,
+}
+
+thread_local! {
+    static PARAMS: RefCell<HashMap<(bool, String), &'static [ParamInfo]>> = RefCell::new(HashMap::new());
+}
+
+/// Fiches de paramètres d'un type d'appareil, mises en cache (créer un appareil
+/// peut allouer beaucoup, comme les lignes de retard d'une réverbe).
+pub fn params_of(kind: &str, instrument: bool) -> &'static [ParamInfo] {
+    PARAMS.with(|cache| {
+        *cache.borrow_mut().entry((instrument, kind.to_string())).or_insert_with(|| {
+            if instrument {
+                registry::create_instrument(kind).map_or(&[], |i| i.params())
+            } else {
+                registry::create_effect(kind).map_or(&[], |e| e.params())
+            }
+        })
+    })
+}
+
+fn find<'a>(list: &[&'a ParamInfo], name: &str) -> Option<&'a ParamInfo> {
+    list.iter().copied().find(|p| p.name == name)
+}
+
+/// Groupes de paramètres dans l'ordre d'apparition, avec leur visuel.
+fn groups(params: &'static [ParamInfo]) -> Vec<Group> {
+    let mut out: Vec<Group> = Vec::new();
     for p in params {
-        match out.iter_mut().find(|(g, _)| *g == p.group) {
-            Some((_, v)) => v.push(p),
-            None => out.push((p.group, vec![p])),
+        match out.iter_mut().find(|g| g.name == p.group) {
+            Some(g) => g.params.push(p),
+            None => out.push(Group { name: p.group, params: vec![p], visual: GroupVisual::None, width: 0.0 }),
         }
+    }
+    for g in &mut out {
+        let l = &g.params;
+        g.visual = match (find(l, "Attaque"), find(l, "Déclin"), find(l, "Maintien"), find(l, "Relâche")) {
+            (Some(a), Some(d), Some(s), Some(r)) => GroupVisual::Envelope([a, d, s, r]),
+            _ => match find(l, "Coupure") {
+                Some(cutoff) => GroupVisual::Filter {
+                    cutoff,
+                    reso: find(l, "Résonance"),
+                    highpass: find(l, "Type").is_some_and(|t| t.choices.iter().any(|c| c.contains("haut"))),
+                },
+                None => GroupVisual::None,
+            },
+        };
+        g.width = match g.visual {
+            // Visuel sur la première rangée, tous les réglages sur la seconde.
+            GroupVisual::None => g.params.len().div_ceil(2) as f32 * CELL_W,
+            _ => (g.params.len() as f32 * CELL_W).max(220.0),
+        };
     }
     out
 }
 
-fn card_width(params: &'static [ParamInfo]) -> f32 {
+fn transfer_kind(kind: &str) -> bool {
+    matches!(kind, "compressor" | "limiter" | "gate" | "saturator")
+}
+
+fn card_width(kind: &str, params: &'static [ParamInfo]) -> f32 {
+    if kind == "eq" {
+        return EQ_W;
+    }
     let g = groups(params);
     if g.is_empty() {
         return 220.0;
     }
-    let cols: f32 = g.iter().map(|(_, v)| v.len().div_ceil(2) as f32).sum();
-    (cols * CELL_W + (g.len() - 1) as f32 * GROUP_GAP + 28.0).max(200.0)
+    let body: f32 = g.iter().map(|g| g.width).sum::<f32>() + (g.len() - 1) as f32 * GROUP_GAP;
+    let extra = if transfer_kind(kind) { TRANSFER + GROUP_GAP } else { 0.0 };
+    (body + extra + 28.0).max(200.0)
 }
 
 impl App {
-    fn instrument_params(&self, kind: &str) -> &'static [ParamInfo] {
-        registry::create_instrument(kind).map_or(&[], |i| i.params())
-    }
-
-    fn effect_params(&self, kind: &str) -> &'static [ParamInfo] {
-        registry::create_effect(kind).map_or(&[], |e| e.params())
+    fn device_kind(&self, d: Device) -> (String, bool) {
+        match d {
+            Device::Instrument(ch) => (self.project.channels[ch].instrument.kind.clone(), true),
+            Device::Effect { track, slot } => {
+                (self.project.tracks[track].inserts[slot].as_ref().map_or(String::new(), |e| e.kind.clone()), false)
+            }
+        }
     }
 
     pub(super) fn device_panel(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
@@ -65,7 +138,11 @@ impl App {
             }
             _ => {
                 let name = self.project.tracks[track].name.clone();
-                let out = if track == MASTER { "Sortie audio".to_string() } else { format!("→ {}", self.project.tracks[self.project.tracks[track].output].name) };
+                let out = if track == MASTER {
+                    "Sortie audio".to_string()
+                } else {
+                    format!("→ {}", self.project.tracks[self.project.tracks[track].output].name)
+                };
                 (name, out)
             }
         };
@@ -87,12 +164,9 @@ impl App {
         let chain = Rect::new(r.x + PAD, header.bottom() + 8.0, r.w - 2.0 * PAD, r.bottom() - header.bottom() - 8.0 - 12.0);
         let widths: Vec<f32> = devices
             .iter()
-            .map(|d| match *d {
-                Device::Instrument(ch) => card_width(self.instrument_params(&self.project.channels[ch].instrument.kind.clone())),
-                Device::Effect { track, slot } => {
-                    let kind = self.project.tracks[track].inserts[slot].as_ref().map_or(String::new(), |e| e.kind.clone());
-                    card_width(self.effect_params(&kind))
-                }
+            .map(|&d| {
+                let (kind, inst) = self.device_kind(d);
+                card_width(&kind, params_of(&kind, inst))
             })
             .collect();
         let total: f32 = widths.iter().sum::<f32>() + devices.len() as f32 * CARD_GAP + 120.0;
@@ -133,17 +207,18 @@ impl App {
         c.fill_rrect(card, 14.0, t.panel);
         c.stroke_rrect(card, 14.0, 1.0, t.hairline);
         let head = Rect::new(card.x, card.y, card.w, 34.0);
+        let (kind, inst) = self.device_kind(device);
+        let params = params_of(&kind, inst);
 
-        let (name, params, bypass, color) = match device {
-            Device::Instrument(ch) => {
-                let kind = self.project.channels[ch].instrument.kind.clone();
+        let (name, bypass, color) = match device {
+            Device::Instrument(_) => {
                 let name = registry::instrument_kind(&kind).map_or(kind.clone(), |k| k.name.to_string());
-                (name, self.instrument_params(&kind), false, t.accent)
+                (name, false, t.accent)
             }
             Device::Effect { track, slot } => {
-                let def = self.project.tracks[track].inserts[slot].clone().expect("effet présent");
+                let def = self.project.tracks[track].inserts[slot].as_ref().expect("effet présent");
                 let name = registry::effect_kind(&def.kind).map_or(def.kind.clone(), |k| k.name.to_string());
-                (name, self.effect_params(&def.kind), def.bypass, pattern_color(1))
+                (name, def.bypass, pattern_color(1))
             }
         };
         c.fill_rrect(Rect::new(head.x + 12.0, head.y + 12.0, 3.0, 12.0), 1.5, if bypass { t.muted } else { color });
@@ -166,24 +241,43 @@ impl App {
         }
 
         let body = Rect::new(card.x + 14.0, head.bottom() + 2.0, card.w - 28.0, card.h - head.h - 8.0);
+        if kind == "eq" {
+            self.eq_device(c, input, body, device, params);
+            return;
+        }
         if params.is_empty() {
             self.text(c, self.f.sans, 12.0, body.x, body.y + 20.0, "Aucun réglage", t.muted);
             return;
         }
         let mut x = body.x;
-        for (gi, (group, list)) in groups(params).into_iter().enumerate() {
-            let cols = list.len().div_ceil(2);
-            if !group.is_empty() {
-                self.text(c, self.f.sans_med, 11.0, x + 4.0, body.y + 6.0, group, t.muted);
+        if transfer_kind(&kind) {
+            let side = TRANSFER.min(body.h - 6.0);
+            self.transfer_graph(c, input, Rect::new(x, body.y + 4.0, side, side), device, &kind, params);
+            x += TRANSFER + GROUP_GAP;
+        }
+        let key = device_key(device);
+        for (gi, g) in groups(params).into_iter().enumerate() {
+            if gi > 0 {
+                c.fill_rect(Rect::new(x - GROUP_GAP * 0.5, body.y + 20.0, 1.0, body.h - 28.0), t.hairline);
             }
-            for (k, p) in list.iter().enumerate() {
-                let (col, row) = (k / 2, k % 2);
+            if !g.name.is_empty() {
+                self.text(c, self.f.sans_med, 11.0, x + 4.0, body.y + 6.0, g.name, t.muted);
+            }
+            let visual = Rect::new(x + 2.0, body.y + 18.0, g.width - 4.0, CELL_H - 8.0);
+            let single_row = !matches!(g.visual, GroupVisual::None);
+            match g.visual {
+                GroupVisual::Envelope(adsr) => self.envelope_graph(c, input, visual, device, adsr),
+                GroupVisual::Filter { cutoff, reso, highpass } => {
+                    let highpass = highpass && find(&g.params, "Type").is_some_and(|tp| self.param_value(device, tp) > 0.5);
+                    self.filter_graph(c, input, visual, device, cutoff, reso, highpass)
+                }
+                GroupVisual::None => {}
+            }
+            for (k, p) in g.params.iter().enumerate() {
+                let (col, row) = if single_row { (k, 1) } else { (k / 2, k % 2) };
                 let cell = Rect::new(x + col as f32 * CELL_W, body.y + 16.0 + row as f32 * CELL_H, CELL_W, CELL_H);
                 let value = self.param_value(device, p);
-                let id = match device {
-                    Device::Instrument(ch) => wid("prm-i", ch, p.id as usize),
-                    Device::Effect { track, slot } => wid("prm-e", track * 16 + slot, p.id as usize),
-                };
+                let id = wid("prm", key, p.id as usize);
                 let changed = if p.unit == Unit::Choice {
                     self.choice(c, input, id, cell, p, value)
                 } else {
@@ -193,23 +287,23 @@ impl App {
                     self.set_param_value(device, p, v);
                 }
             }
-            x += cols as f32 * CELL_W + GROUP_GAP;
-            if gi > 0 || !group.is_empty() {
-                c.fill_rect(Rect::new(x - GROUP_GAP * 0.5, body.y + 20.0, 1.0, body.h - 28.0), t.hairline);
-            }
+            x += g.width + GROUP_GAP;
         }
     }
 
-    fn param_value(&self, device: Device, p: &ParamInfo) -> f32 {
+    pub(super) fn param_value(&self, device: Device, p: &ParamInfo) -> f32 {
         match device {
-            Device::Instrument(ch) => self.project.channels[ch].instrument.get(p.id),
+            Device::Instrument(ch) => self.project.channels.get(ch).and_then(|c| c.instrument.get(p.id)),
             Device::Effect { track, slot } => self.project.tracks[track].inserts[slot].as_ref().and_then(|e| e.get(p.id)),
         }
         .unwrap_or(p.default)
     }
 
-    fn set_param_value(&mut self, device: Device, p: &ParamInfo, v: f32) {
+    pub(super) fn set_param_value(&mut self, device: Device, p: &ParamInfo, v: f32) {
         let v = p.clamp(v);
+        if (self.param_value(device, p) - v).abs() < f32::EPSILON {
+            return;
+        }
         match device {
             Device::Instrument(ch) => self.project.channels[ch].instrument.set(p.id, v),
             Device::Effect { track, slot } => {

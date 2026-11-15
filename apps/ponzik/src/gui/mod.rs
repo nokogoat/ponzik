@@ -14,6 +14,7 @@ mod piano;
 mod playlist;
 mod rack;
 mod sync;
+mod visuals;
 mod theme;
 mod widgets;
 
