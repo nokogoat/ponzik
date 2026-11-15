@@ -110,6 +110,8 @@ impl App {
         add("Nouveau projet".into(), "Fichier", "Ctrl N", Action::NewProject);
         add("Exporter en WAV".into(), "Fichier", "Ctrl R", Action::Export);
         add("Exporter les pistes séparées (stems)".into(), "Fichier", "", Action::ExportStems);
+        add("Importer un fichier MIDI".into(), "Fichier", "", Action::ImportMidiMenu);
+        add("Exporter le pattern en MIDI".into(), "Fichier", "", Action::ExportMidi);
         add("Enregistrer sous".into(), "Fichier", "Ctrl Maj S", Action::SaveAs);
         add(
             "Renommer le projet".into(),

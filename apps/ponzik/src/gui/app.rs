@@ -71,6 +71,8 @@ pub enum Popup {
     Rename { target: Rename, text: String },
     /// Palette touche-à-tout (Ctrl+K).
     Palette { query: String, selected: usize },
+    /// Fichiers MIDI à importer.
+    ImportMidi(Vec<PathBuf>),
     /// Presets d'un appareil : enregistrer, ou charger un preset existant.
     Presets { device: super::devices::Device, kind: String },
     /// Choix du pattern d'une case vide de la vue Session.
@@ -130,6 +132,9 @@ pub enum Action {
     SaveAs,
     ExportStems,
     LoadPreset(super::devices::Device, PathBuf),
+    ImportMidiMenu,
+    ImportMidi(PathBuf),
+    ExportMidi,
     AssignSession(usize, usize, usize),
     RemoveAutomation(ponzik_engine::AutoTarget),
     SetParamValue(ponzik_engine::AutoTarget, f32),
@@ -1605,6 +1610,23 @@ impl App {
                 v.push(("Valeur par défaut".into(), String::new(), Action::SetParamValue(*target, *default)));
                 (label, v)
             }
+            Popup::ImportMidi(files) => {
+                let items = if files.is_empty() {
+                    vec![("Aucun fichier MIDI trouvé".into(), compat::projects_dir().display().to_string(), Action::None)]
+                } else {
+                    files
+                        .iter()
+                        .map(|f| {
+                            (
+                                f.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned()),
+                                f.parent().map_or(String::new(), |d| d.display().to_string()),
+                                Action::ImportMidi(f.clone()),
+                            )
+                        })
+                        .collect()
+                };
+                ("Importer un fichier MIDI".into(), items)
+            }
             Popup::Presets { device, kind } => {
                 let mut v = vec![(
                     "Enregistrer le preset…".into(),
@@ -1761,6 +1783,20 @@ impl App {
                 self.open_popup(Popup::Rename { target: Rename::SaveAs, text }, anchor);
             }
             Action::ExportStems => self.export_stems(),
+            Action::ImportMidiMenu => self.open_popup(Popup::ImportMidi(compat::scan_midi()), anchor),
+            Action::ImportMidi(path) => match compat::import_midi(&mut self.project, &path) {
+                Ok(p) => {
+                    self.select_pattern(p);
+                    self.commit("Importer un fichier MIDI");
+                    self.set_view(View::Rack);
+                    self.toast(&format!("Importé dans le pattern « {} »", self.project.patterns[p].name));
+                }
+                Err(e) => self.toast(&e),
+            },
+            Action::ExportMidi => match compat::export_midi(&self.project, self.project.current_pattern) {
+                Ok(path) => self.toast(&format!("Exporté : {}", path.display())),
+                Err(e) => self.toast(&e),
+            },
             Action::LoadPreset(device, path) => match compat::load_preset(&path) {
                 Ok(params) => {
                     self.apply_preset(device, &params);

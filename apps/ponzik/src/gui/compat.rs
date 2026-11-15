@@ -104,6 +104,51 @@ pub fn scan_samples() -> Vec<PathBuf> {
     out
 }
 
+/// Cherche des fichiers MIDI dans les mêmes dossiers que les échantillons.
+pub fn scan_midi() -> Vec<PathBuf> {
+    let h = home();
+    let mut out = Vec::new();
+    for root in [projects_dir(), music_dir(), h.join("Téléchargements"), h.join("Downloads")] {
+        walk_ext(&root, 0, &["mid", "midi"], &mut out);
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+fn walk_ext(dir: &Path, depth: usize, exts: &[&str], out: &mut Vec<PathBuf>) {
+    if depth > 4 || out.len() >= SAMPLE_SCAN_LIMIT {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for e in entries.flatten() {
+        let p = e.path();
+        if p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.')) {
+            continue;
+        }
+        if p.is_dir() {
+            walk_ext(&p, depth + 1, exts, out);
+        } else if p.extension().is_some_and(|x| exts.iter().any(|e| x.eq_ignore_ascii_case(e))) {
+            out.push(p);
+        }
+    }
+}
+
+pub fn import_midi(project: &mut Project, path: &Path) -> Result<usize, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("{} : {e}", path.display()))?;
+    let file = ponzik_project::read_smf(&bytes)?;
+    let name = path.file_stem().map_or("MIDI".to_string(), |s| s.to_string_lossy().into_owned());
+    Ok(ponzik_project::import_midi(project, &file, &name))
+}
+
+pub fn export_midi(project: &Project, pattern: usize) -> Result<PathBuf, String> {
+    let dir = projects_dir().join("Exports");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("{} : {e}", dir.display()))?;
+    let path = dir.join(format!("{} - {}.mid", file_name(&project.name), file_name(&project.patterns[pattern].name)));
+    std::fs::write(&path, ponzik_project::write_smf(project, pattern)).map_err(|e| format!("{} : {e}", path.display()))?;
+    Ok(path)
+}
+
 fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
     if depth > 4 || out.len() >= SAMPLE_SCAN_LIMIT {
         return;
