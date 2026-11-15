@@ -85,7 +85,7 @@ const EQ_HANDLES: [Handle; 7] = [
 const EQ_RANGE: f32 = 20.0;
 
 impl App {
-    fn info<'a>(params: &'a [ParamInfo], id: u32) -> Option<&'a ParamInfo> {
+    fn info(params: &[ParamInfo], id: u32) -> Option<&ParamInfo> {
         params.iter().find(|p| p.id == id)
     }
 

@@ -7,6 +7,7 @@ name = "ponzik"
 version = "0.1.0"
 dependencies = [
  "ponzik-audio",
+ "ponzik-dsp",
  "ponzik-engine",
  "ponzik-midi",
  "ponzik-project",
