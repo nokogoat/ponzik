@@ -14,7 +14,8 @@ const HELP: &str = "\
 Ponzik — le DAW libre. No more gatekeeping.
 
 Usage :
-  ponzik                                   ouvre l'interface
+  ponzik                                   ouvre l'interface (démo house)
+  ponzik breakcore                         ouvre l'interface sur la démo breakcore
   ponzik play [secondes]                   joue la démo dans le terminal (Entrée pour arrêter)
   ponzik render <sortie.wav> [morceau|pattern]
                                            exporte la démo en WAV 24 bits
@@ -26,7 +27,8 @@ Usage :
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
-        None => gui::run(),
+        None => gui::run(demo_project()),
+        Some("breakcore") => gui::run(ponzik_project::demo_breakcore()),
         Some("play") => play(args.get(1).map(String::as_str)),
         Some("render") => render(&args[1..]),
         Some("screenshot") => screenshot(&args[1..]),
@@ -84,7 +86,7 @@ fn play(seconds: Option<&str>) -> Result<(), String> {
 
 fn render(args: &[String]) -> Result<(), String> {
     let path = args.first().ok_or_else(|| format!("il manque le fichier de sortie\n\n{HELP}"))?;
-    let project = demo_project();
+    let project = if args.get(2).is_some_and(|a| a == "breakcore") { ponzik_project::demo_breakcore() } else { demo_project() };
     let mode = match args.get(1).map(String::as_str) {
         None | Some("morceau") => RenderMode::Song,
         Some("pattern") => RenderMode::Pattern(0, 4),

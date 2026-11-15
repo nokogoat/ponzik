@@ -140,10 +140,9 @@ impl ClickTracker {
     }
 }
 
-pub fn run() -> Result<(), String> {
+pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     let output = ponzik_audio::open_default().map_err(|e| e.to_string())?;
     let config = output.config();
-    let project = demo_project();
     let none = |_: &str| None;
     let (mut engine, handle) = project.build_engine(config.sample_rate as f32, &none);
     let output_name = output.device_name().to_string();
