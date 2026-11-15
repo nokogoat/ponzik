@@ -198,6 +198,9 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     if view == View::Piano {
         app.focus = app::Focus::Channel(4);
     }
+    if view == View::Mixer {
+        app.focus = app::Focus::Track(0);
+    }
     if view == View::Playlist {
         app.set_mode(ponzik_engine::PlayMode::Song);
     }

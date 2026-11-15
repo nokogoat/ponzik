@@ -2,7 +2,7 @@
 
 use ponzik_engine::{Note, PlayMode, TICKS_PER_BAR, TICKS_PER_STEP};
 
-use crate::{ClipDef, InstrumentDef, Project};
+use crate::{ClipDef, EffectDef, InstrumentDef, Project};
 
 /// Paramètres de DrumSynth (voir `instruments/drums.rs`).
 const DRUM_TYPE: u32 = 0;
@@ -29,6 +29,27 @@ pub fn demo_project() -> Project {
     p.channels[open].gain = 0.55;
     // Marge au master : la démo crête autour de −3 dBFS.
     p.tracks[0].gain = 0.6;
+
+    // Effets : saturation sur la basse, bus de réverbe, bus master compressé et limité.
+    let fx = |kind: &str, params: &[(u32, f32)]| {
+        let mut e = EffectDef::new(kind);
+        for &(id, v) in params {
+            e.set(id, v);
+        }
+        Some(e)
+    };
+    let bass_track = p.channels[bass].track;
+    p.tracks[bass_track].inserts[0] = fx("saturator", &[(0, 2.0), (1, 9.0), (4, 0.7)]);
+    let reverb_bus = 10;
+    p.tracks[reverb_bus].name = "Réverbe".into();
+    p.tracks[reverb_bus].inserts[0] = fx("reverb", &[(2, 2.4), (5, 1.0)]);
+    p.tracks[reverb_bus].gain = 0.7;
+    for ch in [clap, hat, open] {
+        let t = p.channels[ch].track;
+        p.tracks[t].sends[0] = (reverb_bus, if ch == clap { 0.35 } else { 0.2 });
+    }
+    p.tracks[0].inserts[0] = fx("compressor", &[(0, -14.0), (1, 2.5), (4, 0.02), (6, 2.0)]);
+    p.tracks[0].inserts[1] = fx("limiter", &[(1, -0.5)]);
 
     let hits = |p: &mut Project, pat: usize, ch: usize, steps: &[u32], vel: f32| {
         for &s in steps {
