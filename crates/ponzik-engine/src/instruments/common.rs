@@ -18,6 +18,37 @@ pub(crate) fn soft_clip(x: f32) -> f32 {
     if a <= 1.0 { x } else { (1.0 + (a - 1.0).tanh()).copysign(x) }
 }
 
+/// Saturation douce réglable, `amount` dans [0, 1] : transparente à 0, gain
+/// petit signal ×2 à 1, sortie toujours dans [−1, 1] au-delà de 0.
+#[inline]
+pub(crate) fn drive(x: f32, amount: f32) -> f32 {
+    if amount <= 0.0 {
+        return x;
+    }
+    let k = 1.0 + 9.0 * amount;
+    (k * x).tanh() / k.powf(0.7)
+}
+
+/// Interpolation cubique d'Hermite entre `x0` et `x1`, `t` dans [0, 1].
+#[inline]
+fn hermite(xm1: f32, x0: f32, x1: f32, x2: f32, t: f32) -> f32 {
+    let c = (x1 - xm1) * 0.5;
+    let v = x0 - x1;
+    let w = c + v;
+    let a = w + v + (x2 - x0) * 0.5;
+    let b = w + a;
+    ((a * t - b) * t + c) * t + x0
+}
+
+/// Lecture cubique à une position fractionnaire ; les bords sont répétés.
+#[inline]
+pub(crate) fn read_cubic(buf: &[f32], pos: f64) -> f32 {
+    let last = buf.len() as isize - 1;
+    let i = pos.floor() as isize;
+    let at = |k: isize| buf[k.clamp(0, last) as usize];
+    hermite(at(i - 1), at(i), at(i + 1), at(i + 2), (pos - i as f64) as f32)
+}
+
 /// Une voix libre, sinon la plus ancienne (vol de voix).
 pub(crate) fn pick_voice(n: usize, active: impl Fn(usize) -> bool, age: impl Fn(usize) -> u64) -> usize {
     (0..n).find(|&i| !active(i)).unwrap_or_else(|| (0..n).min_by_key(|&i| age(i)).unwrap_or(0))

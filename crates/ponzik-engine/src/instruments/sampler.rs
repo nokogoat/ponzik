@@ -10,7 +10,7 @@ use ponzik_dsp::env::{Adsr, AdsrParams};
 use ponzik_dsp::filter::{FilterMode, Svf};
 use ponzik_dsp::util::{db_to_gain, gain_to_db};
 
-use super::common::{pick_voice, soft_clip};
+use super::common::{pick_voice, read_cubic, soft_clip};
 use crate::Instrument;
 use crate::param::{ParamInfo, Params, Unit};
 use crate::sample::Sample;
@@ -55,25 +55,6 @@ static PARAMS: [ParamInfo; 15] = [
     ParamInfo::new(P_RELEASE, "Relâche", 0.005, 8.0, 0.1, Unit::Seconds).log().group("Amplitude"),
     ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -3.0, Unit::Db).group("Amplitude"),
 ];
-
-/// Interpolation cubique d'Hermite entre `x0` et `x1`, `t` dans [0, 1].
-#[inline]
-fn hermite(xm1: f32, x0: f32, x1: f32, x2: f32, t: f32) -> f32 {
-    let c = (x1 - xm1) * 0.5;
-    let v = x0 - x1;
-    let w = c + v;
-    let a = w + v + (x2 - x0) * 0.5;
-    let b = w + a;
-    ((a * t - b) * t + c) * t + x0
-}
-
-#[inline]
-fn read(buf: &[f32], pos: f64) -> f32 {
-    let last = buf.len() as isize - 1;
-    let i = pos.floor() as isize;
-    let at = |k: isize| buf[k.clamp(0, last) as usize];
-    hermite(at(i - 1), at(i), at(i + 1), at(i + 2), (pos - i as f64) as f32)
-}
 
 struct Voice {
     note: u8,
@@ -301,7 +282,7 @@ impl Instrument for Sampler {
             let (mut ml, mut mr) = (0.0, 0.0);
             for (v, &rate) in self.voices.iter_mut().zip(&rates).filter(|(v, _)| v.playing) {
                 let at = if reverse { hi - v.pos } else { lo + v.pos };
-                let (mut sl, mut sr) = (read(&sample.left, at), read(&sample.right, at));
+                let (mut sl, mut sr) = (read_cubic(&sample.left, at), read_cubic(&sample.right, at));
                 if filtered {
                     sl = v.filter[0].process(sl);
                     sr = v.filter[1].process(sr);

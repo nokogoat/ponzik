@@ -7,7 +7,9 @@ use crate::effects::{
     Reverb, Saturator, Shimmer, Tranche, Transient, Utility,
 };
 use crate::instrument::Instrument;
-use crate::instruments::{Bass303, DrumKind, DrumSynth, FmSynth, Pulse, Sampler, WaveSynth};
+use crate::instruments::{
+    Bass303, DrumKind, DrumSynth, EPiano, FmSynth, Granular, Kick, Pluck, Pulse, Sampler, Slicer, WaveSynth,
+};
 
 pub struct InstrumentKind {
     pub id: &'static str,
@@ -68,6 +70,41 @@ pub fn instruments() -> &'static [InstrumentKind] {
             category: "Basses",
             description: "Basse acide monophonique avec accent et glissé",
             create: || Box::new(Bass303::new()),
+        },
+        InstrumentKind {
+            id: "kick",
+            name: "Kick",
+            category: "Batterie",
+            description: "Grosse caisse sculptée : chute de hauteur, clic, corps, saturation",
+            create: || Box::new(Kick::new()),
+        },
+        InstrumentKind {
+            id: "slicer",
+            name: "Découpeur",
+            category: "Échantillonneurs",
+            description: "Découpe un échantillon en tranches égales ou sur les attaques, une note par tranche",
+            create: || Box::new(Slicer::new()),
+        },
+        InstrumentKind {
+            id: "granular",
+            name: "Granulaire",
+            category: "Échantillonneurs",
+            description: "Nuage de grains : position, dispersion, densité, hauteur et largeur aléatoires",
+            create: || Box::new(Granular::new()),
+        },
+        InstrumentKind {
+            id: "pluck",
+            name: "Cordes pincées",
+            category: "Synthés",
+            description: "Corde physique Karplus-Strong avec médiator, caisse et largeur stéréo",
+            create: || Box::new(Pluck::new()),
+        },
+        InstrumentKind {
+            id: "epiano",
+            name: "Piano électrique",
+            category: "Claviers",
+            description: "Piano électrique FM, lame et cloche, trémolo stéréo",
+            create: || Box::new(EPiano::new()),
         },
     ]
 }
