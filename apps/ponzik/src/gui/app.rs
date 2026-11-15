@@ -67,6 +67,8 @@ pub enum Popup {
     Rename { target: Rename, text: String },
     /// Palette touche-à-tout (Ctrl+K).
     Palette { query: String, selected: usize },
+    /// Menu d'un paramètre (clic droit sur un potard).
+    Param { target: ponzik_engine::AutoTarget, value: f32, default: f32 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -112,6 +114,9 @@ pub enum Action {
     Redo,
     LoadDemo(usize),
     SetTheme(usize),
+    Automate(ponzik_engine::AutoTarget, f32),
+    RemoveAutomation(ponzik_engine::AutoTarget),
+    SetParamValue(ponzik_engine::AutoTarget, f32),
 }
 
 pub struct PopupState {
@@ -1437,6 +1442,15 @@ impl App {
                     .collect();
                 (if send { "Envoyer vers" } else { "Sortie vers" }.into(), v)
             }
+            Popup::Param { target, value, default } => {
+                let label = self.target_info(*target).map_or(String::new(), |(l, _)| l);
+                let mut v = vec![("Automatiser dans la playlist".into(), "Une courbe sur toute la durée du morceau".into(), Action::Automate(*target, *value))];
+                if self.is_automated(*target) {
+                    v.push(("Supprimer l'automation".into(), String::new(), Action::RemoveAutomation(*target)));
+                }
+                v.push(("Valeur par défaut".into(), String::new(), Action::SetParamValue(*target, *default)));
+                (label, v)
+            }
             Popup::Rename { .. } | Popup::Palette { .. } => (String::new(), Vec::new()),
         }
     }
@@ -1567,6 +1581,28 @@ impl App {
                 self.toast(&format!("Démo chargée : {name}"));
             }
             Action::SetTheme(i) => self.theme = THEMES[i.min(THEMES.len() - 1)],
+            Action::Automate(target, value) => self.create_automation(target, value),
+            Action::RemoveAutomation(target) => {
+                self.project.automation.retain(|a| a.target != target);
+                self.commit("Retirer une automation");
+            }
+            Action::SetParamValue(target, v) => {
+                use ponzik_engine::AutoTarget as T;
+                match target {
+                    T::InstrumentParam { channel, id } => {
+                        if let Some(c) = self.project.channels.get_mut(channel) {
+                            c.instrument.set(id, v);
+                        }
+                    }
+                    T::EffectParam { track, slot, id } => {
+                        if let Some(Some(e)) = self.project.tracks.get_mut(track).map(|t| &mut t.inserts[slot]) {
+                            e.set(id, v);
+                        }
+                    }
+                    _ => {}
+                }
+                self.commit("Valeur par défaut");
+            }
         }
     }
 

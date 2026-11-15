@@ -86,7 +86,9 @@ impl App {
         let lanes_r = Rect::new(area.x, area.y + RULER + 4.0, area.w, area.h - RULER - 4.0);
         c.fill_rrect(Rect::new(area.x - 1.0, area.y, area.w + 1.0, area.h), 12.0, t.well);
         let lanes_used = self.project.clips.iter().map(|c| c.lane + 1).max().unwrap_or(0);
-        let lanes = (lanes_used + 2).max((lanes_r.h / LANE_H).floor() as usize).min(64);
+        let autos = self.project.automation.iter().filter(|a| a.scope == ponzik_engine::AutoScope::Song).count();
+        let fit = ((lanes_r.h - autos as f32 * super::automation::AUTO_LANE_H) / LANE_H).floor().max(1.0) as usize;
+        let lanes = (lanes_used + 1).max(fit).min(64);
 
         if input.inside && area.contains(input.x, input.y) && input.wheel != 0.0 {
             if input.mods.ctrl {
@@ -132,7 +134,8 @@ impl App {
 
         // Clips.
         let grid_id = wid("pl-grid", 0, 0);
-        let over = input.inside && lanes_r.contains(input.x, input.y) && (self.drag.is_none() || self.is_dragging(grid_id));
+        let clip_zone = Rect::new(lanes_r.x, lanes_r.y, lanes_r.w, lanes as f32 * LANE_H);
+        let over = input.inside && clip_zone.contains(input.x, input.y) && (self.drag.is_none() || self.is_dragging(grid_id));
         let hit = |app: &App, x: f32, y: f32| -> Option<(usize, bool)> {
             let lane = lane_at(y) as usize;
             app.project.clips.iter().enumerate().rev().find_map(|(i, cl)| {
@@ -293,6 +296,13 @@ impl App {
             if hover_clip.is_some_and(|(h, e)| h == i && e) {
                 c.fill_rrect(Rect::new(r.right() - 5.0, r.y + 8.0, 2.0, r.h - 16.0), 1.0, t.text.alpha(0.7));
             }
+        }
+
+        // Couloirs d'automation, sous les clips.
+        let auto_y = lanes_r.y + lanes as f32 * LANE_H + 4.0;
+        if autos > 0 {
+            c.fill_rect(Rect::new(area.x, auto_y - 3.0, area.w, 1.0), t.hairline.alpha(2.0));
+            self.automation_lanes(c, input, area, auto_y, &x_of, &tick_at, snap.min(96.0));
         }
 
         // Tête de lecture.

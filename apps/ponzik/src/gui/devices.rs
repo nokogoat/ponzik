@@ -115,6 +115,14 @@ fn card_width(kind: &str, params: &'static [ParamInfo]) -> f32 {
     (body + extra + 28.0).max(200.0)
 }
 
+/// Cible d'automation d'un paramètre d'appareil.
+pub fn device_target(device: Device, id: u32) -> ponzik_engine::AutoTarget {
+    match device {
+        Device::Instrument(channel) => ponzik_engine::AutoTarget::InstrumentParam { channel, id },
+        Device::Effect { track, slot } => ponzik_engine::AutoTarget::EffectParam { track, slot, id },
+    }
+}
+
 impl App {
     fn device_kind(&self, d: Device) -> (String, bool) {
         match d {
@@ -285,6 +293,15 @@ impl App {
                 };
                 if let Some(v) = changed {
                     self.set_param_value(device, p, v);
+                }
+                // Clic droit : automatiser, valeur par défaut ; point sarcelle si automatisé.
+                let target = device_target(device, p.id);
+                if input.right_pressed && input.inside && cell.contains(input.x, input.y) && self.drag.is_none() {
+                    let popup = Popup::Param { target, value, default: p.default };
+                    self.open_popup(popup, Rect::new(input.x, input.y, 0.0, 0.0));
+                }
+                if self.is_automated(target) {
+                    c.fill_circle(cell.right() - 10.0, cell.y + 6.0, 3.0, t.select);
                 }
             }
             x += g.width + GROUP_GAP;
