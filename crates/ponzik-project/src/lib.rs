@@ -13,12 +13,14 @@ use ponzik_engine::{
     TICKS_PER_BAR, TICKS_PER_STEP,
 };
 
+mod breakcore;
 mod demo;
 pub mod history;
 pub mod io;
 pub mod json;
 pub mod render;
 
+pub use breakcore::demo_breakcore;
 pub use demo::demo_project;
 pub use history::History;
 pub use io::{load, load_from_file, save, save_to_file};
