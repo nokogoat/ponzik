@@ -235,7 +235,8 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
         app.focus = app::Focus::Channel(4);
     }
     if view == View::Mixer {
-        app.focus = app::Focus::Track(0);
+        let track = std::env::var("PONZIK_FOCUS_TRACK").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+        app.focus = app::Focus::Track(track);
     }
     if view == View::Playlist {
         app.set_mode(ponzik_engine::PlayMode::Song);
