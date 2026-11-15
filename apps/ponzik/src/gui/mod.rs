@@ -161,8 +161,10 @@ pub fn run() -> Result<(), String> {
         // en continuant d'écouter la souris jusqu'à l'échéance.
         if dirty || app.needs_redraw() {
             let deadline = last_frame + FRAME;
+            let slice = if app.midi_inputs.is_empty() { FRAME } else { Duration::from_millis(4) };
             while let Some(left) = deadline.checked_duration_since(Instant::now()) {
-                window.wait_events(left, &mut events);
+                window.wait_events(left.min(slice), &mut events);
+                dirty |= app.poll_midi();
             }
         } else {
             // Avec un contrôleur MIDI branché, on se réveille souvent pour ses notes.
