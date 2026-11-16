@@ -119,7 +119,7 @@ fn rack_info(id: u32) -> Option<&'static ParamInfo> {
 impl EffectDef {
     /// An empty rack, one chain.
     pub fn new_rack() -> Self {
-        Self { rack: Some(Box::default()), ..Self::new(RACK) }
+        Self::new(RACK)
     }
 
     /// Sheet of a parameter of this effect, rack devices included.

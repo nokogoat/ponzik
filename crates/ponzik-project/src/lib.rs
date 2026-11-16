@@ -110,7 +110,7 @@ pub struct EffectDef {
 
 impl EffectDef {
     pub fn new(kind: &str) -> Self {
-        Self { kind: kind.into(), params: Vec::new(), bypass: false, sidechain: None, rack: None }
+        Self { kind: kind.into(), params: Vec::new(), bypass: false, sidechain: None, rack: (kind == rack::RACK).then(Box::default) }
     }
 
     pub fn set(&mut self, id: u32, value: f32) {
