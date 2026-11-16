@@ -5098,3 +5098,44 @@ msgstr "{} · note {} · {}\nClic : jouer (plus haut, plus fort) · clic droit :
 
 msgid "{}: FL insert {} does not exist in Ponzik ({} tracks), routed to Master"
 msgstr "{} : la piste FL {} n'existe pas dans Ponzik ({} pistes), routé vers le Master"
+
+# --- First-run tour ---
+
+msgid "Make a beat"
+msgstr "Fais un beat"
+
+msgid "Add a bass"
+msgstr "Ajoute une basse"
+
+msgid "Export your track"
+msgstr "Exporte ton morceau"
+
+msgid "Each row is a sound, each square a sixteenth note. Click squares to switch them on, press Space to hear the loop."
+msgstr "Chaque rangée est un son, chaque case une double croche. Clique les cases pour les allumer, appuie sur Espace pour écouter la boucle."
+
+msgid "Click in the grid to draw notes, drag their end to make them longer, right-click to erase. The arrows above pick the channel."
+msgstr "Clique dans la grille pour dessiner des notes, tire leur fin pour les allonger, clic droit pour effacer. Les flèches au-dessus choisissent le canal."
+
+msgid "When it sounds good, open this menu and choose Export as WAV. Ctrl+K finds every other action."
+msgstr "Quand ça sonne bien, ouvre ce menu et choisis Exporter en WAV. Ctrl+K trouve toutes les autres actions."
+
+msgid "Step {} of {}"
+msgstr "Étape {} sur {}"
+
+msgid "Done"
+msgstr "Terminé"
+
+msgid "Next"
+msgstr "Suivant"
+
+msgid "Skip the tour"
+msgstr "Passer la visite"
+
+msgid "Replay it any time from the palette (Ctrl+K)"
+msgstr "Rejoue-la quand tu veux depuis la palette (Ctrl+K)"
+
+msgid "Take the tour: a beat, a bass, an export"
+msgstr "Visite guidée : un beat, une basse, un export"
+
+msgid "Help"
+msgstr "Aide"

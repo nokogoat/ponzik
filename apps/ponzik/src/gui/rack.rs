@@ -152,6 +152,12 @@ impl App {
             }
             y += ROW_H + ROW_GAP;
         }
+        if !self.project.channels.is_empty() {
+            // Every step row, clipped to the visible rows.
+            let top = rows.y - scroll;
+            let bottom = (y - ROW_GAP).min(rows.bottom());
+            self.tour_anchor(0, Rect::new(pads.x, top.max(rows.y), pads.w, bottom - top.max(rows.y)));
+        }
         let add = Rect::new(rows.x, y + 2.0, LEFT - 12.0, 44.0);
         let id = wid("rack-add", 0, 0);
         let hov = self.hovered(input, id, add);

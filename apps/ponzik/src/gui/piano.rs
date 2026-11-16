@@ -426,6 +426,7 @@ impl App {
         let keys = Rect::new(inner.x, inner.y + RULER, KEYBOARD, inner.h - RULER - VELOCITY - 8.0);
         let grid = Rect::new(keys.right(), keys.y, inner.w - KEYBOARD, keys.h);
         let ruler = Rect::new(grid.x, inner.y, grid.w, RULER);
+        self.tour_anchor(1, grid);
         let vel_lane = Rect::new(grid.x, grid.bottom() + 8.0, grid.w, VELOCITY);
         let pat_len = self.project.patterns[pat].len.max(TICKS_PER_BAR) as f32;
 

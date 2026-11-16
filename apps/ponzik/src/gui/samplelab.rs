@@ -1421,7 +1421,7 @@ impl App {
     /// Bouton pilule : icône et libellé. `style` : 0 normal, 1 principal,
     /// 2 enfoncé, 3 principal avec l'icône à droite (« suivant »).
     #[allow(clippy::too_many_arguments)]
-    fn lab_button(&mut self, c: &mut Canvas, input: &Input, id: u64, r: Rect, icon: Option<Icon>, label: &str, style: u8, tip: &str) -> bool {
+    pub(super) fn lab_button(&mut self, c: &mut Canvas, input: &Input, id: u64, r: Rect, icon: Option<Icon>, label: &str, style: u8, tip: &str) -> bool {
         let t = self.theme;
         let hov = self.hovered(input, id, r);
         let hv = self.hover_anim(id, hov);
@@ -1467,7 +1467,7 @@ impl App {
     }
 
     /// Lignes de `s` coupées aux mots pour tenir dans `max_w`.
-    fn wrap(&self, f: FontId, size: f32, s: &str, max_w: f32) -> Vec<String> {
+    pub(super) fn wrap(&self, f: FontId, size: f32, s: &str, max_w: f32) -> Vec<String> {
         let mut lines = Vec::new();
         let mut cur = String::new();
         for word in s.split_whitespace() {

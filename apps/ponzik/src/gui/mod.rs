@@ -29,6 +29,7 @@ mod settings;
 mod sync;
 mod visuals;
 mod theme;
+mod tour;
 mod widgets;
 
 use std::time::{Duration, Instant};
@@ -217,6 +218,7 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
         eprintln!("MIDI: {}", m.name());
     }
     app.load_settings();
+    app.start_tour_if_new();
     app.start_autosave();
     app.start_library();
     let (play, find) = (app.key_label(keymap::Shortcut::PlayStop), app.key_label(keymap::Shortcut::Palette));
@@ -452,6 +454,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {
         app.screenshot_popup(&name);
+    }
+    // PONZIK_TOUR=n : la bulle n de la visite guidée.
+    if let Some(step) = std::env::var("PONZIK_TOUR").ok().and_then(|v| v.trim().parse().ok()) {
+        app.screenshot_tour(step);
     }
     // PONZIK_FLOAT=n : détache les n premiers appareils du panneau dans des fenêtres.
     if let Some(n) = std::env::var("PONZIK_FLOAT").ok().and_then(|v| v.parse().ok()) {

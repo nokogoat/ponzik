@@ -288,6 +288,8 @@ pub struct Prefs {
     scroll: f32,
     /// Langue choisie ; `None` suit celle du système.
     pub lang: Option<Lang>,
+    /// The first-run tour was finished or skipped.
+    pub tour_done: bool,
 }
 
 /// Texte JSON des réglages.
@@ -391,6 +393,7 @@ impl App {
         }
         self.prefs.keymap = keymap;
         self.prefs.ui_scale = UiScale::from_json(&j);
+        self.prefs.tour_done = j.get("tour_done").and_then(Json::as_bool).unwrap_or(false);
         self.apply_workspace(ws, false);
     }
 
@@ -399,6 +402,7 @@ impl App {
         let mut j = to_json(&self.prefs.ws, &self.prefs.keymap, self.theme.name, self.prefs.lang);
         if let Json::Obj(fields) = &mut j {
             fields.push(("ui_scale".into(), (self.prefs.ui_scale.percent() as f64 / 100.0).into()));
+            fields.push(("tour_done".into(), self.prefs.tour_done.into()));
         }
         let text = j.pretty();
         let path = settings_path();

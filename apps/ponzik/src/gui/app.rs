@@ -170,6 +170,7 @@ pub fn display_kind(kind: &str) -> String {
 #[derive(Clone, Debug)]
 pub enum Action {
     None,
+    StartTour,
     AddInstrument(&'static str, Option<usize>),
     AddEffect(usize, &'static str),
     /// Effet de notes : canal, emplacement, type.
@@ -520,6 +521,7 @@ pub struct App {
     autosaver: Option<Autosaver>,
     /// Sauvegarde d'une session interrompue, proposée au démarrage : fichier, ligne de détail.
     pub recovery: Option<(PathBuf, String)>,
+    pub tour: super::tour::Tour,
     /// Place de la pastille de gamme, où s'ouvre son menu.
     scale_anchor: Rect,
     /// Tailles des zones et fenêtres d'appareil flottantes (non enregistrées).
@@ -635,6 +637,7 @@ impl App {
             sidebar_tab: 0,
             autosaver: None,
             recovery: None,
+            tour: Default::default(),
             scale_anchor: Rect::new(0.0, 0.0, 0.0, 0.0),
             layout: Default::default(),
             cursor: Default::default(),
@@ -1574,7 +1577,7 @@ impl App {
 
         // Un menu ouvert capte la souris : le reste de l'écran ne réagit plus.
         let masked;
-        let over_card = self.recovery_rect(w).is_some_and(|r| r.contains(input.x, input.y));
+        let over_card = self.recovery_rect(w).is_some_and(|r| r.contains(input.x, input.y)) || (self.popup.is_none() && self.over_tour(input));
         let ui = if self.popup.is_some() || over_card {
             masked = Input {
                 inside: false,
@@ -1615,6 +1618,11 @@ impl App {
             self.recovery_prompt(c, input, w);
         }
         self.popup_layer(c, input, Rect::new(0.0, 0.0, w, h));
+        if self.popup.is_none() {
+            self.tour_layer(c, input, Rect::new(0.0, 0.0, w, h));
+        } else {
+            self.tour.anchors = Default::default();
+        }
         self.toast_layer(c, dt, Rect::new(sb, TOP_BAR, w - sb, h - TOP_BAR - pn));
         self.dnd_layer(c, input);
         if self.popup.is_none() {
@@ -1790,6 +1798,9 @@ impl App {
                 continue;
             }
             let on = icon == Icon::Panel && self.panel;
+            if icon == Icon::Menu {
+                self.tour_anchor(2, Rect::new(rx, cy - 16.0, 32.0, 32.0));
+            }
             if self.icon_button(c, input, wid(name, 0, 0), Rect::new(rx, cy - 16.0, 32.0, 32.0), icon, on, tip) {
                 let anchor = Rect::new(rx, cy - 16.0, 32.0, 32.0);
                 match icon {
@@ -2958,6 +2969,7 @@ impl App {
             Action::ToggleCountIn => self.toggle_count_in(),
             Action::ToggleMidiClock(port) => self.toggle_midi_clock(port),
             Action::TapTempo => self.tap_tempo(),
+            Action::StartTour => self.start_tour(),
             Action::ToggleTyping => self.toggle_typing_keyboard(),
             Action::SetView(v) => self.set_view(v),
             Action::ToggleSidebar => self.sidebar = !self.sidebar,

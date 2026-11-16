@@ -118,7 +118,7 @@ template" (V1-12)**.
 | V2-23 | **Clip panel**: gain, adjustable fades, reverse, transposition, loop and color of the selected clip, at the bottom of the screen (Live's Clip View) | Rule 1; fades are currently fixed | M | project, engine, ui | – | ⬜ |
 | V2-24 | **Launch modes and follow actions** in the Session (trigger, gate, toggle, legato; next, random, with probability) | Live on stage, generative jams | M | engine (session), project, ui | – | ⬜ |
 | V2-25 | **FLAC export** (in-house lossless encoder, fixed LPC prediction) | A free, lossless format, doable without dependencies | M | project | – | ⬜ |
-| V2-26 | **Onboarding**: a first launch with 3 guided steps (make a beat, add a bass, export) and callouts on the real widgets | The "a beat in 30 seconds" promise | M | ui | V1-1 | ⬜ (the two essential gestures are shown at startup) |
+| V2-26 | **Onboarding**: a first launch with 3 guided steps (make a beat, add a bass, export) and callouts on the real widgets | The "a beat in 30 seconds" promise | M | ui | V1-1 | ✅ (skippable, replayed from the palette) |
 
 ---
 
