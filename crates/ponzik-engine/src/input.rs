@@ -128,7 +128,7 @@ impl RecordBuffer {
         self.right.truncate(self.len);
         self.left.shrink_to_fit();
         self.right.shrink_to_fit();
-        Sample { name: name.into(), sample_rate: self.sample_rate, left: self.left, right: self.right }
+        Sample { name: name.into(), sample_rate: self.sample_rate, left: self.left, right: self.right, markers: Vec::new() }
     }
 }
 

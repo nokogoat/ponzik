@@ -326,7 +326,7 @@ mod tests {
         let n = (48_000.0 * seconds) as usize;
         let left: Vec<f32> =
             (0..n).map(|i| (std::f32::consts::TAU * 441.0 * i as f32 / 48_000.0).sin() * 0.8).collect();
-        Arc::new(Sample { name: "sinus".into(), sample_rate: 48_000.0, right: left.clone(), left })
+        Arc::new(Sample { name: "sinus".into(), sample_rate: 48_000.0, right: left.clone(), left, markers: Vec::new() })
     }
 
     #[test]

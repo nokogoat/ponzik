@@ -4,7 +4,9 @@
 //! plus graves ou au-delà de la dernière tranche sont muettes. Découpe en
 //! parts égales ou sur les transitoires : l'énergie par bloc est calculée au
 //! chargement, la recherche des attaques (rapide, sans allocation) est refaite
-//! à chaque changement de mode, de nombre de tranches ou de sensibilité.
+//! à chaque changement de mode, de nombre de tranches ou de sensibilité. En
+//! mode « Marqueurs », les tranches suivent les marqueurs de l'échantillon
+//! (posés dans l'Atelier, lus dans le bloc `cue ` du WAV), 64 au plus.
 //!
 //! `is_melodic` vaut vrai : l'éditeur affiche alors les noms de notes, ce qui
 //! permet de choisir la tranche à la saisie (la note ne change pas la hauteur).
@@ -20,7 +22,7 @@ use crate::param::{ParamInfo, Params, Unit};
 use crate::sample::Sample;
 
 const VOICES: usize = 8;
-const MAX_SLICES: usize = 32;
+const MAX_SLICES: usize = 64;
 const FIRST_NOTE: u8 = 60;
 /// Taille des blocs d'analyse des transitoires, en images.
 const HOP: usize = 256;
@@ -29,7 +31,7 @@ const FLOOR_DB: f32 = 60.0;
 /// Écart minimal entre deux attaques, en secondes.
 const MIN_GAP: f32 = 0.03;
 
-const MODES: &[&str] = &["Parts égales", "Transitoires"];
+const MODES: &[&str] = &["Parts égales", "Transitoires", "Marqueurs"];
 const COUNTS: &[&str] = &["4", "8", "16", "32"];
 const COUNT_VALUES: [usize; 4] = [4, 8, 16, 32];
 const OFF_ON: &[&str] = &["Non", "Oui"];
@@ -75,7 +77,8 @@ pub struct Slicer {
     /// Début des tranches ; `bounds[n_slices]` est la fin de l'échantillon.
     bounds: [usize; MAX_SLICES + 1],
     n_slices: usize,
-    transients: bool,
+    /// 0 : parts égales, 1 : transitoires, 2 : marqueurs de l'échantillon.
+    mode: usize,
     count: usize,
     sensitivity: f32,
     env: AdsrParams,
@@ -102,7 +105,7 @@ impl Slicer {
             energy: Vec::new(),
             bounds: [0; MAX_SLICES + 1],
             n_slices: 0,
-            transients: false,
+            mode: 0,
             count: 1,
             sensitivity: 0.5,
             env,
@@ -147,7 +150,20 @@ impl Slicer {
             self.n_slices = 0;
             return;
         }
-        if !self.transients || self.energy.len() < 3 {
+        if self.mode == 2 && !sample.markers.is_empty() {
+            // Marqueurs posés dans l'Atelier (bloc « cue » du WAV).
+            let mut count = 1;
+            for &m in &sample.markers {
+                if count < MAX_SLICES && m > self.bounds[count - 1] && m < len - 1 {
+                    self.bounds[count] = m;
+                    count += 1;
+                }
+            }
+            self.bounds[count] = len;
+            self.n_slices = count;
+            return;
+        }
+        if self.mode != 1 || self.energy.len() < 3 {
             for k in 0..=n {
                 self.bounds[k] = (len as u64 * k as u64 / n as u64) as usize;
             }
@@ -210,7 +226,7 @@ impl Params for Slicer {
     fn get_param(&self, id: u32) -> f32 {
         let b = |x: bool| f32::from(u8::from(x));
         match id {
-            P_MODE => b(self.transients),
+            P_MODE => self.mode as f32,
             P_SLICES => self.count as f32,
             P_SENSITIVITY => self.sensitivity,
             P_ATTACK => self.env.attack,
@@ -226,7 +242,7 @@ impl Params for Slicer {
         let Some(info) = PARAMS.iter().find(|i| i.id == id) else { return };
         let v = info.clamp(value);
         match id {
-            P_MODE => self.transients = v > 0.5,
+            P_MODE => self.mode = v.round() as usize,
             P_SLICES => self.count = v as usize,
             P_SENSITIVITY => self.sensitivity = v,
             P_ATTACK => self.env.attack = v,
@@ -355,7 +371,7 @@ mod tests {
     /// Huit paliers de 1 000 images : la tranche k vaut 0,1 × (k + 1).
     fn steps() -> Arc<Sample> {
         let left: Vec<f32> = (0..8_000).map(|i| 0.1 * (i / 1_000 + 1) as f32).collect();
-        Arc::new(Sample { name: "paliers".into(), sample_rate: 48_000.0, right: left.clone(), left })
+        Arc::new(Sample { name: "paliers".into(), sample_rate: 48_000.0, right: left.clone(), left, markers: Vec::new() })
     }
 
     fn slicer(sample: Arc<Sample>) -> Slicer {
@@ -415,7 +431,7 @@ mod tests {
                 left[h + i] = noise.next_sample() * 0.8 * (-(i as f32) / 600.0).exp();
             }
         }
-        let mut s = slicer(Arc::new(Sample { name: "coups".into(), sample_rate: 48_000.0, right: left.clone(), left }));
+        let mut s = slicer(Arc::new(Sample { name: "coups".into(), sample_rate: 48_000.0, right: left.clone(), left, markers: Vec::new() }));
         s.set_param(P_MODE, 1.0);
         let b = s.slice_bounds();
         assert_eq!(b.len(), hits.len() + 1, "{b:?}");
@@ -427,6 +443,22 @@ mod tests {
         assert!(s.slice_bounds().len() <= 5);
         s.note_on(62, 1.0);
         assert!(peak(&mut s, 1_000) > 0.05);
+    }
+
+    #[test]
+    fn follows_sample_markers() {
+        let mut sample = (*steps()).clone();
+        sample.markers = vec![0, 1_500, 1_500, 6_000, 9_999];
+        let mut s = slicer(Arc::new(sample));
+        s.set_param(P_MODE, 2.0);
+        assert_eq!(s.slice_bounds(), &[0, 1_500, 6_000, 8_000]);
+        s.note_on(61, 1.0);
+        let v = s.voices.iter().find(|v| v.playing).unwrap();
+        assert_eq!((v.start, v.end), (1_500, 6_000));
+        // Sans marqueurs : parts égales.
+        let mut s = slicer(steps());
+        s.set_param(P_MODE, 2.0);
+        assert_eq!(s.slice_bounds().len(), 9);
     }
 
     #[test]

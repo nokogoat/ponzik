@@ -1202,7 +1202,7 @@ mod tests {
         assert_eq!(p.song_len(), TICKS_PER_BAR * 5);
         assert!(p.sequence().audio_clips.is_empty());
         let sample =
-            Arc::new(Sample { name: "a".into(), sample_rate: 48_000.0, left: vec![0.5; 4], right: vec![0.5; 4] });
+            Arc::new(Sample { name: "a".into(), sample_rate: 48_000.0, left: vec![0.5; 4], right: vec![0.5; 4], markers: Vec::new() });
         let loader = |path: &str| (path == "a.wav").then(|| sample.clone());
         let seq = p.sequence_with(&loader);
         assert_eq!(seq.audio_clips.len(), 1);

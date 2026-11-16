@@ -1508,7 +1508,7 @@ mod tests {
         // Rampe : la valeur dit quelle image de la source est jouée.
         let n = 4_800;
         let left: Vec<f32> = (0..n).map(|i| i as f32 / n as f32).collect();
-        let sample = Sample { name: "rampe".into(), sample_rate: SR, right: left.clone(), left };
+        let sample = Sample { name: "rampe".into(), sample_rate: SR, right: left.clone(), left, markers: Vec::new() };
         for block in [64, 300, 1024] {
             // Début au tick 96 = échantillon 24 000 ; décalage 10 ms = 480 images.
             let out = render_audio(vec![audio_clip(sample.clone(), 96, 0.01, 0.5)], 30_000, block);
@@ -1528,7 +1528,7 @@ mod tests {
     #[test]
     fn audio_clip_is_resampled_to_the_engine_rate() {
         let sample =
-            Sample { name: "dc".into(), sample_rate: 24_000.0, left: vec![1.0; 1_000], right: vec![1.0; 1_000] };
+            Sample { name: "dc".into(), sample_rate: 24_000.0, left: vec![1.0; 1_000], right: vec![1.0; 1_000], markers: Vec::new() };
         let out = render_audio(vec![audio_clip(sample, 0, 0.0, 1.0)], 4_000, 256);
         // 1 000 images à 24 kHz = 2 000 échantillons à 48 kHz.
         let audible: Vec<usize> = (0..out.len()).filter(|&i| out[i] != 0.0).collect();
@@ -1540,7 +1540,7 @@ mod tests {
 
     #[test]
     fn audio_clip_follows_locate_and_clip_end() {
-        let sample = Sample { name: "dc".into(), sample_rate: SR, left: vec![1.0; 96_000], right: vec![1.0; 96_000] };
+        let sample = Sample { name: "dc".into(), sample_rate: SR, left: vec![1.0; 96_000], right: vec![1.0; 96_000], markers: Vec::new() };
         let mut clip = audio_clip(sample, 0, 0.0, 1.0);
         clip.len = 96;
         let (mut engine, mut handle, _) = setup(&[]);

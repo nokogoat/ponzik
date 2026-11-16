@@ -454,7 +454,7 @@ mod tests {
         assert_eq!(p.song_len(), TICKS_PER_BAR * 3);
         // 4 s à 11 025 Hz, joués à 22 050 Hz.
         let dc = vec![1.0; 44_100];
-        let sample = Arc::new(Sample { name: "dc".into(), sample_rate: 11_025.0, left: dc.clone(), right: dc });
+        let sample = Arc::new(Sample { name: "dc".into(), sample_rate: 11_025.0, left: dc.clone(), right: dc, markers: Vec::new() });
         let loader = |path: &str| (path == "dc.wav").then(|| sample.clone());
         let out = render_song(&p, SR, &loader, RenderMode::Song);
         // Mesure = 2 s à 120 BPM ; le clip commence pile à 2 s et finit avec le morceau.

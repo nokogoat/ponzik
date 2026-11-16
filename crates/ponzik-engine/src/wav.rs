@@ -36,6 +36,67 @@ pub fn encode_wav_i16(w: &mut impl Write, sample_rate: u32, channels: u16, sampl
     Ok(())
 }
 
+/// Écrit un échantillon en WAV PCM 24 bits (mono si les deux canaux sont
+/// identiques), avec ses marqueurs dans un bloc `cue `.
+pub fn write_sample(path: impl AsRef<Path>, sample: &Sample) -> io::Result<()> {
+    let mut w = BufWriter::new(File::create(path)?);
+    encode_sample(&mut w, sample)?;
+    w.flush()
+}
+
+pub fn encode_sample(w: &mut impl Write, sample: &Sample) -> io::Result<()> {
+    let channels: u16 = if sample.is_mono() { 1 } else { 2 };
+    let frames = sample.len();
+    let data_len = u32::try_from(frames * channels as usize * 3)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "fichier WAV > 4 Go"))?;
+    let markers: Vec<u32> = sample.markers.iter().filter(|&&m| m < frames).map(|&m| m as u32).collect();
+    let cue_len = if markers.is_empty() { 0 } else { 4 + 24 * markers.len() as u32 };
+    let cue_chunk = if markers.is_empty() { 0 } else { 8 + cue_len };
+    let pad = data_len & 1;
+    let rate = sample.sample_rate.round().max(1.0) as u32;
+    let block_align = channels * 3;
+    w.write_all(b"RIFF")?;
+    w.write_all(&(36 + data_len + pad + cue_chunk).to_le_bytes())?;
+    w.write_all(b"WAVEfmt ")?;
+    w.write_all(&16u32.to_le_bytes())?;
+    w.write_all(&1u16.to_le_bytes())?; // PCM
+    w.write_all(&channels.to_le_bytes())?;
+    w.write_all(&rate.to_le_bytes())?;
+    w.write_all(&(rate * block_align as u32).to_le_bytes())?;
+    w.write_all(&block_align.to_le_bytes())?;
+    w.write_all(&24u16.to_le_bytes())?;
+    w.write_all(b"data")?;
+    w.write_all(&data_len.to_le_bytes())?;
+    let put = |w: &mut dyn Write, s: f32| {
+        let v = (s.clamp(-1.0, 1.0) * 8_388_607.0).round() as i32;
+        w.write_all(&v.to_le_bytes()[..3])
+    };
+    for i in 0..frames {
+        put(w, sample.left[i])?;
+        if channels == 2 {
+            put(w, sample.right[i])?;
+        }
+    }
+    if pad == 1 {
+        w.write_all(&[0])?;
+    }
+    if !markers.is_empty() {
+        w.write_all(b"cue ")?;
+        w.write_all(&cue_len.to_le_bytes())?;
+        w.write_all(&(markers.len() as u32).to_le_bytes())?;
+        for (k, &m) in markers.iter().enumerate() {
+            // Identifiant, position, bloc « data », début de bloc, début de paquet, image.
+            w.write_all(&(k as u32 + 1).to_le_bytes())?;
+            w.write_all(&m.to_le_bytes())?;
+            w.write_all(b"data")?;
+            w.write_all(&0u32.to_le_bytes())?;
+            w.write_all(&0u32.to_le_bytes())?;
+            w.write_all(&m.to_le_bytes())?;
+        }
+    }
+    Ok(())
+}
+
 /// Charge un fichier WAV ; l'échantillon prend le nom du fichier sans extension.
 pub fn load_wav(path: impl AsRef<Path>) -> Result<Sample, String> {
     let path = path.as_ref();
@@ -52,6 +113,7 @@ pub fn decode_wav(bytes: &[u8], name: &str) -> Result<Sample, String> {
     }
     let mut format = None;
     let mut data = None;
+    let mut cues = Vec::new();
     let mut pos = 12;
     while pos + 8 <= bytes.len() {
         let size = u32_at(bytes, pos + 4) as usize;
@@ -60,6 +122,15 @@ pub fn decode_wav(bytes: &[u8], name: &str) -> Result<Sample, String> {
         match &bytes[pos..pos + 4] {
             b"fmt " => format = Some(Format::parse(body)?),
             b"data" => data = Some(body),
+            b"cue " if body.len() >= 4 => {
+                // Points de repère : 24 octets chacun, l'image est le dernier champ.
+                let n = u32_at(body, 0) as usize;
+                cues = (0..n)
+                    .map(|k| 4 + 24 * k)
+                    .take_while(|o| o + 24 <= body.len())
+                    .map(|o| u32_at(body, o + 20) as usize)
+                    .collect();
+            }
             _ => {}
         }
         // Un bloc de taille impaire est suivi d'un octet de bourrage.
@@ -91,7 +162,10 @@ pub fn decode_wav(bytes: &[u8], name: &str) -> Result<Sample, String> {
         left.push(l);
         right.push(if f.channels > 1 { read(o + width) } else { l });
     }
-    Ok(Sample { name: name.to_string(), sample_rate: f.sample_rate as f32, left, right })
+    cues.retain(|&m| m < frames);
+    cues.sort_unstable();
+    cues.dedup();
+    Ok(Sample { name: name.to_string(), sample_rate: f.sample_rate as f32, left, right, markers: cues })
 }
 
 struct Format {
@@ -238,6 +312,31 @@ mod tests {
         assert_eq!(s.sample_rate, 22_050.0);
         assert!(s.name.starts_with("ponzik-wav-"));
         assert_eq!(s.len(), 2);
+    }
+
+    #[test]
+    fn sample_roundtrip_keeps_markers() {
+        let left: Vec<f32> = (0..1_001).map(|i| (i as f32 * 0.01).sin() * 0.9).collect();
+        let right: Vec<f32> = left.iter().map(|v| -v).collect();
+        let s = Sample { name: "x".into(), sample_rate: 44_100.0, left, right, markers: vec![0, 250, 700, 5_000] };
+        let mut buf = Vec::new();
+        encode_sample(&mut buf, &s).unwrap();
+        assert_eq!(buf.len() % 2, 0, "taille RIFF paire");
+        let back = decode_wav(&buf, "x").unwrap();
+        assert_eq!(back.markers, [0, 250, 700]);
+        assert_eq!(back.sample_rate, 44_100.0);
+        assert_eq!(back.len(), 1_001);
+        for (a, b) in s.left.iter().zip(&back.left).chain(s.right.iter().zip(&back.right)) {
+            assert!((a - b).abs() < 1e-6, "{a} {b}");
+        }
+        // Mono : un seul canal écrit, pas de bloc « cue » sans marqueurs.
+        let mono = Sample { right: s.left.clone(), markers: Vec::new(), ..s.clone() };
+        let mut buf = Vec::new();
+        encode_sample(&mut buf, &mono).unwrap();
+        assert_eq!(u16::from_le_bytes([buf[22], buf[23]]), 1);
+        assert!(!buf.windows(4).any(|w| w == b"cue "));
+        let back = decode_wav(&buf, "m").unwrap();
+        assert_eq!(back.right, back.left);
     }
 
     #[test]
