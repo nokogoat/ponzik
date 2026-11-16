@@ -2986,7 +2986,6 @@ impl App {
         let list = Rect::new(r.x, r.y + 36.0, r.w, r.h - 40.0);
         let prev = c.push_clip(list);
         let has_icons = items.iter().any(|it| it.icon.is_some());
-        let prev = c.push_clip(Rect::new(r.x, r.y + 36.0, r.w, r.h - 40.0));
         let mut ry = r.y + 38.0 - scroll;
         for (i, it) in items.iter().enumerate() {
             if it.sep {
