@@ -22,31 +22,72 @@ pub enum ScaleKind {
     Phrygian,
     Lydian,
     Mixolydian,
+    Locrian,
     HarmonicMinor,
     MelodicMinor,
+    HarmonicMajor,
     PentatonicMajor,
     PentatonicMinor,
     Blues,
+    BluesMajor,
+    /// Mode de Mi du mineur harmonique : flamenco, oriental, trap sombre.
+    PhrygianDominant,
+    /// Gamme « arabe » (double harmonique).
+    DoubleHarmonic,
+    HungarianMinor,
+    /// Pentatonique japonaise.
+    Hirajoshi,
+    InSen,
+    WholeTone,
+    /// Demi-ton, ton (octatonique).
+    Diminished,
+    BebopDominant,
     /// Les douze notes : aucune gamme imposée.
     #[default]
     Chromatic,
 }
 
 impl ScaleKind {
-    pub const ALL: [ScaleKind; 12] = [
+    pub const ALL: [ScaleKind; 23] = [
         Self::Major,
         Self::Minor,
         Self::Dorian,
         Self::Phrygian,
         Self::Lydian,
         Self::Mixolydian,
+        Self::Locrian,
         Self::HarmonicMinor,
         Self::MelodicMinor,
+        Self::HarmonicMajor,
         Self::PentatonicMajor,
         Self::PentatonicMinor,
         Self::Blues,
+        Self::BluesMajor,
+        Self::PhrygianDominant,
+        Self::DoubleHarmonic,
+        Self::HungarianMinor,
+        Self::Hirajoshi,
+        Self::InSen,
+        Self::WholeTone,
+        Self::Diminished,
+        Self::BebopDominant,
         Self::Chromatic,
     ];
+
+    /// Famille, pour ranger le choix de la gamme.
+    pub fn group(self) -> &'static str {
+        match self {
+            Self::Major | Self::Minor | Self::Dorian | Self::Phrygian | Self::Lydian | Self::Mixolydian | Self::Locrian => {
+                "Modes"
+            }
+            Self::HarmonicMinor | Self::MelodicMinor | Self::HarmonicMajor => "Harmoniques",
+            Self::PentatonicMajor | Self::PentatonicMinor | Self::Blues | Self::BluesMajor => "Pentatoniques et blues",
+            Self::PhrygianDominant | Self::DoubleHarmonic | Self::HungarianMinor | Self::Hirajoshi | Self::InSen => {
+                "Couleurs du monde"
+            }
+            Self::WholeTone | Self::Diminished | Self::BebopDominant | Self::Chromatic => "Symétriques et jazz",
+        }
+    }
 
     /// Intervalles depuis la tonique, en demi-tons, croissants.
     pub fn intervals(self) -> &'static [u8] {
@@ -57,11 +98,22 @@ impl ScaleKind {
             Self::Phrygian => &[0, 1, 3, 5, 7, 8, 10],
             Self::Lydian => &[0, 2, 4, 6, 7, 9, 11],
             Self::Mixolydian => &[0, 2, 4, 5, 7, 9, 10],
+            Self::Locrian => &[0, 1, 3, 5, 6, 8, 10],
             Self::HarmonicMinor => &[0, 2, 3, 5, 7, 8, 11],
             Self::MelodicMinor => &[0, 2, 3, 5, 7, 9, 11],
+            Self::HarmonicMajor => &[0, 2, 4, 5, 7, 8, 11],
             Self::PentatonicMajor => &[0, 2, 4, 7, 9],
             Self::PentatonicMinor => &[0, 3, 5, 7, 10],
             Self::Blues => &[0, 3, 5, 6, 7, 10],
+            Self::BluesMajor => &[0, 2, 3, 4, 7, 9],
+            Self::PhrygianDominant => &[0, 1, 4, 5, 7, 8, 10],
+            Self::DoubleHarmonic => &[0, 1, 4, 5, 7, 8, 11],
+            Self::HungarianMinor => &[0, 2, 3, 6, 7, 8, 11],
+            Self::Hirajoshi => &[0, 2, 3, 7, 8],
+            Self::InSen => &[0, 1, 5, 7, 10],
+            Self::WholeTone => &[0, 2, 4, 6, 8, 10],
+            Self::Diminished => &[0, 1, 3, 4, 6, 7, 9, 10],
+            Self::BebopDominant => &[0, 2, 4, 5, 7, 9, 10, 11],
             Self::Chromatic => &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
         }
     }
@@ -75,11 +127,22 @@ impl ScaleKind {
             Self::Phrygian => "Phrygien",
             Self::Lydian => "Lydien",
             Self::Mixolydian => "Mixolydien",
+            Self::Locrian => "Locrien",
             Self::HarmonicMinor => "Mineur harmonique",
             Self::MelodicMinor => "Mineur mélodique",
-            Self::PentatonicMajor => "Pentatonique majeure",
-            Self::PentatonicMinor => "Pentatonique mineure",
+            Self::HarmonicMajor => "Majeur harmonique",
+            Self::PentatonicMajor => "Penta majeure",
+            Self::PentatonicMinor => "Penta mineure",
             Self::Blues => "Blues",
+            Self::BluesMajor => "Blues majeur",
+            Self::PhrygianDominant => "Phrygien dominant",
+            Self::DoubleHarmonic => "Arabe",
+            Self::HungarianMinor => "Hongrois mineur",
+            Self::Hirajoshi => "Hirajoshi",
+            Self::InSen => "In sen",
+            Self::WholeTone => "Par tons",
+            Self::Diminished => "Diminuée",
+            Self::BebopDominant => "Bebop",
             Self::Chromatic => "Chromatique",
         }
     }
@@ -93,11 +156,22 @@ impl ScaleKind {
             Self::Phrygian => "phrygian",
             Self::Lydian => "lydian",
             Self::Mixolydian => "mixolydian",
+            Self::Locrian => "locrian",
             Self::HarmonicMinor => "harmonic_minor",
             Self::MelodicMinor => "melodic_minor",
+            Self::HarmonicMajor => "harmonic_major",
             Self::PentatonicMajor => "pentatonic_major",
             Self::PentatonicMinor => "pentatonic_minor",
             Self::Blues => "blues",
+            Self::BluesMajor => "blues_major",
+            Self::PhrygianDominant => "phrygian_dominant",
+            Self::DoubleHarmonic => "double_harmonic",
+            Self::HungarianMinor => "hungarian_minor",
+            Self::Hirajoshi => "hirajoshi",
+            Self::InSen => "in_sen",
+            Self::WholeTone => "whole_tone",
+            Self::Diminished => "diminished",
+            Self::BebopDominant => "bebop_dominant",
             Self::Chromatic => "chromatic",
         }
     }
@@ -193,10 +267,22 @@ pub enum ChordKind {
     MinorMajor7,
     Add9,
     MinorAdd9,
+    Six,
+    Minor6,
+    SixNine,
+    SevenSus4,
+    Major9,
+    Minor9,
+    Dominant9,
+    Add11,
+    Minor11,
+    Dominant11,
+    Major13,
+    Dominant13,
 }
 
 impl ChordKind {
-    pub const ALL: [ChordKind; 15] = [
+    pub const ALL: [ChordKind; 27] = [
         Self::Major,
         Self::Minor,
         Self::Diminished,
@@ -212,7 +298,38 @@ impl ChordKind {
         Self::MinorMajor7,
         Self::Add9,
         Self::MinorAdd9,
+        Self::Six,
+        Self::Minor6,
+        Self::SixNine,
+        Self::SevenSus4,
+        Self::Major9,
+        Self::Minor9,
+        Self::Dominant9,
+        Self::Add11,
+        Self::Minor11,
+        Self::Dominant11,
+        Self::Major13,
+        Self::Dominant13,
     ];
+
+    /// Famille, pour ranger le choix de l'accord.
+    pub fn group(self) -> &'static str {
+        match self {
+            Self::Major | Self::Minor | Self::Diminished | Self::Augmented | Self::Sus2 | Self::Sus4 | Self::Power => {
+                "Triades"
+            }
+            Self::Major7
+            | Self::Minor7
+            | Self::Dominant7
+            | Self::HalfDiminished7
+            | Self::Diminished7
+            | Self::MinorMajor7
+            | Self::SevenSus4
+            | Self::Six
+            | Self::Minor6 => "Septièmes et sixtes",
+            _ => "Enrichis",
+        }
+    }
 
     pub fn intervals(self) -> &'static [u8] {
         match self {
@@ -231,6 +348,18 @@ impl ChordKind {
             Self::MinorMajor7 => &[0, 3, 7, 11],
             Self::Add9 => &[0, 4, 7, 14],
             Self::MinorAdd9 => &[0, 3, 7, 14],
+            Self::Six => &[0, 4, 7, 9],
+            Self::Minor6 => &[0, 3, 7, 9],
+            Self::SixNine => &[0, 4, 7, 9, 14],
+            Self::SevenSus4 => &[0, 5, 7, 10],
+            Self::Major9 => &[0, 4, 7, 11, 14],
+            Self::Minor9 => &[0, 3, 7, 10, 14],
+            Self::Dominant9 => &[0, 4, 7, 10, 14],
+            Self::Add11 => &[0, 4, 7, 17],
+            Self::Minor11 => &[0, 3, 7, 10, 14, 17],
+            Self::Dominant11 => &[0, 4, 7, 10, 14, 17],
+            Self::Major13 => &[0, 4, 7, 11, 14, 21],
+            Self::Dominant13 => &[0, 4, 7, 10, 14, 21],
         }
     }
 
@@ -252,6 +381,18 @@ impl ChordKind {
             Self::MinorMajor7 => "m(maj7)",
             Self::Add9 => "add9",
             Self::MinorAdd9 => "madd9",
+            Self::Six => "6",
+            Self::Minor6 => "m6",
+            Self::SixNine => "6/9",
+            Self::SevenSus4 => "7sus4",
+            Self::Major9 => "maj9",
+            Self::Minor9 => "m9",
+            Self::Dominant9 => "9",
+            Self::Add11 => "add11",
+            Self::Minor11 => "m11",
+            Self::Dominant11 => "11",
+            Self::Major13 => "maj13",
+            Self::Dominant13 => "13",
         }
     }
 
@@ -261,6 +402,59 @@ impl ChordKind {
         let intervals: Vec<u8> = notes.iter().map(|&n| n.checked_sub(root)).collect::<Option<_>>()?;
         Self::ALL.into_iter().find(|k| k.intervals() == intervals.as_slice())
     }
+}
+
+/// Disposition des notes d'un accord.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Voicing {
+    /// Notes empilées au plus serré.
+    #[default]
+    Close,
+    /// La deuxième note en partant du haut descend d'une octave (drop 2).
+    Drop2,
+    /// Une note sur deux monte d'une octave : large, aéré.
+    Open,
+}
+
+impl Voicing {
+    pub const ALL: [Voicing; 3] = [Self::Close, Self::Drop2, Self::Open];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Close => "Serré",
+            Self::Drop2 => "Drop 2",
+            Self::Open => "Ouvert",
+        }
+    }
+}
+
+/// Renverse puis dispose un accord : `inversion` fois, la note la plus grave
+/// passe à l'octave du dessus ; le résultat est trié, dans 0–127.
+pub fn revoice(notes: &[u8], inversion: usize, voicing: Voicing) -> Vec<u8> {
+    let mut v: Vec<i32> = notes.iter().map(|&n| i32::from(n)).collect();
+    v.sort_unstable();
+    for _ in 0..inversion.min(v.len().saturating_sub(1)) {
+        let low = v.remove(0);
+        v.push(low + 12);
+    }
+    match voicing {
+        Voicing::Close => {}
+        Voicing::Drop2 if v.len() >= 3 => {
+            let i = v.len() - 2;
+            v[i] -= 12;
+        }
+        Voicing::Drop2 => {}
+        Voicing::Open => {
+            for (i, n) in v.iter_mut().enumerate() {
+                if i % 2 == 1 {
+                    *n += 12;
+                }
+            }
+        }
+    }
+    v.sort_unstable();
+    v.dedup();
+    v.into_iter().filter_map(|n| u8::try_from(n).ok().filter(|&n| n <= 127)).collect()
 }
 
 /// Notes MIDI d'un accord posé sur `root` ; celles au-dessus de 127 sont omises.
@@ -296,6 +490,31 @@ mod tests {
 
     fn project(key: u8, scale: ScaleKind) -> Project {
         Project { key, scale, ..Project::empty() }
+    }
+
+    #[test]
+    fn inversions_and_voicings() {
+        let c = chord(60, ChordKind::Major);
+        assert_eq!(revoice(&c, 0, Voicing::Close), vec![60, 64, 67]);
+        assert_eq!(revoice(&c, 1, Voicing::Close), vec![64, 67, 72]);
+        assert_eq!(revoice(&c, 2, Voicing::Close), vec![67, 72, 76]);
+        // Plus de renversements que de notes : borné.
+        assert_eq!(revoice(&c, 9, Voicing::Close), vec![67, 72, 76]);
+        assert_eq!(revoice(&chord(60, ChordKind::Major7), 0, Voicing::Drop2), vec![55, 60, 64, 71]);
+        assert_eq!(revoice(&c, 0, Voicing::Open), vec![60, 67, 76]);
+    }
+
+    #[test]
+    fn extended_chords_stay_in_scale() {
+        let c = ScaleKind::Major;
+        // Ré mineur 9 et 11 en Do majeur.
+        assert_eq!(c.shaped_chord(0, 62, ChordKind::Dominant9), vec![62, 65, 69, 72, 76]);
+        assert_eq!(c.shaped_chord(0, 62, ChordKind::Dominant11), vec![62, 65, 69, 72, 76, 79]);
+        for sc in ScaleKind::ALL {
+            for k in ChordKind::ALL {
+                assert!(sc.shaped_chord(5, 65, k).iter().all(|&n| sc.contains(5, n)), "{sc:?} {k:?}");
+            }
+        }
     }
 
     #[test]
