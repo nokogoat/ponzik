@@ -248,3 +248,59 @@ already has are not listed here.
 - FabFilter Pro-Q 4: https://www.fabfilter.com/news/1733994000/fabfilter-releases-pro-q-4-equalizer-plug-in · https://www.soundonsound.com/reviews/fabfilter-pro-q-4
 - iZotope Ozone 11: https://izotope.com/en/products/ozone/features/also-includes/master-assistant-view.html · https://www.soundonsound.com/reviews/izotope-ozone-11-advanced
 - Melodyne 5: https://www.pluginboutique.com/products/6442-Melodyne-5-Studio
+
+---
+
+## 7. Wave 4: parity gaps from competitor research
+
+Gaps found in `COMPETITION.md` (November 2026) that no earlier wave covers. Same
+columns and size scale as above; **audio** = `ponzik-audio`, **midi** =
+`ponzik-midi`. The differentiators listed there (one free edition, Linux first,
+instant startup, driver-free vocal recording, workspace profiles, the Pyramid)
+should guide the order.
+
+| # | Item | Why | Size | Area | Depends on | Status |
+|---|---|---|---|---|---|---|
+| V4-1 | **English interface and translation catalog**: every UI string in one table, English and French to start, language picked in the settings | The UI is French only, which blocks most of the world from trying Ponzik | M | ui | – | ⬜ |
+| V4-2 | **macOS port**: Cocoa window, CoreAudio playback and capture, CoreMIDI, then AU hosting | "The same Ponzik on every OS"; a large share of producers are on Macs | L | window, audio, midi, ui | – | ⬜ |
+| V4-3 | **Low-latency Windows audio**: WASAPI exclusive mode and small shared buffers (`IAudioClient3`), optional in-house ASIO host (the ASIO SDK is now GPLv3) | Vocals and guitar need about 5 ms round-trip without ASIO4ALL, FL's top beginner pain | M | audio | – | ⬜ |
+| V4-4 | **Native PipeWire and JACK backends** on Linux, with transport sync | Linux pros route audio between applications (Bitwig, Ardour, Qtractor do it) | L | audio, engine | – | ⬜ |
+| V4-5 | **Recording latency calibration**: loopback measurement, automatic offset of recorded takes | Takes otherwise land late and beginners never know why (Reaper, Cubase) | S | audio, engine, ui | – | ⬜ |
+| V4-6 | **Punch in/out and pre-roll** on the ruler | Fix one line of a vocal without redoing the whole take | M | engine, project, ui | – | ⬜ |
+| V4-7 | **One-click vocal setup**: input picker, meter with clip warning, monitoring, a ready vocal chain (gate, EQ, de-esser, compressor, reverb send) | Turns FL's most common beginner problem into a 10-second task (Logic, Studio Pro, Nectar) | M | ui, engine (de-esser) | V4-3, V4-5 | ⬜ |
+| V4-8 | **Capture Automation**: a buffer of recent parameter moves turned into automation after the fact | Never lose a good gesture (Live 13); the automation twin of MIDI capture | M | engine, ui | V2-8 | ⬜ |
+| V4-9 | **Retroactive audio logger**: always-on buffer of the master and armed inputs, "save the last N minutes" | Recover a jam or a vocal idea that was not armed (FL 2026 Audio Logger) | M | engine, ui | – | ⬜ |
+| V4-10 | **MIDI output, external instruments and MIDI clock out** (ALSA rawmidi, WinMM out) | Ponzik is input-only: no hardware synths, no syncing drum machines | M | midi, engine, ui | – | ⬜ |
+| V4-11 | **Control surfaces**: Mackie Control and HUI, controller templates for faders and transport | Studio users expect hardware faders and transport | M | midi, ui | V2-7, V4-10 | ⬜ |
+| V4-12 | **Key and chord detection**: from MIDI first, then audio (chromagram), feeding the project scale and chord tools | Find the key of a sample or an idea (Logic 12 Chord ID, Live) | M | dsp, project, ui | V1-3 | ⬜ |
+| V4-13 | **Note properties**: slide notes and portamento, per-note pan and fine pitch, CC event lanes | FL's slides and controller lanes are daily tools for 808s and leads | M | engine, project, ui (piano.rs) | – | ⬜ |
+| V4-14 | **Channel Rack graph editor and per-row length** (polymeters) | Per-step pan, pitch and polyrhythms without the piano roll (FL, Live 13 Step Sequencer) | M | engine, project, ui (rack.rs) | – | ⬜ |
+| V4-15 | **Multi-clip and layered editing** in the piano roll | Edit bass and chords together (Live, Bitwig 6) | M | ui (piano.rs) | – | ⬜ |
+| V4-16 | **Groove pool**: extract a groove from MIDI or audio, apply it with an amount | Make programmed parts swing like a sampled break (Live, Logic, Cubase) | M | project, ui | V2-11 for audio | ⬜ |
+| V4-17 | **Convolution engine**: partitioned FFT convolution, IR reverb and cabinet loader | Real spaces and guitar cabinets; FEATURES lists "no convolution" | M | dsp, engine | – | ⬜ |
+| V4-18 | **Amp and cabinet simulator** with a visual of the amp's tone stack | Guitarists and bassists record direct (Live, Logic, Studio Pro 8) | M | dsp, engine, ui | V4-17 | ⬜ |
+| V4-19 | **ARA 2 hosting** | Melodyne and VocAlign inside the timeline (Logic, Cubase, Reaper, Live 13) | L | vst3, engine, ui | V3-14 | ⬜ |
+| V4-20 | **Crash-safe plugin scanning**: scan in a child process, quarantine list, rescan button | A broken plugin must never stop Ponzik from starting | M | clap, vst3, ui | – | ⬜ |
+| V4-21 | **Multi-core audio graph**: independent tracks processed in parallel on a worker pool, lock-free | The engine runs on one core; large projects need all of them | L | engine | – | ⬜ |
+| V4-22 | **Per-track and per-device CPU meter** | Find the plugin that eats the CPU instead of guessing (Reaper, FL) | S | engine, ui | – | ⬜ |
+| V4-23 | **Multi-output plugins and multiple hardware inputs and outputs** | Drum plugins with separate outs, recording a band, external effects | M | engine, audio, clap, vst3 | – | ⬜ |
+| V4-24 | **Manual track delay** (± ms per mixer track) | Fix a late sample or a slow external instrument | S | engine, ui (mixer.rs) | – | ⬜ |
+| V4-25 | **Cue and pre-listen bus** on a second output | Preview clips and samples in headphones while the mix plays (Live, Bitwig) | M | engine, audio, ui | V4-23 | ⬜ |
+| V4-26 | **Collect all and save**: copy every referenced file into the project folder | Move a project to another machine without missing samples | S | project | – | ⬜ |
+| V4-27 | **Free bundled sound library**: drums, loops and presets for every native device | A new user needs sounds in the first minute | M | content, ui | V2-22 | ⬜ |
+| V4-28 | **Similar-sound search** in the browser (spectral fingerprint per sample) | Find another snare like this one (Live, Logic 13) | M | dsp, ui | V2-22 | ⬜ |
+| V4-29 | **Destructive sample editor**: trim, normalize, fade, reverse, loop points, with undo | Clean up a sample without leaving the DAW (FL Edison) | M | project, ui | – | ⬜ |
+| V4-30 | **Score and tab view** | Songwriters, students and guitarists read notation and tabs (Cubase, Logic, Studio Pro 8) | L | ui, project | – | ⬜ |
+| V4-31 | **Expression maps**: articulations per note mapped to keyswitches or CCs | Orchestral libraries are unusable without them (Cubase, Logic) | M | project, engine, ui | V4-13 | ⬜ |
+| V4-32 | **Lossy export**: OGG Vorbis or Opus, then MP3, with in-house encoders | Sharing a demo means a small file | L | project, dsp | V2-25 | ⬜ |
+| V4-33 | **Video track**: import, frame-accurate sync, export | Scoring to picture, content creators | L | new crate, ui | – | ⬜ |
+| V4-34 | **Surround and immersive mixing** (5.1, 7.1.4 beds, object panner) | Atmos delivery for streaming and film (Logic, Cubase, Reaper) | L | engine, ui | V4-23 | ⬜ |
+| V4-35 | **Scripting and extension API**: an in-house script language over the palette actions and the project model | Power users extend the DAW (ReaScript, Ardour Lua, FL Python, Max for Live) | L | new crate, ui | V3-11 | ⬜ |
+| V4-36 | **Accessibility**: visible focus everywhere, screen-reader bridge (UI Automation on Windows, AT-SPI on Linux) | Reaper with OSARA is the only real option for blind musicians today | L | window, ui | – | ⬜ |
+| V4-37 | **UI scaling and HiDPI** (per-monitor scale, settings slider) | 4K and laptop screens; Cubase 15 made every stock effect scalable | M | window, ui | – | ⬜ |
+| V4-38 | **Touch and pen input** for pads, faders and drawing | Touch screens and tablets (FL, Ardour 9) | M | window, ui | V4-37 | ⬜ |
+| V4-39 | **Looper device** with overdub, undo layer and tempo detection | Live layering for performers and guitarists (Live, Bitwig) | M | engine, ui | – | ⬜ |
+| V4-40 | **Microtonal tuning**: Scala files, per-project tuning, piano roll that shows it | Non-Western scales and experimental music (Live, Bitwig, Logic) | M | engine, project, ui | V1-3 | ⬜ |
+| V4-41 | **Collaboration**: merge-friendly project bundles first, then shared live sessions | Producers work in pairs; today that means emailing stems (BandLab, Audiotool) | L | project, new crate | V3-4 | ⬜ |
+| V4-42 | **Help search in the palette**: "how do I…" answered offline from the help texts, with a button that runs the action | Beginner help without a cloud assistant or subscription (FL Gopher, Logic 13) | S | ui (palette.rs) | V1-1 | ⬜ |
+| V4-43 | **FL Studio `.flp` import**: channels, patterns, playlist, mixer, native-device mapping | Ponzik's audience comes from FL; removes the main switching cost | L | project | V3-15 | ⬜ |
