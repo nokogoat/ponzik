@@ -1,6 +1,6 @@
 [package]
 name = "ponzik-midi"
-description = "Entrées MIDI maison de Ponzik (ALSA rawmidi sous Linux, WinMM sous Windows, CoreMIDI sous macOS)"
+description = "Entrées et sorties MIDI maison de Ponzik (ALSA rawmidi sous Linux, WinMM sous Windows, CoreMIDI sous macOS)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

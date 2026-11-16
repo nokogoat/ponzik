@@ -5,6 +5,10 @@
 //! thread avec une liste de paquets, dont les octets passent par le même
 //! analyseur que sous Linux. L'identifiant d'un port est l'identifiant unique
 //! CoreMIDI de la source (stable d'une session à l'autre).
+//!
+//! En sortie, chaque port ouvert crée un port de sortie et envoie ses octets à
+//! une destination par `MIDISend`, horodatés « maintenant » : c'est le thread
+//! d'envoi de [`crate::out`] qui choisit l'instant.
 
 #![allow(non_upper_case_globals)]
 
@@ -55,6 +59,10 @@ unsafe extern "C" {
     fn MIDIPortDispose(port: MIDIPortRef) -> OSStatus;
     fn MIDIGetNumberOfSources() -> usize;
     fn MIDIGetSource(index: usize) -> MIDIEndpointRef;
+    fn MIDIOutputPortCreate(client: MIDIClientRef, name: CFStringRef, port: *mut MIDIPortRef) -> OSStatus;
+    fn MIDIGetNumberOfDestinations() -> usize;
+    fn MIDIGetDestination(index: usize) -> MIDIEndpointRef;
+    fn MIDISend(port: MIDIPortRef, destination: MIDIEndpointRef, list: *const MIDIPacketList) -> OSStatus;
     fn MIDIObjectGetIntegerProperty(object: MIDIObjectRef, property: CFStringRef, value: *mut i32) -> OSStatus;
     fn MIDIObjectGetStringProperty(object: MIDIObjectRef, property: CFStringRef, value: *mut CFStringRef) -> OSStatus;
 }
@@ -118,20 +126,36 @@ fn unique_id(object: MIDIObjectRef) -> Option<i32> {
 fn sources() -> Vec<(MIDIEndpointRef, MidiPortInfo)> {
     // SAFETY: énumération sans état.
     let count = unsafe { MIDIGetNumberOfSources() };
+    // SAFETY: index dans les bornes (vérifiées par CoreMIDI, 0 sinon).
+    endpoints(count, |i| unsafe { MIDIGetSource(i) }, "Source MIDI")
+}
+
+/// Destinations MIDI du système, avec leur identifiant unique.
+fn destinations() -> Vec<(MIDIEndpointRef, MidiPortInfo)> {
+    // SAFETY: énumération sans état.
+    let count = unsafe { MIDIGetNumberOfDestinations() };
+    // SAFETY: idem.
+    endpoints(count, |i| unsafe { MIDIGetDestination(i) }, "MIDI destination")
+}
+
+fn endpoints(
+    count: usize,
+    get: impl Fn(usize) -> MIDIEndpointRef,
+    fallback: &str,
+) -> Vec<(MIDIEndpointRef, MidiPortInfo)> {
     (0..count)
         .filter_map(|i| {
-            // SAFETY: index dans les bornes.
-            let source = unsafe { MIDIGetSource(i) };
-            if source == 0 {
+            let endpoint = get(i);
+            if endpoint == 0 {
                 return None;
             }
-            let id = unique_id(source)?;
+            let id = unique_id(endpoint)?;
             // SAFETY: constantes exportées par CoreMIDI.
             let (display, plain) = unsafe { (kMIDIPropertyDisplayName, kMIDIPropertyName) };
-            let name = string_property(source, display)
-                .or_else(|| string_property(source, plain))
-                .unwrap_or_else(|| format!("Source MIDI {id}"));
-            Some((source, MidiPortInfo { id: id.to_string(), name }))
+            let name = string_property(endpoint, display)
+                .or_else(|| string_property(endpoint, plain))
+                .unwrap_or_else(|| format!("{fallback} {id}"));
+            Some((endpoint, MidiPortInfo { id: id.to_string(), name }))
         })
         .collect()
 }
@@ -234,5 +258,68 @@ pub(crate) fn open(id: &str, name: &str, tx: Sender<MidiEvent>) -> Result<Port, 
     match unsafe { MIDIPortConnectSource(port.port, source, null_mut()) } {
         0 => Ok(port),
         code => Err(error(code, "MIDIPortConnectSource")),
+    }
+}
+
+pub(crate) fn list_outputs() -> Result<Vec<MidiPortInfo>, MidiError> {
+    client()?;
+    Ok(destinations().into_iter().map(|(_, info)| info).collect())
+}
+
+/// Octets de données au plus par paquet envoyé.
+const PACKET_DATA: usize = 256;
+
+/// `MIDIPacketList` d'un seul paquet, construit à la main (`#pragma pack(4)`) :
+/// `numPackets` (u32), `timeStamp` (u64), `length` (u16), `data`.
+#[repr(C, align(8))]
+struct PacketBuffer([u8; 4 + 8 + 2 + PACKET_DATA]);
+
+pub(crate) struct OutPort {
+    port: MIDIPortRef,
+    destination: MIDIEndpointRef,
+    buffer: Box<PacketBuffer>,
+}
+
+// SAFETY: les références CoreMIDI s'utilisent depuis n'importe quel thread.
+unsafe impl Send for OutPort {}
+
+impl Drop for OutPort {
+    fn drop(&mut self) {
+        // SAFETY: port créé par MIDIOutputPortCreate, détruit une seule fois.
+        unsafe { MIDIPortDispose(self.port) };
+    }
+}
+
+pub(crate) fn open_output(id: &str) -> Result<OutPort, MidiError> {
+    let client = client()?;
+    let (destination, info) = destinations()
+        .into_iter()
+        .find(|(_, info)| info.id == id)
+        .ok_or_else(|| MidiError::PortNotFound(id.to_owned()))?;
+    let port_name = CfString::new(&format!("Ponzik · {}", info.name));
+    let mut port = 0;
+    // SAFETY: client valide ; `port` reçoit la référence.
+    match unsafe { MIDIOutputPortCreate(client, port_name.0, &mut port) } {
+        0 => Ok(OutPort { port, destination, buffer: Box::new(PacketBuffer([0; 4 + 8 + 2 + PACKET_DATA])) }),
+        code => Err(error(code, "MIDIOutputPortCreate")),
+    }
+}
+
+impl OutPort {
+    pub(crate) fn send(&mut self, bytes: &[u8]) -> Result<(), MidiError> {
+        for chunk in bytes.chunks(PACKET_DATA) {
+            let buf = &mut self.buffer.0;
+            buf[..4].copy_from_slice(&1u32.to_ne_bytes());
+            // Horodatage nul : envoi immédiat.
+            buf[4..12].copy_from_slice(&0u64.to_ne_bytes());
+            buf[12..14].copy_from_slice(&(chunk.len() as u16).to_ne_bytes());
+            buf[14..14 + chunk.len()].copy_from_slice(chunk);
+            // SAFETY: liste d'un paquet bien formée, valide pendant l'appel.
+            let code = unsafe { MIDISend(self.port, self.destination, buf.as_ptr().cast()) };
+            if code != 0 {
+                return Err(error(code, "MIDISend"));
+            }
+        }
+        Ok(())
     }
 }

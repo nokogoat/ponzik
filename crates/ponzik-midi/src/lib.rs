@@ -1,17 +1,23 @@
-//! Entrées MIDI maison de Ponzik, sans dépendance : on parle directement
-//! aux API du système.
+//! Entrées et sorties MIDI maison de Ponzik, sans dépendance : on parle
+//! directement aux API du système.
 //!
 //! - Linux : ALSA rawmidi (`libasound`), un thread de lecture par port.
-//! - Windows : WinMM (`midiIn*`), rappel système.
+//! - Windows : WinMM (`midiIn*`, `midiOut*`), rappel système en entrée.
 //! - macOS (expérimental) : CoreMIDI, rappel système par port.
 //!
 //! Les événements arrivent dans un canal ; [`MidiInput::poll`] les vide sans bloquer.
+//! En sortie, [`MidiOutput`] écrit directement ; le moteur passe plutôt par
+//! [`out::OutputScheduler`], qui envoie des messages horodatés depuis son thread.
 //! Les canaux MIDI sont numérotés de 0 à 15.
 
 use std::fmt;
 use std::sync::mpsc::{self, Receiver};
 
+pub mod message;
+pub mod out;
 pub mod parser;
+
+pub use message::ShortMessage;
 
 #[cfg(target_os = "linux")]
 #[path = "alsa.rs"]
@@ -113,9 +119,88 @@ impl MidiInput {
     }
 }
 
+/// Liste les ports de sortie MIDI (vide s'il n'y a aucun périphérique).
+pub fn list_outputs() -> Result<Vec<MidiPortInfo>, MidiError> {
+    backend::list_outputs()
+}
+
+/// Port de sortie ouvert ; le détruire le ferme. Les écritures peuvent
+/// bloquer brièvement : jamais depuis le thread audio.
+pub struct MidiOutput {
+    name: String,
+    port: backend::OutPort,
+}
+
+/// Ouvre le port de sortie `id` (tel que renvoyé par [`list_outputs`]).
+pub fn open_output(id: &str) -> Result<MidiOutput, MidiError> {
+    let name = list_outputs()?
+        .into_iter()
+        .find(|p| p.id == id)
+        .map(|p| p.name)
+        .unwrap_or_else(|| id.to_owned());
+    let port = backend::open_output(id)?;
+    Ok(MidiOutput { name, port })
+}
+
+impl MidiOutput {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Écrit des octets MIDI bruts (un ou plusieurs messages complets).
+    pub fn send(&mut self, bytes: &[u8]) -> Result<(), MidiError> {
+        self.port.send(bytes)
+    }
+}
+
+impl out::MidiSink for MidiOutput {
+    fn send(&mut self, bytes: &[u8]) -> Result<(), MidiError> {
+        MidiOutput::send(self, bytes)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Joue une gamme sur le premier port de sortie, avec l'horloge.
+    /// `cargo test -p ponzik-midi -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn plays_on_the_first_real_output() {
+        use message::{CLOCK, START, STOP};
+        let ports = list_outputs().expect("list_outputs");
+        println!("{} MIDI output(s): {ports:#?}", ports.len());
+        let Some(first) = ports.first() else { return };
+        let mut port = open_output(&first.id).expect("open_output");
+        port.send(ShortMessage::realtime(START).bytes()).unwrap();
+        for key in [60, 62, 64, 65, 67] {
+            port.send(ShortMessage::note_on(0, key, 100).bytes()).unwrap();
+            for _ in 0..12 {
+                port.send(ShortMessage::realtime(CLOCK).bytes()).unwrap();
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            port.send(ShortMessage::note_off(0, key, 0).bytes()).unwrap();
+        }
+        port.send(ShortMessage::realtime(STOP).bytes()).unwrap();
+        assert!(open_output("hw:99,0,0").is_err());
+    }
+
+    /// Planificateur sur les vrais ports : un accord sur chacun, 100 ms plus tard.
+    #[test]
+    #[ignore]
+    fn scheduler_drives_real_outputs() {
+        let (mut tx, sched) = out::OutputScheduler::start_system(64).expect("scheduler");
+        let at = out::now_ns() + 100_000_000;
+        for port in 0..sched.ports().len() as u8 {
+            for (k, key) in [60u8, 64, 67].into_iter().enumerate() {
+                let msg = ShortMessage::note_on(0, key, 90);
+                tx.push(out::TimedMessage { port, at_ns: at + k as u64, frame: 0, message: msg });
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        drop(sched);
+    }
 
     /// Sans matériel : ne doit ni paniquer ni échouer. `cargo test -p ponzik-midi -- --ignored --nocapture`
     #[test]

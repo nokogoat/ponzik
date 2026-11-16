@@ -1,8 +1,10 @@
 //! Pilote ALSA rawmidi : liaisons FFI maison vers `libasound`.
 //!
-//! On énumère les sous-périphériques d'entrée de chaque carte via l'interface
-//! de contrôle, puis on ouvre `hw:C,D,S` en non bloquant. Le thread de lecture
-//! attend avec `poll` (délai court) pour pouvoir s'arrêter proprement.
+//! On énumère les sous-périphériques d'entrée (ou de sortie) de chaque carte
+//! via l'interface de contrôle, puis on ouvre `hw:C,D,S`. En entrée, l'ouverture
+//! est non bloquante et le thread de lecture attend avec `poll` (délai court)
+//! pour pouvoir s'arrêter proprement. En sortie, l'écriture est bloquante : elle
+//! se fait sur le thread d'envoi de [`crate::out`], jamais sur le thread audio.
 
 use std::ffi::{CStr, CString, c_char, c_int, c_short, c_uint, c_ulong, c_void};
 use std::ptr::null_mut;
@@ -60,6 +62,9 @@ unsafe extern "C" {
     ) -> c_int;
     fn snd_rawmidi_close(rawmidi: *mut SndRawmidi) -> c_int;
     fn snd_rawmidi_read(rawmidi: *mut SndRawmidi, buffer: *mut c_void, size: usize) -> isize;
+    fn snd_rawmidi_write(rawmidi: *mut SndRawmidi, buffer: *const c_void, size: usize) -> isize;
+    fn snd_rawmidi_drain(rawmidi: *mut SndRawmidi) -> c_int;
+    fn snd_rawmidi_nonblock(rawmidi: *mut SndRawmidi, nonblock: c_int) -> c_int;
     fn snd_rawmidi_poll_descriptors_count(rawmidi: *mut SndRawmidi) -> c_int;
     fn snd_rawmidi_poll_descriptors(rawmidi: *mut SndRawmidi, pfds: *mut PollFd, space: c_uint) -> c_int;
     fn snd_strerror(errnum: c_int) -> *const c_char;
@@ -70,6 +75,7 @@ unsafe extern "C" {
     fn poll(fds: *mut PollFd, nfds: c_ulong, timeout: c_int) -> c_int;
 }
 
+const SND_RAWMIDI_STREAM_OUTPUT: c_int = 0;
 const SND_RAWMIDI_STREAM_INPUT: c_int = 1;
 const SND_RAWMIDI_NONBLOCK: c_int = 0x0002;
 const EAGAIN: c_int = 11;
@@ -116,6 +122,14 @@ impl Drop for Info {
 }
 
 pub(crate) fn list() -> Result<Vec<MidiPortInfo>, MidiError> {
+    list_stream(SND_RAWMIDI_STREAM_INPUT)
+}
+
+pub(crate) fn list_outputs() -> Result<Vec<MidiPortInfo>, MidiError> {
+    list_stream(SND_RAWMIDI_STREAM_OUTPUT)
+}
+
+fn list_stream(stream: c_int) -> Result<Vec<MidiPortInfo>, MidiError> {
     let mut raw = null_mut();
     // SAFETY: pointeur de sortie valide.
     check(unsafe { snd_rawmidi_info_malloc(&mut raw) }, "snd_rawmidi_info_malloc")?;
@@ -128,12 +142,12 @@ pub(crate) fn list() -> Result<Vec<MidiPortInfo>, MidiError> {
             break;
         }
         // Une carte illisible ne doit pas masquer les autres.
-        list_card(card, &info, &mut ports);
+        list_card(card, &info, stream, &mut ports);
     }
     Ok(ports)
 }
 
-fn list_card(card: c_int, info: &Info, ports: &mut Vec<MidiPortInfo>) {
+fn list_card(card: c_int, info: &Info, stream: c_int, ports: &mut Vec<MidiPortInfo>) {
     let Ok(hw) = CString::new(format!("hw:{card}")) else { return };
     let mut raw = null_mut();
     // SAFETY: nom C valide, pointeur de sortie valide.
@@ -151,9 +165,9 @@ fn list_card(card: c_int, info: &Info, ports: &mut Vec<MidiPortInfo>) {
         let count = unsafe {
             snd_rawmidi_info_set_device(info.0, device as c_uint);
             snd_rawmidi_info_set_subdevice(info.0, 0);
-            snd_rawmidi_info_set_stream(info.0, SND_RAWMIDI_STREAM_INPUT);
+            snd_rawmidi_info_set_stream(info.0, stream);
             if snd_ctl_rawmidi_info(ctl.0, info.0) < 0 {
-                continue; // -ENOENT : sortie seule
+                continue; // -ENOENT : pas de flux dans ce sens
             }
             snd_rawmidi_info_get_subdevices_count(info.0)
         };
@@ -231,6 +245,53 @@ pub(crate) fn open(id: &str, name: &str, tx: Sender<MidiEvent>) -> Result<Port, 
         .spawn(move || read_loop(midi, fds, &flag, &tx, &label))
         .map_err(|e| MidiError::System(format!("thread MIDI : {e}")))?;
     Ok(Port { stop, handle: Some(handle) })
+}
+
+/// Port de sortie ouvert ; les octets partent à chaque [`OutPort::send`].
+pub(crate) struct OutPort {
+    midi: Rawmidi,
+}
+
+impl Drop for OutPort {
+    fn drop(&mut self) {
+        // SAFETY: handle ouvert ; on attend que le tampon du noyau soit vidé
+        // (derniers « note off ») avant que `Rawmidi` ne le ferme.
+        unsafe { snd_rawmidi_drain(self.midi.0) };
+    }
+}
+
+pub(crate) fn open_output(id: &str) -> Result<OutPort, MidiError> {
+    let c_id = CString::new(id).map_err(|_| MidiError::PortNotFound(id.to_owned()))?;
+    let mut raw = null_mut();
+    // SAFETY: nom C valide ; seule la sortie est demandée. Ouverture non bloquante
+    // (un port occupé échoue au lieu d'attendre), écriture bloquante ensuite.
+    let code = unsafe { snd_rawmidi_open(null_mut(), &mut raw, c_id.as_ptr(), SND_RAWMIDI_NONBLOCK) };
+    if code == -ENOENT {
+        return Err(MidiError::PortNotFound(id.to_owned()));
+    }
+    check(code, &format!("snd_rawmidi_open {id}"))?;
+    let midi = Rawmidi(raw);
+    // SAFETY: handle ouvert.
+    check(unsafe { snd_rawmidi_nonblock(midi.0, 0) }, "snd_rawmidi_nonblock")?;
+    Ok(OutPort { midi })
+}
+
+impl OutPort {
+    pub(crate) fn send(&mut self, bytes: &[u8]) -> Result<(), MidiError> {
+        let mut rest = bytes;
+        while !rest.is_empty() {
+            // SAFETY: `rest` est un tampon valide de `rest.len()` octets.
+            let n = unsafe { snd_rawmidi_write(self.midi.0, rest.as_ptr().cast(), rest.len()) };
+            if n < 0 {
+                return Err(MidiError::System(format!("snd_rawmidi_write : {}", strerror(n as c_int))));
+            }
+            if n == 0 {
+                return Err(MidiError::System("snd_rawmidi_write : aucun octet écrit".into()));
+            }
+            rest = &rest[(n as usize).min(rest.len())..];
+        }
+        Ok(())
+    }
 }
 
 fn read_loop(midi: Rawmidi, mut fds: Vec<PollFd>, stop: &AtomicBool, tx: &Sender<MidiEvent>, name: &str) {
