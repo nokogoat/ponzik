@@ -19,8 +19,8 @@ const VOICES: usize = 16;
 /// Au-delà, le filtre est court-circuité.
 const OPEN_CUTOFF: f32 = 19_999.0;
 
-const MODES: &[&str] = &["One-shot", "Mélodique"];
-const OFF_ON: &[&str] = &["Non", "Oui"];
+const MODES: &[&str] = &["One-shot", "Melodic"];
+const OFF_ON: &[&str] = &["No", "Yes"];
 
 const P_ROOT: u32 = 0;
 const P_MODE: u32 = 1;
@@ -39,21 +39,21 @@ const P_CUTOFF: u32 = 13;
 const P_VOLUME: u32 = 14;
 
 static PARAMS: [ParamInfo; 15] = [
-    ParamInfo::new(P_ROOT, "Note de base", 0.0, 127.0, 60.0, Unit::None).group("Échantillon"),
-    ParamInfo::choice(P_MODE, "Mode", MODES, 1).group("Échantillon"),
-    ParamInfo::new(P_START, "Début", 0.0, 1.0, 0.0, Unit::Percent).group("Échantillon"),
-    ParamInfo::new(P_END, "Fin", 0.0, 1.0, 1.0, Unit::Percent).group("Échantillon"),
-    ParamInfo::choice(P_REVERSE, "Inversé", OFF_ON, 0).group("Échantillon"),
-    ParamInfo::choice(P_LOOP, "Boucle", OFF_ON, 0).group("Boucle"),
-    ParamInfo::new(P_LOOP_START, "Début de boucle", 0.0, 1.0, 0.0, Unit::Percent).group("Boucle"),
-    ParamInfo::new(P_TRANSPOSE, "Transposition", -24.0, 24.0, 0.0, Unit::Semitones).group("Hauteur"),
-    ParamInfo::new(P_CENTS, "Accord fin", -100.0, 100.0, 0.0, Unit::Cents).group("Hauteur"),
-    ParamInfo::new(P_CUTOFF, "Coupure", 30.0, 20_000.0, 20_000.0, Unit::Hz).log().group("Filtre"),
-    ParamInfo::new(P_ATTACK, "Attaque", 0.001, 4.0, 0.001, Unit::Seconds).log().group("Amplitude"),
-    ParamInfo::new(P_DECAY, "Déclin", 0.005, 8.0, 0.2, Unit::Seconds).log().group("Amplitude"),
-    ParamInfo::new(P_SUSTAIN, "Maintien", 0.0, 1.0, 1.0, Unit::Percent).group("Amplitude"),
-    ParamInfo::new(P_RELEASE, "Relâche", 0.005, 8.0, 0.1, Unit::Seconds).log().group("Amplitude"),
-    ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -3.0, Unit::Db).group("Amplitude"),
+    ParamInfo::new(P_ROOT, "Root Note", 0.0, 127.0, 60.0, Unit::None).group("Sample"),
+    ParamInfo::choice(P_MODE, "Mode", MODES, 1).group("Sample"),
+    ParamInfo::new(P_START, "Start", 0.0, 1.0, 0.0, Unit::Percent).group("Sample"),
+    ParamInfo::new(P_END, "End", 0.0, 1.0, 1.0, Unit::Percent).group("Sample"),
+    ParamInfo::choice(P_REVERSE, "Reverse", OFF_ON, 0).group("Sample"),
+    ParamInfo::choice(P_LOOP, "Loop", OFF_ON, 0).group("Loop"),
+    ParamInfo::new(P_LOOP_START, "Loop Start", 0.0, 1.0, 0.0, Unit::Percent).group("Loop"),
+    ParamInfo::new(P_TRANSPOSE, "Transpose", -24.0, 24.0, 0.0, Unit::Semitones).group("Pitch"),
+    ParamInfo::new(P_CENTS, "Fine Tune", -100.0, 100.0, 0.0, Unit::Cents).group("Pitch"),
+    ParamInfo::new(P_CUTOFF, "Cutoff", 30.0, 20_000.0, 20_000.0, Unit::Hz).log().group("Filter"),
+    ParamInfo::new(P_ATTACK, "Attack", 0.001, 4.0, 0.001, Unit::Seconds).log().group("Amp"),
+    ParamInfo::new(P_DECAY, "Decay", 0.005, 8.0, 0.2, Unit::Seconds).log().group("Amp"),
+    ParamInfo::new(P_SUSTAIN, "Sustain", 0.0, 1.0, 1.0, Unit::Percent).group("Amp"),
+    ParamInfo::new(P_RELEASE, "Release", 0.005, 8.0, 0.1, Unit::Seconds).log().group("Amp"),
+    ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -3.0, Unit::Db).group("Amp"),
 ];
 
 struct Voice {

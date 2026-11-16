@@ -11,20 +11,20 @@ const MAX_NOTES: usize = 5;
 const NONE: u8 = u8::MAX;
 
 const PRESETS: &[&str] = &[
-    "Libre",
-    "Majeur",
-    "Mineur",
-    "Quinte",
+    "Free",
+    "Major",
+    "Minor",
+    "Fifth",
     "Sus2",
     "Sus4",
-    "Majeur 7",
-    "Mineur 7",
-    "Septième",
-    "Diminué",
-    "Augmenté",
+    "Major 7",
+    "Minor 7",
+    "Dominant 7",
+    "Diminished",
+    "Augmented",
     "Octave",
-    "Majeur 9",
-    "Mineur 9",
+    "Major 9",
+    "Minor 9",
 ];
 /// Intervalles ajoutés par chaque préréglage (0 : aucun) ; « Libre » prend les paramètres.
 const PRESET_INTERVALS: [[i32; 4]; 14] = [
@@ -45,12 +45,12 @@ const PRESET_INTERVALS: [[i32; 4]; 14] = [
 ];
 
 static PARAMS: [ParamInfo; 6] = [
-    ParamInfo::choice(P_PRESET, "Accord", PRESETS, 1).group("Accord"),
-    ParamInfo::new(P_INTERVALS[0], "Intervalle 1", -24.0, 24.0, 0.0, Unit::Semitones).group("Libre"),
-    ParamInfo::new(P_INTERVALS[1], "Intervalle 2", -24.0, 24.0, 0.0, Unit::Semitones).group("Libre"),
-    ParamInfo::new(P_INTERVALS[2], "Intervalle 3", -24.0, 24.0, 0.0, Unit::Semitones).group("Libre"),
-    ParamInfo::new(P_INTERVALS[3], "Intervalle 4", -24.0, 24.0, 0.0, Unit::Semitones).group("Libre"),
-    ParamInfo::new(P_VELOCITY, "Vélocité ajoutées", 0.0, 1.0, 1.0, Unit::Percent).group("Accord"),
+    ParamInfo::choice(P_PRESET, "Chord", PRESETS, 1).group("Chord"),
+    ParamInfo::new(P_INTERVALS[0], "Interval 1", -24.0, 24.0, 0.0, Unit::Semitones).group("Free"),
+    ParamInfo::new(P_INTERVALS[1], "Interval 2", -24.0, 24.0, 0.0, Unit::Semitones).group("Free"),
+    ParamInfo::new(P_INTERVALS[2], "Interval 3", -24.0, 24.0, 0.0, Unit::Semitones).group("Free"),
+    ParamInfo::new(P_INTERVALS[3], "Interval 4", -24.0, 24.0, 0.0, Unit::Semitones).group("Free"),
+    ParamInfo::new(P_VELOCITY, "Added Velocity", 0.0, 1.0, 1.0, Unit::Percent).group("Chord"),
 ];
 
 /// Accords : chaque note jouée en ajoute jusqu'à quatre, d'après un préréglage

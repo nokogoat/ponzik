@@ -3,14 +3,31 @@
 //! La tonalité est une classe de hauteur (0 = do … 11 = si) ; les notes sont des
 //! numéros MIDI (60 = do 4). La gamme chromatique, par défaut, n'impose rien.
 
+use ponzik_i18n::{tr, tr_ctx, tr_noop};
+
 use crate::Project;
 
-/// Noms des douze classes de hauteur, en notation française.
-pub const KEY_NAMES: [&str; 12] = ["Do", "Do♯", "Ré", "Mi♭", "Mi", "Fa", "Fa♯", "Sol", "La♭", "La", "Si♭", "Si"];
+/// Noms des douze classes de hauteur, en notation anglaise (non traduits ;
+/// [`key_name`] donne le nom dans la langue de l'interface).
+pub const KEY_NAMES: [&str; 12] = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
 
-/// Nom d'une tonalité (0–11, ramenée modulo 12).
+/// Nom d'une tonalité (0–11, ramenée modulo 12), dans la langue de l'interface
+/// (« A » en anglais, « La » en français).
 pub fn key_name(key: u8) -> &'static str {
-    KEY_NAMES[usize::from(key % 12)]
+    match key % 12 {
+        0 => tr_ctx("note name", "C"),
+        1 => tr_ctx("note name", "C♯"),
+        2 => tr_ctx("note name", "D"),
+        3 => tr_ctx("note name", "E♭"),
+        4 => tr_ctx("note name", "E"),
+        5 => tr_ctx("note name", "F"),
+        6 => tr_ctx("note name", "F♯"),
+        7 => tr_ctx("note name", "G"),
+        8 => tr_ctx("note name", "A♭"),
+        9 => tr_ctx("note name", "A"),
+        10 => tr_ctx("note name", "B♭"),
+        _ => tr_ctx("note name", "B"),
+    }
 }
 
 /// Mode de la gamme du projet.
@@ -74,18 +91,18 @@ impl ScaleKind {
         Self::Chromatic,
     ];
 
-    /// Famille, pour ranger le choix de la gamme.
+    /// Famille, pour ranger le choix de la gamme (traduite).
     pub fn group(self) -> &'static str {
         match self {
             Self::Major | Self::Minor | Self::Dorian | Self::Phrygian | Self::Lydian | Self::Mixolydian | Self::Locrian => {
-                "Modes"
+                tr("Modes")
             }
-            Self::HarmonicMinor | Self::MelodicMinor | Self::HarmonicMajor => "Harmoniques",
-            Self::PentatonicMajor | Self::PentatonicMinor | Self::Blues | Self::BluesMajor => "Pentatoniques et blues",
+            Self::HarmonicMinor | Self::MelodicMinor | Self::HarmonicMajor => tr("Harmonic"),
+            Self::PentatonicMajor | Self::PentatonicMinor | Self::Blues | Self::BluesMajor => tr("Pentatonic and blues"),
             Self::PhrygianDominant | Self::DoubleHarmonic | Self::HungarianMinor | Self::Hirajoshi | Self::InSen => {
-                "Couleurs du monde"
+                tr("World colors")
             }
-            Self::WholeTone | Self::Diminished | Self::BebopDominant | Self::Chromatic => "Symétriques et jazz",
+            Self::WholeTone | Self::Diminished | Self::BebopDominant | Self::Chromatic => tr("Symmetric and jazz"),
         }
     }
 
@@ -118,32 +135,32 @@ impl ScaleKind {
         }
     }
 
-    /// Nom affiché.
+    /// Nom affiché (traduit).
     pub fn name(self) -> &'static str {
         match self {
-            Self::Major => "Majeur",
-            Self::Minor => "Mineur",
-            Self::Dorian => "Dorien",
-            Self::Phrygian => "Phrygien",
-            Self::Lydian => "Lydien",
-            Self::Mixolydian => "Mixolydien",
-            Self::Locrian => "Locrien",
-            Self::HarmonicMinor => "Mineur harmonique",
-            Self::MelodicMinor => "Mineur mélodique",
-            Self::HarmonicMajor => "Majeur harmonique",
-            Self::PentatonicMajor => "Penta majeure",
-            Self::PentatonicMinor => "Penta mineure",
-            Self::Blues => "Blues",
-            Self::BluesMajor => "Blues majeur",
-            Self::PhrygianDominant => "Phrygien dominant",
-            Self::DoubleHarmonic => "Arabe",
-            Self::HungarianMinor => "Hongrois mineur",
-            Self::Hirajoshi => "Hirajoshi",
-            Self::InSen => "In sen",
-            Self::WholeTone => "Par tons",
-            Self::Diminished => "Diminuée",
-            Self::BebopDominant => "Bebop",
-            Self::Chromatic => "Chromatique",
+            Self::Major => tr("Major"),
+            Self::Minor => tr("Minor"),
+            Self::Dorian => tr("Dorian"),
+            Self::Phrygian => tr("Phrygian"),
+            Self::Lydian => tr("Lydian"),
+            Self::Mixolydian => tr("Mixolydian"),
+            Self::Locrian => tr("Locrian"),
+            Self::HarmonicMinor => tr("Harmonic minor"),
+            Self::MelodicMinor => tr("Melodic minor"),
+            Self::HarmonicMajor => tr("Harmonic major"),
+            Self::PentatonicMajor => tr("Major pentatonic"),
+            Self::PentatonicMinor => tr("Minor pentatonic"),
+            Self::Blues => tr("Blues"),
+            Self::BluesMajor => tr("Major blues"),
+            Self::PhrygianDominant => tr("Phrygian dominant"),
+            Self::DoubleHarmonic => tr("Double harmonic"),
+            Self::HungarianMinor => tr("Hungarian minor"),
+            Self::Hirajoshi => tr("Hirajoshi"),
+            Self::InSen => tr("In sen"),
+            Self::WholeTone => tr("Whole tone"),
+            Self::Diminished => ponzik_i18n::tr_ctx("scale", "Diminished"),
+            Self::BebopDominant => tr("Bebop"),
+            Self::Chromatic => tr("Chromatic"),
         }
     }
 
@@ -312,11 +329,12 @@ impl ChordKind {
         Self::Dominant13,
     ];
 
-    /// Famille, pour ranger le choix de l'accord.
+    /// Famille, pour ranger le choix de l'accord : libellé anglais, qui sert
+    /// aussi de clé (l'interface le traduit à l'affichage avec `tr`).
     pub fn group(self) -> &'static str {
         match self {
             Self::Major | Self::Minor | Self::Diminished | Self::Augmented | Self::Sus2 | Self::Sus4 | Self::Power => {
-                "Triades"
+                tr_noop("Triads")
             }
             Self::Major7
             | Self::Minor7
@@ -326,8 +344,8 @@ impl ChordKind {
             | Self::MinorMajor7
             | Self::SevenSus4
             | Self::Six
-            | Self::Minor6 => "Septièmes et sixtes",
-            _ => "Enrichis",
+            | Self::Minor6 => tr_noop("Sevenths and sixths"),
+            _ => tr_noop("Extended"),
         }
     }
 
@@ -419,11 +437,12 @@ pub enum Voicing {
 impl Voicing {
     pub const ALL: [Voicing; 3] = [Self::Close, Self::Drop2, Self::Open];
 
+    /// Nom affiché (traduit).
     pub fn name(self) -> &'static str {
         match self {
-            Self::Close => "Serré",
-            Self::Drop2 => "Drop 2",
-            Self::Open => "Ouvert",
+            Self::Close => tr_ctx("voicing", "Close"),
+            Self::Drop2 => tr("Drop 2"),
+            Self::Open => tr_ctx("voicing", "Open"),
         }
     }
 }
@@ -550,8 +569,8 @@ mod tests {
         }
         assert_eq!(ScaleKind::from_id("inconnue"), None);
         assert_eq!(ScaleKind::default(), ScaleKind::Chromatic);
-        assert_eq!(key_name(9), "La");
-        assert_eq!(key_name(21), "La");
+        assert_eq!(key_name(9), "A");
+        assert_eq!(key_name(21), "A");
     }
 
     #[test]

@@ -24,22 +24,22 @@ const P_OUTPUT: u32 = 19;
 
 const fn band(id: u32, group: &'static str, hz: f32) -> [ParamInfo; 3] {
     [
-        ParamInfo::new(id, "Fréquence", 20.0, 20_000.0, hz, Unit::Hz).log().group(group),
+        ParamInfo::new(id, "Frequency", 20.0, 20_000.0, hz, Unit::Hz).log().group(group),
         ParamInfo::new(id + 1, "Gain", -18.0, 18.0, 0.0, Unit::Db).group(group),
         ParamInfo::new(id + 2, "Q", 0.1, 18.0, 1.0, Unit::None).log().group(group),
     ]
 }
 
-const B1: [ParamInfo; 3] = band(P_BAND, "Bande 1", 250.0);
-const B2: [ParamInfo; 3] = band(P_BAND + 3, "Bande 2", 1_000.0);
-const B3: [ParamInfo; 3] = band(P_BAND + 6, "Bande 3", 4_000.0);
+const B1: [ParamInfo; 3] = band(P_BAND, "Band 1", 250.0);
+const B2: [ParamInfo; 3] = band(P_BAND + 3, "Band 2", 1_000.0);
+const B3: [ParamInfo; 3] = band(P_BAND + 6, "Band 3", 4_000.0);
 
 static PARAMS: [ParamInfo; 20] = [
-    ParamInfo::choice(P_LC_ON, "Coupe-bas", OFF_ON, 0).group("Coupe-bas"),
-    ParamInfo::new(P_LC_FREQ, "Fréquence", 20.0, 2_000.0, 30.0, Unit::Hz).log().group("Coupe-bas"),
-    ParamInfo::choice(P_LC_SLOPE, "Pente", SLOPES, 0).group("Coupe-bas"),
-    ParamInfo::new(P_LS_FREQ, "Fréquence", 20.0, 1_000.0, 100.0, Unit::Hz).log().group("Graves"),
-    ParamInfo::new(P_LS_GAIN, "Gain", -18.0, 18.0, 0.0, Unit::Db).group("Graves"),
+    ParamInfo::choice(P_LC_ON, "Low Cut", OFF_ON, 0).group("Low Cut"),
+    ParamInfo::new(P_LC_FREQ, "Frequency", 20.0, 2_000.0, 30.0, Unit::Hz).log().group("Low Cut"),
+    ParamInfo::choice(P_LC_SLOPE, "Slope", SLOPES, 0).group("Low Cut"),
+    ParamInfo::new(P_LS_FREQ, "Frequency", 20.0, 1_000.0, 100.0, Unit::Hz).log().group("Low"),
+    ParamInfo::new(P_LS_GAIN, "Gain", -18.0, 18.0, 0.0, Unit::Db).group("Low"),
     B1[0],
     B1[1],
     B1[2],
@@ -49,12 +49,12 @@ static PARAMS: [ParamInfo; 20] = [
     B3[0],
     B3[1],
     B3[2],
-    ParamInfo::new(P_HS_FREQ, "Fréquence", 1_000.0, 20_000.0, 8_000.0, Unit::Hz).log().group("Aigus"),
-    ParamInfo::new(P_HS_GAIN, "Gain", -18.0, 18.0, 0.0, Unit::Db).group("Aigus"),
-    ParamInfo::choice(P_HC_ON, "Coupe-haut", OFF_ON, 0).group("Coupe-haut"),
-    ParamInfo::new(P_HC_FREQ, "Fréquence", 1_000.0, 20_000.0, 18_000.0, Unit::Hz).log().group("Coupe-haut"),
-    ParamInfo::choice(P_HC_SLOPE, "Pente", SLOPES, 0).group("Coupe-haut"),
-    ParamInfo::new(P_OUTPUT, "Sortie", -24.0, 24.0, 0.0, Unit::Db).group("Sortie"),
+    ParamInfo::new(P_HS_FREQ, "Frequency", 1_000.0, 20_000.0, 8_000.0, Unit::Hz).log().group("High"),
+    ParamInfo::new(P_HS_GAIN, "Gain", -18.0, 18.0, 0.0, Unit::Db).group("High"),
+    ParamInfo::choice(P_HC_ON, "High Cut", OFF_ON, 0).group("High Cut"),
+    ParamInfo::new(P_HC_FREQ, "Frequency", 1_000.0, 20_000.0, 18_000.0, Unit::Hz).log().group("High Cut"),
+    ParamInfo::choice(P_HC_SLOPE, "Slope", SLOPES, 0).group("High Cut"),
+    ParamInfo::new(P_OUTPUT, "Output", -24.0, 24.0, 0.0, Unit::Db).group("Output"),
 ];
 
 /// Étages : coupe-bas ×2, plateau grave, 3 cloches, plateau aigu, coupe-haut ×2.

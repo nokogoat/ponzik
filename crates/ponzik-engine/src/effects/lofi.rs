@@ -27,13 +27,13 @@ const P_AGE: u32 = 5;
 const P_MIX: u32 = 6;
 
 static PARAMS: [ParamInfo; 7] = [
-    ParamInfo::new(P_CRACKLE, "Craquements", 0.0, 1.0, 0.3, Unit::Percent).group("Vinyle"),
-    ParamInfo::new(P_HISS, "Souffle", 0.0, 1.0, 0.2, Unit::Percent).group("Bande"),
-    ParamInfo::new(P_WOW, "Pleurage", 0.0, 1.0, 0.2, Unit::Percent).group("Bande"),
-    ParamInfo::new(P_FLUTTER, "Scintillement", 0.0, 1.0, 0.1, Unit::Percent).group("Bande"),
-    ParamInfo::new(P_BIT_LOSS, "Perte de bits", 0.0, 1.0, 0.0, Unit::Percent).group("Numérique"),
-    ParamInfo::new(P_AGE, "Âge", 0.0, 1.0, 0.3, Unit::Percent).group("Usure"),
-    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Sortie"),
+    ParamInfo::new(P_CRACKLE, "Crackle", 0.0, 1.0, 0.3, Unit::Percent).group("Vinyl"),
+    ParamInfo::new(P_HISS, "Hiss", 0.0, 1.0, 0.2, Unit::Percent).group("Tape"),
+    ParamInfo::new(P_WOW, "Wow", 0.0, 1.0, 0.2, Unit::Percent).group("Tape"),
+    ParamInfo::new(P_FLUTTER, "Flutter", 0.0, 1.0, 0.1, Unit::Percent).group("Tape"),
+    ParamInfo::new(P_BIT_LOSS, "Bit Loss", 0.0, 1.0, 0.0, Unit::Percent).group("Digital"),
+    ParamInfo::new(P_AGE, "Age", 0.0, 1.0, 0.3, Unit::Percent).group("Wear"),
+    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Output"),
 ];
 
 /// Souffle à fond : −36 dBFS efficaces.

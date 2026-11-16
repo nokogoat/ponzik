@@ -74,8 +74,8 @@ pub(crate) const MIN_BPM: f32 = 20.0;
 
 /// Valeurs de note pour la synchronisation au tempo ; « P » pointée, « T » triolet.
 pub(crate) const DIVISIONS: &[&str] = &[
-    "Libre", "1/32 T", "1/32", "1/32 P", "1/16 T", "1/16", "1/16 P", "1/8 T", "1/8", "1/8 P", "1/4 T", "1/4", "1/4 P",
-    "1/2 T", "1/2", "1/2 P", "1 mesure",
+    "Free", "1/32 T", "1/32", "1/32 D", "1/16 T", "1/16", "1/16 D", "1/8 T", "1/8", "1/8 D", "1/4 T", "1/4", "1/4 D",
+    "1/2 T", "1/2", "1/2 D", "1 bar",
 ];
 
 /// Durée d'une division en noires ; `None` pour « Libre ».

@@ -15,12 +15,12 @@ const P_WIDTH: u32 = 4;
 const P_MIX: u32 = 5;
 
 static PARAMS: [ParamInfo; 6] = [
-    ParamInfo::new(P_PREDELAY, "Pré-délai", 0.0, 0.25, 0.02, Unit::Seconds).group("Espace"),
-    ParamInfo::new(P_SIZE, "Taille", 0.0, 1.0, 0.6, Unit::Percent).group("Espace"),
-    ParamInfo::new(P_DECAY, "Déclin", 0.1, 20.0, 2.0, Unit::Seconds).log().group("Queue"),
-    ParamInfo::new(P_DAMPING, "Amortissement", 0.0, 1.0, 0.5, Unit::Percent).group("Queue"),
-    ParamInfo::new(P_WIDTH, "Largeur", 0.0, 1.0, 1.0, Unit::Percent).group("Sortie"),
-    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 0.3, Unit::Percent).group("Sortie"),
+    ParamInfo::new(P_PREDELAY, "Pre-delay", 0.0, 0.25, 0.02, Unit::Seconds).group("Space"),
+    ParamInfo::new(P_SIZE, "Size", 0.0, 1.0, 0.6, Unit::Percent).group("Space"),
+    ParamInfo::new(P_DECAY, "Decay", 0.1, 20.0, 2.0, Unit::Seconds).log().group("Tail"),
+    ParamInfo::new(P_DAMPING, "Damping", 0.0, 1.0, 0.5, Unit::Percent).group("Tail"),
+    ParamInfo::new(P_WIDTH, "Width", 0.0, 1.0, 1.0, Unit::Percent).group("Output"),
+    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 0.3, Unit::Percent).group("Output"),
 ];
 
 const LINES: usize = 8;

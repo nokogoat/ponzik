@@ -20,17 +20,17 @@ const P_ENV_RELEASE: u32 = 9;
 const P_MIX: u32 = 10;
 
 static PARAMS: [ParamInfo; 11] = [
-    ParamInfo::choice(P_MODE, "Type", &["Passe-bas", "Passe-haut", "Passe-bande", "Coupe-bande"], 0).group("Filtre"),
-    ParamInfo::new(P_CUTOFF, "Coupure", 20.0, 20_000.0, 1_000.0, Unit::Hz).log().group("Filtre"),
-    ParamInfo::new(P_RESONANCE, "Résonance", 0.5, 20.0, 0.707, Unit::None).log().group("Filtre"),
-    ParamInfo::choice(P_SHAPE, "Forme", &["Sinus", "Triangle", "Carré", "Aléatoire"], 0).group("LFO"),
-    ParamInfo::choice(P_SYNC, "Synchro", DIVISIONS, 0).group("LFO"),
-    ParamInfo::new(P_RATE, "Vitesse", 0.01, 20.0, 1.0, Unit::Hz).log().group("LFO"),
-    ParamInfo::new(P_LFO_DEPTH, "Profondeur", 0.0, 1.0, 0.0, Unit::Percent).group("LFO"),
-    ParamInfo::new(P_ENV_AMOUNT, "Quantité", -1.0, 1.0, 0.0, Unit::Percent).group("Enveloppe"),
-    ParamInfo::new(P_ENV_ATTACK, "Attaque", 0.001, 0.5, 0.01, Unit::Seconds).log().group("Enveloppe"),
-    ParamInfo::new(P_ENV_RELEASE, "Relâche", 0.01, 2.0, 0.2, Unit::Seconds).log().group("Enveloppe"),
-    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Sortie"),
+    ParamInfo::choice(P_MODE, "Type", &["Low-pass", "High-pass", "Band-pass", "Notch"], 0).group("Filter"),
+    ParamInfo::new(P_CUTOFF, "Cutoff", 20.0, 20_000.0, 1_000.0, Unit::Hz).log().group("Filter"),
+    ParamInfo::new(P_RESONANCE, "Resonance", 0.5, 20.0, 0.707, Unit::None).log().group("Filter"),
+    ParamInfo::choice(P_SHAPE, "Shape", &["Sine", "Triangle", "Square", "Random"], 0).group("LFO"),
+    ParamInfo::choice(P_SYNC, "Sync", DIVISIONS, 0).group("LFO"),
+    ParamInfo::new(P_RATE, "Rate", 0.01, 20.0, 1.0, Unit::Hz).log().group("LFO"),
+    ParamInfo::new(P_LFO_DEPTH, "Depth", 0.0, 1.0, 0.0, Unit::Percent).group("LFO"),
+    ParamInfo::new(P_ENV_AMOUNT, "Amount", -1.0, 1.0, 0.0, Unit::Percent).group("Envelope"),
+    ParamInfo::new(P_ENV_ATTACK, "Attack", 0.001, 0.5, 0.01, Unit::Seconds).log().group("Envelope"),
+    ParamInfo::new(P_ENV_RELEASE, "Release", 0.01, 2.0, 0.2, Unit::Seconds).log().group("Envelope"),
+    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Output"),
 ];
 
 const MODES: [FilterMode; 4] = [FilterMode::LowPass, FilterMode::HighPass, FilterMode::BandPass, FilterMode::Notch];

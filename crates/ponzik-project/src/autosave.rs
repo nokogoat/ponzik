@@ -14,6 +14,8 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use ponzik_i18n::{tr, tr_fmt};
+
 use crate::{Project, io};
 
 /// Intervalle par défaut entre deux sauvegardes, en secondes.
@@ -45,10 +47,10 @@ impl Autosaver {
     /// `project` est l'état de départ, qui n'est pas réécrit tant qu'il ne change pas.
     pub fn start(dir: impl AsRef<Path>, project: &Project, now: f64) -> Result<Self, String> {
         let dir = dir.as_ref().join(SUBDIR);
-        std::fs::create_dir_all(&dir).map_err(|e| format!("impossible de créer « {} » : {e}", dir.display()))?;
+        std::fs::create_dir_all(&dir).map_err(|e| tr_fmt!("Can't create \"{}\": {}", dir.display().to_string(), e.to_string()))?;
         let lock = dir.join(LOCK);
         std::fs::write(&lock, format!("pid={}\n", std::process::id()))
-            .map_err(|e| format!("impossible d'écrire « {} » : {e}", lock.display()))?;
+            .map_err(|e| tr_fmt!("Can't write \"{}\": {}", lock.display().to_string(), e.to_string()))?;
         Ok(Self {
             dir,
             interval: DEFAULT_INTERVAL,
@@ -121,7 +123,7 @@ impl Autosaver {
         let lock = self.dir.join(LOCK);
         match std::fs::remove_file(&lock) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                Err(format!("impossible de retirer « {} » : {e}", lock.display()))
+                Err(tr_fmt!("Can't remove \"{}\": {}", lock.display().to_string(), e.to_string()))
             }
             _ => Ok(()),
         }
@@ -212,14 +214,14 @@ fn file_name(name: &str) -> String {
     let clean: String =
         name.trim().chars().take(60).map(|c| if c.is_alphanumeric() || " -_".contains(c) { c } else { '_' }).collect();
     let clean = clean.trim();
-    if clean.is_empty() { "Sans titre".into() } else { clean.into() }
+    if clean.is_empty() { tr("Untitled").into() } else { clean.into() }
 }
 
 fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".tmp");
     let tmp = PathBuf::from(tmp);
-    let fail = |e: std::io::Error| format!("impossible d'écrire « {} » : {e}", path.display());
+    let fail = |e: std::io::Error| tr_fmt!("Can't write \"{}\": {}", path.display().to_string(), e.to_string());
     std::fs::write(&tmp, text).map_err(fail)?;
     std::fs::rename(&tmp, path).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
@@ -412,7 +414,7 @@ mod tests {
         assert_eq!(split_stem("été-20251116-133320-123").map(|s| s.0), Some("été"));
         assert_eq!(split_stem("20251116-133320-123"), None);
         assert_eq!(split_stem("éé"), None);
-        assert_eq!(file_name("  "), "Sans titre");
+        assert_eq!(file_name("  "), "Untitled");
         assert_eq!(file_name("a<b>c"), "a_b_c");
     }
 }

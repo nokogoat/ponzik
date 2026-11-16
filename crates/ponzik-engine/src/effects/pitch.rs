@@ -13,10 +13,10 @@ const P_WINDOW: u32 = 2;
 const P_MIX: u32 = 3;
 
 static PARAMS: [ParamInfo; 4] = [
-    ParamInfo::new(P_SEMITONES, "Transposition", -24.0, 24.0, 0.0, Unit::Semitones).group("Hauteur"),
-    ParamInfo::new(P_CENTS, "Fin", -100.0, 100.0, 0.0, Unit::Cents).group("Hauteur"),
-    ParamInfo::new(P_WINDOW, "Fenêtre", MIN_WINDOW, MAX_WINDOW, 0.06, Unit::Seconds).log().group("Grains"),
-    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Sortie"),
+    ParamInfo::new(P_SEMITONES, "Transpose", -24.0, 24.0, 0.0, Unit::Semitones).group("Pitch"),
+    ParamInfo::new(P_CENTS, "Fine", -100.0, 100.0, 0.0, Unit::Cents).group("Pitch"),
+    ParamInfo::new(P_WINDOW, "Window", MIN_WINDOW, MAX_WINDOW, 0.06, Unit::Seconds).log().group("Grains"),
+    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Output"),
 ];
 
 const MIN_WINDOW: f32 = 0.01;

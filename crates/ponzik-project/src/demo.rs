@@ -2,6 +2,8 @@
 
 use ponzik_engine::{Note, PlayMode, TICKS_PER_BAR, TICKS_PER_STEP};
 
+use ponzik_i18n::tr;
+
 use crate::{ClipDef, EffectDef, InstrumentDef, Project};
 
 /// Paramètres de DrumSynth (voir `instruments/drums.rs`).
@@ -13,15 +15,15 @@ const OPEN_HAT: f32 = 4.0;
 
 pub fn demo_project() -> Project {
     let mut p = Project::empty();
-    p.name = "Groove house en La mineur".into();
+    p.name = tr("House groove in A minor").into();
     p.bpm = 124.0;
 
     let drum = |t: f32| InstrumentDef::new("drumsynth").with(DRUM_TYPE, t);
-    let kick = p.add_channel("Kick", drum(KICK), 60);
-    let clap = p.add_channel("Clap", drum(CLAP), 60);
-    let hat = p.add_channel("Hat", drum(CLOSED_HAT), 60);
-    let open = p.add_channel("Open Hat", drum(OPEN_HAT), 60);
-    let bass = p.add_channel("Bass", InstrumentDef::new("pulse"), 45);
+    let kick = p.add_channel(tr("Kick"), drum(KICK), 60);
+    let clap = p.add_channel(tr("Clap"), drum(CLAP), 60);
+    let hat = p.add_channel(tr("Hat"), drum(CLOSED_HAT), 60);
+    let open = p.add_channel(tr("Open Hat"), drum(OPEN_HAT), 60);
+    let bass = p.add_channel(tr("Bass"), InstrumentDef::new("pulse"), 45);
     p.channels[clap].gain = 0.65;
     p.channels[hat].pan = -0.3;
     p.channels[hat].gain = 0.7;
@@ -41,7 +43,7 @@ pub fn demo_project() -> Project {
     let bass_track = p.channels[bass].track;
     p.tracks[bass_track].inserts[0] = fx("saturator", &[(0, 2.0), (1, 9.0), (4, 0.7)]);
     let reverb_bus = 10;
-    p.tracks[reverb_bus].name = "Réverbe".into();
+    p.tracks[reverb_bus].name = tr("Reverb").into();
     p.tracks[reverb_bus].kind = crate::TrackKind::Bus;
     p.tracks[reverb_bus].color = crate::BUS_COLORS[1];
     p.tracks[reverb_bus].inserts[0] = fx("reverb", &[(2, 2.4), (5, 1.0)]);
@@ -73,7 +75,7 @@ pub fn demo_project() -> Project {
     };
 
     // Pattern 1 : le groove complet.
-    p.patterns[0].name = "Groove".into();
+    p.patterns[0].name = tr("Groove").into();
     hits(&mut p, 0, kick, &[0, 4, 8, 12], 1.0);
     hits(&mut p, 0, clap, &[4, 12], 0.9);
     hits(&mut p, 0, hat, &[1, 3, 5, 7, 9, 11, 13, 15], 0.5);
@@ -82,13 +84,13 @@ pub fn demo_project() -> Project {
 
     // Pattern 2 : intro sans basse.
     let intro = p.add_pattern();
-    p.patterns[intro].name = "Intro".into();
+    p.patterns[intro].name = tr("Intro").into();
     hits(&mut p, intro, kick, &[0, 4, 8, 12], 1.0);
     hits(&mut p, intro, hat, &[2, 6, 10, 14], 0.45);
 
     // Pattern 3 : break, basse seule.
     let brk = p.add_pattern();
-    p.patterns[brk].name = "Break".into();
+    p.patterns[brk].name = tr("Break").into();
     bassline(&mut p, brk, &[(0, 33, 3), (6, 36, 2), (10, 40, 2), (14, 43, 2)]);
     hits(&mut p, brk, clap, &[12], 0.6);
 

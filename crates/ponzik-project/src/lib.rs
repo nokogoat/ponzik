@@ -6,6 +6,8 @@
 
 use std::sync::Arc;
 
+use ponzik_i18n::{tr, tr_fmt, tr_noop};
+
 use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS, TRACKS, routing_order};
 use ponzik_engine::registry;
 use ponzik_engine::{
@@ -239,15 +241,16 @@ impl TrackKind {
 /// Couleurs données tour à tour aux nouveaux bus et VCA.
 pub const BUS_COLORS: [u32; 6] = [0xf0b44a, 0xa98cf0, 0x2fb6e0, 0xe878b4, 0x3ccfc4, 0xf08a5d];
 
-/// Effet d'un bus de retour : type, nom du bus, réglages (100 % mouillé).
+/// Effet d'un bus de retour : type, nom du bus (anglais, traduit à l'affichage
+/// et à la création), réglages (100 % mouillé).
 pub type ReturnEffect = (&'static str, &'static str, &'static [(u32, f32)]);
 
 /// Effets proposés pour un bus de retour.
 pub const RETURN_EFFECTS: [ReturnEffect; 2] = [
     // Réverbe : salle moyenne, pré-délai qui détache la voix, aigus adoucis.
-    ("reverb", "Réverbe", &[(0, 0.03), (1, 0.7), (2, 2.2), (3, 0.55), (5, 1.0)]),
+    ("reverb", tr_noop("Reverb"), &[(0, 0.03), (1, 0.7), (2, 2.2), (3, 0.55), (5, 1.0)]),
     // Délai : croche pointée en ping-pong, répétitions filtrées.
-    ("delay", "Délai", &[(0, 9.0), (2, 0.35), (3, 1.0), (4, 200.0), (5, 6_000.0), (6, 1.0)]),
+    ("delay", tr_noop("Delay"), &[(0, 9.0), (2, 0.35), (3, 1.0), (4, 200.0), (5, 6_000.0), (6, 1.0)]),
 ];
 
 #[derive(Clone, Debug, PartialEq)]
@@ -265,6 +268,18 @@ pub struct TrackDef {
     pub folded: bool,
     /// VCA qui pilote le volume de la piste.
     pub vca: Option<usize>,
+}
+
+/// Nom par défaut d'une piste de mixer (« Track 3 », « Piste 3 » en français).
+pub fn default_track_name(index: usize) -> String {
+    tr_fmt!("Track {}", index)
+}
+
+/// Vrai si `name` est un nom de piste par défaut, dans la langue courante ou
+/// dans une autre (projets enregistrés en anglais ou en français).
+pub fn is_default_track_name(name: &str) -> bool {
+    let current = tr_fmt!("Track {}", "");
+    [current.as_str(), "Track ", "Piste "].iter().any(|p| name.starts_with(p))
 }
 
 impl TrackDef {
@@ -321,16 +336,16 @@ impl Default for Project {
 
 impl Project {
     pub fn empty() -> Self {
-        let mut tracks: Vec<TrackDef> = (0..TRACKS).map(|i| TrackDef::new(format!("Piste {i}"))).collect();
-        tracks[MASTER].name = "Master".into();
+        let mut tracks: Vec<TrackDef> = (0..TRACKS).map(|i| TrackDef::new(default_track_name(i))).collect();
+        tracks[MASTER].name = tr("Master").into();
         Self {
-            name: "Sans titre".into(),
+            name: tr("Untitled").into(),
             bpm: 120.0,
             swing: 0.0,
             key: 0,
             scale: ScaleKind::Chromatic,
             channels: Vec::new(),
-            patterns: vec![PatternDef { name: "Pattern 1".into(), len: TICKS_PER_BAR, notes: Vec::new(), color: 0 }],
+            patterns: vec![PatternDef { name: tr_fmt!("Pattern {}", 1), len: TICKS_PER_BAR, notes: Vec::new(), color: 0 }],
             clips: Vec::new(),
             tracks,
             mode: PlayMode::Pattern(0),
@@ -626,7 +641,7 @@ impl Project {
         let free = |t: &usize| !used.contains(t) && self.tracks[*t].kind == TrackKind::Normal;
         let track = (1..TRACKS).find(free).unwrap_or(1);
         let name = name.into();
-        if self.tracks[track].name.starts_with("Piste ") {
+        if is_default_track_name(&self.tracks[track].name) {
             self.tracks[track].name = name.clone();
         }
         self.channels.push(ChannelDef {
@@ -825,7 +840,7 @@ impl Project {
         let Some(tr) = self.tracks.get(t) else { return false };
         t == MASTER
             || tr.kind != TrackKind::Normal
-            || !tr.name.starts_with("Piste ")
+            || !is_default_track_name(&tr.name)
             || tr.inserts.iter().any(Option::is_some)
             || self.channels.iter().any(|c| c.track == t)
             || self.audio_clips.iter().any(|c| c.track == t)
@@ -877,7 +892,7 @@ impl Project {
     /// n'est libre.
     pub fn add_bus(&mut self, members: &[usize]) -> Option<usize> {
         let members: Vec<usize> = members.iter().copied().filter(|&m| m != MASTER && m < TRACKS).collect();
-        let name = self.numbered_name("Bus");
+        let name = self.numbered_name(tr("Bus"));
         let bus = self.claim_track(TrackKind::Bus, name)?;
         let mut outputs = members.iter().map(|&m| self.tracks[m].output);
         if let Some(first) = outputs.next()
@@ -910,6 +925,7 @@ impl Project {
     /// Bus de retour d'effet (`RETURN_EFFECTS`) ; `from` y envoie un peu de son signal.
     pub fn add_return(&mut self, effect: &str, from: Option<usize>) -> Option<usize> {
         let &(kind, name, params) = RETURN_EFFECTS.iter().find(|e| e.0 == effect)?;
+        let name = tr(name);
         let name = if self.tracks.iter().any(|t| t.name == name) { self.numbered_name(name) } else { name.into() };
         let bus = self.claim_track(TrackKind::Bus, name)?;
         let mut fx = EffectDef::new(kind);
@@ -928,7 +944,7 @@ impl Project {
 
     /// Crée un VCA qui pilote `members` (le master et les VCA sont ignorés).
     pub fn add_vca(&mut self, members: &[usize]) -> Option<usize> {
-        let name = self.numbered_name("VCA");
+        let name = self.numbered_name(tr("VCA"));
         let vca = self.claim_track(TrackKind::Vca, name)?;
         for &m in members {
             if m != MASTER && m != vca && m < TRACKS && self.tracks[m].kind != TrackKind::Vca {
@@ -965,13 +981,13 @@ impl Project {
         }
         self.automation.retain(|a| !matches!(a.target, AutoTarget::TrackGain(x) | AutoTarget::TrackPan(x) if x == t));
         self.automation.retain(|a| !matches!(a.target, AutoTarget::EffectParam { track, .. } if track == t));
-        self.tracks[t] = TrackDef::new(format!("Piste {t}"));
+        self.tracks[t] = TrackDef::new(default_track_name(t));
     }
 
     pub fn add_pattern(&mut self) -> usize {
         let n = self.patterns.len() + 1;
         self.patterns.push(PatternDef {
-            name: format!("Pattern {n}"),
+            name: tr_fmt!("Pattern {}", n),
             len: TICKS_PER_BAR,
             notes: vec![Vec::new(); self.channels.len()],
             color: 0,
@@ -1310,7 +1326,7 @@ mod tests {
         // Défaire le bus intérieur rend sa piste à son bus parent.
         p.dissolve(inner);
         assert_eq!(p.tracks[ta].output, bus);
-        assert_eq!(p.tracks[inner], TrackDef::new(format!("Piste {inner}")));
+        assert_eq!(p.tracks[inner], TrackDef::new(format!("Track {inner}")));
         assert!(!p.track_in_use(inner));
     }
 
@@ -1322,10 +1338,10 @@ mod tests {
         let rev = p.add_return("reverb", Some(t)).unwrap();
         let fx = p.tracks[rev].inserts[0].as_ref().unwrap();
         assert_eq!((fx.kind.as_str(), fx.get(5)), ("reverb", Some(1.0)));
-        assert_eq!(p.tracks[rev].name, "Réverbe");
+        assert_eq!(p.tracks[rev].name, "Reverb");
         assert_eq!(p.tracks[t].sends[0], (rev, 0.3));
         let second = p.add_return("reverb", None).unwrap();
-        assert_eq!(p.tracks[second].name, "Réverbe 1");
+        assert_eq!(p.tracks[second].name, "Reverb 1");
         let delay = p.add_return("delay", None).unwrap();
         assert_eq!(p.tracks[delay].inserts[0].as_ref().unwrap().kind, "delay");
         assert!(p.add_return("inconnu", None).is_none());

@@ -12,10 +12,10 @@ const P_OUTPUT: u32 = 2;
 const P_MIX: u32 = 3;
 
 static PARAMS: [ParamInfo; 4] = [
-    ParamInfo::new(P_ATTACK, "Attaque", -1.0, 1.0, 0.0, Unit::Percent).group("Transitoires"),
-    ParamInfo::new(P_SUSTAIN, "Maintien", -1.0, 1.0, 0.0, Unit::Percent).group("Transitoires"),
-    ParamInfo::new(P_OUTPUT, "Sortie", -24.0, 24.0, 0.0, Unit::Db).group("Sortie"),
-    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Sortie"),
+    ParamInfo::new(P_ATTACK, "Attack", -1.0, 1.0, 0.0, Unit::Percent).group("Transients"),
+    ParamInfo::new(P_SUSTAIN, "Sustain", -1.0, 1.0, 0.0, Unit::Percent).group("Transients"),
+    ParamInfo::new(P_OUTPUT, "Output", -24.0, 24.0, 0.0, Unit::Db).group("Output"),
+    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Output"),
 ];
 
 /// dB de gain par dB d'écart entre suiveurs, à 100 %.

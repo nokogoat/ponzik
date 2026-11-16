@@ -37,14 +37,14 @@ const P_RELEASE: u32 = 6;
 const P_VOLUME: u32 = 7;
 
 static PARAMS: [ParamInfo; 8] = [
-    ParamInfo::new(P_BRIGHTNESS, "Brillance", 0.0, 1.0, 0.6, Unit::Percent).group("Corde"),
-    ParamInfo::new(P_DECAY, "Déclin", 0.1, 20.0, 3.0, Unit::Seconds).log().group("Corde"),
-    ParamInfo::new(P_DAMPING, "Amortissement", 0.0, 1.0, 0.4, Unit::Percent).group("Corde"),
-    ParamInfo::new(P_PICK, "Position du médiator", 0.02, 0.5, 0.15, Unit::Percent).group("Corde"),
-    ParamInfo::new(P_RELEASE, "Étouffement", 0.01, 4.0, 0.3, Unit::Seconds).log().group("Corde"),
-    ParamInfo::new(P_BODY, "Caisse", 0.0, 1.0, 0.3, Unit::Percent).group("Sortie"),
-    ParamInfo::new(P_WIDTH, "Largeur stéréo", 0.0, 1.0, 0.3, Unit::Percent).group("Sortie"),
-    ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -6.0, Unit::Db).group("Sortie"),
+    ParamInfo::new(P_BRIGHTNESS, "Brightness", 0.0, 1.0, 0.6, Unit::Percent).group("String"),
+    ParamInfo::new(P_DECAY, "Decay", 0.1, 20.0, 3.0, Unit::Seconds).log().group("String"),
+    ParamInfo::new(P_DAMPING, "Damping", 0.0, 1.0, 0.4, Unit::Percent).group("String"),
+    ParamInfo::new(P_PICK, "Pick Position", 0.02, 0.5, 0.15, Unit::Percent).group("String"),
+    ParamInfo::new(P_RELEASE, "Choke", 0.01, 4.0, 0.3, Unit::Seconds).log().group("String"),
+    ParamInfo::new(P_BODY, "Body Resonance", 0.0, 1.0, 0.3, Unit::Percent).group("Output"),
+    ParamInfo::new(P_WIDTH, "Stereo Width", 0.0, 1.0, 0.3, Unit::Percent).group("Output"),
+    ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -6.0, Unit::Db).group("Output"),
 ];
 
 /// Ligne de retard circulaire à lecture linéaire (gain ≤ 1 à toute fréquence).

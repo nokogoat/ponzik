@@ -38,17 +38,17 @@ const P_TONE: u32 = 9;
 const P_VOLUME: u32 = 10;
 
 static PARAMS: [ParamInfo; 11] = [
-    ParamInfo::new(P_TUNE, "Accord", -24.0, 24.0, 0.0, Unit::Semitones).group("Hauteur"),
-    ParamInfo::new(P_PITCH, "Hauteur de départ", 0.0, 72.0, 36.0, Unit::Semitones).group("Hauteur"),
-    ParamInfo::new(P_PITCH_DECAY, "Chute", 0.002, 0.5, 0.04, Unit::Seconds).log().group("Hauteur"),
-    ParamInfo::new(P_CURVE, "Courbe", 0.0, 1.0, 0.5, Unit::Percent).group("Hauteur"),
-    ParamInfo::new(P_DECAY, "Déclin", 0.05, 4.0, 0.6, Unit::Seconds).log().group("Amplitude"),
-    ParamInfo::new(P_BODY, "Corps", 0.0, 1.0, 0.2, Unit::Percent).group("Amplitude"),
-    ParamInfo::new(P_CLICK, "Niveau", 0.0, 1.0, 0.3, Unit::Percent).group("Clic"),
-    ParamInfo::new(P_CLICK_TONE, "Ton", 500.0, 16_000.0, 4_000.0, Unit::Hz).log().group("Clic"),
-    ParamInfo::new(P_DRIVE, "Saturation", 0.0, 1.0, 0.2, Unit::Percent).group("Sortie"),
-    ParamInfo::new(P_TONE, "Tonalité", 200.0, 20_000.0, 8_000.0, Unit::Hz).log().group("Sortie"),
-    ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -3.0, Unit::Db).group("Sortie"),
+    ParamInfo::new(P_TUNE, "Tune", -24.0, 24.0, 0.0, Unit::Semitones).group("Pitch"),
+    ParamInfo::new(P_PITCH, "Start Pitch", 0.0, 72.0, 36.0, Unit::Semitones).group("Pitch"),
+    ParamInfo::new(P_PITCH_DECAY, "Drop", 0.002, 0.5, 0.04, Unit::Seconds).log().group("Pitch"),
+    ParamInfo::new(P_CURVE, "Curve", 0.0, 1.0, 0.5, Unit::Percent).group("Pitch"),
+    ParamInfo::new(P_DECAY, "Decay", 0.05, 4.0, 0.6, Unit::Seconds).log().group("Amp"),
+    ParamInfo::new(P_BODY, "Body", 0.0, 1.0, 0.2, Unit::Percent).group("Amp"),
+    ParamInfo::new(P_CLICK, "Level", 0.0, 1.0, 0.3, Unit::Percent).group("Click"),
+    ParamInfo::new(P_CLICK_TONE, "Tone", 500.0, 16_000.0, 4_000.0, Unit::Hz).log().group("Click"),
+    ParamInfo::new(P_DRIVE, "Saturation", 0.0, 1.0, 0.2, Unit::Percent).group("Output"),
+    ParamInfo::new(P_TONE, "Tone Filter", 200.0, 20_000.0, 8_000.0, Unit::Hz).log().group("Output"),
+    ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -3.0, Unit::Db).group("Output"),
 ];
 
 /// Grosse caisse monophonique à hauteur suivant la note.

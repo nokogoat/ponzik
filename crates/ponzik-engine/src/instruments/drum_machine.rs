@@ -33,14 +33,14 @@ const CLAP_SPACING: f32 = 0.011;
 const CLAP_BURST_TAU: f32 = 0.002_5;
 
 const GROUPS: [&str; PADS] = [
-    "Grosse caisse",
-    "Cerclage",
-    "Caisse claire",
+    "Bass Drum",
+    "Rimshot",
+    "Snare",
     "Clap",
-    "Charleston ouverte",
-    "Tom grave",
-    "Charleston fermée",
-    "Tom aigu",
+    "Open Hat",
+    "Low Tom",
+    "Closed Hat",
+    "High Tom",
 ];
 
 /// Paramètres du pad `p` : `3p` accord, `3p + 1` déclin, `3p + 2` niveau.
@@ -59,13 +59,13 @@ const fn build_params() -> [ParamInfo; N_PARAMS] {
     let mut p = 0;
     while p < PADS {
         let g = GROUPS[p];
-        out[3 * p] = ParamInfo::new(pad_param(p, SLOT_TUNE), "Accord", -24.0, 24.0, 0.0, Unit::Semitones).group(g);
-        out[3 * p + 1] = ParamInfo::new(pad_param(p, SLOT_DECAY), "Déclin", 0.25, 4.0, 1.0, Unit::None).log().group(g);
-        out[3 * p + 2] = ParamInfo::new(pad_param(p, SLOT_LEVEL), "Niveau", -40.0, 6.0, 0.0, Unit::Db).group(g);
+        out[3 * p] = ParamInfo::new(pad_param(p, SLOT_TUNE), "Tune", -24.0, 24.0, 0.0, Unit::Semitones).group(g);
+        out[3 * p + 1] = ParamInfo::new(pad_param(p, SLOT_DECAY), "Decay", 0.25, 4.0, 1.0, Unit::None).log().group(g);
+        out[3 * p + 2] = ParamInfo::new(pad_param(p, SLOT_LEVEL), "Level", -40.0, 6.0, 0.0, Unit::Db).group(g);
         p += 1;
     }
-    out[3 * PADS] = ParamInfo::new(P_DRIVE, "Saturation", 0.0, 1.0, 0.1, Unit::Percent).group("Général");
-    out[3 * PADS + 1] = ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -3.0, Unit::Db).group("Général");
+    out[3 * PADS] = ParamInfo::new(P_DRIVE, "Saturation", 0.0, 1.0, 0.1, Unit::Percent).group("General");
+    out[3 * PADS + 1] = ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -3.0, Unit::Db).group("General");
     out
 }
 

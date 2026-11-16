@@ -18,13 +18,13 @@ const P_MIX: u32 = 6;
 const STAGE_COUNTS: [usize; 5] = [4, 6, 8, 10, 12];
 
 static PARAMS: [ParamInfo; 7] = [
-    ParamInfo::choice(P_STAGES, "Étages", &["4", "6", "8", "10", "12"], 1).group("Phaser"),
-    ParamInfo::new(P_FREQ, "Fréquence", 100.0, 5_000.0, 700.0, Unit::Hz).log().group("Phaser"),
-    ParamInfo::new(P_RATE, "Vitesse", 0.01, 10.0, 0.5, Unit::Hz).log().group("Modulation"),
-    ParamInfo::new(P_DEPTH, "Profondeur", 0.0, 1.0, 0.7, Unit::Percent).group("Modulation"),
-    ParamInfo::new(P_FEEDBACK, "Réinjection", -0.95, 0.95, 0.5, Unit::Percent).group("Modulation"),
-    ParamInfo::new(P_SPREAD, "Écart stéréo", 0.0, 1.0, 0.25, Unit::Percent).group("Sortie"),
-    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 0.5, Unit::Percent).group("Sortie"),
+    ParamInfo::choice(P_STAGES, "Stages", &["4", "6", "8", "10", "12"], 1).group("Phaser"),
+    ParamInfo::new(P_FREQ, "Frequency", 100.0, 5_000.0, 700.0, Unit::Hz).log().group("Phaser"),
+    ParamInfo::new(P_RATE, "Rate", 0.01, 10.0, 0.5, Unit::Hz).log().group("Modulation"),
+    ParamInfo::new(P_DEPTH, "Depth", 0.0, 1.0, 0.7, Unit::Percent).group("Modulation"),
+    ParamInfo::new(P_FEEDBACK, "Feedback", -0.95, 0.95, 0.5, Unit::Percent).group("Modulation"),
+    ParamInfo::new(P_SPREAD, "Stereo Spread", 0.0, 1.0, 0.25, Unit::Percent).group("Output"),
+    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 0.5, Unit::Percent).group("Output"),
 ];
 
 /// Balayage de ±3 octaves à profondeur maximale.

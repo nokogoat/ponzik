@@ -17,15 +17,15 @@ const P_INPUT: u32 = 7;
 const P_OUTPUT: u32 = 8;
 
 static PARAMS: [ParamInfo; 9] = [
-    ParamInfo::new(P_DEPTH, "Profondeur", 0.0, 1.0, 0.4, Unit::Percent).group("Compression"),
-    ParamInfo::new(P_TIME, "Temps", 0.1, 10.0, 1.0, Unit::Percent).log().group("Compression"),
-    ParamInfo::new(P_UPWARD, "Haut", 0.0, 1.0, 1.0, Unit::Percent).group("Compression"),
-    ParamInfo::new(P_DOWNWARD, "Bas", 0.0, 1.0, 1.0, Unit::Percent).group("Compression"),
-    ParamInfo::new(P_LOW, "Graves", -24.0, 24.0, 0.0, Unit::Db).group("Bandes"),
-    ParamInfo::new(P_MID, "Médiums", -24.0, 24.0, 0.0, Unit::Db).group("Bandes"),
-    ParamInfo::new(P_HIGH, "Aigus", -24.0, 24.0, 0.0, Unit::Db).group("Bandes"),
-    ParamInfo::new(P_INPUT, "Entrée", -24.0, 24.0, 0.0, Unit::Db).group("Niveau"),
-    ParamInfo::new(P_OUTPUT, "Sortie", -24.0, 24.0, 0.0, Unit::Db).group("Niveau"),
+    ParamInfo::new(P_DEPTH, "Depth", 0.0, 1.0, 0.4, Unit::Percent).group("Compression"),
+    ParamInfo::new(P_TIME, "Time", 0.1, 10.0, 1.0, Unit::Percent).log().group("Compression"),
+    ParamInfo::new(P_UPWARD, "Upward", 0.0, 1.0, 1.0, Unit::Percent).group("Compression"),
+    ParamInfo::new(P_DOWNWARD, "Downward", 0.0, 1.0, 1.0, Unit::Percent).group("Compression"),
+    ParamInfo::new(P_LOW, "Low", -24.0, 24.0, 0.0, Unit::Db).group("Bands"),
+    ParamInfo::new(P_MID, "Mid", -24.0, 24.0, 0.0, Unit::Db).group("Bands"),
+    ParamInfo::new(P_HIGH, "High", -24.0, 24.0, 0.0, Unit::Db).group("Bands"),
+    ParamInfo::new(P_INPUT, "Input", -24.0, 24.0, 0.0, Unit::Db).group("Level"),
+    ParamInfo::new(P_OUTPUT, "Output", -24.0, 24.0, 0.0, Unit::Db).group("Level"),
 ];
 
 const CROSSOVER_LOW: f32 = 120.0;

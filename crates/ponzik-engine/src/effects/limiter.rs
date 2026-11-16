@@ -11,9 +11,9 @@ const P_CEILING: u32 = 1;
 const P_RELEASE: u32 = 2;
 
 static PARAMS: [ParamInfo; 3] = [
-    ParamInfo::new(P_INPUT, "Gain d'entrée", 0.0, 24.0, 0.0, Unit::Db).group("Limiteur"),
-    ParamInfo::new(P_CEILING, "Plafond", -24.0, 0.0, -0.3, Unit::Db).group("Limiteur"),
-    ParamInfo::new(P_RELEASE, "Relâche", 0.001, 1.0, 0.1, Unit::Seconds).log().group("Limiteur"),
+    ParamInfo::new(P_INPUT, "Input Gain", 0.0, 24.0, 0.0, Unit::Db).group("Limiter"),
+    ParamInfo::new(P_CEILING, "Ceiling", -24.0, 0.0, -0.3, Unit::Db).group("Limiter"),
+    ParamInfo::new(P_RELEASE, "Release", 0.001, 1.0, 0.1, Unit::Seconds).log().group("Limiter"),
 ];
 
 const LOOKAHEAD: f32 = 0.001_5;

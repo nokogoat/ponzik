@@ -16,14 +16,14 @@ const P_MONO_FREQ: u32 = 6;
 const P_OUTPUT: u32 = 7;
 
 static PARAMS: [ParamInfo; 8] = [
-    ParamInfo::new(P_LOW_WIDTH, "Largeur graves", 0.0, 2.0, 1.0, Unit::Percent).group("Largeur"),
-    ParamInfo::new(P_MID_WIDTH, "Largeur médiums", 0.0, 2.0, 1.0, Unit::Percent).group("Largeur"),
-    ParamInfo::new(P_HIGH_WIDTH, "Largeur aigus", 0.0, 2.0, 1.0, Unit::Percent).group("Largeur"),
-    ParamInfo::new(P_LOW_CROSS, "Séparation basse", 50.0, 1_000.0, 250.0, Unit::Hz).log().group("Bandes"),
-    ParamInfo::new(P_HIGH_CROSS, "Séparation haute", 1_000.0, 15_000.0, 4_000.0, Unit::Hz).log().group("Bandes"),
-    ParamInfo::choice(P_MONO, "Graves mono", OFF_ON, 0).group("Mono"),
-    ParamInfo::new(P_MONO_FREQ, "Mono sous", 20.0, 500.0, 120.0, Unit::Hz).log().group("Mono"),
-    ParamInfo::new(P_OUTPUT, "Sortie", -24.0, 24.0, 0.0, Unit::Db).group("Sortie"),
+    ParamInfo::new(P_LOW_WIDTH, "Low Width", 0.0, 2.0, 1.0, Unit::Percent).group("Width"),
+    ParamInfo::new(P_MID_WIDTH, "Mid Width", 0.0, 2.0, 1.0, Unit::Percent).group("Width"),
+    ParamInfo::new(P_HIGH_WIDTH, "High Width", 0.0, 2.0, 1.0, Unit::Percent).group("Width"),
+    ParamInfo::new(P_LOW_CROSS, "Low Crossover", 50.0, 1_000.0, 250.0, Unit::Hz).log().group("Bands"),
+    ParamInfo::new(P_HIGH_CROSS, "High Crossover", 1_000.0, 15_000.0, 4_000.0, Unit::Hz).log().group("Bands"),
+    ParamInfo::choice(P_MONO, "Mono Bass", OFF_ON, 0).group("Mono"),
+    ParamInfo::new(P_MONO_FREQ, "Mono Below", 20.0, 500.0, 120.0, Unit::Hz).log().group("Mono"),
+    ParamInfo::new(P_OUTPUT, "Output", -24.0, 24.0, 0.0, Unit::Db).group("Output"),
 ];
 
 /// Largeur stéréo sur trois bandes, en milieu/côtés : seul le signal latéral est

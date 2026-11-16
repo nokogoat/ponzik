@@ -29,7 +29,7 @@ const MAX_DETUNE_RATIO: f32 = 1.06;
 /// Le filtre est recalculé tous les `CONTROL_RATE` échantillons.
 const CONTROL_RATE: u32 = 16;
 
-const SETS: &[&str] = &["Basique", "Harmonique"];
+const SETS: &[&str] = &["Basic", "Harmonic"];
 const UNISON: &[&str] = &["1", "2", "3", "4", "5", "6", "7", "8"];
 
 const P_SET: u32 = 0;
@@ -54,24 +54,24 @@ const P_GLIDE: u32 = 40;
 const P_VOLUME: u32 = 41;
 
 static PARAMS: [ParamInfo; 20] = [
-    ParamInfo::choice(P_SET, "Table", SETS, 0).group("Oscillateur"),
-    ParamInfo::new(P_POSITION, "Position", 0.0, 1.0, 0.5, Unit::Percent).group("Oscillateur"),
-    ParamInfo::new(P_SUB, "Sous-oscillateur", 0.0, 1.0, 0.0, Unit::Percent).group("Oscillateur"),
-    ParamInfo::choice(P_UNISON, "Voix", UNISON, 3).group("Unisson"),
-    ParamInfo::new(P_DETUNE, "Désaccord", 0.0, 100.0, 12.0, Unit::Cents).group("Unisson"),
-    ParamInfo::new(P_SPREAD, "Largeur", 0.0, 1.0, 0.5, Unit::Percent).group("Unisson"),
-    ParamInfo::new(P_CUTOFF, "Coupure", 20.0, 20_000.0, 2_000.0, Unit::Hz).log().group("Filtre"),
-    ParamInfo::new(P_RESO, "Résonance", 0.5, 10.0, 0.9, Unit::None).log().group("Filtre"),
-    ParamInfo::new(P_FENV, "Enveloppe", -60.0, 60.0, 24.0, Unit::Semitones).group("Filtre"),
-    ParamInfo::new(P_KEYTRACK, "Suivi de clavier", 0.0, 1.0, 0.5, Unit::Percent).group("Filtre"),
-    ParamInfo::new(P_ATTACK, "Attaque", 0.001, 4.0, 0.005, Unit::Seconds).log().group("Amplitude"),
-    ParamInfo::new(P_DECAY, "Déclin", 0.005, 8.0, 0.3, Unit::Seconds).log().group("Amplitude"),
-    ParamInfo::new(P_SUSTAIN, "Maintien", 0.0, 1.0, 0.7, Unit::Percent).group("Amplitude"),
-    ParamInfo::new(P_RELEASE, "Relâche", 0.005, 8.0, 0.25, Unit::Seconds).log().group("Amplitude"),
-    ParamInfo::new(P_FATTACK, "Attaque", 0.001, 4.0, 0.002, Unit::Seconds).log().group("Enveloppe filtre"),
-    ParamInfo::new(P_FDECAY, "Déclin", 0.005, 8.0, 0.4, Unit::Seconds).log().group("Enveloppe filtre"),
-    ParamInfo::new(P_FSUSTAIN, "Maintien", 0.0, 1.0, 0.2, Unit::Percent).group("Enveloppe filtre"),
-    ParamInfo::new(P_FRELEASE, "Relâche", 0.005, 8.0, 0.3, Unit::Seconds).log().group("Enveloppe filtre"),
+    ParamInfo::choice(P_SET, "Table", SETS, 0).group("Oscillator"),
+    ParamInfo::new(P_POSITION, "Position", 0.0, 1.0, 0.5, Unit::Percent).group("Oscillator"),
+    ParamInfo::new(P_SUB, "Sub Oscillator", 0.0, 1.0, 0.0, Unit::Percent).group("Oscillator"),
+    ParamInfo::choice(P_UNISON, "Voices", UNISON, 3).group("Unison"),
+    ParamInfo::new(P_DETUNE, "Detune", 0.0, 100.0, 12.0, Unit::Cents).group("Unison"),
+    ParamInfo::new(P_SPREAD, "Width", 0.0, 1.0, 0.5, Unit::Percent).group("Unison"),
+    ParamInfo::new(P_CUTOFF, "Cutoff", 20.0, 20_000.0, 2_000.0, Unit::Hz).log().group("Filter"),
+    ParamInfo::new(P_RESO, "Resonance", 0.5, 10.0, 0.9, Unit::None).log().group("Filter"),
+    ParamInfo::new(P_FENV, "Envelope", -60.0, 60.0, 24.0, Unit::Semitones).group("Filter"),
+    ParamInfo::new(P_KEYTRACK, "Key Tracking", 0.0, 1.0, 0.5, Unit::Percent).group("Filter"),
+    ParamInfo::new(P_ATTACK, "Attack", 0.001, 4.0, 0.005, Unit::Seconds).log().group("Amp"),
+    ParamInfo::new(P_DECAY, "Decay", 0.005, 8.0, 0.3, Unit::Seconds).log().group("Amp"),
+    ParamInfo::new(P_SUSTAIN, "Sustain", 0.0, 1.0, 0.7, Unit::Percent).group("Amp"),
+    ParamInfo::new(P_RELEASE, "Release", 0.005, 8.0, 0.25, Unit::Seconds).log().group("Amp"),
+    ParamInfo::new(P_FATTACK, "Attack", 0.001, 4.0, 0.002, Unit::Seconds).log().group("Filter Envelope"),
+    ParamInfo::new(P_FDECAY, "Decay", 0.005, 8.0, 0.4, Unit::Seconds).log().group("Filter Envelope"),
+    ParamInfo::new(P_FSUSTAIN, "Sustain", 0.0, 1.0, 0.2, Unit::Percent).group("Filter Envelope"),
+    ParamInfo::new(P_FRELEASE, "Release", 0.005, 8.0, 0.3, Unit::Seconds).log().group("Filter Envelope"),
     ParamInfo::new(P_GLIDE, "Portamento", 0.0, 2.0, 0.0, Unit::Seconds).group("Global"),
     ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -10.0, Unit::Db).group("Global"),
 ];

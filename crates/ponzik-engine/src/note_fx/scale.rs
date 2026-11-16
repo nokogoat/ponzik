@@ -8,19 +8,19 @@ const P_SNAP: u32 = 2;
 
 const NONE: u8 = u8::MAX;
 
-const ROOTS: &[&str] = &["Do", "Do♯", "Ré", "Mi♭", "Mi", "Fa", "Fa♯", "Sol", "La♭", "La", "Si♭", "Si"];
+const ROOTS: &[&str] = &["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
 const MODES: &[&str] = &[
-    "Majeur",
-    "Mineur",
-    "Dorien",
-    "Phrygien",
-    "Lydien",
-    "Mixolydien",
-    "Locrien",
-    "Mineur harmonique",
-    "Mineur mélodique",
-    "Pentatonique majeure",
-    "Pentatonique mineure",
+    "Major",
+    "Minor",
+    "Dorian",
+    "Phrygian",
+    "Lydian",
+    "Mixolydian",
+    "Locrian",
+    "Harmonic Minor",
+    "Melodic Minor",
+    "Major Pentatonic",
+    "Minor Pentatonic",
     "Blues",
 ];
 /// Degrés de chaque mode de [`MODES`], en demi-tons au-dessus de la tonique.
@@ -38,12 +38,12 @@ const MODE_STEPS: [&[u8]; 12] = [
     &[0, 3, 5, 7, 10],
     &[0, 3, 5, 6, 7, 10],
 ];
-const SNAPS: &[&str] = &["Plus proche", "Vers le haut", "Vers le bas", "Filtrer"];
+const SNAPS: &[&str] = &["Nearest", "Snap Up", "Snap Down", "Filter out"];
 
 static PARAMS: [ParamInfo; 3] = [
-    ParamInfo::choice(P_ROOT, "Tonique", ROOTS, 0).group("Gamme"),
-    ParamInfo::choice(P_MODE, "Mode", MODES, 0).group("Gamme"),
-    ParamInfo::choice(P_SNAP, "Hors gamme", SNAPS, 0).group("Gamme"),
+    ParamInfo::choice(P_ROOT, "Tonic", ROOTS, 0).group("Scale"),
+    ParamInfo::choice(P_MODE, "Mode", MODES, 0).group("Scale"),
+    ParamInfo::choice(P_SNAP, "Out of Scale", SNAPS, 0).group("Scale"),
 ];
 
 /// Gamme : ramène chaque note sur la gamme choisie (la plus proche, vers le

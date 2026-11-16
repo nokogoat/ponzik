@@ -37,15 +37,15 @@ const P_DRIVE: u32 = 7;
 const P_VOLUME: u32 = 8;
 
 static PARAMS: [ParamInfo; 9] = [
-    ParamInfo::new(P_TONE, "Brillance", 0.0, 1.0, 0.5, Unit::Percent).group("Timbre"),
-    ParamInfo::new(P_VELOCITY, "Dynamique", 0.0, 1.0, 0.7, Unit::Percent).group("Timbre"),
-    ParamInfo::new(P_BELL, "Cloche", 0.0, 1.0, 0.35, Unit::Percent).group("Timbre"),
-    ParamInfo::new(P_DECAY, "Déclin", 0.5, 20.0, 5.0, Unit::Seconds).log().group("Amplitude"),
-    ParamInfo::new(P_RELEASE, "Relâche", 0.02, 2.0, 0.25, Unit::Seconds).log().group("Amplitude"),
-    ParamInfo::new(P_TREM_RATE, "Vitesse", 0.1, 12.0, 4.5, Unit::Hz).log().group("Trémolo"),
-    ParamInfo::new(P_TREM_DEPTH, "Profondeur", 0.0, 1.0, 0.3, Unit::Percent).group("Trémolo"),
-    ParamInfo::new(P_DRIVE, "Saturation", 0.0, 1.0, 0.15, Unit::Percent).group("Sortie"),
-    ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -8.0, Unit::Db).group("Sortie"),
+    ParamInfo::new(P_TONE, "Brightness", 0.0, 1.0, 0.5, Unit::Percent).group("Timbre"),
+    ParamInfo::new(P_VELOCITY, "Dynamics", 0.0, 1.0, 0.7, Unit::Percent).group("Timbre"),
+    ParamInfo::new(P_BELL, "Bell", 0.0, 1.0, 0.35, Unit::Percent).group("Timbre"),
+    ParamInfo::new(P_DECAY, "Decay", 0.5, 20.0, 5.0, Unit::Seconds).log().group("Amp"),
+    ParamInfo::new(P_RELEASE, "Release", 0.02, 2.0, 0.25, Unit::Seconds).log().group("Amp"),
+    ParamInfo::new(P_TREM_RATE, "Rate", 0.1, 12.0, 4.5, Unit::Hz).log().group("Tremolo"),
+    ParamInfo::new(P_TREM_DEPTH, "Depth", 0.0, 1.0, 0.3, Unit::Percent).group("Tremolo"),
+    ParamInfo::new(P_DRIVE, "Saturation", 0.0, 1.0, 0.15, Unit::Percent).group("Output"),
+    ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -8.0, Unit::Db).group("Output"),
 ];
 
 #[derive(Clone, Copy, Debug, Default)]

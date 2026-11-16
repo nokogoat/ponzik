@@ -11,11 +11,11 @@ const P_HOLD: u32 = 3;
 const P_RELEASE: u32 = 4;
 
 static PARAMS: [ParamInfo; 5] = [
-    ParamInfo::new(P_THRESHOLD, "Seuil", -60.0, 0.0, -30.0, Unit::Db).group("Ducking"),
-    ParamInfo::new(P_AMOUNT, "Quantité", 0.0, 1.0, 0.8, Unit::Percent).group("Ducking"),
-    ParamInfo::new(P_ATTACK, "Attaque", 0.000_1, 0.1, 0.005, Unit::Seconds).log().group("Temps"),
-    ParamInfo::new(P_HOLD, "Maintien", 0.0, 1.0, 0.05, Unit::Seconds).group("Temps"),
-    ParamInfo::new(P_RELEASE, "Relâche", 0.005, 2.0, 0.2, Unit::Seconds).log().group("Temps"),
+    ParamInfo::new(P_THRESHOLD, "Threshold", -60.0, 0.0, -30.0, Unit::Db).group("Ducking"),
+    ParamInfo::new(P_AMOUNT, "Amount", 0.0, 1.0, 0.8, Unit::Percent).group("Ducking"),
+    ParamInfo::new(P_ATTACK, "Attack", 0.000_1, 0.1, 0.005, Unit::Seconds).log().group("Time"),
+    ParamInfo::new(P_HOLD, "Hold", 0.0, 1.0, 0.05, Unit::Seconds).group("Time"),
+    ParamInfo::new(P_RELEASE, "Release", 0.005, 2.0, 0.2, Unit::Seconds).log().group("Time"),
 ];
 
 /// Ducking par entrée latérale : le volume baisse de « Quantité » tant que la

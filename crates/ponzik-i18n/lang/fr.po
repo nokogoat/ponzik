@@ -63,3 +63,4446 @@ msgstr "Glace"
 
 msgid "Amber"
 msgstr "Ambre"
+
+# --- Project: errors, default names, scales, chords, templates, demos ---
+
+msgid "Can't create \"{}\": {}"
+msgstr "impossible de créer « {} » : {}"
+
+msgid "Can't write \"{}\": {}"
+msgstr "impossible d'écrire « {} » : {}"
+
+msgid "Can't remove \"{}\": {}"
+msgstr "impossible de retirer « {} » : {}"
+
+msgid "Untitled"
+msgstr "Sans titre"
+
+msgid "Kick"
+msgstr "Kick"
+
+msgid "Snare"
+msgstr "Caisse claire"
+
+msgid "Ghost"
+msgstr "Ghost"
+
+msgid "Hat"
+msgstr "Hat"
+
+msgid "Ride"
+msgstr "Ride"
+
+msgid "Acid"
+msgstr "Acid"
+
+msgid "Sub"
+msgstr "Sub"
+
+msgid "Stab"
+msgstr "Stab"
+
+msgid "Pad"
+msgstr "Nappe"
+
+msgid "Drums"
+msgstr "Batterie"
+
+msgid "Reverb"
+msgstr "Réverbe"
+
+msgid "Chop"
+msgstr "Chop"
+
+msgid "Breath"
+msgstr "Respiration"
+
+msgid "Drill"
+msgstr "Drill"
+
+msgid "House groove in A minor"
+msgstr "Groove house en La mineur"
+
+msgid "Clap"
+msgstr "Clap"
+
+msgid "Open Hat"
+msgstr "Charleston ouverte"
+
+msgid "Bass"
+msgstr "Basse"
+
+msgid "Groove"
+msgstr "Groove"
+
+msgid "Intro"
+msgstr "Intro"
+
+msgid "Break"
+msgstr "Break"
+
+msgid "Channel"
+msgstr "Canal"
+
+msgid "Pattern {}"
+msgstr "Pattern {}"
+
+msgid "Master"
+msgstr "Master"
+
+msgid "Unreadable project file: {}"
+msgstr "fichier de projet illisible : {}"
+
+msgid "This file is not a Ponzik project"
+msgstr "ce fichier n'est pas un projet Ponzik"
+
+msgid "Unknown format \"{}\": this file is not a Ponzik project"
+msgstr "format « {} » inconnu : ce fichier n'est pas un projet Ponzik"
+
+msgid "This file is not a Ponzik project (no \"format\" field)"
+msgstr "ce fichier n'est pas un projet Ponzik (champ « format » absent)"
+
+msgid "Can't read \"{}\": {}"
+msgstr "impossible de lire « {} » : {}"
+
+msgid "\"{}\" is not a valid UTF-8 text file"
+msgstr "« {} » n'est pas un fichier texte UTF-8 valide"
+
+msgid "\"{}\": {}"
+msgstr "« {} » : {}"
+
+msgid "unexpected content after the end of the document"
+msgstr "contenu inattendu après la fin du document"
+
+msgid "line {}, column {}: {}"
+msgstr "ligne {}, colonne {} : {}"
+
+msgid "expected \"{}\""
+msgstr "« {} » attendu"
+
+msgid "unexpected end of text, {}"
+msgstr "fin de texte inattendue, {}"
+
+msgid "unexpected character \"{}\", {}"
+msgstr "caractère « {} » inattendu, {}"
+
+msgid "nesting too deep"
+msgstr "imbrication trop profonde"
+
+msgid "expected a value"
+msgstr "valeur attendue"
+
+msgid "expected a quoted key"
+msgstr "clé entre guillemets attendue"
+
+msgid "expected \",\" or \"}\""
+msgstr "« , » ou « } » attendu"
+
+msgid "expected \",\" or \"]\""
+msgstr "« , » ou « ] » attendu"
+
+msgid "expected a digit"
+msgstr "chiffre attendu"
+
+msgid "leading zero not allowed in a number"
+msgstr "zéro initial interdit dans un nombre"
+
+msgid "expected a digit after the decimal point"
+msgstr "chiffre attendu après la virgule"
+
+msgid "expected a digit in the exponent"
+msgstr "chiffre attendu dans l'exposant"
+
+msgid "invalid number"
+msgstr "nombre invalide"
+
+msgid "incomplete \\u sequence"
+msgstr "séquence \\u incomplète"
+
+msgid "invalid \\u sequence"
+msgstr "séquence \\u invalide"
+
+msgid "unterminated string"
+msgstr "chaîne non terminée"
+
+msgid "UTF-16 high surrogate without its low surrogate"
+msgstr "demi-paire UTF-16 sans sa seconde moitié"
+
+msgid "invalid UTF-16 surrogate pair"
+msgstr "paire UTF-16 invalide"
+
+msgid "lone UTF-16 low surrogate"
+msgstr "demi-paire UTF-16 isolée"
+
+msgid "invalid code point"
+msgstr "point de code invalide"
+
+msgid "unknown escape"
+msgstr "échappement inconnu"
+
+msgid "control character not allowed in a string"
+msgstr "caractère de contrôle interdit dans une chaîne"
+
+msgid "Delay"
+msgstr "Délai"
+
+msgid "Bus"
+msgstr "Bus"
+
+msgid "VCA"
+msgstr "VCA"
+
+msgid "truncated MIDI file"
+msgstr "fichier MIDI tronqué"
+
+msgid "invalid variable-length quantity"
+msgstr "quantité de longueur variable invalide"
+
+msgid "data byte without a status (no running status)"
+msgstr "octet de données sans statut (running status absent)"
+
+msgid "unexpected system message in a track: {}"
+msgstr "message système inattendu dans une piste : {}"
+
+msgid "not a MIDI file (no MThd header)"
+msgstr "ce n'est pas un fichier MIDI (en-tête MThd absent)"
+
+msgid "MIDI header too short"
+msgstr "en-tête MIDI trop court"
+
+msgid "MIDI format {} not supported (only formats 0 and 1 are)"
+msgstr "format MIDI {} non pris en charge (seuls les formats 0 et 1 le sont)"
+
+msgid "SMPTE time division not supported (ticks per quarter note required)"
+msgstr "division temporelle SMPTE non prise en charge (ticks par noire requis)"
+
+msgid "zero time division"
+msgstr "division temporelle nulle"
+
+msgid "Track {} (channel {})"
+msgstr "Piste {} (canal {})"
+
+msgid "{} (channel {})"
+msgstr "{} (canal {})"
+
+msgid "WAV file larger than 4 GB"
+msgstr "fichier WAV > 4 Go"
+
+msgid "Modes"
+msgstr "Modes"
+
+msgid "Harmonic"
+msgstr "Harmoniques"
+
+msgid "Pentatonic and blues"
+msgstr "Pentatoniques et blues"
+
+msgid "World colors"
+msgstr "Couleurs du monde"
+
+msgid "Symmetric and jazz"
+msgstr "Symétriques et jazz"
+
+msgid "Blues"
+msgstr "Blues"
+
+msgid "Hirajoshi"
+msgstr "Hirajoshi"
+
+msgid "In sen"
+msgstr "In sen"
+
+msgid "Bebop"
+msgstr "Bebop"
+
+msgid "Major"
+msgstr "Majeur"
+
+msgid "Minor"
+msgstr "Mineur"
+
+msgid "Dorian"
+msgstr "Dorien"
+
+msgid "Phrygian"
+msgstr "Phrygien"
+
+msgid "Lydian"
+msgstr "Lydien"
+
+msgid "Mixolydian"
+msgstr "Mixolydien"
+
+msgid "Locrian"
+msgstr "Locrien"
+
+msgid "Harmonic minor"
+msgstr "Mineur harmonique"
+
+msgid "Melodic minor"
+msgstr "Mineur mélodique"
+
+msgid "Harmonic major"
+msgstr "Majeur harmonique"
+
+msgid "Major pentatonic"
+msgstr "Penta majeure"
+
+msgid "Minor pentatonic"
+msgstr "Penta mineure"
+
+msgid "Major blues"
+msgstr "Blues majeur"
+
+msgid "Phrygian dominant"
+msgstr "Phrygien dominant"
+
+msgid "Double harmonic"
+msgstr "Arabe"
+
+msgid "Hungarian minor"
+msgstr "Hongrois mineur"
+
+msgid "Whole tone"
+msgstr "Par tons"
+
+msgid "Diminished"
+msgstr "Diminué"
+
+msgid "Chromatic"
+msgstr "Chromatique"
+
+msgid "Triads"
+msgstr "Triades"
+
+msgid "Sevenths and sixths"
+msgstr "Septièmes et sixtes"
+
+msgid "Extended"
+msgstr "Enrichis"
+
+msgid "Drop 2"
+msgstr "Drop 2"
+
+msgid "House"
+msgstr "House"
+
+msgid "Hip-hop / trap 140"
+msgstr "Hip-hop / trap 140"
+
+msgid "Drum & bass 174"
+msgstr "Drum & bass 174"
+
+msgid "Ambient"
+msgstr "Ambient"
+
+msgid "Empty"
+msgstr "Vide"
+
+msgid "Beat (drums + bass)"
+msgstr "Beat (batterie + basse)"
+
+msgid "Beat"
+msgstr "Beat"
+
+msgid "Hi-hat"
+msgstr "Charleston"
+
+msgid "Open hi-hat"
+msgstr "Charleston ouverte"
+
+msgid "Chords"
+msgstr "Accords"
+
+msgid "Trap"
+msgstr "Trap"
+
+msgid "Melody"
+msgstr "Mélodie"
+
+msgid "Drum & bass"
+msgstr "Drum & bass"
+
+msgid "Reese bass"
+msgstr "Basse Reese"
+
+msgid "Two-step"
+msgstr "Deux temps"
+
+msgid "Piano"
+msgstr "Piano"
+
+msgid "Plucked strings"
+msgstr "Cordes pincées"
+
+msgid "Bell"
+msgstr "Cloche"
+
+# --- Interface ---
+
+msgid "Channel Rack"
+msgstr "Channel Rack"
+
+msgid "Piano roll"
+msgstr "Piano roll"
+
+msgid "Playlist"
+msgstr "Playlist"
+
+msgid "Session"
+msgstr "Session"
+
+msgid "Mixer"
+msgstr "Mixer"
+
+msgid "Sample Lab"
+msgstr "Sample Lab"
+
+msgid "Tempo"
+msgstr "Tempo"
+
+msgid "Place a note"
+msgstr "Poser une note"
+
+msgid "Move notes"
+msgstr "Déplacer des notes"
+
+msgid "Scale"
+msgstr "Gamme"
+
+msgid "Add an effect"
+msgstr "Ajouter un effet"
+
+msgid "Recover?"
+msgstr "Récupérer ?"
+
+msgid "Reopen the autosave"
+msgstr "Rouvrir la sauvegarde automatique"
+
+msgid "Project recovered · Ctrl+S to save it"
+msgstr "Projet récupéré · Ctrl+S pour l'enregistrer"
+
+msgid "Dismiss"
+msgstr "Ignorer"
+
+msgid "Undone: {}"
+msgstr "Annulé : {}"
+
+msgid "Redone: {}"
+msgstr "Rétabli : {}"
+
+msgid "Back to the start"
+msgstr "Retour au départ"
+
+msgid "Back to: {}"
+msgstr "Retour à : {}"
+
+msgid "Audio"
+msgstr "Audio"
+
+msgid "Place an audio clip"
+msgstr "Poser un clip audio"
+
+msgid "{} placed in the playlist"
+msgstr "{} posé dans la playlist"
+
+msgid "Add a channel"
+msgstr "Ajouter un canal"
+
+msgid "{} added to the rack"
+msgstr "{} ajouté au rack"
+
+msgid "Sample"
+msgstr "Échantillon"
+
+msgid "The sampler is not available yet"
+msgstr "Le sampler n'est pas encore disponible"
+
+msgid "Add a sample"
+msgstr "Ajouter un échantillon"
+
+msgid "A VCA carries no sound: put the effect on a bus"
+msgstr "Un VCA ne fait passer aucun son : mettez l'effet sur un bus"
+
+msgid "No free slot left on this track"
+msgstr "Plus d'emplacement libre sur cette piste"
+
+msgid "{} added on {}"
+msgstr "{} ajouté sur {}"
+
+msgid "{}: {}"
+msgstr "{} : {}"
+
+msgid "Record audio"
+msgstr "Enregistrer de l'audio"
+
+msgid "{} stems exported to {}"
+msgstr "{} stems exportés dans {}"
+
+msgid "Playback mode"
+msgstr "Mode de lecture"
+
+msgid "Change pattern"
+msgstr "Changer de pattern"
+
+msgid "One-bar count-in on"
+msgstr "Pré-compte d'une mesure activé"
+
+msgid "Count-in off"
+msgstr "Pré-compte désactivé"
+
+msgid "Saved to {}"
+msgstr "Enregistré dans {}"
+
+msgid "{} opened"
+msgstr "{} ouvert"
+
+msgid "Exported: {} ({:.1} s)"
+msgstr "Exporté : {} ({:.1} s)"
+
+msgid "Musical typing on: letters play notes ({} to go back)"
+msgstr "Clavier musical activé : les lettres jouent des notes ({} pour revenir)"
+
+msgid "Musical typing off"
+msgstr "Clavier musical désactivé"
+
+msgid "{} is hidden · ☰ Settings to show it"
+msgstr "{} est masqué · ☰ Réglages pour l'afficher"
+
+msgid "Browser"
+msgstr "Navigateur"
+
+msgid "Pause"
+msgstr "Pause"
+
+msgid "Play"
+msgstr "Lecture"
+
+msgid "Stop"
+msgstr "Arrêt"
+
+msgid "Play the pattern"
+msgstr "Jouer le pattern"
+
+msgid "Play the song"
+msgstr "Jouer le morceau"
+
+msgid "Play the session"
+msgstr "Jouer la session"
+
+msgid "Tempo\nDrag or scroll · Shift: fine"
+msgstr "Tempo\nGlisser ou molette · Maj : fin"
+
+msgid "Position\nbar . beat . step"
+msgstr "Position\nmesure . temps . pas"
+
+msgid "Metronome"
+msgstr "Métronome"
+
+msgid "Musical typing"
+msgstr "Clavier musical"
+
+msgid "Menu"
+msgstr "Menu"
+
+msgid "Find anything"
+msgstr "Tout trouver"
+
+msgid "Devices"
+msgstr "Appareils"
+
+msgid "Save"
+msgstr "Enregistrer"
+
+msgid "Redo"
+msgstr "Rétablir"
+
+msgid "Undo"
+msgstr "Annuler"
+
+msgid "History"
+msgstr "Historique"
+
+msgid "DSP load: {:.0}%"
+msgstr "Charge DSP : {:.0} %"
+
+msgid "Project\nDouble-click: rename"
+msgstr "Projet\nDouble-clic : renommer"
+
+msgid "Previous pattern"
+msgstr "Pattern précédent"
+
+msgid "Next pattern"
+msgstr "Pattern suivant"
+
+msgid "New pattern"
+msgstr "Nouveau pattern"
+
+msgid "Patterns"
+msgstr "Patterns"
+
+msgid "Project scale\nNone: every note"
+msgstr "Gamme du projet\nAucune : toutes les notes"
+
+msgid "Project scale\n{} {} · scroll: key"
+msgstr "Gamme du projet\n{} {} · molette : tonalité"
+
+msgid "Key"
+msgstr "Tonalité"
+
+msgid "TAP"
+msgstr "TAP"
+
+msgid "Tap tempo\nTap the beat: average of the last 4 taps"
+msgstr "Tap tempo\nTape le temps : moyenne des 4 derniers appuis"
+
+msgid "Record notes and audio\nOne-bar count-in · right-click: turn off"
+msgstr "Enregistrer les notes et l'audio\nPré-compte d'une mesure · clic droit : couper"
+
+msgid "Record notes and audio\nNo count-in · right-click: turn on"
+msgstr "Enregistrer les notes et l'audio\nSans pré-compte · clic droit : l'activer"
+
+msgid "Recording armed"
+msgstr "Enregistrement armé"
+
+msgid "Recording disarmed"
+msgstr "Enregistrement désarmé"
+
+msgid "Instrument"
+msgstr "Instrument"
+
+msgid "Effect"
+msgstr "Effet"
+
+msgid "Instruments"
+msgstr "Instruments"
+
+msgid "Effects"
+msgstr "Effets"
+
+msgid "Samples"
+msgstr "Échantillons"
+
+msgid "CLAP and VST 3 plugins"
+msgstr "Plugins CLAP et VST 3"
+
+msgid "Search"
+msgstr "Rechercher"
+
+msgid "Nothing found"
+msgstr "Rien de trouvé"
+
+msgid "No WAV files"
+msgstr "Aucun fichier WAV"
+
+msgid "No CLAP or VST 3 plugins"
+msgstr "Aucun plugin CLAP ni VST 3"
+
+msgid "Click: add · drag: drop"
+msgstr "Clic : ajouter · glisser : déposer"
+
+msgid "{}\nClick: add · drag: drop"
+msgstr "{}\nClic : ajouter · glisser : déposer"
+
+msgid "Replace with"
+msgstr "Remplacer par"
+
+msgid "Note effects"
+msgstr "Effets de notes"
+
+msgid "New"
+msgstr "Nouveau"
+
+msgid "Duplicate"
+msgstr "Dupliquer"
+
+msgid "Rename"
+msgstr "Renommer"
+
+msgid "Delete"
+msgstr "Supprimer"
+
+msgid "Also removes its clips"
+msgstr "Retire aussi ses clips"
+
+msgid "No projects"
+msgstr "Aucun projet"
+
+msgid "Projects"
+msgstr "Projets"
+
+msgid "Replace"
+msgstr "Remplacer"
+
+msgid "Same settings, without the notes"
+msgstr "Mêmes réglages, sans les notes"
+
+msgid "Also removes its notes"
+msgstr "Retire aussi ses notes"
+
+msgid "Output"
+msgstr "Sortie"
+
+msgid "Send"
+msgstr "Envoi"
+
+msgid "Group into a bus"
+msgstr "Grouper dans un bus"
+
+msgid "The {} selected tracks go out into a new bus"
+msgstr "Les {} pistes choisies sortent dans un nouveau bus"
+
+msgid "Route to a new bus"
+msgstr "Envoyer vers un nouveau bus"
+
+msgid "Creates a bus and routes this track into it"
+msgstr "Crée un bus et y fait sortir cette piste"
+
+msgid "New send bus"
+msgstr "Nouveau bus d'envoi"
+
+msgid "A return bus with a reverb or a delay, and a send to it"
+msgstr "Un bus de retour avec une réverbe ou un délai, et un envoi vers lui"
+
+msgid "A fader that controls the volume of several tracks"
+msgstr "Un fader qui pilote le volume de plusieurs pistes"
+
+msgid "Unfold"
+msgstr "Déplier"
+
+msgid "Fold"
+msgstr "Replier"
+
+msgid "Ungroup the bus"
+msgstr "Défaire le bus"
+
+msgid "Its tracks go out where it went out"
+msgstr "Ses pistes sortent là où il sortait"
+
+msgid "Delete the VCA"
+msgstr "Supprimer le VCA"
+
+msgid "Its tracks keep their own volume"
+msgstr "Ses pistes gardent leur volume propre"
+
+msgid "Reset"
+msgstr "Réinitialiser"
+
+msgid "Volume 0 dB, pan centered"
+msgstr "Volume 0 dB, pan au centre"
+
+msgid "New bus"
+msgstr "Nouveau bus"
+
+msgid "Send to"
+msgstr "Envoyer vers"
+
+msgid "Output to"
+msgstr "Sortie vers"
+
+msgid "Group the selection"
+msgstr "Grouper la sélection"
+
+msgid "The selected tracks (Ctrl+click on their name) go out into a new bus"
+msgstr "Les pistes choisies (Ctrl+clic sur leur nom) sortent dans un nouveau bus"
+
+msgid "An empty bus; Ctrl+click strips then Ctrl+G to group them"
+msgstr "Un bus vide ; Ctrl+clic sur des tranches puis Ctrl+G pour les grouper"
+
+msgid "Return with {}"
+msgstr "Retour {}"
+
+msgid "Return bus, effect 100% wet"
+msgstr "Bus de retour, effet 100 % mouillé"
+
+msgid "A fader that controls the volume of several tracks without carrying their sound"
+msgstr "Un fader qui pilote le volume de plusieurs pistes sans faire passer leur son"
+
+msgid "New return bus, send at −10 dB from this track"
+msgstr "Nouveau bus de retour, envoi à −10 dB depuis cette piste"
+
+msgid "Send bus"
+msgstr "Bus d'envoi"
+
+msgid "None"
+msgstr "Aucun"
+
+msgid "New VCA"
+msgstr "Nouveau VCA"
+
+msgid "loop"
+msgstr "boucle"
+
+msgid "Not possible: would create a routing loop"
+msgstr "Impossible : créerait une boucle de routage"
+
+msgid "Sidechain track"
+msgstr "Piste clé"
+
+msgid "Automate"
+msgstr "Automatiser"
+
+msgid "A curve in the playlist"
+msgstr "Une courbe dans la playlist"
+
+msgid "Delete the automation"
+msgstr "Supprimer l'automation"
+
+msgid "Default value"
+msgstr "Valeur par défaut"
+
+msgid "No MIDI files"
+msgstr "Aucun fichier MIDI"
+
+msgid "Import MIDI"
+msgstr "Importer du MIDI"
+
+msgid "Save…"
+msgstr "Enregistrer…"
+
+msgid "The current settings, under a name"
+msgstr "Les réglages actuels, sous un nom"
+
+msgid "Presets"
+msgstr "Presets"
+
+msgid "Track {} · scene {}"
+msgstr "Piste {} · scène {}"
+
+msgid "New project"
+msgstr "Nouveau projet"
+
+msgid "Start"
+msgstr "Début"
+
+msgid "Humanize"
+msgstr "Humaniser"
+
+msgid "±{} · ±{:.0}%"
+msgstr "±{} · ±{:.0} %"
+
+msgid "Random start (ticks) and velocity"
+msgstr "Début (ticks) et vélocité, au hasard"
+
+msgid "Open"
+msgstr "Ouvrir"
+
+msgid "Save as"
+msgstr "Enregistrer sous"
+
+msgid "Export as WAV"
+msgstr "Exporter en WAV"
+
+msgid "Export stems"
+msgstr "Exporter les pistes"
+
+msgid "One WAV per mixer track"
+msgstr "Un WAV par piste du mixer"
+
+msgid "Export as MIDI"
+msgstr "Exporter en MIDI"
+
+msgid "The current pattern"
+msgstr "Le pattern actuel"
+
+msgid "House demo"
+msgstr "Démo house"
+
+msgid "Breakcore demo"
+msgstr "Démo breakcore"
+
+msgid "Theme"
+msgstr "Thème"
+
+msgid "Settings"
+msgstr "Réglages"
+
+msgid "Views, panels and shortcuts"
+msgstr "Vues, panneaux et raccourcis"
+
+msgid "Make unique"
+msgstr "Rendre unique"
+
+msgid "{} clips"
+msgstr "{} clips"
+
+msgid "Copy of the pattern for this clip alone"
+msgstr "Copie du pattern pour ce clip seul"
+
+msgid "This clip is already the only one playing this pattern"
+msgstr "Ce clip est déjà le seul à jouer ce pattern"
+
+msgid "Color"
+msgstr "Couleur"
+
+msgid "Renames the pattern and all its clips"
+msgstr "Renomme le pattern et tous ses clips"
+
+msgid "Edit"
+msgstr "Éditer"
+
+msgid "double-click"
+msgstr "double-clic"
+
+msgid "Delete the clip"
+msgstr "Supprimer le clip"
+
+msgid "Hold right-click: sweep to erase"
+msgstr "Clic droit maintenu : effacer en balayant"
+
+msgid "Automatic"
+msgstr "Automatique"
+
+msgid "Color · {}"
+msgstr "Couleur · {}"
+
+msgid "Replace the instrument"
+msgstr "Remplacer l'instrument"
+
+msgid "Pattern color"
+msgstr "Couleur du pattern"
+
+msgid "Erase a clip"
+msgstr "Effacer un clip"
+
+msgid "Control with a VCA"
+msgstr "Piloter par un VCA"
+
+msgid "Remove from the VCA"
+msgstr "Retirer du VCA"
+
+msgid "{} (copy)"
+msgstr "{} (copie)"
+
+msgid "Duplicate a channel"
+msgstr "Dupliquer un canal"
+
+msgid "Delete a channel"
+msgstr "Supprimer un canal"
+
+msgid "{} deleted · Ctrl+Z to undo"
+msgstr "{} supprimé · Ctrl+Z pour annuler"
+
+msgid "Track output"
+msgstr "Sortie de piste"
+
+msgid "Add a send"
+msgstr "Ajouter un envoi"
+
+msgid "No free send left on this track"
+msgstr "Plus d'envoi libre sur cette piste"
+
+msgid "{} can't be used as a sidechain: routing loop"
+msgstr "{} ne peut pas servir de clé : boucle de routage"
+
+msgid "Connect a sidechain"
+msgstr "Brancher une clé"
+
+msgid "Disconnect the sidechain"
+msgstr "Débrancher la clé"
+
+msgid "Reset a track"
+msgstr "Réinitialiser une piste"
+
+msgid "New project · {}"
+msgstr "Nouveau projet · {}"
+
+msgid "Volume · {}"
+msgstr "Volume · {}"
+
+msgid "Volume"
+msgstr "Volume"
+
+msgid "Pan · {}"
+msgstr "Pan · {}"
+
+msgid "Pan"
+msgstr "Pan"
+
+msgid "This parameter is already automated: see the playlist"
+msgstr "Ce paramètre est déjà automatisé : voir la playlist"
+
+msgid "Create an automation"
+msgstr "Créer une automation"
+
+msgid "Automation created in the playlist (Song mode)"
+msgstr "Automation créée dans la playlist (mode Morceau)"
+
+msgid "Remove an automation"
+msgstr "Retirer une automation"
+
+msgid "Automation point"
+msgstr "Point d'automation"
+
+msgid "Move an automation point"
+msgstr "Déplacer un point d'automation"
+
+msgid "Erase an automation point"
+msgstr "Effacer un point d'automation"
+
+msgid "The playlist is empty: place patterns before exporting"
+msgstr "La playlist est vide : place des patterns avant d'exporter"
+
+msgid "Double-click: rename"
+msgstr "Double-clic : renommer"
+
+msgid "Add an effect\nor drag one from the browser"
+msgstr "Ajouter un effet\nou glisser un effet du navigateur"
+
+msgid "Dock"
+msgstr "Réancrer"
+
+msgid "Detach into a window"
+msgstr "Détacher dans une fenêtre"
+
+msgid "Enable"
+msgstr "Activer"
+
+msgid "Bypass"
+msgstr "Contourner"
+
+msgid "Bypass an effect"
+msgstr "Contourner un effet"
+
+msgid "Remove"
+msgstr "Retirer"
+
+msgid "Remove an effect"
+msgstr "Retirer un effet"
+
+msgid "No settings"
+msgstr "Aucun réglage"
+
+msgid "Preset saved: {}"
+msgstr "Preset enregistré : {}"
+
+msgid "Load a preset"
+msgstr "Charger un preset"
+
+msgid "Setting: {}"
+msgstr "Réglage : {}"
+
+msgid "Replace instrument"
+msgstr "Remplacer l'instrument"
+
+msgid "{} loaded"
+msgstr "{} chargé"
+
+msgid "Load a sample"
+msgstr "Charger un échantillon"
+
+msgid "Drag: move\nDouble-click or drag onto the panel: dock"
+msgstr "Glisser : déplacer\nDouble-clic ou glisser sur le panneau : réancrer"
+
+msgid "Drag upward: detach"
+msgstr "Glisser vers le haut : détacher"
+
+msgid "In a window\nClick: bring to front · double-click: dock"
+msgstr "Dans une fenêtre\nClic : premier plan · double-clic : réancrer"
+
+msgid "Drag: resize"
+msgstr "Glisser : redimensionner"
+
+msgid "Drag: browser width"
+msgstr "Glisser : largeur du navigateur"
+
+msgid "Drag: panel height"
+msgstr "Glisser : hauteur du panneau"
+
+msgid "{}\nDouble-click: default size"
+msgstr "{}\nDouble-clic : taille par défaut"
+
+msgid "Shift"
+msgstr "Maj"
+
+msgid "Space"
+msgstr "Espace"
+
+msgid "Enter"
+msgstr "Entrée"
+
+msgid "Esc"
+msgstr "Échap"
+
+msgid "Backspace"
+msgstr "Retour"
+
+msgid "Del"
+msgstr "Suppr"
+
+msgid "Home"
+msgstr "Début"
+
+msgid "End"
+msgstr "Fin"
+
+msgid "Transport"
+msgstr "Transport"
+
+msgid "Pattern"
+msgstr "Pattern"
+
+msgid "Views"
+msgstr "Vues"
+
+msgid "File"
+msgstr "Fichier"
+
+msgid "Tap tempo"
+msgstr "Tap tempo"
+
+msgid "Play / stop"
+msgstr "Lecture / arrêt"
+
+msgid "Pattern / song"
+msgstr "Pattern / morceau"
+
+msgid "Arm recording"
+msgstr "Armer l'enregistrement"
+
+msgid "Typing keyboard"
+msgstr "Clavier musical"
+
+msgid "Next view"
+msgstr "Vue suivante"
+
+msgid "Device panel"
+msgstr "Panneau d'appareils"
+
+msgid "Export to WAV"
+msgstr "Exporter en WAV"
+
+msgid "Search sounds"
+msgstr "Chercher un son"
+
+msgid "Record notes"
+msgstr "Enregistrer des notes"
+
+msgid "Keyboard: octave {}"
+msgstr "Clavier : octave {}"
+
+msgid "No free track left in the mixer"
+msgstr "Plus de piste libre dans le mixer"
+
+msgid "{} created · double-click its name to rename it"
+msgstr "{} créé · double-clic sur son nom pour le renommer"
+
+msgid "{} created · {} track left out: routing loop"
+msgstr "{} créé · {} piste laissée de côté : boucle de routage"
+
+msgid "New return bus"
+msgstr "Nouveau bus d'envoi"
+
+msgid "{} created · sent from {}"
+msgstr "{} créé · envoi depuis {}"
+
+msgid "{} created · use Send in a track's menu to feed it"
+msgstr "{} créé · Envoi dans le menu d'une piste pour l'alimenter"
+
+msgid "{} created · right-click a track › VCA to assign it"
+msgstr "{} créé · clic droit sur une piste › VCA pour la lui confier"
+
+msgid "{} controls {} track · no sound passes through it"
+msgstr "{} pilote {} piste · aucun son ne le traverse"
+
+msgid "Fold a bus"
+msgstr "Replier un bus"
+
+msgid "Unfold a bus"
+msgstr "Déplier un bus"
+
+msgid "Ungroup a bus"
+msgstr "Défaire un bus"
+
+msgid "Delete a VCA"
+msgstr "Supprimer un VCA"
+
+msgid "{} removed · Ctrl+Z to undo"
+msgstr "{} retiré · Ctrl+Z pour annuler"
+
+msgid "Used tracks only"
+msgstr "Pistes utilisées seulement"
+
+msgid "All tracks"
+msgstr "Toutes les pistes"
+
+msgid "{} · group"
+msgstr "{} · grouper"
+
+msgid "New bus, effect return or VCA\nCtrl+click strips to group them"
+msgstr "Nouveau bus, retour d'effet ou VCA\nCtrl+clic sur des tranches pour les grouper"
+
+msgid "Outputs to {}"
+msgstr "Sort dans {}"
+
+msgid "Unfold · {} track"
+msgstr "Déplier · {} piste"
+
+msgid "Fold · {} track"
+msgstr "Replier · {} piste"
+
+msgid "Double-click: rename · Ctrl+click: multi-select · right-click: menu"
+msgstr "Double-clic : renommer · Ctrl+clic : sélection multiple · clic droit : menu"
+
+msgid "Bus: other tracks output into it, its effects process their sum"
+msgstr "Bus : d'autres pistes y sortent, ses effets traitent leur somme"
+
+msgid "VCA: its fader controls the volume of its tracks, no sound passes through it"
+msgstr "VCA : son fader pilote le volume de ses pistes, aucun son ne le traverse"
+
+msgid "Controlled by {}"
+msgstr "Piloté par {}"
+
+msgid "Sidechain key for\n{}"
+msgstr "Sert de clé à\n{}"
+
+msgid "Right-click: remove"
+msgstr "Clic droit : retirer"
+
+msgid "Send level"
+msgstr "Niveau d'envoi"
+
+msgid "Track pan"
+msgstr "Pan de piste"
+
+msgid "Track mute"
+msgstr "Muet de piste"
+
+msgid "Unmute"
+msgstr "Réactiver"
+
+msgid "Mute"
+msgstr "Couper"
+
+msgid "Solo"
+msgstr "Solo"
+
+msgid "Controls"
+msgstr "Pilote"
+
+msgid "No tracks."
+msgstr "Aucune piste."
+
+msgid "Right-click a"
+msgstr "Clic droit sur une"
+
+msgid "track › VCA."
+msgstr "piste › VCA."
+
+msgid "+ {} more"
+msgstr "+ {} autres"
+
+msgid "Click: show · right-click: remove from VCA"
+msgstr "Clic : afficher · clic droit : retirer du VCA"
+
+msgid "Remove from VCA"
+msgstr "Retirer du VCA"
+
+msgid "Unmute the VCA's tracks"
+msgstr "Réactiver les pistes du VCA"
+
+msgid "Mute all the VCA's tracks"
+msgstr "Couper toutes les pistes du VCA"
+
+msgid "Key: {}\nClick: change · right-click: unplug"
+msgstr "Clé : {}\nClic : changer · clic droit : débrancher"
+
+msgid "Sidechain input\nClick: choose the key track"
+msgstr "Entrée latérale\nClic : choisir la piste clé"
+
+msgid "Unplug the key"
+msgstr "Débrancher la clé"
+
+msgid "Master loudness\nIntegrated {} · 3 s {}\nClick: reset"
+msgstr "Sonie du master\nIntégrée {} · 3 s {}\nClic : remettre à zéro"
+
+msgid "Track volume"
+msgstr "Volume de piste"
+
+msgid "{} to play · {} to find anything"
+msgstr "{} pour jouer · {} pour tout trouver"
+
+msgid "the audio driver stopped"
+msgstr "le pilote audio s'est arrêté"
+
+msgid "Demo · 3 min ago"
+msgstr "Démo · il y a 3 min"
+
+msgid "Capture effects"
+msgstr "Effets de capture"
+
+msgid "C"
+msgstr "Do"
+
+msgid "C♯"
+msgstr "Do♯"
+
+msgid "D"
+msgstr "Ré"
+
+msgid "E♭"
+msgstr "Mi♭"
+
+msgid "E"
+msgstr "Mi"
+
+msgid "F"
+msgstr "Fa"
+
+msgid "F♯"
+msgstr "Fa♯"
+
+msgid "G"
+msgstr "Sol"
+
+msgid "A♭"
+msgstr "La♭"
+
+msgid "A"
+msgstr "La"
+
+msgid "B♭"
+msgstr "Si♭"
+
+msgid "B"
+msgstr "Si"
+
+msgid "Add a note effect"
+msgstr "Ajouter un effet de notes"
+
+msgid "Remove a note effect"
+msgstr "Retirer un effet de notes"
+
+msgid "Notes"
+msgstr "Notes"
+
+msgid "{}\nRight-click: remove"
+msgstr "{}\nClic droit : retirer"
+
+msgid "Add a note effect\nArpeggio, chord, scale… before the instrument"
+msgstr "Ajouter un effet de notes\nArpège, accord, gamme… avant l'instrument"
+
+msgid "{}: in the scale"
+msgstr "{} : dans la gamme"
+
+msgid "{}: dropped"
+msgstr "{} : écartée"
+
+msgid "{}\nClick: select and listen"
+msgstr "{}\nClic : choisir et écouter"
+
+msgid "Switch pattern / song"
+msgstr "Basculer pattern / morceau"
+
+msgid "Turn off the count-in"
+msgstr "Couper le pré-compte"
+
+msgid "One-bar count-in before recording"
+msgstr "Pré-compte d'une mesure avant l'enregistrement"
+
+msgid "Computer typing keyboard"
+msgstr "Clavier d'ordinateur musical"
+
+msgid "Go to: {}"
+msgstr "Aller à : {}"
+
+msgid "View"
+msgstr "Vue"
+
+msgid "Show or hide the browser"
+msgstr "Afficher ou masquer le navigateur"
+
+msgid "Show or hide the devices"
+msgstr "Afficher ou masquer les appareils"
+
+msgid "Settings: workspace"
+msgstr "Réglages : espace de travail"
+
+msgid "Settings: keyboard shortcuts"
+msgstr "Réglages : raccourcis clavier"
+
+msgid "Profile: {} · {}"
+msgstr "Profil : {} · {}"
+
+msgid "Duplicate pattern"
+msgstr "Dupliquer le pattern"
+
+msgid "Rename pattern"
+msgstr "Renommer le pattern"
+
+msgid "Duplicate time selection"
+msgstr "Dupliquer la sélection de temps"
+
+msgid "Make the selected clip unique"
+msgstr "Rendre unique le clip sélectionné"
+
+msgid "Pattern: {}"
+msgstr "Pattern : {}"
+
+msgid "Channel: {}"
+msgstr "Canal : {}"
+
+msgid "Add {}"
+msgstr "Ajouter {}"
+
+msgid "Send {} to a new bus"
+msgstr "Envoyer {} vers un nouveau bus"
+
+msgid "Group {} tracks into a bus"
+msgstr "Grouper {} pistes dans un bus"
+
+msgid "New send bus: {}"
+msgstr "Nouveau bus d'envoi : {}"
+
+msgid "Fold or unfold {}"
+msgstr "Replier ou déplier {}"
+
+msgid "{} on {}"
+msgstr "{} sur {}"
+
+msgid "Note effect"
+msgstr "Effet de notes"
+
+msgid "Open a project"
+msgstr "Ouvrir un projet"
+
+msgid "Open: {}"
+msgstr "Ouvrir : {}"
+
+msgid "Recent"
+msgstr "Récent"
+
+msgid "New project: {}"
+msgstr "Nouveau projet : {}"
+
+msgid "Template"
+msgstr "Modèle"
+
+msgid "Export to 24-bit WAV"
+msgstr "Exporter en WAV 24 bits"
+
+msgid "Export to 16-bit WAV (TPDF dither)"
+msgstr "Exporter en WAV 16 bits (dither TPDF)"
+
+msgid "Export to 32-bit float WAV"
+msgstr "Exporter en WAV 32 bits flottant"
+
+msgid "Export normalized (peak at −0.3 dBFS)"
+msgstr "Exporter normalisé (crête à −0,3 dBFS)"
+
+msgid "Export for streaming (−14 LUFS, −1 dBTP)"
+msgstr "Exporter pour le streaming (−14 LUFS, −1 dBTP)"
+
+msgid "Export loud for the club (−9 LUFS, −1 dBTP)"
+msgstr "Exporter fort pour le club (−9 LUFS, −1 dBTP)"
+
+msgid "Export separate tracks (stems)"
+msgstr "Exporter les pistes séparées (stems)"
+
+msgid "Import a MIDI file"
+msgstr "Importer un fichier MIDI"
+
+msgid "Export the pattern to MIDI"
+msgstr "Exporter le pattern en MIDI"
+
+msgid "Rename project"
+msgstr "Renommer le projet"
+
+msgid "Humanize notes: {}"
+msgstr "Humaniser les notes : {}"
+
+msgid "Demo: house groove"
+msgstr "Démo : groove house"
+
+msgid "Demo"
+msgstr "Démo"
+
+msgid "Demo: Amen rave (breakcore)"
+msgstr "Démo : Amen rave (breakcore)"
+
+msgid "Theme: {}"
+msgstr "Thème : {}"
+
+msgid "Search for an action, an instrument, an effect…"
+msgstr "Rechercher une action, un instrument, un effet…"
+
+msgid "Piano roll\nClick: place · edge: length · right-click: erase\nCtrl + drag: select · ruler: loop\nCtrl+B: duplicate · Ctrl+Q: quantize\nWheel: scroll · Shift: horizontal · Ctrl: zoom\nMiddle button: pan the view"
+msgstr "Piano roll\nClic : poser · bord : durée · clic droit : effacer\nCtrl + glisser : sélectionner · règle : boucle\nCtrl+B : dupliquer · Ctrl+Q : quantifier\nMolette : défiler · Maj : horizontal · Ctrl : zoom\nBouton du milieu : glisser la vue"
+
+msgid "Light"
+msgstr "Léger"
+
+msgid "Medium"
+msgstr "Moyen"
+
+msgid "Strong"
+msgstr "Fort"
+
+msgid "Sus 2"
+msgstr "Sus 2"
+
+msgid "Sus 4"
+msgstr "Sus 4"
+
+msgid "Add 9"
+msgstr "Add 9"
+
+msgid "7 sus 4"
+msgstr "7 sus 4"
+
+msgid "Add 11"
+msgstr "Add 11"
+
+msgid "Augmented"
+msgstr "Augmenté"
+
+msgid "Power"
+msgstr "Quinte"
+
+msgid "Major 7"
+msgstr "Majeur 7"
+
+msgid "Minor 7"
+msgstr "Mineur 7"
+
+msgid "Dominant 7"
+msgstr "Septième"
+
+msgid "Half-diminished"
+msgstr "Demi-diminué"
+
+msgid "Diminished 7"
+msgstr "Diminué 7"
+
+msgid "Minor maj. 7"
+msgstr "Mineur maj. 7"
+
+msgid "Minor add 9"
+msgstr "Mineur add 9"
+
+msgid "Sixth"
+msgstr "Sixte"
+
+msgid "Minor 6"
+msgstr "Mineur 6"
+
+msgid "Six-nine"
+msgstr "Six-neuf"
+
+msgid "Major 9"
+msgstr "Majeur 9"
+
+msgid "Minor 9"
+msgstr "Mineur 9"
+
+msgid "Dominant 9"
+msgstr "Neuvième"
+
+msgid "Minor 11"
+msgstr "Mineur 11"
+
+msgid "Dominant 11"
+msgstr "Onzième"
+
+msgid "Major 13"
+msgstr "Majeur 13"
+
+msgid "Dominant 13"
+msgstr "Treizième"
+
+msgid "Triad"
+msgstr "Triade"
+
+msgid "Seventh"
+msgstr "Septième"
+
+msgid "Ninth"
+msgstr "Neuvième"
+
+msgid "Eleventh"
+msgstr "Onzième"
+
+msgid "Thirteenth"
+msgstr "Treizième"
+
+msgid "Root"
+msgstr "Fond."
+
+msgid "1st"
+msgstr "1er"
+
+msgid "2nd"
+msgstr "2e"
+
+msgid "3rd"
+msgstr "3e"
+
+msgid "Shape · {} {}"
+msgstr "Forme · {} {}"
+
+msgid "Chord"
+msgstr "Accord"
+
+msgid "Inversion"
+msgstr "Renversement"
+
+msgid "Voicing"
+msgstr "Disposition"
+
+msgid "Add an instrument to write notes"
+msgstr "Ajoute un instrument pour écrire des notes"
+
+msgid "Previous channel"
+msgstr "Canal précédent"
+
+msgid "Next channel"
+msgstr "Canal suivant"
+
+msgid "Channel\nDouble-click: rename"
+msgstr "Canal\nDouble-clic : renommer"
+
+msgid "Snap to scale"
+msgstr "Coller à la gamme"
+
+msgid "Snap to scale\nPick a scale first, at the top"
+msgstr "Coller à la gamme\nChoisis d'abord une gamme, en haut"
+
+msgid "Stamp chords\nOne click: a whole chord"
+msgstr "Poser des accords\nUn clic : un accord entier"
+
+msgid "Chord · {} · {}\nFollows the scale · wheel: inversion"
+msgstr "Accord · {} · {}\nSuit la gamme · molette : renversement"
+
+msgid "Humanize\nThe selection, or else the whole channel"
+msgstr "Humaniser\nLa sélection, sinon tout le canal"
+
+msgid "Snap to 1/4"
+msgstr "Aimanter à la noire"
+
+msgid "Snap to 1/8"
+msgstr "Aimanter à la croche"
+
+msgid "Snap to 1/16"
+msgstr "Aimanter à la double"
+
+msgid "Snap to 1/32"
+msgstr "Aimanter à la triple"
+
+msgid "Place chord"
+msgstr "Poser un accord"
+
+msgid "Place note"
+msgstr "Poser une note"
+
+msgid "Delete notes"
+msgstr "Effacer des notes"
+
+msgid "Note length"
+msgstr "Durée des notes"
+
+msgid "Edit notes"
+msgstr "Modifier des notes"
+
+msgid "Length · drag"
+msgstr "Durée · glisser"
+
+msgid "Drag: move · right-click: erase"
+msgstr "Glisser : déplacer · clic droit : effacer"
+
+msgid "Velocity"
+msgstr "Vélocité"
+
+msgid "Velocity\nDrag in the lane to draw it"
+msgstr "Vélocité\nGlisser dans le couloir pour la dessiner"
+
+msgid "No notes to humanize"
+msgstr "Aucune note à humaniser"
+
+msgid "{} note humanized"
+msgstr "{} note humanisée"
+
+msgid "{} note copied"
+msgstr "{} note copiée"
+
+msgid "Paste notes"
+msgstr "Coller des notes"
+
+msgid "Duplicate notes"
+msgstr "Dupliquer des notes"
+
+msgid "Quantize"
+msgstr "Quantifier"
+
+msgid "Notes quantized"
+msgstr "Notes quantifiées"
+
+msgid "Transpose"
+msgstr "Transposition"
+
+msgid "Nudge notes"
+msgstr "Décaler des notes"
+
+msgid "Playlist\nClick: place the chosen pattern · edge: length\nRight-click: erase · on the title: clip menu\nDouble-click: edit · Ctrl+B: duplicate\nRuler: start, loop and time selection\nWheel: scroll · Ctrl: zoom · middle: pan"
+msgstr "Playlist\nClic : poser le pattern choisi · bord : durée\nClic droit : effacer · sur le titre : menu du clip\nDouble-clic : éditer · Ctrl+B : dupliquer\nRègle : départ, boucle et sélection de temps\nMolette : défiler · Ctrl : zoom · milieu : glisser"
+
+msgid "Lime"
+msgstr "Lime"
+
+msgid "Indigo"
+msgstr "Indigo"
+
+msgid "Green"
+msgstr "Vert"
+
+msgid "Teal"
+msgstr "Sarcelle"
+
+msgid "Sky"
+msgstr "Ciel"
+
+msgid "Mint"
+msgstr "Menthe"
+
+msgid "Lemon"
+msgstr "Citron"
+
+msgid "Coral"
+msgstr "Corail"
+
+msgid "Pink"
+msgstr "Rose"
+
+msgid "Lilac"
+msgstr "Lilas"
+
+msgid "Slate"
+msgstr "Ardoise"
+
+msgid "Clip made unique: {}"
+msgstr "Clip rendu unique : {}"
+
+msgid "Drag a time selection in the ruler first"
+msgstr "Tire d'abord une sélection de temps dans la règle"
+
+msgid "Snap to bar"
+msgstr "Aimanter à la mesure"
+
+msgid "Snap to beat"
+msgstr "Aimanter au temps"
+
+msgid "Play song"
+msgstr "Jouer le morceau"
+
+msgid "Click: brush · double-click: rename\nRight-click: color, duplicate, delete"
+msgstr "Clic : pinceau · double-clic : renommer\nClic droit : couleur, dupliquer, supprimer"
+
+msgid "Time selection\nCtrl+B: copy it right after"
+msgstr "Sélection de temps\nCtrl+B : la recopier juste après"
+
+msgid "Delete audio clip"
+msgstr "Effacer un clip audio"
+
+msgid "Move audio clip"
+msgstr "Déplacer un clip audio"
+
+msgid "Audio clip length"
+msgstr "Longueur du clip audio"
+
+msgid "Place clip"
+msgstr "Poser un clip"
+
+msgid "Delete clips"
+msgstr "Effacer des clips"
+
+msgid "Right-click: make unique, rename, color"
+msgstr "Clic droit : rendre unique, renommer, couleur"
+
+msgid "Move clip"
+msgstr "Déplacer un clip"
+
+msgid "Clip length"
+msgstr "Longueur du clip"
+
+msgid "Delete clip"
+msgstr "Effacer un clip"
+
+msgid "Clip copied"
+msgstr "Clip copié"
+
+msgid "Paste clip"
+msgstr "Coller un clip"
+
+msgid "Duplicate clip"
+msgstr "Dupliquer un clip"
+
+msgid "Step"
+msgstr "Pas"
+
+msgid "1 bar"
+msgstr "1 mesure"
+
+msgid "2 bars"
+msgstr "2 mesures"
+
+msgid "4 bars"
+msgstr "4 mesures"
+
+msgid "Pattern length"
+msgstr "Longueur du pattern"
+
+msgid "Swing"
+msgstr "Swing"
+
+msgid "{:.0}%"
+msgstr "{:.0} %"
+
+msgid "Swing\nDrag or scroll"
+msgstr "Swing\nGlisser ou molette"
+
+msgid "Add an instrument\nor drag one from the browser"
+msgstr "Ajouter un instrument\nou glisser depuis le navigateur"
+
+msgid "Drop an instrument here"
+msgstr "Glisse un instrument ici"
+
+msgid "{} · track {}\nDouble-click: rename · right-click: menu"
+msgstr "{} · piste {}\nDouble-clic : renommer · clic droit : menu"
+
+msgid "Channel volume"
+msgstr "Volume du canal"
+
+msgid "Volume {}"
+msgstr "Volume {}"
+
+msgid "Channel pan"
+msgstr "Pan du canal"
+
+msgid "Pan {}"
+msgstr "Pan {}"
+
+msgid "Step velocity"
+msgstr "Vélocité du pas"
+
+msgid "Velocity {:.0}%"
+msgstr "Vélocité {:.0} %"
+
+msgid "Session\nClick: launch the clip at the next bar\nEmpty slot: pick a pattern\nHold right-click: clear the swept slots"
+msgstr "Session\nClic : lancer le clip à la prochaine mesure\nCase vide : choisir un pattern\nClic droit maintenu : vider les cases balayées"
+
+msgid "Stop all"
+msgstr "Tout arrêter"
+
+msgid "Launch scene {}"
+msgstr "Lancer la scène {}"
+
+msgid "Pick a pattern"
+msgstr "Choisir un pattern"
+
+msgid "Clear slot"
+msgstr "Vider une case"
+
+msgid "Stop column"
+msgstr "Arrêter la colonne"
+
+msgid "Mode"
+msgstr "Mode"
+
+msgid "Tap"
+msgstr "Tap"
+
+msgid "Position"
+msgstr "Position"
+
+msgid "Rec"
+msgstr "Rec"
+
+msgid "DSP"
+msgstr "DSP"
+
+msgid "Keyboard"
+msgstr "Clavier"
+
+msgid "Play the pattern, the song or the session"
+msgstr "Jouer le pattern, le morceau ou la session"
+
+msgid "Current pattern picker"
+msgstr "Choix du pattern en cours"
+
+msgid "Tap tempo: tap the beat"
+msgstr "Tap tempo : taper le temps"
+
+msgid "Bar, beat and step of playback"
+msgstr "Mesure, temps et pas de la lecture"
+
+msgid "Project scale"
+msgstr "Gamme du projet"
+
+msgid "Record notes and audio"
+msgstr "Enregistrer les notes et l'audio"
+
+msgid "Computer keyboard played like a piano"
+msgstr "Clavier d'ordinateur joué comme un piano"
+
+msgid "Undo and redo buttons"
+msgstr "Boutons annuler et rétablir"
+
+msgid "Edit history"
+msgstr "Historique des modifications"
+
+msgid "Audio processor load"
+msgstr "Charge du processeur audio"
+
+msgid "Chop, edit and flip samples"
+msgstr "Chop, edit and flip samples"
+
+msgid "Steps and channels: the heart of the beat"
+msgstr "Pas et canaux : le cœur du beat"
+
+msgid "Melodies and chords, note by note"
+msgstr "Mélodies et accords, note par note"
+
+msgid "The arrangement of the song"
+msgstr "L'arrangement du morceau"
+
+msgid "Clips launched live"
+msgstr "Clips lancés en direct"
+
+msgid "Tracks, effects and sends"
+msgstr "Pistes, effets et envois"
+
+msgid "Beatmaker"
+msgstr "Beatmaker"
+
+msgid "Sampling"
+msgstr "Sampling"
+
+msgid "Live"
+msgstr "Live"
+
+msgid "Full"
+msgstr "Complet"
+
+msgid "All of Ponzik"
+msgstr "Tout Ponzik"
+
+msgid "Rack, playlist and mixer"
+msgstr "Rack, playlist et mixer"
+
+msgid "Everything but the piano roll"
+msgstr "Tout sauf le piano roll"
+
+msgid "Session and mixer, to play live"
+msgstr "Session et mixer, pour jouer en direct"
+
+msgid "Minimal"
+msgstr "Minimal"
+
+msgid "Rack and playlist, nothing else"
+msgstr "Rack et playlist, rien d'autre"
+
+msgid "Profile: {}"
+msgstr "Profil : {}"
+
+msgid "Keep at least one view"
+msgstr "Il faut garder au moins une vue"
+
+msgid "Workspace"
+msgstr "Espace de travail"
+
+msgid "Views, panels and top bar"
+msgstr "Vues, panneaux et barre du haut"
+
+msgid "Shortcuts"
+msgstr "Raccourcis"
+
+msgid "Change the keys"
+msgstr "Changer les touches"
+
+msgid "Close"
+msgstr "Fermer"
+
+msgid "Click a tile to show or hide it"
+msgstr "Clic sur une tuile pour l'afficher ou la masquer"
+
+msgid "Click a key, then the new combination · Esc cancels"
+msgstr "Clic sur une touche, puis la nouvelle combinaison · Échap annule"
+
+msgid "Profiles"
+msgstr "Profils"
+
+msgid "Panels and top bar"
+msgstr "Panneaux et barre du haut"
+
+msgid "Sounds, instruments and effects"
+msgstr "Sons, instruments et effets"
+
+msgid "Details of the selected channel or track"
+msgstr "Le détail du canal ou de la piste choisie"
+
+msgid "Count-in"
+msgstr "Pré-compte"
+
+msgid "One bar of metronome before recording"
+msgstr "Une mesure de métronome avant d'enregistrer"
+
+msgid "Preview"
+msgstr "Aperçu"
+
+msgid "Custom"
+msgstr "Sur mesure"
+
+msgid "Your own workspace"
+msgstr "Ton propre espace de travail"
+
+msgid "is already used by"
+msgstr "est déjà pris par"
+
+msgid "Keep the current keys"
+msgstr "Garder les touches actuelles"
+
+msgid "Take the key away from the other action"
+msgstr "Retirer la touche à l'autre action"
+
+msgid "Swap"
+msgstr "Échanger"
+
+msgid "The other action takes the old key · Enter"
+msgstr "L'autre action prend l'ancienne touche · Entrée"
+
+msgid "FL Studio keys"
+msgstr "Touches de FL Studio"
+
+msgid "Default shortcuts"
+msgstr "Raccourcis par défaut"
+
+msgid "Go back to all the default keys"
+msgstr "Revenir à toutes les touches par défaut"
+
+msgid "Press the new combination · Esc cancels"
+msgstr "Appuie sur la nouvelle combinaison · Échap annule"
+
+msgid "{} · click: change the key"
+msgstr "{} · clic : changer la touche"
+
+msgid "Default key"
+msgstr "Touche par défaut"
+
+msgid "Remove the key"
+msgstr "Retirer la touche"
+
+msgid "Hidden view: the key stays in reserve"
+msgstr "Vue masquée : la touche reste en réserve"
+
+msgid "LC"
+msgstr "CB"
+
+msgid "L"
+msgstr "G"
+
+msgid "H"
+msgstr "A"
+
+msgid "HC"
+msgstr "CH"
+
+msgid "Transfer\nDrag: drive"
+msgstr "Transfert\nGlisser : drive"
+
+msgid "Transfer\nDrag: threshold · wheel: ratio"
+msgstr "Transfert\nGlisser : seuil · molette : ratio"
+
+msgid "Transfer\nDrag: input gain"
+msgstr "Transfert\nGlisser : gain d'entrée"
+
+msgid "Transfer\nDrag: threshold"
+msgstr "Transfert\nGlisser : seuil"
+
+msgid "Drop a WAV here"
+msgstr "Glisse un WAV ici"
+
+msgid "Open in the Sample Lab: chop, trim, stretch"
+msgstr "Open in the Sample Lab: chop, trim, stretch"
+
+msgid "Gain reduction: {} dB\nEstimated from the track level"
+msgstr "Réduction de gain : {} dB\nEstimée d'après le niveau de la piste"
+
+msgid "Transfer\nDrag: input gain · wheel: ceiling"
+msgstr "Transfert\nGlisser : gain d'entrée · molette : plafond"
+
+msgid "Character transfer\nDrag: drive"
+msgstr "Transfert du caractère\nGlisser : drive"
+
+msgid "Drive per band\nLine: tone"
+msgstr "Drive par bande\nTrait : ton"
+
+msgid "Multiband off\nLine: tone"
+msgstr "Multibande coupée\nTrait : ton"
+
+msgid "Vinyl: crackle and age\nWave: wow, hiss, bit loss"
+msgstr "Disque : craquements et âge\nOnde : pleurage, souffle, perte de bits"
+
+msgid "R"
+msgstr "D"
+
+msgid "Echoes over two bars\nTop: left · bottom: right"
+msgstr "Échos sur deux mesures\nHaut : gauche · bas : droite"
+
+msgid "Frozen tail\nIt holds as long as Freeze is on"
+msgstr "Queue figée\nElle tient tant que « Figer » est actif"
+
+msgid "Tail over 5 s\nLine: pre-delay · mark: decay"
+msgstr "Queue sur 5 s\nTrait : pré-délai · repère : déclin"
+
+# --- Command line ---
+
+
+msgid "unknown command: {}\n\n{}"
+msgstr "commande inconnue : {}\n\n{}"
+
+msgid "error: {}"
+msgstr "erreur : {}"
+
+msgid "invalid duration: {}"
+msgstr "durée invalide : {}"
+
+msgid "Playing for {} s…"
+msgstr "Lecture pendant {} s…"
+
+msgid "Press Enter to stop."
+msgstr "Entrée pour arrêter."
+
+msgid "missing output file\n\n{}"
+msgstr "il manque le fichier de sortie\n\n{}"
+
+msgid "unknown mode: {}"
+msgstr "mode inconnu : {}"
+
+msgid "invalid dimension: {}"
+msgstr "dimension invalide : {}"
+
+msgid "{}: {}×{}, view {}"
+msgstr "{} : {}×{}, vue {}"
+
+# --- Interface (plurals and contexts) ---
+
+msgid "Chord · {} · {}\nWheel: inversion"
+msgstr "Accord · {} · {}\nMolette : renversement"
+
+msgid "Exported: {} ({:.1} s, {:+.1} dB)"
+msgstr "Exporté : {} ({:.1} s, {:+.1} dB)"
+
+msgid "Fold · {} tracks"
+msgstr "Replier · {} pistes"
+
+msgid "Unfold · {} tracks"
+msgstr "Déplier · {} pistes"
+
+msgid "Hide the {} view"
+msgstr "Masquer la vue {}"
+
+msgid "Show the {} view"
+msgstr "Afficher la vue {}"
+
+msgid "This project uses version {} of the format, newer than this version of Ponzik supports ({}): please update Ponzik"
+msgstr "ce projet utilise la version {} du format, plus récente que celle de cette version de Ponzik ({}) : mettez Ponzik à jour"
+
+msgid "Track {}"
+msgstr "Piste {}"
+
+msgctxt "drum pad"
+msgid "Clap"
+msgstr "Clap"
+
+msgctxt "drum pad"
+msgid "Closed hat"
+msgstr "Charl. fer."
+
+msgctxt "drum pad"
+msgid "High tom"
+msgstr "Tom aigu"
+
+msgctxt "drum pad"
+msgid "Kick"
+msgstr "Kick"
+
+msgctxt "drum pad"
+msgid "Low tom"
+msgstr "Tom grave"
+
+msgctxt "drum pad"
+msgid "Open hat"
+msgstr "Charl. ouv."
+
+msgctxt "drum pad"
+msgid "Rim"
+msgstr "Cerclage"
+
+msgctxt "drum pad"
+msgid "Snare"
+msgstr "Caisse"
+
+msgctxt "master track"
+msgid "M"
+msgstr "M"
+
+msgctxt "note name"
+msgid "A"
+msgstr "La"
+
+msgctxt "note name"
+msgid "A♭"
+msgstr "La♭"
+
+msgctxt "note name"
+msgid "B"
+msgstr "Si"
+
+msgctxt "note name"
+msgid "B♭"
+msgstr "Si♭"
+
+msgctxt "note name"
+msgid "C"
+msgstr "Do"
+
+msgctxt "note name"
+msgid "C♯"
+msgstr "Do♯"
+
+msgctxt "note name"
+msgid "D"
+msgstr "Ré"
+
+msgctxt "note name"
+msgid "E"
+msgstr "Mi"
+
+msgctxt "note name"
+msgid "E♭"
+msgstr "Mi♭"
+
+msgctxt "note name"
+msgid "F"
+msgstr "Fa"
+
+msgctxt "note name"
+msgid "F♯"
+msgstr "Fa♯"
+
+msgctxt "note name"
+msgid "G"
+msgstr "Sol"
+
+msgctxt "pan"
+msgid "C"
+msgstr "C"
+
+msgctxt "sidechain"
+msgid "None"
+msgstr "Aucune"
+
+msgctxt "voicing"
+msgid "Close"
+msgstr "Serré"
+
+msgctxt "voicing"
+msgid "Open"
+msgstr "Ouvert"
+
+msgid "{} clip duplicated · {} bars"
+msgstr "{} clip dupliqué · {} mes."
+
+msgid "{} clips duplicated · {} bars"
+msgstr "{} clips dupliqués · {} mes."
+
+msgid "{} controls {} tracks · no sound passes through it"
+msgstr "{} pilote {} pistes · aucun son ne le traverse"
+
+msgid "{} created · {} tracks left out: routing loop"
+msgstr "{} créé · {} pistes laissées de côté : boucle de routage"
+
+msgid "{} notes copied"
+msgstr "{} notes copiées"
+
+msgid "{} notes humanized"
+msgstr "{} notes humanisées"
+
+msgid "{} track"
+msgstr "{} piste"
+
+msgid "{} tracks"
+msgstr "{} pistes"
+
+msgid "{}: {:.1} s, peak {:.1} dBFS"
+msgstr "{} : {:.1} s, crête {:.1} dBFS"
+
+# --- Interface: menus, toasts, keys and scales ---
+
+msgid "Demo loaded: {}"
+msgstr "Démo chargée : {}"
+
+msgid "Imported into the pattern \"{}\""
+msgstr "Importé dans le pattern « {} »"
+
+msgid "Exported: {}"
+msgstr "Exporté : {}"
+
+msgid "Preset loaded: {}"
+msgstr "Preset chargé : {}"
+
+msgid "Fill a slot"
+msgstr "Remplir une case"
+
+msgid "Delete a pattern"
+msgstr "Supprimer un pattern"
+
+msgid "Preset name"
+msgstr "Nom du preset"
+
+msgid "just now"
+msgstr "à l'instant"
+
+msgid "{} min ago"
+msgstr "il y a {} min"
+
+msgid "{} h ago"
+msgstr "il y a {} h"
+
+msgid "{} d ago"
+msgstr "il y a {} j"
+
+msgctxt "key"
+msgid "C"
+msgstr "Do"
+
+msgctxt "key"
+msgid "C#"
+msgstr "Do#"
+
+msgctxt "key"
+msgid "D"
+msgstr "Ré"
+
+msgctxt "key"
+msgid "Eb"
+msgstr "Mib"
+
+msgctxt "key"
+msgid "E"
+msgstr "Mi"
+
+msgctxt "key"
+msgid "F"
+msgstr "Fa"
+
+msgctxt "key"
+msgid "F#"
+msgstr "Fa#"
+
+msgctxt "key"
+msgid "G"
+msgstr "Sol"
+
+msgctxt "key"
+msgid "Ab"
+msgstr "Lab"
+
+msgctxt "key"
+msgid "A"
+msgstr "La"
+
+msgctxt "key"
+msgid "Bb"
+msgstr "Sib"
+
+msgctxt "key"
+msgid "B"
+msgstr "Si"
+
+msgid "major"
+msgstr "majeur"
+
+msgid "minor"
+msgstr "mineur"
+
+msgid "dorian"
+msgstr "dorien"
+
+msgid "phrygian"
+msgstr "phrygien"
+
+msgid "lydian"
+msgstr "lydien"
+
+msgid "mixolydian"
+msgstr "mixolydien"
+
+msgid "harm. minor"
+msgstr "m. harm."
+
+msgid "mel. minor"
+msgstr "m. mél."
+
+msgid "maj. penta"
+msgstr "penta maj."
+
+msgid "min. penta"
+msgstr "penta min."
+
+msgid "blues"
+msgstr "blues"
+
+msgid "locrian"
+msgstr "locrien"
+
+msgid "harm. major"
+msgstr "maj. harm."
+
+msgid "major blues"
+msgstr "blues maj."
+
+msgid "phryg. dom."
+msgstr "phryg. dom."
+
+msgid "double harm."
+msgstr "arabe"
+
+msgid "hungarian"
+msgstr "hongrois"
+
+msgid "hirajoshi"
+msgstr "hirajoshi"
+
+msgid "in sen"
+msgstr "in sen"
+
+msgid "whole tone"
+msgstr "par tons"
+
+msgid "diminished"
+msgstr "diminuée"
+
+msgid "bebop"
+msgstr "bebop"
+
+msgid "{} {}"
+msgstr "{} {}"
+
+# --- Engine: devices, parameters, choices and categories ---
+
+msgid "Synths"
+msgstr "Synthés"
+
+msgid "Polyphonic subtractive synth"
+msgstr "Synthé soustractif polyphonique"
+
+msgid "Synthesized 808 and 909 style percussion"
+msgstr "Percussions synthétisées façon 808 et 909"
+
+msgid "Four-operator FM synth with eight algorithms"
+msgstr "Synthé FM à quatre opérateurs et huit algorithmes"
+
+msgid "Wavetable synth with unison and sub oscillator"
+msgstr "Synthé à tables d'ondes avec unisson et sous-oscillateur"
+
+msgid "Samplers"
+msgstr "Échantillonneurs"
+
+msgid "Sample player, melodic or one-shot, with looping"
+msgstr "Lecteur d'échantillons, mélodique ou one-shot, avec boucle"
+
+msgid "Monophonic acid bass with accent and slide"
+msgstr "Basse acide monophonique avec accent et glissé"
+
+msgid "Sculpted kick drum: pitch drop, click, body, saturation"
+msgstr "Grosse caisse sculptée : chute de hauteur, clic, corps, saturation"
+
+msgid "Slicer"
+msgstr "Découpeur"
+
+msgid "Slices a sample into equal parts or at transients, one note per slice"
+msgstr "Découpe un échantillon en tranches égales ou sur les attaques, une note par tranche"
+
+msgid "Granular"
+msgstr "Granulaire"
+
+msgid "Grain cloud: position, spray, density, random pitch and width"
+msgstr "Nuage de grains : position, dispersion, densité, hauteur et largeur aléatoires"
+
+msgid "Pluck"
+msgstr "Cordes pincées"
+
+msgid "Physical Karplus-Strong string with pick, body and stereo width"
+msgstr "Corde physique Karplus-Strong avec médiator, caisse et largeur stéréo"
+
+msgid "Electric Piano"
+msgstr "Piano électrique"
+
+msgid "Keys"
+msgstr "Claviers"
+
+msgid "FM electric piano, tine and bell, stereo tremolo"
+msgstr "Piano électrique FM, lame et cloche, trémolo stéréo"
+
+msgid "Drum Machine"
+msgstr "Boîte à rythmes"
+
+msgid "Eight layered synthesized pads (transient, body, noise), tune, decay and level per pad"
+msgstr "Huit pads synthétisés en couches (transitoire, corps, bruit), accord, déclin et niveau par pad"
+
+msgid "EQ & Filters"
+msgstr "EQ et filtres"
+
+msgid "Parametric EQ: low cut, shelves, three bells, high cut"
+msgstr "Égaliseur paramétrique : coupe-bas, plateaux, trois cloches, coupe-haut"
+
+msgid "Filter modulated by a syncable LFO and an envelope follower"
+msgstr "Filtre modulé par LFO synchronisable et suivi d'enveloppe"
+
+msgid "Compressor"
+msgstr "Compresseur"
+
+msgid "Dynamics"
+msgstr "Dynamique"
+
+msgid "Linked stereo compressor, soft knee, parallel mix"
+msgstr "Compresseur stéréo lié, genou doux, mix parallèle"
+
+msgid "Limiter"
+msgstr "Limiteur"
+
+msgid "Lookahead limiter: never goes over the ceiling"
+msgstr "Limiteur à anticipation : aucun dépassement du plafond"
+
+msgid "Gate"
+msgstr "Porte"
+
+msgid "Noise gate with hold and range"
+msgstr "Porte de bruit avec maintien et plage"
+
+msgid "Multiband"
+msgstr "Multibande"
+
+msgid "Three-band upward and downward compression, dialed in with depth"
+msgstr "Compression trois bandes vers le haut et vers le bas, dosée par la profondeur"
+
+msgid "Pump"
+msgstr "Pompe"
+
+msgid "Volume that dips on every beat, sidechain style, synced to the tempo"
+msgstr "Volume qui plonge à chaque temps, façon compression latérale, synchronisé au tempo"
+
+msgid "Lowers the volume when the key track plays (sidechain input), with hold and release"
+msgstr "Baisse le volume quand la piste clé joue (entrée latérale), avec maintien et relâche"
+
+msgid "Transient Shaper"
+msgstr "Transitoires"
+
+msgid "Boosts or softens the attack and sustain of sounds"
+msgstr "Renforce ou adoucit l'attaque et le maintien des sons"
+
+msgid "Stutter"
+msgstr "Tranche"
+
+msgid "Rhythm"
+msgstr "Rythme"
+
+msgid "Tempo-synced chopper, slice repeat and tape stop"
+msgstr "Hachoir, répétition de tranches et arrêt de bande synchronisés au tempo"
+
+msgid "Pitch Shifter"
+msgstr "Transposeur"
+
+msgid "Pitch"
+msgstr "Hauteur"
+
+msgid "Granular pitch shifting over ±24 semitones"
+msgstr "Transposition granulaire de ±24 demi-tons"
+
+msgid "Eight-line algorithmic reverb"
+msgstr "Réverbération algorithmique à huit lignes"
+
+msgid "Tempo-synced stereo echo, ping-pong"
+msgstr "Écho stéréo synchronisé au tempo, ping-pong"
+
+msgid "Lush reverb whose tail rises an octave on every pass"
+msgstr "Réverbération ample dont la queue monte d'une octave à chaque passage"
+
+msgid "Stereo chorus and flanger"
+msgstr "Chorus et flanger stéréo"
+
+msgid "Phaser with 4 to 12 stages"
+msgstr "Phaser de 4 à 12 étages"
+
+msgid "Saturator"
+msgstr "Saturateur"
+
+msgid "Oversampled saturation: soft, hard, tube, fold, rectifier"
+msgstr "Saturation suréchantillonnée : douce, dure, lampe, repli, redresseur"
+
+msgid "Bit depth and sample rate reduction"
+msgstr "Réduction de bits et de fréquence d'échantillonnage"
+
+msgid "Utility"
+msgstr "Utilitaire"
+
+msgid "Utilities"
+msgstr "Utilitaires"
+
+msgid "Gain, balance, width, mono bass, phase"
+msgstr "Gain, balance, largeur, graves mono, phase"
+
+msgid "Stereo Imager"
+msgstr "Image stéréo"
+
+msgid "Three-band stereo width and mono bass"
+msgstr "Largeur stéréo sur trois bandes et graves en mono"
+
+msgid "Bus Compressor"
+msgstr "Compresseur de bus"
+
+msgid "Bus glue: clean, opto and VCA modes, auto release, gain reduction meter"
+msgstr "Colle de bus : modes propre, opto et VCA, relâche automatique, mesure de réduction"
+
+msgid "Mastering Limiter"
+msgstr "Limiteur de mastering"
+
+msgid "True peak lookahead limiter: transparent, punchy or aggressive"
+msgstr "Limiteur à crête vraie et anticipation : transparent, punchy ou agressif"
+
+msgid "Character Delay"
+msgstr "Délai à caractère"
+
+msgid "Tape, analog or digital echo: saturation and filters in the loop, wow, ping-pong"
+msgstr "Écho de bande, analogique ou numérique : saturation et filtres dans la boucle, pleurage, ping-pong"
+
+msgid "Character Saturation"
+msgstr "Saturation à caractère"
+
+msgid "Tube, tape, transistor or rectifier, full range or three bands, with tone and mix"
+msgstr "Lampe, bande, transistor ou redresseur, sur tout le spectre ou trois bandes, avec ton et mix"
+
+msgid "Noise & Texture"
+msgstr "Bruits et texture"
+
+msgid "Vinyl crackle, tape hiss, wow, block bit loss and spectral wear"
+msgstr "Craquements de vinyle, souffle de bande, pleurage, perte de bits par bloc et usure du spectre"
+
+msgid "Algorithmic Reverb"
+msgstr "Réverbe algorithmique"
+
+msgid "Hall, plate or diffusion cloud, rich modulation, tails up to a minute and freeze"
+msgstr "Salle, plaque ou nuage de diffusion, modulation riche, queues jusqu'à une minute et gel"
+
+msgid "Arpeggiator"
+msgstr "Arpégiateur"
+
+msgid "Plays held notes one by one, synced to the tempo, over one to four octaves"
+msgstr "Joue les notes tenues une à une, synchronisé au tempo, sur une à quatre octaves"
+
+msgid "Adds up to four notes to every note played: presets or custom intervals"
+msgstr "Ajoute jusqu'à quatre notes à chaque note jouée : préréglages ou intervalles libres"
+
+msgid "Snaps notes to a scale, or drops the ones outside it"
+msgstr "Ramène les notes sur une gamme, ou écarte celles qui n'en sont pas"
+
+msgid "Random"
+msgstr "Aléatoire"
+
+msgid "Random play probability, velocity and delay to humanize"
+msgstr "Probabilité de jouer, vélocité et retard aléatoires pour humaniser"
+
+msgid "Repeat"
+msgstr "Répétition"
+
+msgid "Retriggers each note at the chosen rate, while held or a fixed number of hits"
+msgstr "Rejoue chaque note à la cadence choisie, tenue ou un nombre fixe de coups"
+
+msgid "Low-pass"
+msgstr "Passe-bas"
+
+msgid "High-pass"
+msgstr "Passe-haut"
+
+msgid "Band-pass"
+msgstr "Passe-bande"
+
+msgid "Notch"
+msgstr "Coupe-bande"
+
+msgid "Filter"
+msgstr "Filtre"
+
+msgid "Cutoff"
+msgstr "Coupure"
+
+msgid "Resonance"
+msgstr "Résonance"
+
+msgid "Shape"
+msgstr "Forme"
+
+msgid "Sine"
+msgstr "Sinus"
+
+msgid "Square"
+msgstr "Carré"
+
+msgid "Sync"
+msgstr "Synchro"
+
+msgid "Rate"
+msgstr "Vitesse"
+
+msgid "Depth"
+msgstr "Profondeur"
+
+msgid "Amount"
+msgstr "Quantité"
+
+msgid "Envelope"
+msgstr "Enveloppe"
+
+msgid "Attack"
+msgstr "Attaque"
+
+msgid "Release"
+msgstr "Relâche"
+
+msgid "Reduction"
+msgstr "Réduction"
+
+msgid "Downsample"
+msgstr "Sous-échantillonnage"
+
+msgid "Character"
+msgstr "Caractère"
+
+msgid "Clean"
+msgstr "Propre"
+
+msgid "Threshold"
+msgstr "Seuil"
+
+msgid "Time"
+msgstr "Temps"
+
+msgid "Auto Release"
+msgstr "Relâche auto"
+
+msgid "Detector Low Cut"
+msgstr "Coupe-bas détecteur"
+
+msgid "Detection"
+msgstr "Détection"
+
+msgid "Makeup"
+msgstr "Compensation"
+
+msgid "Tape"
+msgstr "Bande"
+
+msgid "Analog"
+msgstr "Analogique"
+
+msgid "Digital"
+msgstr "Numérique"
+
+msgid "Free Time"
+msgstr "Temps libre"
+
+msgid "Feedback"
+msgstr "Réinjection"
+
+msgid "Echoes"
+msgstr "Répétitions"
+
+msgid "Low Cut"
+msgstr "Coupe-bas"
+
+msgid "High Cut"
+msgstr "Coupe-haut"
+
+msgid "Wow"
+msgstr "Pleurage"
+
+msgid "Flutter"
+msgstr "Scintillement"
+
+msgid "Tube"
+msgstr "Lampe"
+
+msgid "Rectifier"
+msgstr "Redresseur"
+
+msgid "Bands"
+msgstr "Bandes"
+
+msgid "Low Split"
+msgstr "Séparation grave"
+
+msgid "High Split"
+msgstr "Séparation aiguë"
+
+msgid "Low Drive"
+msgstr "Drive graves"
+
+msgid "Mid Drive"
+msgstr "Drive médiums"
+
+msgid "High Drive"
+msgstr "Drive aigus"
+
+msgid "Tone"
+msgstr "Ton"
+
+msgid "Stereo Spread"
+msgstr "Écart stéréo"
+
+msgid "Knee"
+msgstr "Genou"
+
+msgid "Peak"
+msgstr "Crête"
+
+msgid "Hold"
+msgstr "Maintien"
+
+msgid "Frequency"
+msgstr "Fréquence"
+
+msgid "Band 1"
+msgstr "Bande 1"
+
+msgid "Band 2"
+msgstr "Bande 2"
+
+msgid "Band 3"
+msgstr "Bande 3"
+
+msgid "Slope"
+msgstr "Pente"
+
+msgid "Low"
+msgstr "Graves"
+
+msgid "High"
+msgstr "Aigus"
+
+msgid "Range"
+msgstr "Plage"
+
+msgid "Low Width"
+msgstr "Largeur graves"
+
+msgid "Width"
+msgstr "Largeur"
+
+msgid "Mid Width"
+msgstr "Largeur médiums"
+
+msgid "High Width"
+msgstr "Largeur aigus"
+
+msgid "Low Crossover"
+msgstr "Séparation basse"
+
+msgid "High Crossover"
+msgstr "Séparation haute"
+
+msgid "Mono Bass"
+msgstr "Graves mono"
+
+msgid "Mono Below"
+msgstr "Mono sous"
+
+msgid "Input Gain"
+msgstr "Gain d'entrée"
+
+msgid "Ceiling"
+msgstr "Plafond"
+
+msgid "Crackle"
+msgstr "Craquements"
+
+msgid "Vinyl"
+msgstr "Vinyle"
+
+msgid "Hiss"
+msgstr "Souffle"
+
+msgid "Bit Loss"
+msgstr "Perte de bits"
+
+msgid "Age"
+msgstr "Âge"
+
+msgid "Wear"
+msgstr "Usure"
+
+msgid "Algorithm"
+msgstr "Algorithme"
+
+msgid "Aggressive"
+msgstr "Agressif"
+
+msgid "Lookahead"
+msgstr "Anticipation"
+
+msgid "True Peak"
+msgstr "Crête vraie"
+
+msgid "Free"
+msgstr "Libre"
+
+msgid "1/32 D"
+msgstr "1/32 P"
+
+msgid "1/16 D"
+msgstr "1/16 P"
+
+msgid "1/8 D"
+msgstr "1/8 P"
+
+msgid "1/4 D"
+msgstr "1/4 P"
+
+msgid "1/2 D"
+msgstr "1/2 P"
+
+msgid "Upward"
+msgstr "Haut"
+
+msgid "Downward"
+msgstr "Bas"
+
+msgid "Mid"
+msgstr "Médiums"
+
+msgid "Input"
+msgstr "Entrée"
+
+msgid "Level"
+msgstr "Niveau"
+
+msgid "Stages"
+msgstr "Étages"
+
+msgid "Fine"
+msgstr "Fin"
+
+msgid "Window"
+msgstr "Fenêtre"
+
+msgid "Smooth"
+msgstr "Douce"
+
+msgid "Tight"
+msgstr "Sèche"
+
+msgid "Long"
+msgstr "Longue"
+
+msgid "Bounce"
+msgstr "Rebond"
+
+msgid "Division"
+msgstr "Cadence"
+
+msgid "Curve"
+msgstr "Courbe"
+
+msgid "Offset"
+msgstr "Décalage"
+
+msgid "Pre-delay"
+msgstr "Pré-délai"
+
+msgid "Size"
+msgstr "Taille"
+
+msgid "Decay"
+msgstr "Déclin"
+
+msgid "Tail"
+msgstr "Queue"
+
+msgid "Damping"
+msgstr "Amortissement"
+
+msgid "Soft"
+msgstr "Doux"
+
+msgid "Hard"
+msgstr "Dur"
+
+msgid "Chopper"
+msgstr "Hachoir"
+
+msgid "Tape Stop"
+msgstr "Ralenti"
+
+msgid "Alternate"
+msgstr "Alterné"
+
+msgid "Dotted"
+msgstr "Pointé"
+
+msgid "Syncopated"
+msgstr "Syncopé"
+
+msgid "Burst"
+msgstr "Rafale"
+
+msgid "Smoothing"
+msgstr "Lissage"
+
+msgid "Transients"
+msgstr "Transitoires"
+
+msgid "Sustain"
+msgstr "Maintien"
+
+msgid "Stereo"
+msgstr "Stéréo"
+
+msgid "Bass Mono"
+msgstr "Basses mono"
+
+msgid "Mono Frequency"
+msgstr "Fréquence mono"
+
+msgid "Invert L"
+msgstr "Inverser G"
+
+msgid "Invert R"
+msgstr "Inverser D"
+
+msgid "Hall"
+msgstr "Salle"
+
+msgid "Plate"
+msgstr "Plaque"
+
+msgid "Cloud"
+msgstr "Nuage"
+
+msgid "Freeze"
+msgstr "Figer"
+
+msgid "Wave"
+msgstr "Onde"
+
+msgid "Oscillator"
+msgstr "Oscillateur"
+
+msgid "Tune"
+msgstr "Accord"
+
+msgid "Performance"
+msgstr "Jeu"
+
+msgid "Slide"
+msgstr "Glissé"
+
+msgid "Distortion"
+msgstr "Distorsion"
+
+msgid "Bass Drum"
+msgstr "Grosse caisse"
+
+msgid "Rimshot"
+msgstr "Cerclage"
+
+msgid "Low Tom"
+msgstr "Tom grave"
+
+msgid "Closed Hat"
+msgstr "Charleston fermée"
+
+msgid "High Tom"
+msgstr "Tom aigu"
+
+msgid "General"
+msgstr "Général"
+
+msgid "Length"
+msgstr "Longueur"
+
+msgid "Brightness"
+msgstr "Brillance"
+
+msgid "Amp"
+msgstr "Amplitude"
+
+msgid "Tremolo"
+msgstr "Trémolo"
+
+msgid "0.5"
+msgstr "0,5"
+
+msgid "parallel"
+msgstr "parallèle"
+
+msgid "Operator 1"
+msgstr "Opérateur 1"
+
+msgid "Operator 2"
+msgstr "Opérateur 2"
+
+msgid "Operator 3"
+msgstr "Opérateur 3"
+
+msgid "Operator 4"
+msgstr "Opérateur 4"
+
+msgid "Coarse"
+msgstr "Rapport"
+
+msgid "Feedback 4"
+msgstr "Rétroaction 4"
+
+msgid "Trapezoid"
+msgstr "Trapèze"
+
+msgid "Spray"
+msgstr "Dispersion"
+
+msgid "Density"
+msgstr "Densité"
+
+msgid "Random Pitch"
+msgstr "Hauteur aléatoire"
+
+msgid "Stereo Width"
+msgstr "Largeur stéréo"
+
+msgid "Start Pitch"
+msgstr "Hauteur de départ"
+
+msgid "Drop"
+msgstr "Chute"
+
+msgid "Body"
+msgstr "Corps"
+
+msgid "Click"
+msgstr "Clic"
+
+msgid "Tone Filter"
+msgstr "Tonalité"
+
+msgid "String"
+msgstr "Corde"
+
+msgid "Pick Position"
+msgstr "Position du médiator"
+
+msgid "Choke"
+msgstr "Étouffement"
+
+msgid "Body Resonance"
+msgstr "Caisse"
+
+msgid "Oscillators"
+msgstr "Oscillateurs"
+
+msgid "Detune"
+msgstr "Désaccord"
+
+msgid "Filter Decay"
+msgstr "Déclin filtre"
+
+msgid "Melodic"
+msgstr "Mélodique"
+
+msgid "No"
+msgstr "Non"
+
+msgid "Yes"
+msgstr "Oui"
+
+msgid "Root Note"
+msgstr "Note de base"
+
+msgid "Reverse"
+msgstr "Inversé"
+
+msgid "Loop"
+msgstr "Boucle"
+
+msgid "Loop Start"
+msgstr "Début de boucle"
+
+msgid "Fine Tune"
+msgstr "Accord fin"
+
+msgid "Equal Slices"
+msgstr "Parts égales"
+
+msgid "Slicing"
+msgstr "Découpe"
+
+msgid "Slices"
+msgstr "Tranches"
+
+msgid "Sensitivity"
+msgstr "Sensibilité"
+
+msgid "Slice"
+msgstr "Tranche"
+
+msgid "Basic"
+msgstr "Basique"
+
+msgid "Sub Oscillator"
+msgstr "Sous-oscillateur"
+
+msgid "Voices"
+msgstr "Voix"
+
+msgid "Unison"
+msgstr "Unisson"
+
+msgid "Key Tracking"
+msgstr "Suivi de clavier"
+
+msgid "Filter Envelope"
+msgstr "Enveloppe filtre"
+
+msgid "Up"
+msgstr "Montant"
+
+msgid "Down"
+msgstr "Descendant"
+
+msgid "Up-Down"
+msgstr "Montant-descendant"
+
+msgid "As Played"
+msgstr "Ordre joué"
+
+msgid "Gate Length"
+msgstr "Durée"
+
+msgid "Fifth"
+msgstr "Quinte"
+
+msgid "Interval 1"
+msgstr "Intervalle 1"
+
+msgid "Interval 2"
+msgstr "Intervalle 2"
+
+msgid "Interval 3"
+msgstr "Intervalle 3"
+
+msgid "Interval 4"
+msgstr "Intervalle 4"
+
+msgid "Added Velocity"
+msgstr "Vélocité ajoutées"
+
+msgid "Probability"
+msgstr "Probabilité"
+
+msgid "Chance"
+msgstr "Hasard"
+
+msgid "Timing"
+msgstr "Retard"
+
+msgid "Held"
+msgstr "Tenue"
+
+msgid "Hits"
+msgstr "Coups"
+
+msgid "Harmonic Minor"
+msgstr "Mineur harmonique"
+
+msgid "Melodic Minor"
+msgstr "Mineur mélodique"
+
+msgid "Major Pentatonic"
+msgstr "Pentatonique majeure"
+
+msgid "Minor Pentatonic"
+msgstr "Pentatonique mineure"
+
+msgid "Nearest"
+msgstr "Plus proche"
+
+msgid "Snap Up"
+msgstr "Vers le haut"
+
+msgid "Snap Down"
+msgstr "Vers le bas"
+
+msgid "Out of Scale"
+msgstr "Hors gamme"
+
+# --- Engine: sample loading ---
+
+msgid "Not a WAV file"
+msgstr "ce n'est pas un fichier WAV"
+
+msgid "Missing \"fmt\" chunk"
+msgstr "bloc « fmt » manquant"
+
+msgid "Missing \"data\" chunk"
+msgstr "bloc « data » manquant"
+
+msgid "\"fmt\" chunk too short"
+msgstr "bloc « fmt » trop court"
+
+msgid "Extended \"fmt\" chunk too short"
+msgstr "bloc « fmt » étendu trop court"
+
+msgid "Unsupported WAV format ({})"
+msgstr "format WAV non géré ({})"
+
+msgid "Unsupported bit depth: {} bits"
+msgstr "profondeur non gérée : {} bits"
+
+msgid "Invalid WAV header"
+msgstr "en-tête WAV invalide"
+
+# --- Engine: disambiguated names ---
+
+msgid "Wavefold"
+msgstr "Repli"
+
+msgid "Filter out"
+msgstr "Filtrer"
+
+msgid "Tonic"
+msgstr "Tonique"
+
+msgctxt "scale"
+msgid "Diminished"
+msgstr "Diminuée"
+
+# --- Names that read the same in French ---
+
+msgid "1/16 T"
+msgstr "1/16 T"
+
+msgid "1/2 T"
+msgstr "1/2 T"
+
+msgid "1/32 T"
+msgstr "1/32 T"
+
+msgid "1/4 T"
+msgstr "1/4 T"
+
+msgid "1/8 T"
+msgstr "1/8 T"
+
+msgid "12 dB/oct"
+msgstr "12 dB/oct"
+
+msgid "24 dB/oct"
+msgstr "24 dB/oct"
+
+msgid "Accent"
+msgstr "Accent"
+
+msgid "Acid 303"
+msgstr "Acid 303"
+
+msgid "AutoFilter"
+msgstr "AutoFilter"
+
+msgid "Balance"
+msgstr "Balance"
+
+msgid "Bitcrusher"
+msgstr "Bitcrusher"
+
+msgid "Bits"
+msgstr "Bits"
+
+msgid "Chorus"
+msgstr "Chorus"
+
+msgid "Compression"
+msgstr "Compression"
+
+msgid "Cycle"
+msgstr "Cycle"
+
+msgid "Diffusion"
+msgstr "Diffusion"
+
+msgid "Drive"
+msgstr "Drive"
+
+msgid "DrumSynth"
+msgstr "DrumSynth"
+
+msgid "Ducking"
+msgstr "Ducking"
+
+msgid "EQ"
+msgstr "EQ"
+
+msgid "Flanger"
+msgstr "Flanger"
+
+msgid "Gain"
+msgstr "Gain"
+
+msgid "Global"
+msgstr "Global"
+
+msgid "Grains"
+msgstr "Grains"
+
+msgid "Hann"
+msgstr "Hann"
+
+msgid "LFO"
+msgstr "LFO"
+
+msgid "Markers"
+msgstr "Markers"
+
+msgid "Mix"
+msgstr "Mix"
+
+msgid "Modulation"
+msgstr "Modulation"
+
+msgid "Mono"
+msgstr "Mono"
+
+msgid "Octave"
+msgstr "Octave"
+
+msgid "Octaves"
+msgstr "Octaves"
+
+msgid "Off"
+msgstr "Off"
+
+msgid "On"
+msgstr "On"
+
+msgid "One-shot"
+msgstr "One-shot"
+
+msgid "Opto"
+msgstr "Opto"
+
+msgid "Pg ↑"
+msgstr "Pg ↑"
+
+msgid "Pg ↓"
+msgstr "Pg ↓"
+
+msgid "Phase"
+msgstr "Phase"
+
+msgid "Phaser"
+msgstr "Phaser"
+
+msgid "Ping-pong"
+msgstr "Ping-pong"
+
+msgid "Ponzik FM"
+msgstr "Ponzik FM"
+
+msgid "Ponzik Wave"
+msgstr "Ponzik Wave"
+
+msgid "Portamento"
+msgstr "Portamento"
+
+msgid "Pulse"
+msgstr "Pulse"
+
+msgid "Punchy"
+msgstr "Punchy"
+
+msgid "Q"
+msgstr "Q"
+
+msgid "RMS"
+msgstr "RMS"
+
+msgid "Ratio"
+msgstr "Ratio"
+
+msgid "Sampler"
+msgstr "Sampler"
+
+msgid "Saturation"
+msgstr "Saturation"
+
+msgid "Shimmer"
+msgstr "Shimmer"
+
+msgid "Sus2"
+msgstr "Sus2"
+
+msgid "Sus4"
+msgstr "Sus4"
+
+msgid "Table"
+msgstr "Table"
+
+msgid "Timbre"
+msgstr "Timbre"
+
+msgid "Transistor"
+msgstr "Transistor"
+
+msgid "Transparent"
+msgstr "Transparent"
+
+msgid "Triangle"
+msgstr "Triangle"
+
+msgid "Type"
+msgstr "Type"
+
+msgid "{:.1} BPM"
+msgstr "{:.1} BPM"
+
+msgid "{}\nDouble-click: default · right-click: automate"
+msgstr "{}\nDouble-clic : défaut · clic droit : automatiser"
+
+# --- Recording panel ---
+
+msgid "Microphone \"{}\" unavailable: using the system default input"
+msgstr "Micro « {} » indisponible : entrée par défaut du système"
+
+msgid "Warning: the input and output run at different sample rates"
+msgstr "Attention : l'entrée et la sortie n'ont pas la même fréquence d'échantillonnage"
+
+msgid "Can't open the microphone: {}"
+msgstr "Impossible d'ouvrir le micro : {}"
+
+msgid "{} armed: press play to record"
+msgstr "{} armée : lance la lecture pour enregistrer"
+
+msgid "Take reached its maximum length (10 min)"
+msgstr "La prise a atteint sa durée maximale (10 min)"
+
+msgid "Nothing was recorded inside the punch range"
+msgstr "Rien n'a été enregistré dans la zone de punch"
+
+msgid "{} takes recorded ({}), last full pass active · Alt+click a take to switch"
+msgstr "{} prises enregistrées ({}), dernier passage complet actif · Alt+clic sur une prise pour changer"
+
+msgid "Take recorded: {} ({:.1} s, aligned by {:.1} ms)"
+msgstr "Prise enregistrée : {} ({:.1} s, recalée de {:.1} ms)"
+
+msgid "Choose take"
+msgstr "Choisir la prise"
+
+msgid "Calibrating: loop the output back to the input (cable, or mic close to the speaker)"
+msgstr "Calibration : renvoie la sortie dans l'entrée (câble, ou micro près de l'enceinte)"
+
+msgid "Calibration failed: no input signal"
+msgstr "Calibration impossible : aucun signal en entrée"
+
+msgid "Measured round trip: {:.1} ms · offset set to {:+.1} ms"
+msgstr "Aller-retour mesuré : {:.1} ms · décalage réglé à {:+.1} ms"
+
+msgid "No click came back: check the loopback and the input level"
+msgstr "Aucun clic n'est revenu : vérifie le bouclage et le niveau d'entrée"
+
+msgid "Recording"
+msgstr "Enregistrement"
+
+msgid "No track armed"
+msgstr "Aucune piste armée"
+
+msgid "{} armed"
+msgstr "{} armée"
+
+msgid "{} tracks armed"
+msgstr "{} pistes armées"
+
+msgid "System default input"
+msgstr "Entrée par défaut du système"
+
+msgid "Input closed"
+msgstr "Entrée fermée"
+
+msgid "Pick another microphone below"
+msgstr "Choisis un autre micro ci-dessous"
+
+msgid "In 1 (mono)"
+msgstr "Entrée 1 (mono)"
+
+msgid "In 2 (mono)"
+msgstr "Entrée 2 (mono)"
+
+msgid "Both input channels, stereo take"
+msgstr "Les deux canaux d'entrée, prise stéréo"
+
+msgid "Input 1 only, mono take (vocal mic)"
+msgstr "Entrée 1 seule, prise mono (micro voix)"
+
+msgid "Input 2 only, mono take"
+msgstr "Entrée 2 seule, prise mono"
+
+msgid "Input gain\nDrag or scroll · double-click: 0 dB\nAim for peaks around -12 dBFS"
+msgstr "Gain d'entrée\nGlisser ou molette · double-clic : 0 dB\nVise des crêtes autour de −12 dBFS"
+
+msgid "Low cut"
+msgstr "Coupe-bas"
+
+msgid "80 Hz high-pass\nRemoves rumble and mic stand thumps"
+msgstr "Passe-haut à 80 Hz\nRetire les grondements et les chocs sur le pied de micro"
+
+msgid "Gentle noise gate\nLowers the noise by 18 dB between phrases (never cuts dead)"
+msgstr "Noise gate doux\nBaisse le bruit de 18 dB entre les phrases (sans jamais couper net)"
+
+msgid "Hear input"
+msgstr "Écouter l'entrée"
+
+msgid "Hear the armed tracks' input through their effects\nUse headphones to avoid feedback"
+msgstr "Écouter l'entrée des pistes armées à travers leurs effets\nUtilise un casque pour éviter le larsen"
+
+msgid "Low latency"
+msgstr "Faible latence"
+
+msgid "Low-latency monitoring\nLookahead effects on the monitored path are bypassed\nand delay compensation is skipped. Takes stay dry and aligned."
+msgstr "Écoute à faible latence\nLes effets à anticipation sur le chemin écouté sont contournés\net la compensation de délai est sautée. Les prises restent sèches et alignées."
+
+msgid "32-bit float"
+msgstr "32 bits flottant"
+
+msgid "24-bit PCM WAV at the device rate"
+msgstr "WAV PCM 24 bits à la fréquence de l'appareil"
+
+msgid "32-bit float WAV at the device rate"
+msgstr "WAV 32 bits flottant à la fréquence de l'appareil"
+
+msgid "Punch in/out\nKeep only what falls inside the time selection"
+msgstr "Punch in/out\nGarde seulement ce qui tombe dans la sélection de temps"
+
+msgid "Punch in/out\nDraw a time selection in the playlist ruler first"
+msgstr "Punch in/out\nTrace d'abord une sélection de temps dans la règle de la playlist"
+
+msgid "Punch"
+msgstr "Punch"
+
+msgid "Loop recording: every pass of the selection becomes a take"
+msgstr "Enregistrement en boucle : chaque passage de la sélection devient une prise"
+
+msgid "Tip: select a range in the ruler to loop and stack takes"
+msgstr "Astuce : sélectionne une zone dans la règle pour boucler et empiler les prises"
+
+msgid "sweet spot"
+msgstr "zone idéale"
+
+msgid "The input clipped: lower the gain or the preamp\nClick to reset"
+msgstr "L'entrée a saturé : baisse le gain ou le préampli\nClic pour réinitialiser"
+
+msgid "Lights up when the input clips"
+msgstr "S'allume quand l'entrée sature"
+
+msgid "You hear yourself after"
+msgstr "Tu t'entends après"
+
+msgid "input closed"
+msgstr "entrée fermée"
+
+msgid "imperceptible"
+msgstr "imperceptible"
+
+msgid "slight"
+msgstr "léger"
+
+msgid "noticeable: lower the buffer"
+msgstr "sensible : réduis le tampon"
+
+msgid "Monitoring latency: output + input buffers, measured live\n(+ delay compensation when low latency is off)\nPONZIK_LATENCY_MS sets the buffer (default 10 ms)"
+msgstr "Latence d'écoute : tampons de sortie et d'entrée, mesurée en direct\n(+ compensation de délai quand la faible latence est coupée)\nPONZIK_LATENCY_MS règle le tampon (10 ms par défaut)"
+
+msgid "Take offset"
+msgstr "Décalage des prises"
+
+msgid "Extra delay compensation for takes, on top of the measured latency\nDrag or scroll · Calibrate to measure it"
+msgstr "Compensation de délai en plus pour les prises, au-delà de la latence mesurée\nGlisser ou molette · Calibrer pour la mesurer"
+
+msgid "Listening..."
+msgstr "Écoute…"
+
+msgid "Calibrate"
+msgstr "Calibrer"
+
+msgid "Plays clicks and records them back to measure the true round trip\nLast: measured {:.1} ms, reported {:.1} ms"
+msgstr "Joue des clics et les réenregistre pour mesurer le vrai aller-retour\nDernière : mesurée {:.1} ms, annoncée {:.1} ms"
+
+msgid "Plays clicks and records them back to measure the true round trip\nLoop the output into the input (cable or mic near the speaker)"
+msgstr "Joue des clics et les réenregistre pour mesurer le vrai aller-retour\nRenvoie la sortie dans l'entrée (câble ou micro près de l'enceinte)"
+
+msgid "No other input found"
+msgstr "Aucune autre entrée trouvée"
+
+msgid "{}\n{} channel"
+msgstr "{}\n{} canal"
+
+msgid "{}\n{} channels"
+msgstr "{}\n{} canaux"
+
+# --- Mix assistant ---
+
+msgid "High-pass at {}"
+msgstr "Passe-haut à {}"
+
+msgid "No high-pass"
+msgstr "Pas de passe-haut"
+
+msgid "{} at {}"
+msgstr "{} à {}"
+
+msgid "Flat EQ"
+msgstr "EQ plate"
+
+msgid "Up to {} above {}, threshold {}"
+msgstr "Jusqu'à {} au-dessus de {}, seuil {}"
+
+msgid "No de-essing"
+msgstr "Pas de de-essing"
+
+msgid "{} from {}, attack {}, release {}, makeup {}"
+msgstr "{} dès {}, attaque {}, relâche {}, compensation {}"
+
+msgid "Drive {}"
+msgstr "Drive {}"
+
+msgid "Width {}"
+msgstr "Largeur {}"
+
+msgid "Output {}"
+msgstr "Sortie {}"
+
+msgid "Apply mix suggestion"
+msgstr "Appliquer la suggestion de mix"
+
+msgid "Applied the {} suggestion · Ctrl+Z to undo"
+msgstr "Suggestion {} appliquée · Ctrl+Z pour annuler"
+
+msgid "Listened"
+msgstr "Écouté"
+
+msgid "Suggested"
+msgstr "Suggéré"
+
+msgid "Listening"
+msgstr "Écoute"
+
+msgid "{} s of audio, any part of the track"
+msgstr "{} s d'audio, n'importe où dans la piste"
+
+msgid "Waiting for audio"
+msgstr "En attente d'audio"
+
+msgid "Start playback to listen"
+msgstr "Lance la lecture pour écouter"
+
+msgid "Press Listen while the track plays"
+msgstr "Appuie sur Écouter pendant que la piste joue"
+
+msgid "Nothing changes until you apply"
+msgstr "Rien ne change tant que tu n'appliques pas"
+
+msgid "Listening {}%"
+msgstr "Écoute {} %"
+
+msgid "Listen again"
+msgstr "Réécouter"
+
+msgid "Listen"
+msgstr "Écouter"
+
+msgid "Stop listening"
+msgstr "Arrêter l'écoute"
+
+msgid "Listen\nAnalyses 10 s of the playing track, then suggests settings"
+msgstr "Écouter\nAnalyse 10 s de la piste en lecture, puis suggère des réglages"
+
+msgid "Profile\nWhat the track is: sets the target curve and the starting points"
+msgstr "Profil\nCe qu'est la piste : règle la courbe cible et les points de départ"
+
+msgid "Amount\nFrom neutral (0 %, untouched sound) to the full settings · double-click: 100 %"
+msgstr "Dosage\nDu neutre (0 %, son intact) aux réglages complets · double-clic : 100 %"
+
+msgid "Apply suggestion"
+msgstr "Appliquer la suggestion"
+
+msgid "Apply the {} suggestion\nEvery value stays editable · Ctrl+Z undoes it"
+msgstr "Appliquer la suggestion {}\nChaque valeur reste modifiable · Ctrl+Z l'annule"
+
+msgid "Dismiss the suggestion"
+msgstr "Écarter la suggestion"
+
+msgid "Show suggestion"
+msgstr "Voir la suggestion"
+
+msgid "Suggestion from the last listen ({} s)"
+msgstr "Suggestion de la dernière écoute ({} s)"
+
+msgid "Flat"
+msgstr "Plate"
+
+msgid "Idle"
+msgstr "Au repos"
+
+msgid "Not yet"
+msgstr "Pas encore"
+
+msgid "Listen first: level, dynamics, sibilance and stereo image show up here"
+msgstr "Écoute d'abord : niveau, dynamique, sibilance et image stéréo s'affichent ici"
+
+# --- Mix assistant and interface size ---
+
+msgid " (auto)"
+msgstr " (auto)"
+
+msgid "Analysis"
+msgstr "Analyse"
+
+msgid "Analysis\nWhat the last listen measured"
+msgstr "Analyse\nCe que la dernière écoute a mesuré"
+
+msgid "Arm for audio recording · right click: recording panel"
+msgstr "Armer l'enregistrement audio · clic droit : panneau d'enregistrement"
+
+msgid "Band to edit"
+msgstr "Bande à modifier"
+
+msgid "Compressor\nEvens out the level"
+msgstr "Compresseur\nÉgalise le niveau"
+
+msgid "Correlation"
+msgstr "Corrélation"
+
+msgid "Crest"
+msgstr "Facteur de crête"
+
+msgid "De-esser"
+msgstr "De-esser"
+
+msgid "De-esser\nTames harsh \"s\" sounds above its frequency"
+msgstr "De-esser\nAdoucit les « s » agressifs au-dessus de sa fréquence"
+
+msgid "Disarm · right click: recording panel"
+msgstr "Désarmer · clic droit : panneau d'enregistrement"
+
+msgid "EQ\nLow shelf, three bells, high shelf"
+msgstr "EQ\nPlateau grave, trois cloches, plateau aigu"
+
+msgid "Enlarge the interface"
+msgstr "Agrandir l'interface"
+
+msgid "Freq"
+msgstr "Fréq."
+
+msgid "High-pass\nRemoves rumble below the useful range"
+msgstr "Passe-haut\nRetire les grondements sous la plage utile"
+
+msgid "Image"
+msgstr "Image"
+
+msgid "Interface at 100%"
+msgstr "Interface à 100 %"
+
+msgid "Output\nLevel after the chain"
+msgstr "Sortie\nNiveau après la chaîne"
+
+msgid "Saturation\nAdds warmth and density"
+msgstr "Saturation\nAjoute chaleur et densité"
+
+msgid "Shrink the interface"
+msgstr "Réduire l'interface"
+
+msgid "Sibilance"
+msgstr "Sibilance"
+
+msgid "Stereo width\nNarrows or widens the side signal"
+msgstr "Largeur stéréo\nResserre ou élargit le signal latéral"
+
+msgid "Target · {}{}"
+msgstr "Cible · {}{}"
+
+msgid "bypass"
+msgstr "contourner"
+
+msgid "enable"
+msgstr "activer"
+
+msgid "{}\nClick: {}"
+msgstr "{}\nClic : {}"
+
+msgid "{}\nReduction now: {} dB"
+msgstr "{}\nRéduction actuelle : {} dB"
+
+msgid "{}\nSuggested: {}"
+msgstr "{}\nSuggéré : {}"
+
+msgid "{} band"
+msgstr "Bande {}"
+
+msgid "{} band\nDrag: frequency and gain · wheel: Q · double-click: flat"
+msgstr "Bande {}\nGlisser : fréquence et gain · molette : Q · double-clic : à plat"
+
+msgid "{} active band"
+msgstr "{} bande active"
+
+msgid "{} active bands"
+msgstr "{} bandes actives"
+
+msgid "{} dB side"
+msgstr "{} dB latéral"
+
+# --- Command line help ---
+
+msgid "Ponzik — the free DAW. No more gatekeeping.\n\nUsage:\n  ponzik                                   opens the interface (house demo)\n  ponzik breakcore                         opens the interface on the breakcore demo\n  ponzik play [seconds]                    plays the demo in the terminal (Enter to stop)\n  ponzik render <output.wav> [song|pattern]\n                                           exports the demo as a 24-bit WAV\n  ponzik screenshot <output.png> [view] [width height]\n                                           captures the interface off-screen\n                                           (views: rack, piano, playlist, mixer, lab;\n                                           PONZIK_SAMPLELAB=demo|<wav> opens the Sample Lab;\n                                           PONZIK_SCALE_UI=2 renders at 2× for HiDPI;\n                                           PONZIK_LANG=fr picks the language)\n  ponzik help                              shows this help"
+msgstr "Ponzik — le DAW libre. No more gatekeeping.\n\nUsage :\n  ponzik                                   ouvre l'interface (démo house)\n  ponzik breakcore                         ouvre l'interface sur la démo breakcore\n  ponzik play [secondes]                   joue la démo dans le terminal (Entrée pour arrêter)\n  ponzik render <sortie.wav> [song|pattern]\n                                           exporte la démo en WAV 24 bits\n  ponzik screenshot <sortie.png> [vue] [largeur hauteur]\n                                           capture l'interface hors écran\n                                           (vues : rack, piano, playlist, mixer, lab ;\n                                           PONZIK_SAMPLELAB=demo|<wav> ouvre le Sample Lab ;\n                                           PONZIK_SCALE_UI=2 rend en 2× pour l'HiDPI ;\n                                           PONZIK_LANG=fr choisit la langue)\n  ponzik help                              affiche cette aide"
+
+# --- Interface size, MIDI clock, takes ---
+
+msgid "Interface size: {}%"
+msgstr "Taille de l'interface : {} %"
+
+msgid "Interface size"
+msgstr "Taille de l'interface"
+
+msgid "Back to 100%"
+msgstr "Revenir à 100 %"
+
+msgid "Size of text and controls, on top of the screen scale · {} / {}"
+msgstr "Taille du texte et des contrôles, en plus de l'échelle de l'écran · {} / {}"
+
+msgid "on"
+msgstr "activée"
+
+msgid "off"
+msgstr "coupée"
+
+msgid "MIDI clock out: Port {} · {} ({})"
+msgstr "Horloge MIDI sortante : port {} · {} ({})"
+
+msgid "Alt+click: play this take"
+msgstr "Alt+clic : jouer cette prise"
+
+msgid "Recording panel: input, level, monitoring, latency"
+msgstr "Panneau d'enregistrement : entrée, niveau, écoute, latence"
+
+# --- MIDI clock ---
+
+msgid "MIDI clock {} · {}"
+msgstr "Horloge MIDI {} · {}"
+
+# --- Mix assistant and external MIDI devices ---
+
+msgid "Assistant"
+msgstr "Assistant"
+
+msgid "Auto"
+msgstr "Auto"
+
+msgid "Bell 1 Q"
+msgstr "Q cloche 1"
+
+msgid "Bell 1 freq"
+msgstr "Fréq. cloche 1"
+
+msgid "Bell 1 gain"
+msgstr "Gain cloche 1"
+
+msgid "Bell 2 Q"
+msgstr "Q cloche 2"
+
+msgid "Bell 2 freq"
+msgstr "Fréq. cloche 2"
+
+msgid "Bell 2 gain"
+msgstr "Gain cloche 2"
+
+msgid "Bell 3 Q"
+msgstr "Q cloche 3"
+
+msgid "Bell 3 freq"
+msgstr "Fréq. cloche 3"
+
+msgid "Bell 3 gain"
+msgstr "Gain cloche 3"
+
+msgid "Controllers"
+msgstr "Contrôleurs"
+
+msgid "De-ess freq"
+msgstr "Fréq. de-esser"
+
+msgid "De-ess range"
+msgstr "Plage de-esser"
+
+msgid "De-ess threshold"
+msgstr "Seuil de-esser"
+
+msgid "External"
+msgstr "Externe"
+
+msgid "External MIDI"
+msgstr "MIDI externe"
+
+msgid "Full mix"
+msgstr "Mix complet"
+
+msgid "Guitar"
+msgstr "Guitare"
+
+msgid "High shelf Q"
+msgstr "Q plateau aigu"
+
+msgid "High shelf freq"
+msgstr "Fréq. plateau aigu"
+
+msgid "High shelf gain"
+msgstr "Gain plateau aigu"
+
+msgid "High-pass freq"
+msgstr "Fréq. passe-haut"
+
+msgid "Latency offset"
+msgstr "Compensation de latence"
+
+msgid "Listens to the track and suggests a high-pass, EQ, de-esser, compressor, saturation, width and level per source type; nothing changes until you apply"
+msgstr "Écoute la piste et propose passe-haut, EQ, de-esser, compresseur, saturation, largeur et niveau selon le type de source ; rien ne change tant que tu n'appliques pas"
+
+msgid "Low shelf Q"
+msgstr "Q plateau grave"
+
+msgid "Low shelf freq"
+msgstr "Fréq. plateau grave"
+
+msgid "Low shelf gain"
+msgstr "Gain plateau grave"
+
+msgid "Mix Assistant"
+msgstr "Assistant de mix"
+
+msgid "Mixing"
+msgstr "Mixage"
+
+msgid "Mod wheel"
+msgstr "Molette de modulation"
+
+msgid "Pitch bend"
+msgstr "Pitch bend"
+
+msgid "Plays a hardware synth or another app: sends the channel's notes to a MIDI output port"
+msgstr "Joue un synthé matériel ou une autre appli : envoie les notes du canal vers un port de sortie MIDI"
+
+msgid "Port"
+msgstr "Port"
+
+msgid "Port 1"
+msgstr "Port 1"
+
+msgid "Port 2"
+msgstr "Port 2"
+
+msgid "Port 3"
+msgstr "Port 3"
+
+msgid "Port 4"
+msgstr "Port 4"
+
+msgid "Port 5"
+msgstr "Port 5"
+
+msgid "Port 6"
+msgstr "Port 6"
+
+msgid "Port 7"
+msgstr "Port 7"
+
+msgid "Port 8"
+msgstr "Port 8"
+
+msgid "Port 9"
+msgstr "Port 9"
+
+msgid "Port 10"
+msgstr "Port 10"
+
+msgid "Port 11"
+msgstr "Port 11"
+
+msgid "Port 12"
+msgstr "Port 12"
+
+msgid "Port 13"
+msgstr "Port 13"
+
+msgid "Port 14"
+msgstr "Port 14"
+
+msgid "Port 15"
+msgstr "Port 15"
+
+msgid "Port 16"
+msgstr "Port 16"
+
+msgid "Profile"
+msgstr "Profil"
+
+msgid "Stereo width"
+msgstr "Largeur stéréo"
+
+msgid "Synth/Keys"
+msgstr "Synthé/claviers"
+
+msgid "Vocal"
+msgstr "Voix"
+
+# --- Sample Lab ---
+
+msgid "Remove marker"
+msgstr "Retirer un marqueur"
+
+msgid "Sample reversed"
+msgstr "Échantillon inversé"
+
+msgid "Reverse slice"
+msgstr "Inverser la tranche"
+
+msgid "Pitch slice"
+msgstr "Transposer la tranche"
+
+msgid "Original tempo unknown: type it in or detect it"
+msgstr "Tempo d'origine inconnu : saisis-le ou détecte-le"
+
+msgid "Already at the project tempo"
+msgstr "Déjà au tempo du projet"
+
+msgid "Stretch to tempo"
+msgstr "Étirer au tempo"
+
+msgid "Resample to tempo"
+msgstr "Rééchantillonner au tempo"
+
+msgid "{} → {} BPM"
+msgstr "{} → {} BPM"
+
+msgid "Nothing to normalize: silence"
+msgstr "Rien à normaliser : silence"
+
+msgid "Normalize"
+msgstr "Normaliser"
+
+msgid "Peak at 0 dB"
+msgstr "Crête à 0 dB"
+
+msgid "Original tempo"
+msgstr "Tempo d'origine"
+
+msgid "Detected tempo: {} BPM"
+msgstr "Tempo détecté : {} BPM"
+
+msgid "No clear rhythm to find a tempo"
+msgstr "Pas de rythme assez net pour trouver un tempo"
+
+msgid "Saved to Échantillons: {}"
+msgstr "Enregistré dans Échantillons : {}"
+
+msgid "Sample Lab: replace sample"
+msgstr "Sample Lab : remplacer l'échantillon"
+
+msgid "\"{}\" now plays the Sample Lab version"
+msgstr "« {} » joue maintenant la version du Sample Lab"
+
+msgid "Sample Lab: replace clip"
+msgstr "Sample Lab : remplacer le clip"
+
+msgid "Clip replaced with the Sample Lab version"
+msgstr "Clip remplacé par la version du Sample Lab"
+
+msgid "Saved to Échantillons"
+msgstr "Enregistré dans Échantillons"
+
+msgid "{} slices"
+msgstr "{} tranches"
+
+msgid "Flip {}"
+msgstr "Flip {}"
+
+msgid "Flip to the rack"
+msgstr "Flip vers le rack"
+
+msgid "{} slices on {}…{} · pattern \"Flip {}\""
+msgstr "{} tranches sur {}…{} · pattern « Flip {} »"
+
+msgid "Slices to the rack"
+msgstr "Tranches vers le rack"
+
+msgid "Slicer: {} slices on {}…{}"
+msgstr "Découpeur : {} tranches sur {}…{}"
+
+msgid "{} slice {}"
+msgstr "{} tranche {}"
+
+msgid "Drop a sample here"
+msgstr "Dépose un échantillon ici"
+
+msgid "or click a WAV in the browser · double-click an audio clip"
+msgstr "ou clique un WAV dans le navigateur · double-clic sur un clip audio"
+
+msgid "Try a drum loop"
+msgstr "Essayer une boucle de batterie"
+
+msgid "Opens a demo drum loop"
+msgstr "Ouvre une boucle de batterie de démo"
+
+msgid "{}\nDrag · wheel (Shift: fine) · double-click: default"
+msgstr "{}\nGlisser · molette (Maj : fin) · double-clic : défaut"
+
+msgid "mono"
+msgstr "mono"
+
+msgid "stereo"
+msgstr "stéréo"
+
+msgid "{} · {} kHz · {}"
+msgstr "{} · {} kHz · {}"
+
+msgid " · {} BPM"
+msgstr " · {} BPM"
+
+msgid "To Slicer"
+msgstr "Vers le Découpeur"
+
+msgid "New Slicer channel: slice k plays on note {} + k"
+msgstr "Nouveau canal Découpeur : la tranche k joue sur la note {} + k"
+
+msgid "Flip"
+msgstr "Flip"
+
+msgid "Slicer plus a pattern replaying the slices in their original order\nRearrange the notes in the piano roll to flip the sample"
+msgstr "Découpeur et pattern qui rejoue les tranches dans l'ordre d'origine\nRéarrange les notes dans le piano roll pour flipper l'échantillon"
+
+msgid "the clip"
+msgstr "le clip"
+
+msgid "Apply"
+msgstr "Appliquer"
+
+msgid "Saves and replaces the sample of \"{}\"\nCtrl+Z brings the old one back"
+msgstr "Enregistre et remplace l'échantillon de « {} »\nCtrl+Z ramène l'ancien"
+
+msgid "Save to Échantillons (24-bit WAV, slice markers included)"
+msgstr "Enregistrer dans Échantillons (WAV 24 bits, marqueurs de tranches inclus)"
+
+msgid "Chop at transients\nOne slice per hit; sensitivity sets how many"
+msgstr "Découper aux transitoires\nUne tranche par frappe ; la sensibilité règle combien"
+
+msgid "Chop to the grid\nEven slices at the original tempo"
+msgstr "Découper sur la grille\nTranches égales au tempo d'origine"
+
+msgid "Chop by hand\nClick: add · drag: move · hold right-click: erase"
+msgstr "Découper à la main\nClic : ajouter · glisser : déplacer · clic droit maintenu : effacer"
+
+msgid "Grid"
+msgstr "Grille"
+
+msgid "Manual"
+msgstr "Manuel"
+
+msgid "Chop mode"
+msgstr "Mode de découpe"
+
+msgid "Hit sensitivity: higher means more slices"
+msgstr "Sensibilité aux frappes : plus haut, plus de tranches"
+
+msgid "Quarter notes"
+msgstr "Noires"
+
+msgid "Eighth notes"
+msgstr "Croches"
+
+msgid "Sixteenth notes"
+msgstr "Doubles croches"
+
+msgid "Thirty-second notes"
+msgstr "Triples croches"
+
+msgid "Original tempo of the sample\nDrag vertically · wheel"
+msgstr "Tempo d'origine de l'échantillon\nGlisser verticalement · molette"
+
+msgid "Click: add a marker · drag: move · hold right-click: erase"
+msgstr "Clic : ajouter un marqueur · glisser : déplacer · clic droit maintenu : effacer"
+
+msgid "Show all"
+msgstr "Tout afficher"
+
+msgid "Spectral colors: lows in teal, highs in pale green\nClick: slice colors"
+msgstr "Couleurs spectrales : graves en sarcelle, aigus en vert pâle\nClic : couleurs des tranches"
+
+msgid "Slice colors\nClick: spectral colors (brightness of the sound)"
+msgstr "Couleurs des tranches\nClic : couleurs spectrales (brillance du son)"
+
+msgid "Overview\nClick or drag: jump there"
+msgstr "Vue d'ensemble\nClic ou glisser : y aller"
+
+msgid "Loop: drag to draw it (snaps to slices)\nSpace plays it · right-click: remove"
+msgstr "Boucle : glisser pour la tracer (aimantée aux tranches)\nEspace la joue · clic droit : retirer"
+
+msgid "Click: play from here · drag: scrub"
+msgstr "Clic : lire d'ici · glisser : parcourir"
+
+msgid "Fade in: drag to set its length"
+msgstr "Fondu d'entrée : glisser pour régler sa durée"
+
+msgid "Fade out: drag to set its length"
+msgstr "Fondu de sortie : glisser pour régler sa durée"
+
+msgid "Fade curve: drag vertically"
+msgstr "Courbe du fondu : glisser verticalement"
+
+msgid "Start: drag to trim"
+msgstr "Début : glisser pour rogner"
+
+msgid "End: drag to trim"
+msgstr "Fin : glisser pour rogner"
+
+msgid "Marker: drag to move · right-click: erase"
+msgstr "Marqueur : glisser pour déplacer · clic droit : effacer"
+
+msgid "Click: add a marker and hear it · hold right-click: erase\nWheel: zoom · Shift+wheel: scroll"
+msgstr "Clic : ajouter un marqueur et l'écouter · clic droit maintenu : effacer\nMolette : zoom · Maj+molette : défiler"
+
+msgid "Click: hear the slice · double-click: add a marker\nWheel: zoom · Shift+wheel: scroll"
+msgstr "Clic : écouter la tranche · double-clic : ajouter un marqueur\nMolette : zoom · Maj+molette : défiler"
+
+msgid "Erase markers"
+msgstr "Effacer des marqueurs"
+
+msgid "Trim"
+msgstr "Rogner"
+
+msgid "Fade"
+msgstr "Fondu"
+
+msgid "Move marker"
+msgstr "Déplacer un marqueur"
+
+msgid "Add marker"
+msgstr "Ajouter un marqueur"
+
+msgid "Slice {} · {} · note {}\nClick: play · drag: drop into the playlist or the rack"
+msgstr "Tranche {} · {} · note {}\nClic : lire · glisser : déposer dans la playlist ou le rack"
+
+msgid "Slice {}"
+msgstr "Tranche {}"
+
+msgid "note {} · {} of {}"
+msgstr "note {} · {} sur {}"
+
+msgid "Play the slice"
+msgstr "Lire la tranche"
+
+msgid "Slice one semitone down (slower)"
+msgstr "Tranche un demi-ton plus bas (plus lente)"
+
+msgid "Slice one semitone up (faster)"
+msgstr "Tranche un demi-ton plus haut (plus rapide)"
+
+msgid "Volume and fades"
+msgstr "Volume et fondus"
+
+msgid "Sample gain"
+msgstr "Gain de l'échantillon"
+
+msgid "Normalize: peak at 0 dB"
+msgstr "Normaliser : crête à 0 dB"
+
+msgid "Fade in"
+msgstr "Fondu d'entrée"
+
+msgid "Fade out"
+msgstr "Fondu de sortie"
+
+msgid "Tempo and pitch"
+msgstr "Tempo et hauteur"
+
+msgid "orig. BPM"
+msgstr "BPM d'orig."
+
+msgid "Original tempo of the sample\nDrag vertically · wheel (Shift: fine)"
+msgstr "Tempo d'origine de l'échantillon\nGlisser verticalement · molette (Maj : fin)"
+
+msgid "Detect the tempo"
+msgstr "Détecter le tempo"
+
+msgid "Fit to the project · {} BPM"
+msgstr "Caler sur le projet · {} BPM"
+
+msgid "Speed"
+msgstr "Vitesse"
+
+msgid "Resample: tempo and pitch change together, like a record"
+msgstr "Rééchantillonner : tempo et hauteur changent ensemble, comme un disque"
+
+msgid "Stretch"
+msgstr "Étirer"
+
+msgid "Stretch (WSOLA): the tempo changes, the pitch stays"
+msgstr "Étirer (WSOLA) : le tempo change, la hauteur reste"
+
+msgid "−1 semitone (length kept)"
+msgstr "−1 demi-ton (durée gardée)"
+
+msgid "+1 semitone (length kept)"
+msgstr "+1 demi-ton (durée gardée)"
+
+msgid "Reverse the whole sample"
+msgstr "Inverser tout l'échantillon"
+
+msgid "−1 st"
+msgstr "−1 dt"
+
+msgid "+1 st"
+msgstr "+1 dt"
+
+msgid "Redone in the Sample Lab: {}"
+msgstr "Rétabli dans le Sample Lab : {}"
+
+msgid "Undone in the Sample Lab: {}"
+msgstr "Annulé dans le Sample Lab : {}"
+
+msgid "Transposed by {:+} semitone"
+msgstr "Transposé de {:+} demi-ton"
+
+msgid "Transposed by {:+} semitones"
+msgstr "Transposé de {:+} demi-tons"
+
+msgid "{} · {} slice"
+msgstr "{} · {} tranche"
+
+msgid "{} · {} slices"
+msgstr "{} · {} tranches"
+
+# --- Recording panel headings ---
+
+msgid "INPUT"
+msgstr "ENTRÉE"
+
+msgid "MONITORING"
+msgstr "ÉCOUTE"
+
+msgid "24-bit"
+msgstr "24 bits"
+
+msgid "dBFS peak"
+msgstr "dBFS crête"

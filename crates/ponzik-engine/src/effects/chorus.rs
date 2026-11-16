@@ -16,11 +16,11 @@ const P_MIX: u32 = 5;
 
 static PARAMS: [ParamInfo; 6] = [
     ParamInfo::choice(P_MODE, "Mode", &["Chorus", "Flanger"], 0).group("Modulation"),
-    ParamInfo::new(P_RATE, "Vitesse", 0.01, 10.0, 0.8, Unit::Hz).log().group("Modulation"),
-    ParamInfo::new(P_DEPTH, "Profondeur", 0.0, 1.0, 0.5, Unit::Percent).group("Modulation"),
-    ParamInfo::new(P_FEEDBACK, "Réinjection", -0.95, 0.95, 0.0, Unit::Percent).group("Modulation"),
-    ParamInfo::new(P_SPREAD, "Écart stéréo", 0.0, 1.0, 0.5, Unit::Percent).group("Sortie"),
-    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 0.5, Unit::Percent).group("Sortie"),
+    ParamInfo::new(P_RATE, "Rate", 0.01, 10.0, 0.8, Unit::Hz).log().group("Modulation"),
+    ParamInfo::new(P_DEPTH, "Depth", 0.0, 1.0, 0.5, Unit::Percent).group("Modulation"),
+    ParamInfo::new(P_FEEDBACK, "Feedback", -0.95, 0.95, 0.0, Unit::Percent).group("Modulation"),
+    ParamInfo::new(P_SPREAD, "Stereo Spread", 0.0, 1.0, 0.5, Unit::Percent).group("Output"),
+    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 0.5, Unit::Percent).group("Output"),
 ];
 
 const MAX_MS: f32 = 25.0;

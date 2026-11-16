@@ -25,15 +25,15 @@ const P_MAKEUP: u32 = 7;
 const P_MIX: u32 = 8;
 
 static PARAMS: [ParamInfo; 9] = [
-    ParamInfo::choice(P_MODE, "Caractère", &["Propre", "Opto", "VCA"], 0).group("Compression"),
-    ParamInfo::new(P_THRESHOLD, "Seuil", -40.0, 0.0, -12.0, Unit::Db).group("Compression"),
+    ParamInfo::choice(P_MODE, "Character", &["Clean", "Opto", "VCA"], 0).group("Compression"),
+    ParamInfo::new(P_THRESHOLD, "Threshold", -40.0, 0.0, -12.0, Unit::Db).group("Compression"),
     ParamInfo::new(P_RATIO, "Ratio", 1.0, 10.0, 4.0, Unit::Ratio).log().group("Compression"),
-    ParamInfo::new(P_ATTACK, "Attaque", 0.000_1, 0.1, 0.01, Unit::Seconds).log().group("Temps"),
-    ParamInfo::new(P_RELEASE, "Relâche", 0.05, 2.0, 0.3, Unit::Seconds).log().group("Temps"),
-    ParamInfo::choice(P_AUTO, "Relâche auto", OFF_ON, 0).group("Temps"),
-    ParamInfo::new(P_SC_CUT, "Coupe-bas détecteur", 20.0, 500.0, 20.0, Unit::Hz).log().group("Détection"),
-    ParamInfo::new(P_MAKEUP, "Compensation", 0.0, 24.0, 0.0, Unit::Db).group("Sortie"),
-    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Sortie"),
+    ParamInfo::new(P_ATTACK, "Attack", 0.000_1, 0.1, 0.01, Unit::Seconds).log().group("Time"),
+    ParamInfo::new(P_RELEASE, "Release", 0.05, 2.0, 0.3, Unit::Seconds).log().group("Time"),
+    ParamInfo::choice(P_AUTO, "Auto Release", OFF_ON, 0).group("Time"),
+    ParamInfo::new(P_SC_CUT, "Detector Low Cut", 20.0, 500.0, 20.0, Unit::Hz).log().group("Detection"),
+    ParamInfo::new(P_MAKEUP, "Makeup", 0.0, 24.0, 0.0, Unit::Db).group("Output"),
+    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Output"),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq)]

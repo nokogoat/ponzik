@@ -24,7 +24,7 @@ const ROOT: f32 = 60.0;
 /// Grain le plus court, en images de sortie.
 const MIN_GRAIN: f32 = 16.0;
 
-const WINDOWS: &[&str] = &["Hann", "Triangle", "Trapèze"];
+const WINDOWS: &[&str] = &["Hann", "Triangle", "Trapezoid"];
 
 const P_POSITION: u32 = 0;
 const P_SPRAY: u32 = 1;
@@ -42,18 +42,18 @@ const P_VOLUME: u32 = 12;
 
 static PARAMS: [ParamInfo; 13] = [
     ParamInfo::new(P_POSITION, "Position", 0.0, 1.0, 0.3, Unit::Percent).group("Grains"),
-    ParamInfo::new(P_SPRAY, "Dispersion", 0.0, 2.0, 0.05, Unit::Seconds).group("Grains"),
-    ParamInfo::new(P_SIZE, "Taille", 0.005, 0.5, 0.08, Unit::Seconds).log().group("Grains"),
-    ParamInfo::new(P_DENSITY, "Densité", 1.0, 200.0, 30.0, Unit::Hz).log().group("Grains"),
-    ParamInfo::choice(P_WINDOW, "Fenêtre", WINDOWS, 0).group("Grains"),
-    ParamInfo::new(P_PITCH, "Transposition", -24.0, 24.0, 0.0, Unit::Semitones).group("Hauteur"),
-    ParamInfo::new(P_RAND_PITCH, "Hauteur aléatoire", 0.0, 1_200.0, 0.0, Unit::Cents).group("Hauteur"),
-    ParamInfo::new(P_SPREAD, "Largeur stéréo", 0.0, 1.0, 0.5, Unit::Percent).group("Sortie"),
-    ParamInfo::new(P_ATTACK, "Attaque", 0.001, 4.0, 0.02, Unit::Seconds).log().group("Amplitude"),
-    ParamInfo::new(P_DECAY, "Déclin", 0.005, 8.0, 0.3, Unit::Seconds).log().group("Amplitude"),
-    ParamInfo::new(P_SUSTAIN, "Maintien", 0.0, 1.0, 1.0, Unit::Percent).group("Amplitude"),
-    ParamInfo::new(P_RELEASE, "Relâche", 0.005, 8.0, 0.3, Unit::Seconds).log().group("Amplitude"),
-    ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -3.0, Unit::Db).group("Sortie"),
+    ParamInfo::new(P_SPRAY, "Spray", 0.0, 2.0, 0.05, Unit::Seconds).group("Grains"),
+    ParamInfo::new(P_SIZE, "Size", 0.005, 0.5, 0.08, Unit::Seconds).log().group("Grains"),
+    ParamInfo::new(P_DENSITY, "Density", 1.0, 200.0, 30.0, Unit::Hz).log().group("Grains"),
+    ParamInfo::choice(P_WINDOW, "Window", WINDOWS, 0).group("Grains"),
+    ParamInfo::new(P_PITCH, "Transpose", -24.0, 24.0, 0.0, Unit::Semitones).group("Pitch"),
+    ParamInfo::new(P_RAND_PITCH, "Random Pitch", 0.0, 1_200.0, 0.0, Unit::Cents).group("Pitch"),
+    ParamInfo::new(P_SPREAD, "Stereo Width", 0.0, 1.0, 0.5, Unit::Percent).group("Output"),
+    ParamInfo::new(P_ATTACK, "Attack", 0.001, 4.0, 0.02, Unit::Seconds).log().group("Amp"),
+    ParamInfo::new(P_DECAY, "Decay", 0.005, 8.0, 0.3, Unit::Seconds).log().group("Amp"),
+    ParamInfo::new(P_SUSTAIN, "Sustain", 0.0, 1.0, 1.0, Unit::Percent).group("Amp"),
+    ParamInfo::new(P_RELEASE, "Release", 0.005, 8.0, 0.3, Unit::Seconds).log().group("Amp"),
+    ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -3.0, Unit::Db).group("Output"),
 ];
 
 #[derive(Clone, Copy, Debug, Default)]

@@ -25,12 +25,12 @@ const P_LOOKAHEAD: u32 = 4;
 const P_TRUE_PEAK: u32 = 5;
 
 static PARAMS: [ParamInfo; 6] = [
-    ParamInfo::choice(P_ALGORITHM, "Algorithme", &["Transparent", "Punchy", "Agressif"], 0).group("Limiteur"),
-    ParamInfo::new(P_INPUT, "Gain d'entrée", 0.0, 24.0, 0.0, Unit::Db).group("Limiteur"),
-    ParamInfo::new(P_CEILING, "Plafond", -12.0, 0.0, -1.0, Unit::Db).group("Limiteur"),
-    ParamInfo::new(P_RELEASE, "Relâche", 0.001, 1.0, 0.08, Unit::Seconds).log().group("Temps"),
-    ParamInfo::new(P_LOOKAHEAD, "Anticipation", MIN_LOOKAHEAD, MAX_LOOKAHEAD, 0.002, Unit::Seconds).group("Temps"),
-    ParamInfo::choice(P_TRUE_PEAK, "Crête vraie", OFF_ON, 1).group("Détection"),
+    ParamInfo::choice(P_ALGORITHM, "Algorithm", &["Transparent", "Punchy", "Aggressive"], 0).group("Limiter"),
+    ParamInfo::new(P_INPUT, "Input Gain", 0.0, 24.0, 0.0, Unit::Db).group("Limiter"),
+    ParamInfo::new(P_CEILING, "Ceiling", -12.0, 0.0, -1.0, Unit::Db).group("Limiter"),
+    ParamInfo::new(P_RELEASE, "Release", 0.001, 1.0, 0.08, Unit::Seconds).log().group("Time"),
+    ParamInfo::new(P_LOOKAHEAD, "Lookahead", MIN_LOOKAHEAD, MAX_LOOKAHEAD, 0.002, Unit::Seconds).group("Time"),
+    ParamInfo::choice(P_TRUE_PEAK, "True Peak", OFF_ON, 1).group("Detection"),
 ];
 
 const MIN_LOOKAHEAD: f32 = 0.000_5;

@@ -17,7 +17,7 @@ const OPS: usize = 4;
 const MOD_DEPTH: f32 = 1.0;
 const FB_DEPTH: f32 = 0.5;
 
-const COARSE: &[&str] = &["0,5", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"];
+const COARSE: &[&str] = &["0.5", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"];
 const ALGO_NAMES: &[&str] = &[
     "4 → 3 → 2 → 1",
     "(3 + 4) → 2 → 1",
@@ -26,10 +26,10 @@ const ALGO_NAMES: &[&str] = &[
     "4 → (1, 2, 3)",
     "4 → 3 → 2, 1",
     "(2 + 3 + 4) → 1",
-    "parallèle",
+    "parallel",
 ];
-const FILTERS: &[&str] = &["Passe-bas", "Passe-haut"];
-const OP_GROUPS: [&str; OPS] = ["Opérateur 1", "Opérateur 2", "Opérateur 3", "Opérateur 4"];
+const FILTERS: &[&str] = &["Low-pass", "High-pass"];
+const OP_GROUPS: [&str; OPS] = ["Operator 1", "Operator 2", "Operator 3", "Operator 4"];
 
 /// `mods[i]` : masque des opérateurs qui modulent `i` (bit j = opérateur j + 1).
 /// Un modulateur a toujours un indice supérieur à sa cible : on calcule de 4 vers 1.
@@ -84,22 +84,22 @@ const fn build_params() -> [ParamInfo; N_PARAMS] {
             1 => (0.45, 0.6, 0.25),
             _ => (0.0, 0.5, 0.5),
         };
-        p[k] = ParamInfo::choice(b + F_COARSE, "Rapport", COARSE, 1).group(g);
-        p[k + 1] = ParamInfo::new(b + F_FINE, "Fin", 0.0, 0.99, 0.0, Unit::None).group(g);
-        p[k + 2] = ParamInfo::new(b + F_LEVEL, "Niveau", 0.0, 1.0, level, Unit::Percent).group(g);
-        p[k + 3] = ParamInfo::new(b + F_ATTACK, "Attaque", 0.001, 4.0, 0.002, Unit::Seconds).log().group(g);
-        p[k + 4] = ParamInfo::new(b + F_DECAY, "Déclin", 0.005, 8.0, decay, Unit::Seconds).log().group(g);
-        p[k + 5] = ParamInfo::new(b + F_SUSTAIN, "Maintien", 0.0, 1.0, sustain, Unit::Percent).group(g);
-        p[k + 6] = ParamInfo::new(b + F_RELEASE, "Relâche", 0.005, 8.0, 0.3, Unit::Seconds).log().group(g);
-        p[k + 7] = ParamInfo::new(b + F_VEL, "Vélocité", 0.0, 1.0, 0.5, Unit::Percent).group(g);
+        p[k] = ParamInfo::choice(b + F_COARSE, "Coarse", COARSE, 1).group(g);
+        p[k + 1] = ParamInfo::new(b + F_FINE, "Fine", 0.0, 0.99, 0.0, Unit::None).group(g);
+        p[k + 2] = ParamInfo::new(b + F_LEVEL, "Level", 0.0, 1.0, level, Unit::Percent).group(g);
+        p[k + 3] = ParamInfo::new(b + F_ATTACK, "Attack", 0.001, 4.0, 0.002, Unit::Seconds).log().group(g);
+        p[k + 4] = ParamInfo::new(b + F_DECAY, "Decay", 0.005, 8.0, decay, Unit::Seconds).log().group(g);
+        p[k + 5] = ParamInfo::new(b + F_SUSTAIN, "Sustain", 0.0, 1.0, sustain, Unit::Percent).group(g);
+        p[k + 6] = ParamInfo::new(b + F_RELEASE, "Release", 0.005, 8.0, 0.3, Unit::Seconds).log().group(g);
+        p[k + 7] = ParamInfo::new(b + F_VEL, "Velocity", 0.0, 1.0, 0.5, Unit::Percent).group(g);
         op += 1;
     }
     let k = OPS * OP_FIELDS;
-    p[k] = ParamInfo::choice(P_ALGO, "Algorithme", ALGO_NAMES, 0).group("Algorithme");
-    p[k + 1] = ParamInfo::new(P_FEEDBACK, "Rétroaction 4", 0.0, 1.0, 0.0, Unit::Percent).group("Algorithme");
-    p[k + 2] = ParamInfo::choice(P_FILTER, "Type", FILTERS, 0).group("Filtre");
-    p[k + 3] = ParamInfo::new(P_CUTOFF, "Coupure", 30.0, 20_000.0, 20_000.0, Unit::Hz).log().group("Filtre");
-    p[k + 4] = ParamInfo::new(P_RESO, "Résonance", 0.5, 10.0, 0.707, Unit::None).log().group("Filtre");
+    p[k] = ParamInfo::choice(P_ALGO, "Algorithm", ALGO_NAMES, 0).group("Algorithm");
+    p[k + 1] = ParamInfo::new(P_FEEDBACK, "Feedback 4", 0.0, 1.0, 0.0, Unit::Percent).group("Algorithm");
+    p[k + 2] = ParamInfo::choice(P_FILTER, "Type", FILTERS, 0).group("Filter");
+    p[k + 3] = ParamInfo::new(P_CUTOFF, "Cutoff", 30.0, 20_000.0, 20_000.0, Unit::Hz).log().group("Filter");
+    p[k + 4] = ParamInfo::new(P_RESO, "Resonance", 0.5, 10.0, 0.707, Unit::None).log().group("Filter");
     p[k + 5] = ParamInfo::new(P_GLIDE, "Portamento", 0.0, 2.0, 0.0, Unit::Seconds).group("Global");
     p[k + 6] = ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -10.0, Unit::Db).group("Global");
     p

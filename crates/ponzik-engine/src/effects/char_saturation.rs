@@ -29,17 +29,17 @@ const P_OUTPUT: u32 = 9;
 const P_MIX: u32 = 10;
 
 static PARAMS: [ParamInfo; 11] = [
-    ParamInfo::choice(P_CHARACTER, "Caractère", &["Lampe", "Bande", "Transistor", "Redresseur"], 0).group("Saturation"),
+    ParamInfo::choice(P_CHARACTER, "Character", &["Tube", "Tape", "Transistor", "Rectifier"], 0).group("Saturation"),
     ParamInfo::new(P_DRIVE, "Drive", 0.0, 36.0, 9.0, Unit::Db).group("Saturation"),
-    ParamInfo::choice(P_MULTIBAND, "Multibande", OFF_ON, 0).group("Bandes"),
-    ParamInfo::new(P_LOW_SPLIT, "Séparation grave", 40.0, 1_000.0, 200.0, Unit::Hz).log().group("Bandes"),
-    ParamInfo::new(P_HIGH_SPLIT, "Séparation aiguë", 1_000.0, 12_000.0, 3_000.0, Unit::Hz).log().group("Bandes"),
-    ParamInfo::new(P_LOW_DRIVE, "Drive graves", -12.0, 12.0, 0.0, Unit::Db).group("Bandes"),
-    ParamInfo::new(P_MID_DRIVE, "Drive médiums", -12.0, 12.0, 0.0, Unit::Db).group("Bandes"),
-    ParamInfo::new(P_HIGH_DRIVE, "Drive aigus", -12.0, 12.0, 0.0, Unit::Db).group("Bandes"),
-    ParamInfo::new(P_TONE, "Ton", -12.0, 12.0, 0.0, Unit::Db).group("Couleur"),
-    ParamInfo::new(P_OUTPUT, "Sortie", -24.0, 12.0, 0.0, Unit::Db).group("Sortie"),
-    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Sortie"),
+    ParamInfo::choice(P_MULTIBAND, "Multiband", OFF_ON, 0).group("Bands"),
+    ParamInfo::new(P_LOW_SPLIT, "Low Split", 40.0, 1_000.0, 200.0, Unit::Hz).log().group("Bands"),
+    ParamInfo::new(P_HIGH_SPLIT, "High Split", 1_000.0, 12_000.0, 3_000.0, Unit::Hz).log().group("Bands"),
+    ParamInfo::new(P_LOW_DRIVE, "Low Drive", -12.0, 12.0, 0.0, Unit::Db).group("Bands"),
+    ParamInfo::new(P_MID_DRIVE, "Mid Drive", -12.0, 12.0, 0.0, Unit::Db).group("Bands"),
+    ParamInfo::new(P_HIGH_DRIVE, "High Drive", -12.0, 12.0, 0.0, Unit::Db).group("Bands"),
+    ParamInfo::new(P_TONE, "Tone", -12.0, 12.0, 0.0, Unit::Db).group("Color"),
+    ParamInfo::new(P_OUTPUT, "Output", -24.0, 12.0, 0.0, Unit::Db).group("Output"),
+    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Output"),
 ];
 
 /// Pivot de la bascule grave/aigu du réglage « Ton ».

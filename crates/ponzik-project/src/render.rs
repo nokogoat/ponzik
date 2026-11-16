@@ -10,6 +10,8 @@ use ponzik_dsp::loudness::LoudnessMeter;
 use ponzik_dsp::noise::WhiteNoise;
 use ponzik_engine::{Command, PPQ, PlayMode, Sequence, TICKS_PER_BAR, default_worker_threads};
 
+use ponzik_i18n::tr;
+
 use crate::{Project, SampleLoader};
 
 /// Taille des blocs demandés au moteur.
@@ -329,7 +331,7 @@ pub fn encode_wav_channels(
     let data_len = u32::try_from(samples.len() * bytes)
         .ok()
         .filter(|&n| n <= u32::MAX - 64)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "fichier WAV > 4 Go"))?;
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, tr("WAV file larger than 4 GB")))?;
     let pad = data_len & 1;
     let float = depth == BitDepth::Float32;
     // Le flottant exige un bloc fmt étendu (cbSize) et un bloc fact.

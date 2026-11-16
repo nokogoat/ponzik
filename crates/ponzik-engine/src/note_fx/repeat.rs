@@ -10,15 +10,15 @@ const P_DECAY: u32 = 3;
 /// Notes répétées en même temps ; au-delà, les nouvelles passent sans répétition.
 const MAX_VOICES: usize = 32;
 
-const COUNTS: &[&str] = &["Tenue", "2", "3", "4", "5", "6", "8", "12", "16"];
+const COUNTS: &[&str] = &["Held", "2", "3", "4", "5", "6", "8", "12", "16"];
 /// Coups par note de [`COUNTS`] ; 0 : tant que la note est tenue.
 const COUNT_HITS: [u32; 9] = [0, 2, 3, 4, 5, 6, 8, 12, 16];
 
 static PARAMS: [ParamInfo; 4] = [
-    ParamInfo::choice(P_RATE, "Cadence", RATES, 5).group("Rythme"),
-    ParamInfo::choice(P_COUNT, "Coups", COUNTS, 0).group("Rythme"),
-    ParamInfo::new(P_GATE, "Durée", 0.05, 1.0, 0.5, Unit::Percent).group("Rythme"),
-    ParamInfo::new(P_DECAY, "Déclin", 0.0, 1.0, 0.0, Unit::Percent).group("Vélocité"),
+    ParamInfo::choice(P_RATE, "Division", RATES, 5).group("Rhythm"),
+    ParamInfo::choice(P_COUNT, "Hits", COUNTS, 0).group("Rhythm"),
+    ParamInfo::new(P_GATE, "Gate Length", 0.05, 1.0, 0.5, Unit::Percent).group("Rhythm"),
+    ParamInfo::new(P_DECAY, "Decay", 0.0, 1.0, 0.0, Unit::Percent).group("Velocity"),
 ];
 
 #[derive(Clone, Copy, Debug, Default)]

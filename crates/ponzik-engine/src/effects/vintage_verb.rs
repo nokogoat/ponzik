@@ -31,18 +31,18 @@ const P_WIDTH: u32 = 10;
 const P_MIX: u32 = 11;
 
 static PARAMS: [ParamInfo; 12] = [
-    ParamInfo::choice(P_MODE, "Caractère", &["Salle", "Plaque", "Nuage"], 0).group("Caractère"),
-    ParamInfo::new(P_PREDELAY, "Pré-délai", 0.0, MAX_PREDELAY, 0.02, Unit::Seconds).group("Espace"),
-    ParamInfo::new(P_SIZE, "Taille", 0.0, 1.0, 0.6, Unit::Percent).group("Espace"),
-    ParamInfo::new(P_DIFFUSION, "Diffusion", 0.0, 1.0, 0.7, Unit::Percent).group("Espace"),
-    ParamInfo::new(P_DECAY, "Déclin", 0.2, 60.0, 3.0, Unit::Seconds).log().group("Queue"),
-    ParamInfo::new(P_DAMPING, "Amortissement", 1_000.0, 20_000.0, 8_000.0, Unit::Hz).log().group("Queue"),
-    ParamInfo::new(P_LOW_CUT, "Coupe-bas", 20.0, 1_000.0, 80.0, Unit::Hz).log().group("Queue"),
-    ParamInfo::choice(P_FREEZE, "Figer", OFF_ON, 0).group("Queue"),
-    ParamInfo::new(P_MOD_DEPTH, "Profondeur", 0.0, 1.0, 0.4, Unit::Percent).group("Modulation"),
-    ParamInfo::new(P_MOD_RATE, "Vitesse", 0.05, 5.0, 0.6, Unit::Hz).log().group("Modulation"),
-    ParamInfo::new(P_WIDTH, "Largeur", 0.0, 1.0, 1.0, Unit::Percent).group("Sortie"),
-    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 0.3, Unit::Percent).group("Sortie"),
+    ParamInfo::choice(P_MODE, "Character", &["Hall", "Plate", "Cloud"], 0).group("Character"),
+    ParamInfo::new(P_PREDELAY, "Pre-delay", 0.0, MAX_PREDELAY, 0.02, Unit::Seconds).group("Space"),
+    ParamInfo::new(P_SIZE, "Size", 0.0, 1.0, 0.6, Unit::Percent).group("Space"),
+    ParamInfo::new(P_DIFFUSION, "Diffusion", 0.0, 1.0, 0.7, Unit::Percent).group("Space"),
+    ParamInfo::new(P_DECAY, "Decay", 0.2, 60.0, 3.0, Unit::Seconds).log().group("Tail"),
+    ParamInfo::new(P_DAMPING, "Damping", 1_000.0, 20_000.0, 8_000.0, Unit::Hz).log().group("Tail"),
+    ParamInfo::new(P_LOW_CUT, "Low Cut", 20.0, 1_000.0, 80.0, Unit::Hz).log().group("Tail"),
+    ParamInfo::choice(P_FREEZE, "Freeze", OFF_ON, 0).group("Tail"),
+    ParamInfo::new(P_MOD_DEPTH, "Depth", 0.0, 1.0, 0.4, Unit::Percent).group("Modulation"),
+    ParamInfo::new(P_MOD_RATE, "Rate", 0.05, 5.0, 0.6, Unit::Hz).log().group("Modulation"),
+    ParamInfo::new(P_WIDTH, "Width", 0.0, 1.0, 1.0, Unit::Percent).group("Output"),
+    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 0.3, Unit::Percent).group("Output"),
 ];
 
 const LINES: usize = 8;

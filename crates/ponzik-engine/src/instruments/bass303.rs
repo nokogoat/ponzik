@@ -22,7 +22,7 @@ const ENV_OCTAVES: f32 = 5.0;
 const HELD: usize = 16;
 const AMP_ENV: AdsrParams = AdsrParams { attack: 0.003, decay: 0.01, sustain: 1.0, release: 0.012 };
 
-const WAVES: &[&str] = &["Scie", "Carré"];
+const WAVES: &[&str] = &["Saw", "Square"];
 
 const P_WAVE: u32 = 0;
 const P_CUTOFF: u32 = 1;
@@ -36,16 +36,16 @@ const P_TUNE: u32 = 8;
 const P_VOLUME: u32 = 9;
 
 static PARAMS: [ParamInfo; 10] = [
-    ParamInfo::choice(P_WAVE, "Onde", WAVES, 0).group("Oscillateur"),
-    ParamInfo::new(P_TUNE, "Accord", -12.0, 12.0, 0.0, Unit::Semitones).group("Oscillateur"),
-    ParamInfo::new(P_CUTOFF, "Coupure", 40.0, 8_000.0, 400.0, Unit::Hz).log().group("Filtre"),
-    ParamInfo::new(P_RESO, "Résonance", 0.0, 1.0, 0.7, Unit::Percent).group("Filtre"),
-    ParamInfo::new(P_ENV_MOD, "Modulation", 0.0, 1.0, 0.5, Unit::Percent).group("Filtre"),
-    ParamInfo::new(P_DECAY, "Déclin", 0.03, 3.0, 0.4, Unit::Seconds).log().group("Filtre"),
-    ParamInfo::new(P_ACCENT, "Accent", 0.0, 1.0, 0.6, Unit::Percent).group("Jeu"),
-    ParamInfo::new(P_SLIDE, "Glissé", 0.01, 0.5, 0.06, Unit::Seconds).log().group("Jeu"),
-    ParamInfo::new(P_DIST, "Distorsion", 0.0, 1.0, 0.2, Unit::Percent).group("Sortie"),
-    ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -6.0, Unit::Db).group("Sortie"),
+    ParamInfo::choice(P_WAVE, "Wave", WAVES, 0).group("Oscillator"),
+    ParamInfo::new(P_TUNE, "Tune", -12.0, 12.0, 0.0, Unit::Semitones).group("Oscillator"),
+    ParamInfo::new(P_CUTOFF, "Cutoff", 40.0, 8_000.0, 400.0, Unit::Hz).log().group("Filter"),
+    ParamInfo::new(P_RESO, "Resonance", 0.0, 1.0, 0.7, Unit::Percent).group("Filter"),
+    ParamInfo::new(P_ENV_MOD, "Modulation", 0.0, 1.0, 0.5, Unit::Percent).group("Filter"),
+    ParamInfo::new(P_DECAY, "Decay", 0.03, 3.0, 0.4, Unit::Seconds).log().group("Filter"),
+    ParamInfo::new(P_ACCENT, "Accent", 0.0, 1.0, 0.6, Unit::Percent).group("Performance"),
+    ParamInfo::new(P_SLIDE, "Slide", 0.01, 0.5, 0.06, Unit::Seconds).log().group("Performance"),
+    ParamInfo::new(P_DIST, "Distortion", 0.0, 1.0, 0.2, Unit::Percent).group("Output"),
+    ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -6.0, Unit::Db).group("Output"),
 ];
 
 /// Acid 303, monophonique.

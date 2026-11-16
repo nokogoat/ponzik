@@ -15,11 +15,11 @@ const P_OUTPUT: u32 = 3;
 const P_MIX: u32 = 4;
 
 static PARAMS: [ParamInfo; 5] = [
-    ParamInfo::choice(P_TYPE, "Type", &["Doux", "Dur", "Lampe", "Repli", "Redresseur"], 0).group("Saturation"),
+    ParamInfo::choice(P_TYPE, "Type", &["Soft", "Hard", "Tube", "Wavefold", "Rectifier"], 0).group("Saturation"),
     ParamInfo::new(P_DRIVE, "Drive", 0.0, 36.0, 6.0, Unit::Db).group("Saturation"),
-    ParamInfo::new(P_TONE, "Ton", -12.0, 12.0, 0.0, Unit::Db).group("Couleur"),
-    ParamInfo::new(P_OUTPUT, "Sortie", -24.0, 12.0, 0.0, Unit::Db).group("Sortie"),
-    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Sortie"),
+    ParamInfo::new(P_TONE, "Tone", -12.0, 12.0, 0.0, Unit::Db).group("Color"),
+    ParamInfo::new(P_OUTPUT, "Output", -24.0, 12.0, 0.0, Unit::Db).group("Output"),
+    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Output"),
 ];
 
 /// Pivot de la bascule grave/aigu du réglage « Ton ».

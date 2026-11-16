@@ -12,23 +12,23 @@ const P_CYCLE: u32 = 3;
 const P_SMOOTHING: u32 = 4;
 const P_MIX: u32 = 5;
 
-const MODES: &[&str] = &["Hachoir", "Répétition", "Ralenti"];
+const MODES: &[&str] = &["Chopper", "Repeat", "Tape Stop"];
 const DIVISIONS: &[&str] = &["1/32", "1/16", "1/8", "1/4"];
 const DIVISION_BEATS: [f32; 4] = [0.125, 0.25, 0.5, 1.0];
-const CYCLES: &[&str] = &["1/4", "1/2", "1 mesure"];
+const CYCLES: &[&str] = &["1/4", "1/2", "1 bar"];
 const CYCLE_BEATS: [f32; 3] = [1.0, 2.0, 4.0];
-const PATTERNS: &[&str] = &["Alterné", "Pointé", "Syncopé", "Rafale"];
+const PATTERNS: &[&str] = &["Alternate", "Dotted", "Syncopated", "Burst"];
 /// Motifs du hachoir sur 16 pas, bit de poids faible = premier pas.
 const PATTERN_BITS: [u16; 4] =
     [0b0101_0101_0101_0101, 0b0110_1101_1011_0110, 0b1001_0010_0100_1001, 0b0010_1111_0000_1111];
 
 static PARAMS: [ParamInfo; 6] = [
-    ParamInfo::choice(P_MODE, "Mode", MODES, 0).group("Tranche"),
-    ParamInfo::choice(P_DIVISION, "Pas", DIVISIONS, 1).group("Rythme"),
-    ParamInfo::choice(P_PATTERN, "Motif", PATTERNS, 0).group("Rythme"),
-    ParamInfo::choice(P_CYCLE, "Cycle", CYCLES, 2).group("Rythme"),
-    ParamInfo::new(P_SMOOTHING, "Lissage", 0.001, 0.05, 0.004, Unit::Seconds).log().group("Tranche"),
-    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Sortie"),
+    ParamInfo::choice(P_MODE, "Mode", MODES, 0).group("Stutter"),
+    ParamInfo::choice(P_DIVISION, "Step", DIVISIONS, 1).group("Rhythm"),
+    ParamInfo::choice(P_PATTERN, "Pattern", PATTERNS, 0).group("Rhythm"),
+    ParamInfo::choice(P_CYCLE, "Cycle", CYCLES, 2).group("Rhythm"),
+    ParamInfo::new(P_SMOOTHING, "Smoothing", 0.001, 0.05, 0.004, Unit::Seconds).log().group("Stutter"),
+    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Output"),
 ];
 
 /// Pas le plus long au tempo le plus lent (tranche de répétition).

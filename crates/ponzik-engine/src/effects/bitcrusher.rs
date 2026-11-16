@@ -9,9 +9,9 @@ const P_DOWNSAMPLE: u32 = 1;
 const P_MIX: u32 = 2;
 
 static PARAMS: [ParamInfo; 3] = [
-    ParamInfo::new(P_BITS, "Bits", 1.0, 24.0, 8.0, Unit::None).group("Réduction"),
-    ParamInfo::new(P_DOWNSAMPLE, "Sous-échantillonnage", 1.0, 64.0, 1.0, Unit::Ratio).log().group("Réduction"),
-    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Sortie"),
+    ParamInfo::new(P_BITS, "Bits", 1.0, 24.0, 8.0, Unit::None).group("Reduction"),
+    ParamInfo::new(P_DOWNSAMPLE, "Downsample", 1.0, 64.0, 1.0, Unit::Ratio).log().group("Reduction"),
+    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Output"),
 ];
 
 /// Réduction de résolution (bits fractionnaires) et de fréquence d'échantillonnage

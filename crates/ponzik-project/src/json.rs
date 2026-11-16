@@ -3,6 +3,8 @@
 
 use std::fmt::Write as _;
 
+use ponzik_i18n::{tr, tr_fmt};
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Json {
     Null,
@@ -270,7 +272,7 @@ pub fn parse(text: &str) -> Result<Json, String> {
     let v = p.value(0)?;
     p.skip_ws();
     if p.pos < p.src.len() {
-        return Err(p.error("contenu inattendu après la fin du document"));
+        return Err(p.error(tr("unexpected content after the end of the document")));
     }
     Ok(v)
 }
@@ -292,7 +294,7 @@ impl Parser<'_> {
         let line_start = before.iter().rposition(|&b| b == b'\n').map_or(0, |i| i + 1);
         // Colonne en caractères, pas en octets.
         let col = String::from_utf8_lossy(&before[line_start..]).chars().count() + 1;
-        format!("ligne {line}, colonne {col} : {msg}")
+        tr_fmt!("line {}, column {}: {}", line, col, msg)
     }
 
     fn peek(&self) -> Option<u8> {
@@ -310,26 +312,26 @@ impl Parser<'_> {
             self.pos += 1;
             Ok(())
         } else {
-            Err(self.unexpected(&format!("« {} » attendu", b as char)))
+            Err(self.unexpected(&tr_fmt!("expected \"{}\"", b as char)))
         }
     }
 
     fn unexpected(&self, msg: &str) -> String {
         match self.peek() {
-            None => self.error(&format!("fin de texte inattendue, {msg}")),
+            None => self.error(&tr_fmt!("unexpected end of text, {}", msg)),
             Some(_) => {
                 let c = std::str::from_utf8(&self.src[self.pos..])
                     .ok()
                     .and_then(|s| s.chars().next())
                     .unwrap_or('\u{FFFD}');
-                self.error(&format!("caractère « {} » inattendu, {msg}", c.escape_debug()))
+                self.error(&tr_fmt!("unexpected character \"{}\", {}", c.escape_debug().to_string(), msg))
             }
         }
     }
 
     fn value(&mut self, depth: usize) -> Result<Json, String> {
         if depth > MAX_DEPTH {
-            return Err(self.error("imbrication trop profonde"));
+            return Err(self.error(tr("nesting too deep")));
         }
         self.skip_ws();
         match self.peek() {
@@ -340,7 +342,7 @@ impl Parser<'_> {
             Some(b't') => self.keyword("true", Json::Bool(true)),
             Some(b'f') => self.keyword("false", Json::Bool(false)),
             Some(b'n') => self.keyword("null", Json::Null),
-            _ => Err(self.unexpected("valeur attendue")),
+            _ => Err(self.unexpected(tr("expected a value"))),
         }
     }
 
@@ -349,7 +351,7 @@ impl Parser<'_> {
             self.pos += word.len();
             Ok(v)
         } else {
-            Err(self.unexpected("valeur attendue"))
+            Err(self.unexpected(tr("expected a value")))
         }
     }
 
@@ -364,7 +366,7 @@ impl Parser<'_> {
         loop {
             self.skip_ws();
             if self.peek() != Some(b'"') {
-                return Err(self.unexpected("clé entre guillemets attendue"));
+                return Err(self.unexpected(tr("expected a quoted key")));
             }
             let key = self.string()?;
             self.skip_ws();
@@ -378,7 +380,7 @@ impl Parser<'_> {
                     self.pos += 1;
                     return Ok(Json::Obj(pairs));
                 }
-                _ => return Err(self.unexpected("« , » ou « } » attendu")),
+                _ => return Err(self.unexpected(tr("expected \",\" or \"}\""))),
             }
         }
     }
@@ -400,7 +402,7 @@ impl Parser<'_> {
                     self.pos += 1;
                     return Ok(Json::Arr(items));
                 }
-                _ => return Err(self.unexpected("« , » ou « ] » attendu")),
+                _ => return Err(self.unexpected(tr("expected \",\" or \"]\""))),
             }
         }
     }
@@ -419,16 +421,16 @@ impl Parser<'_> {
         }
         let int_start = self.pos;
         match digits(self) {
-            0 => return Err(self.unexpected("chiffre attendu")),
+            0 => return Err(self.unexpected(tr("expected a digit"))),
             n if n > 1 && self.src[int_start] == b'0' => {
-                return Err(self.error_at(int_start, "zéro initial interdit dans un nombre"));
+                return Err(self.error_at(int_start, tr("leading zero not allowed in a number")));
             }
             _ => {}
         }
         if self.peek() == Some(b'.') {
             self.pos += 1;
             if digits(self) == 0 {
-                return Err(self.unexpected("chiffre attendu après la virgule"));
+                return Err(self.unexpected(tr("expected a digit after the decimal point")));
             }
         }
         if let Some(b'e' | b'E') = self.peek() {
@@ -437,21 +439,21 @@ impl Parser<'_> {
                 self.pos += 1;
             }
             if digits(self) == 0 {
-                return Err(self.unexpected("chiffre attendu dans l'exposant"));
+                return Err(self.unexpected(tr("expected a digit in the exponent")));
             }
         }
         // Que de l'ASCII : la conversion ne peut pas échouer.
         let text = std::str::from_utf8(&self.src[start..self.pos]).unwrap_or("0");
-        text.parse::<f64>().map(Json::Num).map_err(|_| self.error_at(start, "nombre invalide"))
+        text.parse::<f64>().map(Json::Num).map_err(|_| self.error_at(start, tr("invalid number")))
     }
 
     fn hex4(&mut self) -> Result<u32, String> {
         let at = self.pos;
-        let hex = self.src.get(self.pos..self.pos + 4).ok_or_else(|| self.error("séquence \\u incomplète"))?;
-        let text = std::str::from_utf8(hex).map_err(|_| self.error_at(at, "séquence \\u invalide"))?;
-        let v = u32::from_str_radix(text, 16).map_err(|_| self.error_at(at, "séquence \\u invalide"))?;
+        let hex = self.src.get(self.pos..self.pos + 4).ok_or_else(|| self.error(tr("incomplete \\u sequence")))?;
+        let text = std::str::from_utf8(hex).map_err(|_| self.error_at(at, tr("invalid \\u sequence")))?;
+        let v = u32::from_str_radix(text, 16).map_err(|_| self.error_at(at, tr("invalid \\u sequence")))?;
         if !text.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err(self.error_at(at, "séquence \\u invalide"));
+            return Err(self.error_at(at, tr("invalid \\u sequence")));
         }
         self.pos += 4;
         Ok(v)
@@ -473,14 +475,14 @@ impl Parser<'_> {
             // `src` vient d'un `&str` et les coupures tombent sur de l'ASCII : UTF-8 valide.
             out.push_str(std::str::from_utf8(&self.src[run..self.pos]).unwrap_or("\u{FFFD}"));
             match self.peek() {
-                None => return Err(self.error_at(open, "chaîne non terminée")),
+                None => return Err(self.error_at(open, tr("unterminated string"))),
                 Some(b'"') => {
                     self.pos += 1;
                     return Ok(out);
                 }
                 Some(b'\\') => {
                     self.pos += 1;
-                    let esc = self.peek().ok_or_else(|| self.error_at(open, "chaîne non terminée"))?;
+                    let esc = self.peek().ok_or_else(|| self.error_at(open, tr("unterminated string")))?;
                     self.pos += 1;
                     match esc {
                         b'"' => out.push('"'),
@@ -497,24 +499,24 @@ impl Parser<'_> {
                             let code = match hi {
                                 0xD800..=0xDBFF => {
                                     if !self.src[self.pos..].starts_with(b"\\u") {
-                                        return Err(self.error_at(at, "demi-paire UTF-16 sans sa seconde moitié"));
+                                        return Err(self.error_at(at, tr("UTF-16 high surrogate without its low surrogate")));
                                     }
                                     self.pos += 2;
                                     let lo = self.hex4()?;
                                     if !(0xDC00..=0xDFFF).contains(&lo) {
-                                        return Err(self.error_at(at, "paire UTF-16 invalide"));
+                                        return Err(self.error_at(at, tr("invalid UTF-16 surrogate pair")));
                                     }
                                     0x10000 + ((hi - 0xD800) << 10) + (lo - 0xDC00)
                                 }
-                                0xDC00..=0xDFFF => return Err(self.error_at(at, "demi-paire UTF-16 isolée")),
+                                0xDC00..=0xDFFF => return Err(self.error_at(at, tr("lone UTF-16 low surrogate"))),
                                 c => c,
                             };
-                            out.push(char::from_u32(code).ok_or_else(|| self.error_at(at, "point de code invalide"))?);
+                            out.push(char::from_u32(code).ok_or_else(|| self.error_at(at, tr("invalid code point")))?);
                         }
-                        _ => return Err(self.error_at(self.pos - 2, "échappement inconnu")),
+                        _ => return Err(self.error_at(self.pos - 2, tr("unknown escape"))),
                     }
                 }
-                Some(_) => return Err(self.error("caractère de contrôle interdit dans une chaîne")),
+                Some(_) => return Err(self.error(tr("control character not allowed in a string"))),
             }
         }
     }
@@ -541,12 +543,12 @@ mod tests {
     fn string_escapes_and_surrogates() {
         let v = parse(r#""a\"b\\c\/d\b\f\n\r\té€🎵""#).unwrap();
         assert_eq!(v.as_str(), Some("a\"b\\c/d\u{08}\u{0C}\n\r\té€🎵"));
-        assert!(parse(r#""\ud83c""#).unwrap_err().contains("demi-paire"));
-        assert!(parse(r#""\udfb5""#).unwrap_err().contains("isolée"));
-        assert!(parse(r#""\ud83cA""#).unwrap_err().contains("paire"));
+        assert!(parse(r#""\ud83c""#).unwrap_err().contains("without its low surrogate"));
+        assert!(parse(r#""\udfb5""#).unwrap_err().contains("lone"));
+        assert!(parse(r#""\ud83cA""#).unwrap_err().contains("surrogate"));
         assert!(parse(r#""\uZZZZ""#).is_err());
-        assert!(parse(r#""\q""#).unwrap_err().contains("échappement"));
-        assert!(parse("\"a\nb\"").unwrap_err().contains("contrôle"));
+        assert!(parse(r#""\q""#).unwrap_err().contains("escape"));
+        assert!(parse("\"a\nb\"").unwrap_err().contains("control character"));
         // Écriture puis relecture : identique.
         let s = "guillemet \" barre \\ ligne\n tab\t ctrl\u{01} é 🎵 \u{2028}";
         let text = Json::Str(s.into()).pretty();
@@ -556,12 +558,12 @@ mod tests {
     #[test]
     fn errors_have_line_and_column() {
         let e = parse("{\n  \"a\": 1,\n  \"b\" 2\n}").unwrap_err();
-        assert!(e.starts_with("ligne 3, colonne 7"), "{e}");
+        assert!(e.starts_with("line 3, column 7"), "{e}");
         let e = parse("[1, 2").unwrap_err();
-        assert!(e.contains("fin de texte"), "{e}");
+        assert!(e.contains("end of text"), "{e}");
         let e = parse("\"é\" x").unwrap_err();
-        assert!(e.starts_with("ligne 1, colonne 5"), "{e}");
-        assert!(parse("01").unwrap_err().contains("zéro"));
+        assert!(e.starts_with("line 1, column 5"), "{e}");
+        assert!(parse("01").unwrap_err().contains("leading zero"));
         assert!(parse("1.").is_err());
         assert!(parse("-").is_err());
         assert!(parse("1e").is_err());
@@ -569,7 +571,7 @@ mod tests {
         assert!(parse("{\"a\":1,}").is_err());
         assert!(parse("tru").is_err());
         assert!(parse("").is_err());
-        assert!(parse(&"[".repeat(1_000)).unwrap_err().contains("profonde"));
+        assert!(parse(&"[".repeat(1_000)).unwrap_err().contains("too deep"));
         assert!(parse("\u{FEFF}[1]").is_ok());
     }
 

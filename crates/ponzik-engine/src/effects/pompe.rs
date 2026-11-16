@@ -12,17 +12,17 @@ const P_DEPTH: u32 = 2;
 const P_OFFSET: u32 = 3;
 const P_MIX: u32 = 4;
 
-const RATES: &[&str] = &["1/4", "1/2", "1 mesure", "1/8", "1/16"];
+const RATES: &[&str] = &["1/4", "1/2", "1 bar", "1/8", "1/16"];
 /// Durée de chaque cadence en noires.
 const RATE_BEATS: [f32; 5] = [1.0, 2.0, 4.0, 0.5, 0.25];
-const SHAPES: &[&str] = &["Douce", "Sèche", "Longue", "Rebond"];
+const SHAPES: &[&str] = &["Smooth", "Tight", "Long", "Bounce"];
 
 static PARAMS: [ParamInfo; 5] = [
-    ParamInfo::choice(P_RATE, "Cadence", RATES, 0).group("Rythme"),
-    ParamInfo::choice(P_SHAPE, "Courbe", SHAPES, 0).group("Rythme"),
-    ParamInfo::new(P_DEPTH, "Profondeur", 0.0, 1.0, 0.8, Unit::Percent).group("Pompe"),
-    ParamInfo::new(P_OFFSET, "Décalage", 0.0, 1.0, 0.0, Unit::Percent).group("Rythme"),
-    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Pompe"),
+    ParamInfo::choice(P_RATE, "Division", RATES, 0).group("Rhythm"),
+    ParamInfo::choice(P_SHAPE, "Curve", SHAPES, 0).group("Rhythm"),
+    ParamInfo::new(P_DEPTH, "Depth", 0.0, 1.0, 0.8, Unit::Percent).group("Pump"),
+    ParamInfo::new(P_OFFSET, "Offset", 0.0, 1.0, 0.0, Unit::Percent).group("Rhythm"),
+    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Pump"),
 ];
 
 /// Atténuation dans [0, 1] à la position `t` ∈ [0, 1) du cycle (1 au début du temps).

@@ -23,7 +23,7 @@ pub struct PulseParams {
     pub gain: f32,
 }
 
-const WAVES: &[&str] = &["Sinus", "Scie", "Carré", "Triangle"];
+const WAVES: &[&str] = &["Sine", "Saw", "Square", "Triangle"];
 const P_WAVE: u32 = 0;
 const P_DETUNE: u32 = 1;
 const P_CUTOFF: u32 = 2;
@@ -37,17 +37,17 @@ const P_RELEASE: u32 = 9;
 const P_VOLUME: u32 = 10;
 
 static PARAMS: [ParamInfo; 11] = [
-    ParamInfo::choice(P_WAVE, "Onde", WAVES, 1).group("Oscillateurs"),
-    ParamInfo::new(P_DETUNE, "Désaccord", 0.0, 50.0, 7.0, Unit::Cents).group("Oscillateurs"),
-    ParamInfo::new(P_CUTOFF, "Coupure", 40.0, 16_000.0, 400.0, Unit::Hz).log().group("Filtre"),
-    ParamInfo::new(P_RESO, "Résonance", 0.5, 10.0, 1.2, Unit::None).log().group("Filtre"),
-    ParamInfo::new(P_FENV, "Enveloppe", 0.0, 10_000.0, 3_000.0, Unit::Hz).group("Filtre"),
-    ParamInfo::new(P_FDECAY, "Déclin filtre", 0.01, 4.0, 0.25, Unit::Seconds).log().group("Filtre"),
-    ParamInfo::new(P_ATTACK, "Attaque", 0.001, 2.0, 0.004, Unit::Seconds).log().group("Amplitude"),
-    ParamInfo::new(P_DECAY, "Déclin", 0.005, 4.0, 0.2, Unit::Seconds).log().group("Amplitude"),
-    ParamInfo::new(P_SUSTAIN, "Maintien", 0.0, 1.0, 0.6, Unit::Percent).group("Amplitude"),
-    ParamInfo::new(P_RELEASE, "Relâche", 0.005, 4.0, 0.12, Unit::Seconds).log().group("Amplitude"),
-    ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -8.0, Unit::Db).group("Amplitude"),
+    ParamInfo::choice(P_WAVE, "Wave", WAVES, 1).group("Oscillators"),
+    ParamInfo::new(P_DETUNE, "Detune", 0.0, 50.0, 7.0, Unit::Cents).group("Oscillators"),
+    ParamInfo::new(P_CUTOFF, "Cutoff", 40.0, 16_000.0, 400.0, Unit::Hz).log().group("Filter"),
+    ParamInfo::new(P_RESO, "Resonance", 0.5, 10.0, 1.2, Unit::None).log().group("Filter"),
+    ParamInfo::new(P_FENV, "Envelope", 0.0, 10_000.0, 3_000.0, Unit::Hz).group("Filter"),
+    ParamInfo::new(P_FDECAY, "Filter Decay", 0.01, 4.0, 0.25, Unit::Seconds).log().group("Filter"),
+    ParamInfo::new(P_ATTACK, "Attack", 0.001, 2.0, 0.004, Unit::Seconds).log().group("Amp"),
+    ParamInfo::new(P_DECAY, "Decay", 0.005, 4.0, 0.2, Unit::Seconds).log().group("Amp"),
+    ParamInfo::new(P_SUSTAIN, "Sustain", 0.0, 1.0, 0.6, Unit::Percent).group("Amp"),
+    ParamInfo::new(P_RELEASE, "Release", 0.005, 4.0, 0.12, Unit::Seconds).log().group("Amp"),
+    ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -8.0, Unit::Db).group("Amp"),
 ];
 
 impl Default for Pulse {

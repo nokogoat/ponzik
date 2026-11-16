@@ -3,6 +3,8 @@
 
 use ponzik_engine::{AutoScope, AutoTarget, Note, PlayMode, TICKS_PER_BAR};
 
+use ponzik_i18n::tr;
+
 use crate::{ClipDef, EffectDef, InstrumentDef, Project};
 
 const T32: u32 = 12;
@@ -50,31 +52,31 @@ pub fn demo_breakcore() -> Project {
 
     // Percussions DrumSynth : 0 Type, 1 Accord, 2 Longueur, 3 Brillance, 4 Volume.
     // Kick : 1 Hauteur de départ, 2 Chute, 4 Déclin, 5 Clic, 8 Saturation, 10 Volume.
-    let kick = p.add_channel("Kick", inst("kick", &[(1, 36.0), (2, 0.04), (4, 0.45), (5, 0.6), (8, 0.35), (10, -2.0)]), 60);
-    let snare = p.add_channel("Snare", inst("drumsynth", &[(0, 1.0), (1, 2.0), (2, 0.8), (3, 0.75)]), 60);
-    let ghost = p.add_channel("Ghost", inst("drumsynth", &[(0, 1.0), (1, 6.0), (2, 0.4), (3, 0.9), (4, -5.0)]), 60);
-    let hat = p.add_channel("Hat", inst("drumsynth", &[(0, 3.0), (2, 0.6), (3, 0.8), (4, -3.0)]), 60);
-    let ride = p.add_channel("Ride", inst("drumsynth", &[(0, 4.0), (1, 5.0), (2, 0.5), (4, -9.0)]), 60);
+    let kick = p.add_channel(tr("Kick"), inst("kick", &[(1, 36.0), (2, 0.04), (4, 0.45), (5, 0.6), (8, 0.35), (10, -2.0)]), 60);
+    let snare = p.add_channel(tr("Snare"), inst("drumsynth", &[(0, 1.0), (1, 2.0), (2, 0.8), (3, 0.75)]), 60);
+    let ghost = p.add_channel(tr("Ghost"), inst("drumsynth", &[(0, 1.0), (1, 6.0), (2, 0.4), (3, 0.9), (4, -5.0)]), 60);
+    let hat = p.add_channel(tr("Hat"), inst("drumsynth", &[(0, 3.0), (2, 0.6), (3, 0.8), (4, -3.0)]), 60);
+    let ride = p.add_channel(tr("Ride"), inst("drumsynth", &[(0, 4.0), (1, 5.0), (2, 0.5), (4, -9.0)]), 60);
     // Acid 303 : 1 Coupure, 2 Résonance, 3 Modulation, 4 Déclin, 5 Accent, 6 Glissé, 7 Distorsion, 9 Volume.
     let acid = p.add_channel(
-        "Acid",
+        tr("Acid"),
         inst("bass303", &[(1, 260.0), (2, 0.86), (3, 0.8), (4, 0.22), (5, 0.9), (6, 0.05), (7, 0.55), (9, -9.0)]),
         41,
     );
     // Pulse en sinus : sub.
-    let sub = p.add_channel("Sub", inst("pulse", &[(0, 0.0), (2, 180.0), (6, 0.003), (9, 0.08), (10, -7.0)]), 29);
+    let sub = p.add_channel(tr("Sub"), inst("pulse", &[(0, 0.0), (2, 180.0), (6, 0.003), (9, 0.08), (10, -7.0)]), 29);
     // FM : stab court, opérateur 2 plus riche.
     let stab = p.add_channel(
-        "Stab",
+        tr("Stab"),
         inst("fm", &[(4, 0.25), (5, 0.0), (12, 0.55), (10, 3.0), (14, 0.18), (46, -15.0)]),
         53,
     );
     // Wave : nappe large, attaque lente.
-    let pad = p.add_channel("Nappe", inst("wavetable", &[(1, 0.55), (2, 5.0), (3, 0.35), (20, 0.6), (23, 1.5), (41, -20.0)]), 53);
+    let pad = p.add_channel(tr("Pad"), inst("wavetable", &[(1, 0.55), (2, 5.0), (3, 0.35), (20, 0.6), (23, 1.5), (41, -20.0)]), 53);
 
     // Mixer : les percussions passent par un bus batterie.
     let drum_bus = 12;
-    p.tracks[drum_bus].name = "Batterie".into();
+    p.tracks[drum_bus].name = tr("Drums").into();
     for ch in [kick, snare, ghost, hat, ride] {
         let t = p.channels[ch].track;
         p.tracks[t].output = drum_bus;
@@ -93,7 +95,7 @@ pub fn demo_breakcore() -> Project {
     let stab_t = p.channels[stab].track;
     p.tracks[stab_t].inserts[0] = fx("delay", &[(3, 1.0), (2, 0.5), (6, 0.35)]);
     let reverb_bus = 10;
-    p.tracks[reverb_bus].name = "Réverbe".into();
+    p.tracks[reverb_bus].name = tr("Reverb").into();
     // Shimmer : 0 Taille, 1 Déclin, 2 Shimmer, 5 Mix.
     p.tracks[reverb_bus].inserts[0] = fx("shimmer", &[(0, 0.8), (1, 3.5), (2, 0.35), (5, 1.0)]);
     p.tracks[reverb_bus].gain = 0.6;
@@ -121,7 +123,7 @@ pub fn demo_breakcore() -> Project {
 
     // Pattern 2 : haché, kicks en contretemps, roulement qui monte d'une octave.
     let chop = p.add_pattern();
-    p.patterns[chop].name = "Chop".into();
+    p.patterns[chop].name = tr("Chop").into();
     p.patterns[chop].len = 2 * TICKS_PER_BAR;
     hits(&mut p, chop, kick, 0, &[(0, 1.0), (3, 0.9), (6, 0.9), (8, 1.0), (11, 0.85), (14, 0.9)], 60);
     hits(&mut p, chop, snare, 0, &[(4, 1.0), (12, 1.0), (13, 0.7)], 60);
@@ -136,7 +138,7 @@ pub fn demo_breakcore() -> Project {
 
     // Pattern 3 : ligne acide en Fa mineur, glissés et accents, sub et stabs.
     let acid_p = p.add_pattern();
-    p.patterns[acid_p].name = "Acid".into();
+    p.patterns[acid_p].name = tr("Acid").into();
     p.patterns[acid_p].len = 2 * TICKS_PER_BAR;
     let line: [(i32, f32, bool); 16] = [
         (0, 0.95, false),
@@ -174,7 +176,7 @@ pub fn demo_breakcore() -> Project {
 
     // Pattern 4 : respiration, nappe et stabs.
     let breath = p.add_pattern();
-    p.patterns[breath].name = "Respiration".into();
+    p.patterns[breath].name = tr("Breath").into();
     p.patterns[breath].len = 2 * TICKS_PER_BAR;
     for (bar, chord) in [(0u32, [53u8, 56, 60]), (1, [51, 55, 58])] {
         for key in chord {
@@ -187,7 +189,7 @@ pub fn demo_breakcore() -> Project {
 
     // Pattern 5 : drill, une mesure de triples croches qui accélère vers la reprise.
     let drill = p.add_pattern();
-    p.patterns[drill].name = "Drill".into();
+    p.patterns[drill].name = tr("Drill").into();
     roll(&mut p, drill, snare, 0, 0, 16, 55, 17);
     roll(&mut p, drill, kick, 0, 8, 16, 58, 6);
 

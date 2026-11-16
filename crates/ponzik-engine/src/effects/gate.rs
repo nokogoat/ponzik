@@ -11,11 +11,11 @@ const P_RELEASE: u32 = 3;
 const P_RANGE: u32 = 4;
 
 static PARAMS: [ParamInfo; 5] = [
-    ParamInfo::new(P_THRESHOLD, "Seuil", -80.0, 0.0, -40.0, Unit::Db).group("Porte"),
-    ParamInfo::new(P_ATTACK, "Attaque", 0.000_1, 0.1, 0.001, Unit::Seconds).log().group("Temps"),
-    ParamInfo::new(P_HOLD, "Maintien", 0.0, 0.5, 0.05, Unit::Seconds).group("Temps"),
-    ParamInfo::new(P_RELEASE, "Relâche", 0.005, 2.0, 0.1, Unit::Seconds).log().group("Temps"),
-    ParamInfo::new(P_RANGE, "Plage", -80.0, 0.0, -80.0, Unit::Db).group("Porte"),
+    ParamInfo::new(P_THRESHOLD, "Threshold", -80.0, 0.0, -40.0, Unit::Db).group("Gate"),
+    ParamInfo::new(P_ATTACK, "Attack", 0.000_1, 0.1, 0.001, Unit::Seconds).log().group("Time"),
+    ParamInfo::new(P_HOLD, "Hold", 0.0, 0.5, 0.05, Unit::Seconds).group("Time"),
+    ParamInfo::new(P_RELEASE, "Release", 0.005, 2.0, 0.1, Unit::Seconds).log().group("Time"),
+    ParamInfo::new(P_RANGE, "Range", -80.0, 0.0, -80.0, Unit::Db).group("Gate"),
 ];
 
 /// Hystérésis : la porte se referme 4 dB sous le seuil d'ouverture.

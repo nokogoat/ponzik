@@ -16,14 +16,14 @@ const P_INVERT_R: u32 = 6;
 const P_MUTE: u32 = 7;
 
 static PARAMS: [ParamInfo; 8] = [
-    ParamInfo::new(P_GAIN, "Gain", -80.0, 24.0, 0.0, Unit::Db).group("Niveau"),
-    ParamInfo::new(P_PAN, "Balance", -1.0, 1.0, 0.0, Unit::Pan).group("Niveau"),
-    ParamInfo::new(P_WIDTH, "Largeur", 0.0, 2.0, 1.0, Unit::Percent).group("Stéréo"),
-    ParamInfo::choice(P_BASS_MONO, "Basses mono", OFF_ON, 0).group("Stéréo"),
-    ParamInfo::new(P_BASS_FREQ, "Fréquence mono", 20.0, 500.0, 120.0, Unit::Hz).log().group("Stéréo"),
-    ParamInfo::choice(P_INVERT_L, "Inverser G", OFF_ON, 0).group("Phase"),
-    ParamInfo::choice(P_INVERT_R, "Inverser D", OFF_ON, 0).group("Phase"),
-    ParamInfo::choice(P_MUTE, "Muet", OFF_ON, 0).group("Niveau"),
+    ParamInfo::new(P_GAIN, "Gain", -80.0, 24.0, 0.0, Unit::Db).group("Level"),
+    ParamInfo::new(P_PAN, "Balance", -1.0, 1.0, 0.0, Unit::Pan).group("Level"),
+    ParamInfo::new(P_WIDTH, "Width", 0.0, 2.0, 1.0, Unit::Percent).group("Stereo"),
+    ParamInfo::choice(P_BASS_MONO, "Bass Mono", OFF_ON, 0).group("Stereo"),
+    ParamInfo::new(P_BASS_FREQ, "Mono Frequency", 20.0, 500.0, 120.0, Unit::Hz).log().group("Stereo"),
+    ParamInfo::choice(P_INVERT_L, "Invert L", OFF_ON, 0).group("Phase"),
+    ParamInfo::choice(P_INVERT_R, "Invert R", OFF_ON, 0).group("Phase"),
+    ParamInfo::choice(P_MUTE, "Mute", OFF_ON, 0).group("Level"),
 ];
 
 /// Séparation Linkwitz-Riley d'ordre 4 : graves + aigus = passe-tout.

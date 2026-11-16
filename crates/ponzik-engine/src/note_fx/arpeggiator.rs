@@ -10,14 +10,14 @@ const P_GATE: u32 = 3;
 /// Notes tenues gardées ; au-delà, les nouvelles sont ignorées.
 const MAX_HELD: usize = 32;
 
-const MODES: &[&str] = &["Montant", "Descendant", "Montant-descendant", "Aléatoire", "Ordre joué"];
+const MODES: &[&str] = &["Up", "Down", "Up-Down", "Random", "As Played"];
 const OCTAVES: &[&str] = &["1", "2", "3", "4"];
 
 static PARAMS: [ParamInfo; 4] = [
-    ParamInfo::choice(P_RATE, "Cadence", RATES, 3).group("Rythme"),
-    ParamInfo::choice(P_MODE, "Mode", MODES, 0).group("Motif"),
-    ParamInfo::choice(P_OCTAVES, "Octaves", OCTAVES, 0).group("Motif"),
-    ParamInfo::new(P_GATE, "Durée", 0.05, 1.0, 0.5, Unit::Percent).group("Rythme"),
+    ParamInfo::choice(P_RATE, "Division", RATES, 3).group("Rhythm"),
+    ParamInfo::choice(P_MODE, "Mode", MODES, 0).group("Pattern"),
+    ParamInfo::choice(P_OCTAVES, "Octaves", OCTAVES, 0).group("Pattern"),
+    ParamInfo::new(P_GATE, "Gate Length", 0.05, 1.0, 0.5, Unit::Percent).group("Rhythm"),
 ];
 
 /// Arpégiateur synchronisé : joue une à une les notes tenues, sur une à quatre

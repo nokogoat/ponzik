@@ -16,14 +16,14 @@ const P_MAKEUP: u32 = 6;
 const P_MIX: u32 = 7;
 
 static PARAMS: [ParamInfo; 8] = [
-    ParamInfo::new(P_THRESHOLD, "Seuil", -60.0, 0.0, -18.0, Unit::Db).group("Compression"),
+    ParamInfo::new(P_THRESHOLD, "Threshold", -60.0, 0.0, -18.0, Unit::Db).group("Compression"),
     ParamInfo::new(P_RATIO, "Ratio", 1.0, 20.0, 4.0, Unit::Ratio).log().group("Compression"),
-    ParamInfo::new(P_KNEE, "Genou", 0.0, 24.0, 6.0, Unit::Db).group("Compression"),
-    ParamInfo::choice(P_DETECTOR, "Détection", &["Crête", "RMS"], 0).group("Compression"),
-    ParamInfo::new(P_ATTACK, "Attaque", 0.000_1, 0.2, 0.01, Unit::Seconds).log().group("Temps"),
-    ParamInfo::new(P_RELEASE, "Relâche", 0.01, 2.0, 0.15, Unit::Seconds).log().group("Temps"),
-    ParamInfo::new(P_MAKEUP, "Compensation", 0.0, 24.0, 0.0, Unit::Db).group("Sortie"),
-    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Sortie"),
+    ParamInfo::new(P_KNEE, "Knee", 0.0, 24.0, 6.0, Unit::Db).group("Compression"),
+    ParamInfo::choice(P_DETECTOR, "Detection", &["Peak", "RMS"], 0).group("Compression"),
+    ParamInfo::new(P_ATTACK, "Attack", 0.000_1, 0.2, 0.01, Unit::Seconds).log().group("Time"),
+    ParamInfo::new(P_RELEASE, "Release", 0.01, 2.0, 0.15, Unit::Seconds).log().group("Time"),
+    ParamInfo::new(P_MAKEUP, "Makeup", 0.0, 24.0, 0.0, Unit::Db).group("Output"),
+    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 1.0, Unit::Percent).group("Output"),
 ];
 
 /// Réduction de gain (dB, positive) d'un niveau `x` dB, genou doux de largeur `knee`.

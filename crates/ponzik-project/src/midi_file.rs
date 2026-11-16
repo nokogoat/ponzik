@@ -5,6 +5,8 @@ use std::collections::VecDeque;
 
 use ponzik_engine::{Note, PPQ, TICKS_PER_BAR};
 
+use ponzik_i18n::{tr, tr_fmt};
+
 use crate::{InstrumentDef, PatternDef, Project};
 
 /// Canal MIDI de la batterie (canal 10, numéroté 9 à partir de 0).
@@ -43,7 +45,7 @@ struct Reader<'a> {
 
 impl<'a> Reader<'a> {
     fn take(&mut self, n: usize) -> Result<&'a [u8], String> {
-        let end = self.pos.checked_add(n).filter(|&e| e <= self.bytes.len()).ok_or("fichier MIDI tronqué")?;
+        let end = self.pos.checked_add(n).filter(|&e| e <= self.bytes.len()).ok_or(tr("truncated MIDI file"))?;
         let s = &self.bytes[self.pos..end];
         self.pos = end;
         Ok(s)
@@ -68,7 +70,7 @@ impl<'a> Reader<'a> {
                 return Ok(v);
             }
         }
-        Err("quantité de longueur variable invalide".into())
+        Err(tr("invalid variable-length quantity").into())
     }
 
     fn done(&self) -> bool {
@@ -107,7 +109,7 @@ fn read_track(
         let mut status = r.u8()?;
         let first_data = if status < 0x80 {
             let data = status;
-            status = running.ok_or("octet de données sans statut (running status absent)")?;
+            status = running.ok_or(tr("data byte without a status (no running status)"))?;
             Some(data)
         } else {
             None
@@ -141,7 +143,7 @@ fn read_track(
                 let len = r.vlq()? as usize;
                 r.take(len)?;
             }
-            0xf1..=0xfe => return Err(format!("message système inattendu dans une piste : {status:#04x}")),
+            0xf1..=0xfe => return Err(tr_fmt!("unexpected system message in a track: {}", format!("{status:#04x}"))),
             _ => {
                 running = Some(status);
                 let a = match first_data {
@@ -179,23 +181,23 @@ fn read_track(
 pub fn read_smf(bytes: &[u8]) -> Result<MidiFile, String> {
     let mut r = Reader { bytes, pos: 0 };
     if r.take(4).ok() != Some(b"MThd".as_slice()) {
-        return Err("ce n'est pas un fichier MIDI (en-tête MThd absent)".into());
+        return Err(tr("not a MIDI file (no MThd header)").into());
     }
     let header_len = r.u32()? as usize;
     if header_len < 6 {
-        return Err("en-tête MIDI trop court".into());
+        return Err(tr("MIDI header too short").into());
     }
     let header = r.take(header_len)?;
     let format = u16::from_be_bytes([header[0], header[1]]);
     let division = u16::from_be_bytes([header[4], header[5]]);
     if format > 1 {
-        return Err(format!("format MIDI {format} non pris en charge (seuls les formats 0 et 1 le sont)"));
+        return Err(tr_fmt!("MIDI format {} not supported (only formats 0 and 1 are)", format));
     }
     if division & 0x8000 != 0 {
-        return Err("division temporelle SMPTE non prise en charge (ticks par noire requis)".into());
+        return Err(tr("SMPTE time division not supported (ticks per quarter note required)").into());
     }
     if division == 0 {
-        return Err("division temporelle nulle".into());
+        return Err(tr("zero time division").into());
     }
     let mut tempo = None;
     let mut sig = None;
@@ -230,8 +232,8 @@ pub fn read_smf(bytes: &[u8]) -> Result<MidiFile, String> {
                 .collect();
             notes.sort_by_key(|n| (n.start, n.key));
             let name = match (t.name.is_empty(), several) {
-                (true, _) => format!("Piste {} (canal {})", ti + 1, ch + 1),
-                (false, true) => format!("{} (canal {})", t.name, ch + 1),
+                (true, _) => tr_fmt!("Track {} (channel {})", ti + 1, ch + 1),
+                (false, true) => tr_fmt!("{} (channel {})", t.name.as_str(), ch + 1),
                 (false, false) => t.name.clone(),
             };
             tracks.push(MidiTrack { name, channel: ch, drums: ch == DRUM_CHANNEL, notes });
@@ -416,7 +418,7 @@ mod tests {
         assert_eq!(f.time_signature, (3, 4));
         assert_eq!(f.tracks.len(), 2);
         let (mel, drums) = (&f.tracks[0], &f.tracks[1]);
-        assert_eq!((mel.channel, mel.drums, mel.name.as_str()), (0, false, "Demo (canal 1)"));
+        assert_eq!((mel.channel, mel.drums, mel.name.as_str()), (0, false, "Demo (channel 1)"));
         assert_eq!(keys(mel), [(0, 48, 60), (0, 96, 64)]);
         assert!((mel.notes[0].vel - 100.0 / 127.0).abs() < 1e-6);
         assert_eq!((drums.channel, drums.drums), (9, true));

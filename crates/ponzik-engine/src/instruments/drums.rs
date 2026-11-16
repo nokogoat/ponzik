@@ -26,10 +26,10 @@ const P_TONE: u32 = 3;
 const P_VOLUME: u32 = 4;
 
 static PARAMS: [ParamInfo; 5] = [
-    ParamInfo::choice(P_KIND, "Type", &["Kick", "Caisse claire", "Clap", "Charleston fermée", "Charleston ouverte"], 0),
-    ParamInfo::new(P_TUNE, "Accord", -24.0, 24.0, 0.0, Unit::Semitones),
-    ParamInfo::new(P_DECAY, "Longueur", 0.25, 4.0, 1.0, Unit::None).log(),
-    ParamInfo::new(P_TONE, "Brillance", 0.0, 1.0, 0.5, Unit::Percent),
+    ParamInfo::choice(P_KIND, "Type", &["Kick", "Snare", "Clap", "Closed Hat", "Open Hat"], 0),
+    ParamInfo::new(P_TUNE, "Tune", -24.0, 24.0, 0.0, Unit::Semitones),
+    ParamInfo::new(P_DECAY, "Length", 0.25, 4.0, 1.0, Unit::None).log(),
+    ParamInfo::new(P_TONE, "Brightness", 0.0, 1.0, 0.5, Unit::Percent),
     ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, 0.0, Unit::Db),
 ];
 

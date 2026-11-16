@@ -6,6 +6,8 @@
 
 use std::path::Path;
 
+use ponzik_i18n::{tr, tr_fmt};
+
 use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS, TRACKS};
 use ponzik_engine::{NOTE_FX_SLOTS, Note, PlayMode, TICKS_PER_BAR};
 
@@ -226,7 +228,7 @@ pub fn save_to_file(project: &Project, path: impl AsRef<Path>) -> Result<(), Str
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".tmp");
     let tmp = std::path::PathBuf::from(tmp);
-    let fail = |e: std::io::Error| format!("impossible d'écrire « {} » : {e}", path.display());
+    let fail = |e: std::io::Error| tr_fmt!("Can't write \"{}\": {}", path.display().to_string(), e.to_string());
     std::fs::write(&tmp, save(project)).map_err(fail)?;
     std::fs::rename(&tmp, path).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
@@ -308,7 +310,7 @@ fn load_channel(v: &Json) -> ChannelDef {
     let inst = v.get("instrument");
     let field = |k| inst.and_then(|i| i.get(k));
     ChannelDef {
-        name: string_or(v.get("name"), "Canal"),
+        name: string_or(v.get("name"), tr("Channel")),
         instrument: InstrumentDef {
             kind: string_or(field("kind"), "pulse"),
             params: load_params(field("params")),
@@ -346,7 +348,7 @@ fn load_pattern(v: &Json, index: usize, channels: usize) -> PatternDef {
         .collect();
     notes.resize(channels, Vec::new());
     PatternDef {
-        name: string_or(v.get("name"), &format!("Pattern {}", index + 1)),
+        name: string_or(v.get("name"), &tr_fmt!("Pattern {}", index + 1)),
         len: u32_or(v.get("len"), TICKS_PER_BAR).max(1),
         notes,
         color: u32_or(v.get("color"), 0),
@@ -377,7 +379,7 @@ fn load_effect(v: &Json) -> Option<EffectDef> {
 }
 
 fn load_track(v: &Json, index: usize) -> TrackDef {
-    let mut t = TrackDef::new(if index == MASTER { "Master".to_string() } else { format!("Piste {index}") });
+    let mut t = TrackDef::new(if index == MASTER { tr("Master").to_string() } else { crate::default_track_name(index) });
     t.name = string_or(v.get("name"), &t.name);
     t.gain = gain(v.get("gain"), 1.0);
     t.pan = pan(v.get("pan"));
@@ -482,22 +484,22 @@ fn load_audio_clip(v: &Json) -> Option<AudioClipDef> {
 
 /// Texte JSON → projet.
 pub fn load(text: &str) -> Result<Project, String> {
-    let root = json::parse(text).map_err(|e| format!("fichier de projet illisible : {e}"))?;
+    let root = json::parse(text).map_err(|e| tr_fmt!("Unreadable project file: {}", e))?;
     if root.as_obj().is_none() {
-        return Err("ce fichier n'est pas un projet Ponzik".into());
+        return Err(tr("This file is not a Ponzik project").into());
     }
     match root.get("format").and_then(Json::as_str) {
         Some(FORMAT) => {}
-        Some(other) => return Err(format!("format « {other} » inconnu : ce fichier n'est pas un projet Ponzik")),
-        None => return Err("ce fichier n'est pas un projet Ponzik (champ « format » absent)".into()),
+        Some(other) => return Err(tr_fmt!("Unknown format \"{}\": this file is not a Ponzik project", other)),
+        None => return Err(tr("This file is not a Ponzik project (no \"format\" field)").into()),
     }
     if let Some(v) = num(root.get("version"))
         && v.floor() > VERSION as f64
     {
-        return Err(format!(
-            "ce projet utilise la version {} du format, plus récente que celle de cette version de Ponzik ({VERSION}) : \
-             mettez Ponzik à jour",
-            json::format_number(v.floor())
+        return Err(tr_fmt!(
+            "This project uses version {} of the format, newer than this version of Ponzik supports ({}): please update Ponzik",
+            json::format_number(v.floor()),
+            VERSION
         ));
     }
 
@@ -572,10 +574,10 @@ pub fn load(text: &str) -> Result<Project, String> {
 
 pub fn load_from_file(path: impl AsRef<Path>) -> Result<Project, String> {
     let path = path.as_ref();
-    let bytes = std::fs::read(path).map_err(|e| format!("impossible de lire « {} » : {e}", path.display()))?;
+    let bytes = std::fs::read(path).map_err(|e| tr_fmt!("Can't read \"{}\": {}", path.display().to_string(), e.to_string()))?;
     let text = String::from_utf8(bytes)
-        .map_err(|_| format!("« {} » n'est pas un fichier texte UTF-8 valide", path.display()))?;
-    load(&text).map_err(|e| format!("« {} » : {e}", path.display()))
+        .map_err(|_| tr_fmt!("\"{}\" is not a valid UTF-8 text file", path.display().to_string()))?;
+    load(&text).map_err(|e| tr_fmt!("\"{}\": {}", path.display().to_string(), e))
 }
 
 #[cfg(test)]
@@ -627,7 +629,7 @@ mod tests {
         let p = demo_project();
         save_to_file(&p, &path).unwrap();
         assert_eq!(load_from_file(&path).unwrap(), p);
-        assert!(load_from_file(dir.join("absent.ponzik")).unwrap_err().contains("impossible de lire"));
+        assert!(load_from_file(dir.join("absent.ponzik")).unwrap_err().contains("Can't read"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -662,7 +664,7 @@ mod tests {
         assert_eq!(p.channels[0].track, TRACKS - 1);
         assert_eq!(p.channels[0].root_note, 127);
         assert_eq!(p.channels[0].pan, -1.0);
-        assert_eq!(p.channels[1].name, "Canal");
+        assert_eq!(p.channels[1].name, "Channel");
         assert_eq!(p.channels[1].instrument.kind, "pulse");
         assert_eq!(p.patterns.len(), 2);
         let pat = &p.patterns[0];
@@ -680,7 +682,7 @@ mod tests {
         assert_eq!(p.tracks.len(), TRACKS);
         assert_eq!(p.tracks[MASTER].name, "Principal");
         assert_eq!(p.tracks[MASTER].output, MASTER);
-        assert_eq!(p.tracks[5].name, "Piste 5");
+        assert_eq!(p.tracks[5].name, "Track 5");
         // Les pistes 1 et 2 bouclaient : tout est renvoyé au master.
         assert!(p.tracks.iter().all(|t| t.output == MASTER));
         assert!(p.routing_order().is_some());
@@ -881,13 +883,13 @@ mod tests {
     #[test]
     fn rejects_foreign_and_future_files() {
         let e = load(r#"{"format": "autre-daw", "version": 1}"#).unwrap_err();
-        assert!(e.contains("autre-daw") && e.contains("pas un projet Ponzik"), "{e}");
+        assert!(e.contains("autre-daw") && e.contains("not a Ponzik project"), "{e}");
         assert!(load(r#"{"version": 1}"#).unwrap_err().contains("format"));
-        assert!(load("[1, 2]").unwrap_err().contains("pas un projet Ponzik"));
+        assert!(load("[1, 2]").unwrap_err().contains("not a Ponzik project"));
         let e = load(r#"{"format": "ponzik-project", "version": 2}"#).unwrap_err();
-        assert!(e.contains("version 2") && e.contains("mettez Ponzik à jour"), "{e}");
+        assert!(e.contains("version 2") && e.contains("update Ponzik"), "{e}");
         let e = load("{\n  \"format\": \"ponzik-project\",\n  \"bpm\": 12O\n}").unwrap_err();
-        assert!(e.contains("illisible") && e.contains("ligne 3"), "{e}");
+        assert!(e.contains("Unreadable") && e.contains("line 3"), "{e}");
     }
 
     #[test]

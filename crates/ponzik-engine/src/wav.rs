@@ -1,5 +1,6 @@
 //! Lecture et écriture WAV, sans dépendance.
 
+use ponzik_i18n::{tr, tr_fmt};
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
@@ -100,7 +101,7 @@ pub fn encode_sample(w: &mut impl Write, sample: &Sample) -> io::Result<()> {
 /// Charge un fichier WAV ; l'échantillon prend le nom du fichier sans extension.
 pub fn load_wav(path: impl AsRef<Path>) -> Result<Sample, String> {
     let path = path.as_ref();
-    let bytes = std::fs::read(path).map_err(|e| format!("{} : {e}", path.display()))?;
+    let bytes = std::fs::read(path).map_err(|e| tr_fmt!("{}: {}", path.display().to_string(), e.to_string()))?;
     let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     decode_wav(&bytes, &name)
 }
@@ -109,7 +110,7 @@ pub fn load_wav(path: impl AsRef<Path>) -> Result<Sample, String> {
 /// WAVE_FORMAT_EXTENSIBLE. Au-delà de deux canaux, seuls les deux premiers sont gardés.
 pub fn decode_wav(bytes: &[u8], name: &str) -> Result<Sample, String> {
     if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
-        return Err("ce n'est pas un fichier WAV".into());
+        return Err(tr("Not a WAV file").into());
     }
     let mut format = None;
     let mut data = None;
@@ -136,8 +137,8 @@ pub fn decode_wav(bytes: &[u8], name: &str) -> Result<Sample, String> {
         // Un bloc de taille impaire est suivi d'un octet de bourrage.
         pos = start.saturating_add(size).saturating_add(size & 1);
     }
-    let f = format.ok_or("bloc « fmt » manquant")?;
-    let data = data.ok_or("bloc « data » manquant")?;
+    let f = format.ok_or_else(|| tr("Missing \"fmt\" chunk").to_string())?;
+    let data = data.ok_or_else(|| tr("Missing \"data\" chunk").to_string())?;
 
     let width = f.bits as usize / 8;
     let frame = width * f.channels;
@@ -178,29 +179,29 @@ struct Format {
 impl Format {
     fn parse(b: &[u8]) -> Result<Self, String> {
         if b.len() < 16 {
-            return Err("bloc « fmt » trop court".into());
+            return Err(tr("\"fmt\" chunk too short").into());
         }
         let mut tag = u16_at(b, 0);
         if tag == 0xFFFE {
             // WAVE_FORMAT_EXTENSIBLE : le vrai format ouvre le GUID SubFormat.
             if b.len() < 26 {
-                return Err("bloc « fmt » étendu trop court".into());
+                return Err(tr("Extended \"fmt\" chunk too short").into());
             }
             tag = u16_at(b, 24);
         }
         let float = match tag {
             1 => false,
             3 => true,
-            t => return Err(format!("format WAV non géré ({t:#06x})")),
+            t => return Err(tr_fmt!("Unsupported WAV format ({})", format!("{t:#06x}"))),
         };
         let bits = u16_at(b, 14);
         if !matches!((float, bits), (false, 8 | 16 | 24 | 32) | (true, 32 | 64)) {
-            return Err(format!("profondeur non gérée : {bits} bits"));
+            return Err(tr_fmt!("Unsupported bit depth: {} bits", bits));
         }
         let channels = u16_at(b, 2) as usize;
         let sample_rate = u32_at(b, 4);
         if channels == 0 || sample_rate == 0 {
-            return Err("en-tête WAV invalide".into());
+            return Err(tr("Invalid WAV header").into());
         }
         Ok(Self { float, channels, sample_rate, bits })
     }

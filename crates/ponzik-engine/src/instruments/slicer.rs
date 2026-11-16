@@ -31,10 +31,10 @@ const FLOOR_DB: f32 = 60.0;
 /// Écart minimal entre deux attaques, en secondes.
 const MIN_GAP: f32 = 0.03;
 
-const MODES: &[&str] = &["Parts égales", "Transitoires", "Markers"];
+const MODES: &[&str] = &["Equal Slices", "Transients", "Markers"];
 const COUNTS: &[&str] = &["4", "8", "16", "32"];
 const COUNT_VALUES: [usize; 4] = [4, 8, 16, 32];
-const OFF_ON: &[&str] = &["Non", "Oui"];
+const OFF_ON: &[&str] = &["No", "Yes"];
 
 const P_MODE: u32 = 0;
 const P_SLICES: u32 = 1;
@@ -46,14 +46,14 @@ const P_REVERSE: u32 = 6;
 const P_VOLUME: u32 = 7;
 
 static PARAMS: [ParamInfo; 8] = [
-    ParamInfo::choice(P_MODE, "Mode", MODES, 0).group("Découpe"),
-    ParamInfo::choice(P_SLICES, "Tranches", COUNTS, 1).group("Découpe"),
-    ParamInfo::new(P_SENSITIVITY, "Sensibilité", 0.0, 1.0, 0.5, Unit::Percent).group("Découpe"),
-    ParamInfo::new(P_ATTACK, "Attaque", 0.0005, 1.0, 0.001, Unit::Seconds).log().group("Tranche"),
-    ParamInfo::new(P_RELEASE, "Relâche", 0.001, 4.0, 0.02, Unit::Seconds).log().group("Tranche"),
-    ParamInfo::new(P_PITCH, "Transposition", -24.0, 24.0, 0.0, Unit::Semitones).group("Tranche"),
-    ParamInfo::choice(P_REVERSE, "Inversé", OFF_ON, 0).group("Tranche"),
-    ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -3.0, Unit::Db).group("Sortie"),
+    ParamInfo::choice(P_MODE, "Mode", MODES, 0).group("Slicing"),
+    ParamInfo::choice(P_SLICES, "Slices", COUNTS, 1).group("Slicing"),
+    ParamInfo::new(P_SENSITIVITY, "Sensitivity", 0.0, 1.0, 0.5, Unit::Percent).group("Slicing"),
+    ParamInfo::new(P_ATTACK, "Attack", 0.0005, 1.0, 0.001, Unit::Seconds).log().group("Slice"),
+    ParamInfo::new(P_RELEASE, "Release", 0.001, 4.0, 0.02, Unit::Seconds).log().group("Slice"),
+    ParamInfo::new(P_PITCH, "Transpose", -24.0, 24.0, 0.0, Unit::Semitones).group("Slice"),
+    ParamInfo::choice(P_REVERSE, "Reverse", OFF_ON, 0).group("Slice"),
+    ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -3.0, Unit::Db).group("Output"),
 ];
 
 struct Voice {

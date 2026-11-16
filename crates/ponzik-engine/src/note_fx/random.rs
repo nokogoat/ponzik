@@ -10,9 +10,9 @@ const P_TIMING: u32 = 2;
 const MAX_PENDING: usize = 64;
 
 static PARAMS: [ParamInfo; 3] = [
-    ParamInfo::new(P_PROBABILITY, "Probabilité", 0.0, 1.0, 1.0, Unit::Percent).group("Hasard"),
-    ParamInfo::new(P_VELOCITY, "Vélocité", 0.0, 1.0, 0.0, Unit::Percent).group("Humanisation"),
-    ParamInfo::new(P_TIMING, "Retard", 0.0, 0.1, 0.0, Unit::Seconds).group("Humanisation"),
+    ParamInfo::new(P_PROBABILITY, "Probability", 0.0, 1.0, 1.0, Unit::Percent).group("Chance"),
+    ParamInfo::new(P_VELOCITY, "Velocity", 0.0, 1.0, 0.0, Unit::Percent).group("Humanize"),
+    ParamInfo::new(P_TIMING, "Timing", 0.0, 0.1, 0.0, Unit::Seconds).group("Humanize"),
 ];
 
 /// Hasard et humanisation : chaque note a une probabilité de jouer, sa vélocité

@@ -30,18 +30,18 @@ const P_DUCKING: u32 = 10;
 const P_MIX: u32 = 11;
 
 static PARAMS: [ParamInfo; 12] = [
-    ParamInfo::choice(P_CHARACTER, "Caractère", &["Bande", "Analogique", "Numérique"], 0).group("Caractère"),
-    ParamInfo::choice(P_DIVISION, "Synchro", DIVISIONS, 8).group("Temps"),
-    ParamInfo::new(P_TIME, "Temps libre", 0.001, MAX_FREE_TIME, 0.375, Unit::Seconds).log().group("Temps"),
-    ParamInfo::new(P_FEEDBACK, "Réinjection", 0.0, 1.0, 0.45, Unit::Percent).group("Répétitions"),
-    ParamInfo::choice(P_PINGPONG, "Ping-pong", OFF_ON, 0).group("Répétitions"),
-    ParamInfo::new(P_SATURATION, "Saturation", 0.0, 1.0, 0.3, Unit::Percent).group("Répétitions"),
-    ParamInfo::new(P_LOW_CUT, "Coupe-bas", 20.0, 2_000.0, 100.0, Unit::Hz).log().group("Répétitions"),
-    ParamInfo::new(P_HIGH_CUT, "Coupe-haut", 500.0, 20_000.0, 7_000.0, Unit::Hz).log().group("Répétitions"),
-    ParamInfo::new(P_WOW, "Pleurage", 0.0, 1.0, 0.2, Unit::Percent).group("Modulation"),
-    ParamInfo::new(P_FLUTTER, "Scintillement", 0.0, 1.0, 0.15, Unit::Percent).group("Modulation"),
-    ParamInfo::new(P_DUCKING, "Ducking", 0.0, 1.0, 0.0, Unit::Percent).group("Sortie"),
-    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 0.3, Unit::Percent).group("Sortie"),
+    ParamInfo::choice(P_CHARACTER, "Character", &["Tape", "Analog", "Digital"], 0).group("Character"),
+    ParamInfo::choice(P_DIVISION, "Sync", DIVISIONS, 8).group("Time"),
+    ParamInfo::new(P_TIME, "Free Time", 0.001, MAX_FREE_TIME, 0.375, Unit::Seconds).log().group("Time"),
+    ParamInfo::new(P_FEEDBACK, "Feedback", 0.0, 1.0, 0.45, Unit::Percent).group("Echoes"),
+    ParamInfo::choice(P_PINGPONG, "Ping-pong", OFF_ON, 0).group("Echoes"),
+    ParamInfo::new(P_SATURATION, "Saturation", 0.0, 1.0, 0.3, Unit::Percent).group("Echoes"),
+    ParamInfo::new(P_LOW_CUT, "Low Cut", 20.0, 2_000.0, 100.0, Unit::Hz).log().group("Echoes"),
+    ParamInfo::new(P_HIGH_CUT, "High Cut", 500.0, 20_000.0, 7_000.0, Unit::Hz).log().group("Echoes"),
+    ParamInfo::new(P_WOW, "Wow", 0.0, 1.0, 0.2, Unit::Percent).group("Modulation"),
+    ParamInfo::new(P_FLUTTER, "Flutter", 0.0, 1.0, 0.15, Unit::Percent).group("Modulation"),
+    ParamInfo::new(P_DUCKING, "Ducking", 0.0, 1.0, 0.0, Unit::Percent).group("Output"),
+    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 0.3, Unit::Percent).group("Output"),
 ];
 
 const MAX_FREE_TIME: f32 = 4.0;

@@ -16,13 +16,13 @@ const P_HIGH_CUT: u32 = 5;
 const P_MIX: u32 = 6;
 
 static PARAMS: [ParamInfo; 7] = [
-    ParamInfo::choice(P_DIVISION, "Synchro", DIVISIONS, 8).group("Temps"),
-    ParamInfo::new(P_TIME, "Temps libre", 0.001, MAX_FREE_TIME, 0.25, Unit::Seconds).log().group("Temps"),
-    ParamInfo::new(P_FEEDBACK, "Réinjection", 0.0, 0.95, 0.4, Unit::Percent).group("Répétitions"),
-    ParamInfo::choice(P_PINGPONG, "Ping-pong", OFF_ON, 0).group("Répétitions"),
-    ParamInfo::new(P_LOW_CUT, "Coupe-bas", 20.0, 2_000.0, 80.0, Unit::Hz).log().group("Répétitions"),
-    ParamInfo::new(P_HIGH_CUT, "Coupe-haut", 1_000.0, 20_000.0, 12_000.0, Unit::Hz).log().group("Répétitions"),
-    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 0.3, Unit::Percent).group("Sortie"),
+    ParamInfo::choice(P_DIVISION, "Sync", DIVISIONS, 8).group("Time"),
+    ParamInfo::new(P_TIME, "Free Time", 0.001, MAX_FREE_TIME, 0.25, Unit::Seconds).log().group("Time"),
+    ParamInfo::new(P_FEEDBACK, "Feedback", 0.0, 0.95, 0.4, Unit::Percent).group("Echoes"),
+    ParamInfo::choice(P_PINGPONG, "Ping-pong", OFF_ON, 0).group("Echoes"),
+    ParamInfo::new(P_LOW_CUT, "Low Cut", 20.0, 2_000.0, 80.0, Unit::Hz).log().group("Echoes"),
+    ParamInfo::new(P_HIGH_CUT, "High Cut", 1_000.0, 20_000.0, 12_000.0, Unit::Hz).log().group("Echoes"),
+    ParamInfo::new(P_MIX, "Mix", 0.0, 1.0, 0.3, Unit::Percent).group("Output"),
 ];
 
 const MAX_FREE_TIME: f32 = 4.0;
