@@ -8,7 +8,7 @@ use std::path::Path;
 
 use ponzik_dsp::loudness::LoudnessMeter;
 use ponzik_dsp::noise::WhiteNoise;
-use ponzik_engine::{Command, PPQ, PlayMode, Sequence, TICKS_PER_BAR};
+use ponzik_engine::{Command, PPQ, PlayMode, Sequence, TICKS_PER_BAR, default_worker_threads};
 
 use crate::{Project, SampleLoader};
 
@@ -49,7 +49,20 @@ fn span(project: &Project, mode: RenderMode) -> (u32, PlayMode) {
 
 /// Rendu stéréo entrelacé. La queue après la fin s'arrête au premier passage de
 /// [`SILENCE_HOLD`] secondes sous −90 dBFS (silence final retiré), au plus [`MAX_TAIL`].
+/// Le moteur calcule sur [`default_worker_threads`] threads en plus.
 pub fn render_song(project: &Project, sample_rate: u32, loader: SampleLoader, mode: RenderMode) -> Vec<f32> {
+    render_song_threads(project, sample_rate, loader, mode, default_worker_threads())
+}
+
+/// Comme [`render_song`], avec `workers` threads de calcul en plus (0 : un
+/// seul) ; le résultat est identique au bit près quel que soit leur nombre.
+pub fn render_song_threads(
+    project: &Project,
+    sample_rate: u32,
+    loader: SampleLoader,
+    mode: RenderMode,
+    workers: usize,
+) -> Vec<f32> {
     let sample_rate = sample_rate.max(1);
     let (ticks, play_mode) = span(project, mode);
     let mut project = project.clone();
@@ -58,6 +71,7 @@ pub fn render_song(project: &Project, sample_rate: u32, loader: SampleLoader, mo
     project.loop_range = None;
     // La séquence initiale du moteur est déjà complète (clips audio compris).
     let (mut engine, mut handle) = project.build_engine(sample_rate as f32, loader);
+    engine.set_worker_threads(workers);
     let _ = handle.send(Command::Play);
 
     let frames = ticks_to_frames(ticks, project.bpm, sample_rate);
@@ -377,7 +391,7 @@ mod tests {
     use ponzik_engine::{Note, Sample, TICKS_PER_STEP};
 
     use super::*;
-    use crate::{AudioClipDef, AutoScope, AutoTarget, InstrumentDef, demo_project};
+    use crate::{AudioClipDef, AutoScope, AutoTarget, InstrumentDef, demo_breakcore, demo_project};
 
     const SR: u32 = 22_050;
 
@@ -671,5 +685,56 @@ mod tests {
         write_wav(&path, &[0.0; 8], 48_000, BitDepth::Pcm24).unwrap();
         assert_eq!(std::fs::metadata(&path).unwrap().len(), 44 + 24);
         std::fs::remove_file(&path).unwrap();
+    }
+
+    /// `blocks` blocs de tailles variées avec `workers` threads de calcul ; l'ordre
+    /// de routage change en route (un ordre périmé sur deux).
+    fn render_blocks(p: &Project, workers: usize, blocks: usize) -> Vec<f32> {
+        let (mut engine, mut handle) = p.build_engine(48_000.0, &no_samples);
+        engine.set_worker_threads(workers);
+        assert_eq!(handle.worker_threads(), workers);
+        handle.send(Command::Play).unwrap();
+        let order = p.routing_order().unwrap();
+        let mut buf = [0.0f32; 2 * 600];
+        let mut out = Vec::new();
+        for b in 0..blocks {
+            if b % 3 == 0 {
+                let o = if b % 6 == 0 { order.iter().rev().copied().collect() } else { order.clone() };
+                handle.send(Command::SetRoutingOrder(o)).unwrap();
+            }
+            let n = [600, 64, 1, 256, 333][b % 5];
+            engine.process(&mut buf[..2 * n], 2);
+            out.extend_from_slice(&buf[..2 * n]);
+            handle.collect_garbage();
+        }
+        out
+    }
+
+    #[test]
+    fn demos_render_bit_identical_on_one_or_several_threads() {
+        for p in [demo_project(), demo_breakcore()] {
+            let single = render_blocks(&p, 0, 400);
+            assert!(peak(&single) > 0.05, "{}", p.name);
+            for workers in [1, 3] {
+                let multi = render_blocks(&p, workers, 400);
+                assert_eq!(single.len(), multi.len());
+                let diff = single.iter().zip(&multi).position(|(a, b)| a.to_bits() != b.to_bits());
+                assert_eq!(diff, None, "{} : {workers} threads", p.name);
+            }
+        }
+    }
+
+    /// `cargo test --release -p ponzik-project bench_threads -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn bench_threads() {
+        let p = demo_breakcore();
+        for workers in [0, 1, 2, 3, 5, 7, default_worker_threads()] {
+            let started = std::time::Instant::now();
+            let out = render_song_threads(&p, 48_000, &no_samples, RenderMode::Song, workers);
+            let took = started.elapsed().as_secs_f64();
+            let secs = out.len() as f64 / 2.0 / 48_000.0;
+            println!("{workers:>2} workers : {took:.3} s for {secs:.1} s of audio ({:.0}x real time)", secs / took);
+        }
     }
 }

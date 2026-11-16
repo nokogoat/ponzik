@@ -197,6 +197,7 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     let config = output.config();
     let none = |_: &str| None;
     let (mut engine, handle) = project.build_engine(config.sample_rate as f32, &none);
+    engine.set_worker_threads(ponzik_engine::default_worker_threads());
     let output_name = output.device_name().to_string();
     // Duplex : l'entrée, une fois branchée, arrive dans le même appel que la sortie.
     let stream = output
