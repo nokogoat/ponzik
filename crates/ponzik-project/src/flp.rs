@@ -592,6 +592,28 @@ impl ImportReport {
             .chain(self.skipped.iter().map(tag("Skipped")))
             .collect()
     }
+
+    /// [`ImportReport::lines`] wrapped at `width` characters for narrow
+    /// lists: (text, true when the row continues the previous entry).
+    pub fn rows(&self, width: usize) -> Vec<(String, bool)> {
+        let mut rows = Vec::new();
+        for line in self.lines() {
+            let mut row = String::new();
+            let mut more = false;
+            for word in line.split(' ') {
+                if !row.is_empty() && row.chars().count() + 1 + word.chars().count() > width {
+                    rows.push((std::mem::take(&mut row), more));
+                    more = true;
+                }
+                if !row.is_empty() {
+                    row.push(' ');
+                }
+                row.push_str(word);
+            }
+            rows.push((row, more));
+        }
+        rows
+    }
 }
 
 // --- Device mapping ---
@@ -1447,6 +1469,10 @@ mod tests {
         assert!(lines.contains("Skipped: 1 automation clips in the playlist"), "{lines}");
         assert!(lines.contains("Skipped: 1 notes on channels"), "{lines}");
         assert!(report.summary().starts_with("FL Studio import: "));
+        let rows = report.rows(30);
+        assert!(rows.iter().all(|(r, _)| r.chars().count() <= 30 || !r.contains(' ')));
+        assert_eq!(rows.iter().filter(|(_, more)| !more).count(), report.lines().len());
+        assert_eq!(rows.iter().map(|(r, _)| r.as_str()).collect::<Vec<_>>().join(" "), report.lines().join(" "));
         // The project survives a save / load round trip.
         let back = crate::load(&crate::save(&p)).unwrap();
         assert_eq!(back.channels, p.channels);
