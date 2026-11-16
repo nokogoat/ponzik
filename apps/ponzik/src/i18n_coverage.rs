@@ -44,6 +44,10 @@ fn device_keys() -> BTreeSet<String> {
         keys.extend([k.name, k.description].map(str::to_string));
         params((k.create)().params(), &mut keys);
     }
+    for k in ponzik_engine::ModKind::ALL {
+        keys.extend([k.name(), k.description()].map(str::to_string));
+        params(k.params(), &mut keys);
+    }
     keys
 }
 

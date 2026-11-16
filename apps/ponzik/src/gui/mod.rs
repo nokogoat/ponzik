@@ -17,12 +17,14 @@ mod keys;
 mod library;
 mod midiout;
 mod mixer;
+mod modulators;
 mod notefx;
 mod pads;
 mod palette;
 mod piano;
 mod playlist;
 mod rack;
+mod rackfx;
 mod samplelab;
 mod record;
 mod session;
@@ -429,6 +431,19 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
             }
         }
         app.commit(tr("Capture effects"));
+    }
+    // PONZIK_RACK=3 : a rack with macros on track 3, focused.
+    if let Ok(spec) = std::env::var("PONZIK_RACK") {
+        app.screenshot_rack(&spec);
+    }
+    // PONZIK_MODS=edit,all : modulators on the focused track (depth mode, all kinds).
+    if let Ok(spec) = std::env::var("PONZIK_MODS") {
+        app.screenshot_mods(&spec);
+    }
+    // PONZIK_CHAIN_SCROLL=px : the device panel scrolled to the right.
+    if let Some(px) = std::env::var("PONZIK_CHAIN_SCROLL").ok().and_then(|v| v.trim().parse::<f32>().ok()) {
+        app.chain_scroll = px;
+        app.anim.set(widgets::wid("chain-sx", 0, 0), px);
     }
     // PONZIK_LISTEN=s[,apply] : les assistants de mixage écoutent s secondes de
     // lecture, puis appliquent leur suggestion.

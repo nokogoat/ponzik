@@ -25,6 +25,13 @@ impl App {
             }
             AutoTarget::EffectParam { track, slot, id } => {
                 let fx = p.tracks.get(track)?.inserts.get(slot)?.as_ref()?;
+                if let Some((unit, _)) = ponzik_engine::effects::fx_rack::split_param(id) {
+                    // A device inside a rack: its name too.
+                    let info = fx.param_info(id)?;
+                    let kind = &fx.rack.as_deref()?.device(unit)?.kind;
+                    let device = ponzik_engine::registry::effect_kind(kind).map_or(kind.as_str(), |k| tr(k.name));
+                    return Some((format!("{} · {} · {}", tr(info.name), device, p.tracks[track].name), info));
+                }
                 let info = *params_of(&fx.kind, false).iter().find(|i| i.id == id)?;
                 (format!("{} · {}", tr(info.name), p.tracks[track].name), info)
             }

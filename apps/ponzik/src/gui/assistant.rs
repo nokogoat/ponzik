@@ -787,7 +787,7 @@ impl App {
 
 fn key_of(device: Device) -> (usize, usize) {
     match device {
-        Device::Effect { track, slot } => (track, slot),
+        Device::Effect { track, slot } | Device::RackUnit { track, slot, .. } => (track, slot),
         Device::Instrument(ch) => (usize::MAX, ch),
     }
 }

@@ -744,7 +744,7 @@ impl App {
     /// Niveau crête de la piste de l'appareil, en dB.
     fn device_level_db(&self, device: Device) -> f32 {
         match device {
-            Device::Effect { track, .. } => {
+            Device::Effect { track, .. } | Device::RackUnit { track, .. } => {
                 let m = self.track_meters.get(track).map_or(0.0, |m| m.level[0].max(m.level[1]));
                 db(m)
             }
@@ -1183,5 +1183,6 @@ pub fn device_key(d: Device) -> usize {
     match d {
         Device::Instrument(ch) => ch,
         Device::Effect { track, slot } => 10_000 + track * 16 + slot,
+        Device::RackUnit { track, slot, unit } => 20_000 + (track * 16 + slot) * 64 + unit,
     }
 }

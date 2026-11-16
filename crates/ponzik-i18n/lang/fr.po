@@ -5307,3 +5307,285 @@ msgstr "{} BPM"
 msgctxt "section"
 msgid "Drop"
 msgstr "Drop"
+
+msgid "A chain holds {} effects at most"
+msgstr "Une chaîne contient {} effets au plus"
+
+msgid "A synced pattern of up to 16 values"
+msgstr "Un motif synchronisé de 16 valeurs au plus"
+
+msgid "Add a modulator"
+msgstr "Ajouter un modulateur"
+
+msgid "Add a modulator\nLFO, envelope follower, steps, random"
+msgstr "Ajouter un modulateur\nLFO, suiveur d'enveloppe, pas, aléatoire"
+
+msgid "Add a parallel chain"
+msgstr "Ajouter une chaîne parallèle"
+
+msgid "Add an effect to the rack"
+msgstr "Ajouter un effet au rack"
+
+msgid "Add an effect to this chain\nor drag one from the browser"
+msgstr "Ajouter un effet à cette chaîne\nou en glisser un depuis le navigateur"
+
+msgid "Chain 1 Mix"
+msgstr "Mix chaîne 1"
+
+msgid "Chain 1 Volume"
+msgstr "Volume chaîne 1"
+
+msgid "Chain 2 Mix"
+msgstr "Mix chaîne 2"
+
+msgid "Chain 2 Volume"
+msgstr "Volume chaîne 2"
+
+msgid "Chain 3 Mix"
+msgstr "Mix chaîne 3"
+
+msgid "Chain 3 Volume"
+msgstr "Volume chaîne 3"
+
+msgid "Chain 4 Mix"
+msgstr "Mix chaîne 4"
+
+msgid "Chain 4 Volume"
+msgstr "Volume chaîne 4"
+
+msgid "Chain {}"
+msgstr "Chaîne {}"
+
+msgid "Chains"
+msgstr "Chaînes"
+
+msgid "Chains of effects in one slot, side by side or in parallel, with eight macro knobs"
+msgstr "Des chaînes d'effets dans un seul emplacement, à la suite ou en parallèle, avec huit macros"
+
+msgid "Click or drag to draw the steps"
+msgstr "Cliquer ou glisser pour dessiner les pas"
+
+msgid "Click: depth mode (drag knobs to set the depth)"
+msgstr "Clic : mode profondeur (glisser les potards règle la profondeur)"
+
+msgid "Click: open · drag: move · right-click: menu"
+msgstr "Clic : ouvrir · glisser : déplacer · clic droit : menu"
+
+msgid "Drag onto a knob to modulate it"
+msgstr "Glisser sur un potard pour le moduler"
+
+msgid "Drag: depth of {}"
+msgstr "Glisser : profondeur de {}"
+
+msgid "Draw the steps"
+msgstr "Dessiner les pas"
+
+msgid "Drop effects on a chain, or click +"
+msgstr "Déposer des effets sur une chaîne, ou cliquer sur +"
+
+msgid "Envelope Follower"
+msgstr "Suiveur d'enveloppe"
+
+msgid "Follows the loudness of the track"
+msgstr "Suit le niveau de la piste"
+
+msgid "Full range"
+msgstr "Plage complète"
+
+msgid "Glide"
+msgstr "Glissé"
+
+msgid "Invert the range"
+msgstr "Inverser la plage"
+
+msgid "Macro 1"
+msgstr "Macro 1"
+
+msgid "Macro 2"
+msgstr "Macro 2"
+
+msgid "Macro 3"
+msgstr "Macro 3"
+
+msgid "Macro 4"
+msgstr "Macro 4"
+
+msgid "Macro 5"
+msgstr "Macro 5"
+
+msgid "Macro 6"
+msgstr "Macro 6"
+
+msgid "Macro 7"
+msgstr "Macro 7"
+
+msgid "Macro 8"
+msgstr "Macro 8"
+
+msgid "Macro range"
+msgstr "Plage de macro"
+
+msgid "Macros"
+msgstr "Macros"
+
+msgid "Map to Macro {}"
+msgstr "Lier à la macro {}"
+
+msgid "Map to a macro"
+msgstr "Lier à une macro"
+
+msgid "Modulate a parameter"
+msgstr "Moduler un paramètre"
+
+msgid "Modulate with {}"
+msgstr "Moduler avec {}"
+
+msgid "Modulation depth"
+msgstr "Profondeur de modulation"
+
+msgid "Modulators"
+msgstr "Modulateurs"
+
+msgid "Move an effect in the rack"
+msgstr "Déplacer un effet dans le rack"
+
+msgid "Move left"
+msgstr "Déplacer à gauche"
+
+msgid "Move right"
+msgstr "Déplacer à droite"
+
+msgid "Move to chain {}"
+msgstr "Déplacer vers la chaîne {}"
+
+msgid "New {} on this parameter"
+msgstr "Nouveau {} sur ce paramètre"
+
+msgid "No room for another modulator here"
+msgstr "Plus de place pour un autre modulateur ici"
+
+msgid "Only built-in effects go in a rack"
+msgstr "Seuls les effets intégrés vont dans un rack"
+
+msgid "Parallel chain"
+msgstr "Chaîne parallèle"
+
+msgid "Rack"
+msgstr "Rack"
+
+msgid "Random values, smooth or stepped"
+msgstr "Valeurs au hasard, douces ou en paliers"
+
+msgid "Remove a chain"
+msgstr "Retirer une chaîne"
+
+msgid "Remove a macro mapping"
+msgstr "Retirer un lien de macro"
+
+msgid "Remove a modulation"
+msgstr "Retirer une modulation"
+
+msgid "Remove a modulator"
+msgstr "Retirer un modulateur"
+
+msgid "Remove an effect from the rack"
+msgstr "Retirer un effet du rack"
+
+msgid "Remove chain {}"
+msgstr "Retirer la chaîne {}"
+
+msgid "Remove the macro mapping"
+msgstr "Retirer le lien de macro"
+
+msgid "Remove the modulation by {}"
+msgstr "Retirer la modulation par {}"
+
+msgid "Repeating wave, free or synced to the tempo"
+msgstr "Onde répétée, libre ou synchronisée au tempo"
+
+msgid "Sample & Hold"
+msgstr "Échantillonné-bloqué"
+
+msgid "Saw Down"
+msgstr "Scie descendante"
+
+msgid "Saw Up"
+msgstr "Scie montante"
+
+msgid "Splits the sound into chains side by side, mixed back together"
+msgstr "Partage le son entre des chaînes côte à côte, puis les remélange"
+
+msgid "Step 1"
+msgstr "Pas 1"
+
+msgid "Step 2"
+msgstr "Pas 2"
+
+msgid "Step 3"
+msgstr "Pas 3"
+
+msgid "Step 4"
+msgstr "Pas 4"
+
+msgid "Step 5"
+msgstr "Pas 5"
+
+msgid "Step 6"
+msgstr "Pas 6"
+
+msgid "Step 7"
+msgstr "Pas 7"
+
+msgid "Step 8"
+msgstr "Pas 8"
+
+msgid "Step 9"
+msgstr "Pas 9"
+
+msgid "Step 10"
+msgstr "Pas 10"
+
+msgid "Step 11"
+msgstr "Pas 11"
+
+msgid "Step 12"
+msgstr "Pas 12"
+
+msgid "Step 13"
+msgstr "Pas 13"
+
+msgid "Step 14"
+msgstr "Pas 14"
+
+msgid "Step 15"
+msgstr "Pas 15"
+
+msgid "Step 16"
+msgstr "Pas 16"
+
+msgid "Step Sequencer"
+msgstr "Séquenceur de pas"
+
+msgid "Stepped"
+msgstr "En paliers"
+
+msgid "Steps"
+msgstr "Pas"
+
+msgid "The knob goes down when the macro goes up"
+msgstr "Le potard descend quand la macro monte"
+
+msgid "Track effects"
+msgstr "Effets de la piste"
+
+msgid "instrument"
+msgstr "instrument"
+
+msgid "track"
+msgstr "piste"
+
+msgid "{} · 1 target"
+msgstr "{} · 1 cible"
+
+msgid "{} · {} targets"
+msgstr "{} · {} cibles"

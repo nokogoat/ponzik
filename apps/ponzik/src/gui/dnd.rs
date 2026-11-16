@@ -55,6 +55,8 @@ pub enum DropTarget {
     Lab,
     /// A Drum Pads pad; `add_layer` (Shift held) adds a velocity layer.
     Pad { channel: usize, pad: usize, add_layer: bool },
+    /// The end of one chain of a rack.
+    RackChain { track: usize, slot: usize, chain: usize },
 }
 
 pub struct Dnd {
@@ -82,7 +84,7 @@ impl App {
         matches!(
             (payload, target),
             (Payload::Instrument { .. }, DropTarget::Rack | DropTarget::Channel(_))
-                | (Payload::Effect { .. }, DropTarget::Channel(_) | DropTarget::Track(_) | DropTarget::Slot(..))
+                | (Payload::Effect { .. }, DropTarget::Channel(_) | DropTarget::Track(_) | DropTarget::Slot(..) | DropTarget::RackChain { .. })
                 | (Payload::Sample(_), DropTarget::Rack | DropTarget::Channel(_) | DropTarget::Lane { .. } | DropTarget::Lab | DropTarget::Pad { .. })
         )
     }
@@ -171,6 +173,13 @@ impl App {
             }
             (Payload::Effect { kind, .. }, DropTarget::Track(t)) => self.insert_effect(t, None, &kind),
             (Payload::Effect { kind, .. }, DropTarget::Slot(t, s)) => self.insert_effect(t, Some(s), &kind),
+            (Payload::Effect { kind, .. }, DropTarget::RackChain { track, slot, chain }) => {
+                if ponzik_project::rack::rack_accepts(&kind) {
+                    self.run_rack_action(super::rackfx::RackAction::Add { track, slot, chain, kind });
+                } else {
+                    self.toast(tr("Only built-in effects go in a rack"));
+                }
+            }
             (Payload::Sample(path), DropTarget::Rack) => self.add_sample_channel(&path.to_string_lossy()),
             (Payload::Sample(path), DropTarget::Channel(ch)) => {
                 let path = path.to_string_lossy().into_owned();

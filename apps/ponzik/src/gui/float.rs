@@ -12,7 +12,7 @@ use ponzik_window::Cursor;
 
 use super::Input;
 use super::app::{App, Focus};
-use super::devices::{Device, card_width, params_of};
+use super::devices::Device;
 use super::theme::*;
 use super::visuals::device_key;
 use super::widgets::{Icon, draw_icon, wid};
@@ -162,6 +162,7 @@ impl App {
                 .get(track)
                 .and_then(|t| t.inserts.get(slot))
                 .is_some_and(|e| e.as_ref().is_some_and(|e| e.kind == kind)),
+            Device::RackUnit { .. } => self.device_kind(d).0 == kind,
         }
     }
 
@@ -172,8 +173,8 @@ impl App {
             self.layout.raise(i);
             return;
         }
-        let (kind, inst) = self.device_kind(device);
-        let rect = Rect::new(0.0, 0.0, card_width(&kind, params_of(&kind, inst)), FLOAT_H);
+        let (kind, _) = self.device_kind(device);
+        let rect = Rect::new(0.0, 0.0, self.device_width(device), FLOAT_H);
         let id = self.layout.next;
         self.layout.next += 1;
         self.anim.set(wid("float-open", id, 0), 0.0);
@@ -187,7 +188,7 @@ impl App {
         self.panel = true;
         match device {
             Device::Instrument(ch) => self.focus = Focus::Channel(ch),
-            Device::Effect { track, .. } => {
+            Device::Effect { track, .. } | Device::RackUnit { track, .. } => {
                 if self.focused_track() != track {
                     self.focus = Focus::Track(track);
                 }

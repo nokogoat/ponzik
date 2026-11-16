@@ -286,11 +286,11 @@ pub fn list_presets(kind: &str) -> Vec<PathBuf> {
 }
 
 /// Enregistre les réglages d'un appareil : `{"kind": …, "params": [[id, valeur], …]}`.
-pub fn save_preset(kind: &str, name: &str, params: &[(u32, f32)]) -> Result<PathBuf, String> {
+pub fn save_preset(kind: &str, name: &str, params: &[(u32, f32)], rack: Option<&ponzik_project::RackDef>) -> Result<PathBuf, String> {
     let dir = presets_dir(kind);
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let path = dir.join(format!("{}.json", file_name(name)));
-    std::fs::write(&path, ponzik_project::presets::preset_json(kind, name, params)).map_err(|e| format!("{}: {e}", path.display()))?;
+    std::fs::write(&path, ponzik_project::presets::rack_preset_json(kind, name, params, rack)).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(path)
 }
 

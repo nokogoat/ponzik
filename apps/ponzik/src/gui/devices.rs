@@ -5,6 +5,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+use ponzik_engine::effects::fx_rack::{split_param, unit_param};
 use ponzik_engine::mixer::{INSERT_SLOTS, MASTER};
 use ponzik_engine::{ParamInfo, Unit, registry};
 use ponzik_i18n::{tr, tr_fmt};
@@ -30,6 +31,8 @@ const EQ_W: f32 = 640.0;
 pub enum Device {
     Instrument(usize),
     Effect { track: usize, slot: usize },
+    /// A device inside the rack of an insert slot.
+    RackUnit { track: usize, slot: usize, unit: usize },
 }
 
 /// Visuel d'un groupe de paramètres, déduit des noms.
@@ -160,6 +163,7 @@ pub fn device_target(device: Device, id: u32) -> ponzik_engine::AutoTarget {
     match device {
         Device::Instrument(channel) => ponzik_engine::AutoTarget::InstrumentParam { channel, id },
         Device::Effect { track, slot } => ponzik_engine::AutoTarget::EffectParam { track, slot, id },
+        Device::RackUnit { track, slot, unit } => ponzik_engine::AutoTarget::EffectParam { track, slot, id: unit_param(unit, id) },
     }
 }
 
@@ -170,6 +174,22 @@ impl App {
             Device::Effect { track, slot } => {
                 (self.project.tracks[track].inserts[slot].as_ref().map_or(String::new(), |e| e.kind.clone()), false)
             }
+            Device::RackUnit { track, slot, unit } => (
+                self.project.tracks[track].inserts[slot]
+                    .as_ref()
+                    .and_then(|e| e.rack.as_deref()?.device(unit))
+                    .map_or(String::new(), |d| d.kind.clone()),
+                false,
+            ),
+        }
+    }
+
+    /// Width of a device's card in the panel.
+    pub(super) fn device_width(&self, d: Device) -> f32 {
+        let (kind, inst) = self.device_kind(d);
+        match d {
+            Device::Effect { track, slot } if kind == ponzik_project::rack::RACK => self.rack_width(track, slot),
+            _ => card_width(&kind, params_of(&kind, inst)),
         }
     }
 
@@ -221,11 +241,11 @@ impl App {
                 if self.layout.floating(d) {
                     return super::float::PLACEHOLDER_W;
                 }
-                let (kind, inst) = self.device_kind(d);
-                card_width(&kind, params_of(&kind, inst))
+                self.device_width(d)
             })
             .collect();
-        let total: f32 = widths.iter().sum::<f32>() + devices.len() as f32 * CARD_GAP + 120.0 + self.note_fx_lead();
+        let mods = self.panel_mod_count() as f32 * 350.0 + 80.0;
+        let total: f32 = widths.iter().sum::<f32>() + devices.len() as f32 * CARD_GAP + 120.0 + mods + self.note_fx_lead();
         let over_header = input.inside && header.contains(input.x, input.y);
         let over_chain = input.inside && chain.contains(input.x, input.y);
         if (over_header || (over_chain && input.mods.shift)) && input.wheel != 0.0 {
@@ -274,7 +294,20 @@ impl App {
         if hov && input.pressed {
             self.open_popup(Popup::AddEffect { track }, add);
         }
+        // Modulators of the instrument and the track.
+        self.modulator_cards(c, input, add.right() + CARD_GAP * 2.0, chain);
         c.set_clip(Some(prev));
+        self.mod_drag_layer(c, input);
+    }
+
+    /// Modulator cards shown in the panel.
+    fn panel_mod_count(&self) -> usize {
+        let track = self.focused_track();
+        let channel = match self.focus {
+            Focus::Channel(ch) => self.project.channels.get(ch).map_or(0, |c| c.modulators.len()),
+            _ => 0,
+        };
+        channel + self.project.tracks[track].modulators.len()
     }
 
     /// Appareils du panneau : l'instrument du canal sélectionné, puis les effets de sa piste.
@@ -316,12 +349,13 @@ impl App {
                 let name = registry::effect_kind(&def.kind).map_or_else(|| super::app::display_kind(&def.kind), |k| tr(k.name).to_string());
                 (name, def.bypass, pattern_color(1))
             }
+            Device::RackUnit { .. } => (super::app::display_kind(&kind), false, pattern_color(1)),
         };
         c.fill_rrect(Rect::new(head.x + 12.0, head.y + 12.0, 3.0, 12.0), 1.5, if bypass { t.muted } else { color });
         // CPU load of the device, share of one core.
         let cpu = match device {
             Device::Instrument(ch) => self.engine.channel_cpu(ch),
-            Device::Effect { track, slot } => self.engine.insert_cpu(track, slot),
+            Device::Effect { track, slot } | Device::RackUnit { track, slot, .. } => self.engine.insert_cpu(track, slot),
         };
         let cpu = (cpu >= 0.0005).then(|| ponzik_i18n::tr_fmt!("{:.1}%", cpu * 100.0));
         let title_w = if matches!(device, Device::Effect { .. }) { head.w - 158.0 } else { head.w - 98.0 };
@@ -363,6 +397,18 @@ impl App {
         }
 
         let body = Rect::new(card.x + 14.0, head.bottom() + 2.0, card.w - 28.0, card.h - head.h - 8.0);
+        if let Device::Effect { track, slot } = device
+            && kind == ponzik_project::rack::RACK
+        {
+            return self.rack_device(c, input, body, track, slot);
+        }
+        self.device_body(c, input, body, device, &kind, params);
+    }
+
+    /// Settings of a device: its visual and its knobs, in groups.
+    pub(super) fn device_body(&mut self, c: &mut Canvas, input: &Input, body: Rect, device: Device, kind: &str, params: &'static [ParamInfo]) {
+        let t = self.theme;
+        let kind = kind.to_string();
         if kind == "eq" {
             self.eq_device(c, input, body, device, params);
             return;
@@ -416,11 +462,15 @@ impl App {
                 let cell = Rect::new(x + col as f32 * CELL_W, body.y + 16.0 + row as f32 * CELL_H, CELL_W, CELL_H);
                 let value = self.param_value(device, p);
                 let id = wid("prm", key, p.id as usize);
-                let changed = if p.unit == Unit::Choice {
+                let mut changed = if p.unit == Unit::Choice {
                     self.choice(c, input, id, cell, p, value)
                 } else {
                     self.knob(c, input, id, cell, p, value)
                 };
+                if let Device::RackUnit { track, slot, unit } = device {
+                    self.macro_range_knob(c, cell, id, track, slot, unit, p, &mut changed, input.mods.alt);
+                }
+                self.mod_knob(c, input, id, cell, device, p, value, &mut changed);
                 if let Some(v) = changed {
                     self.set_param_value(device, p, v);
                 }
@@ -445,20 +495,32 @@ impl App {
             Device::Effect { track, slot } => {
                 self.project.tracks[track].inserts[slot].as_ref().map_or(Vec::new(), |e| e.params.clone())
             }
+            Device::RackUnit { track, slot, unit } => self.project.tracks[track].inserts[slot].as_ref().map_or(Vec::new(), |e| {
+                e.params
+                    .iter()
+                    .filter_map(|&(id, v)| split_param(id).filter(|&(u, _)| u == unit).map(|(_, local)| (local, v)))
+                    .collect()
+            }),
         }
+    }
+
+    /// Chains and mappings of a rack device, saved with its preset.
+    fn device_rack(&self, device: Device) -> Option<ponzik_project::RackDef> {
+        let Device::Effect { track, slot } = device else { return None };
+        self.project.tracks[track].inserts[slot].as_ref()?.rack.as_deref().cloned()
     }
 
     pub fn save_preset(&mut self, device: Device, name: &str) {
         let (kind, _) = self.device_kind(device);
         let params = self.device_params(device);
-        match super::compat::save_preset(&kind, name, &params) {
+        match super::compat::save_preset(&kind, name, &params, self.device_rack(device).as_ref()) {
             Ok(_) => self.toast(&tr_fmt!("Preset saved: {}", name)),
             Err(e) => self.toast(&e),
         }
     }
 
     /// Remplace tous les réglages de l'appareil par ceux du preset.
-    pub fn apply_preset(&mut self, device: Device, params: &[(u32, f32)]) {
+    pub fn apply_preset(&mut self, device: Device, params: &[(u32, f32)], rack: Option<ponzik_project::RackDef>) {
         match device {
             Device::Instrument(ch) => {
                 if let Some(c) = self.project.channels.get_mut(ch) {
@@ -468,6 +530,19 @@ impl App {
             Device::Effect { track, slot } => {
                 if let Some(e) = self.project.tracks[track].inserts[slot].as_mut() {
                     e.params = params.to_vec();
+                    if e.kind == ponzik_project::rack::RACK
+                        && let Some(rack) = rack
+                    {
+                        e.rack = Some(Box::new(rack));
+                    }
+                }
+                // Modulations of the old rack devices no longer apply.
+                self.project.prune_modulators();
+            }
+            Device::RackUnit { track, slot, unit } => {
+                if let Some(e) = self.project.tracks[track].inserts[slot].as_mut() {
+                    e.params.retain(|(id, _)| split_param(*id).is_none_or(|(u, _)| u != unit));
+                    e.params.extend(params.iter().map(|&(id, v)| (unit_param(unit, id), v)));
                 }
             }
         }
@@ -478,6 +553,9 @@ impl App {
         match device {
             Device::Instrument(ch) => self.project.channels.get(ch).and_then(|c| c.instrument.get(p.id)),
             Device::Effect { track, slot } => self.project.tracks[track].inserts[slot].as_ref().and_then(|e| e.get(p.id)),
+            Device::RackUnit { track, slot, unit } => {
+                return self.project.tracks[track].inserts[slot].as_ref().map_or(p.default, |e| e.effective(unit_param(unit, p.id), p));
+            }
         }
         .unwrap_or(p.default)
     }
@@ -492,6 +570,11 @@ impl App {
             Device::Effect { track, slot } => {
                 if let Some(e) = self.project.tracks[track].inserts[slot].as_mut() {
                     e.set(p.id, v);
+                }
+            }
+            Device::RackUnit { track, slot, unit } => {
+                if let Some(e) = self.project.tracks[track].inserts[slot].as_mut() {
+                    e.set(unit_param(unit, p.id), v);
                 }
             }
         }

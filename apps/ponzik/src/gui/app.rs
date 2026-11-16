@@ -145,6 +145,12 @@ pub enum Popup {
     MarkerColor(usize),
     /// Time signature from this tick (tempo lane).
     Signature(u32),
+    /// New modulator: on the channel's instrument (if any) or the track.
+    AddModulator { track: usize, channel: Option<usize> },
+    /// An effect for one chain of a rack.
+    RackAdd { track: usize, slot: usize, chain: usize },
+    /// Right-click on a device inside a rack.
+    RackDevice { track: usize, slot: usize, unit: usize },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -177,6 +183,10 @@ pub fn display_kind(kind: &str) -> String {
 pub enum Action {
     None,
     StartTour,
+    /// Edit of an effect rack.
+    Rack(super::rackfx::RackAction),
+    /// Edit of the modulators.
+    Mod(super::modulators::ModAction),
     AddInstrument(&'static str, Option<usize>),
     AddEffect(usize, &'static str),
     /// Effet de notes : canal, emplacement, type.
@@ -550,6 +560,12 @@ pub struct App {
     pub prefs: super::settings::Prefs,
     /// Atelier : échantillon ouvert et son édition.
     pub lab: super::samplelab::Lab,
+    /// Device open in each rack: (track, slot) → unit.
+    pub rack_sel: HashMap<(usize, usize), usize>,
+    /// Device chip dragged inside a rack.
+    pub rack_chip: Option<super::rackfx::ChipDrag>,
+    /// Modulator cards: handle drag, depth mode, live traces.
+    pub mod_ui: super::modulators::ModUi,
 }
 
 impl App {
@@ -662,6 +678,9 @@ impl App {
             cursor: Default::default(),
             prefs: Default::default(),
             lab: Default::default(),
+            rack_sel: HashMap::new(),
+            rack_chip: None,
+            mod_ui: Default::default(),
         }
     }
 
@@ -728,6 +747,15 @@ impl App {
             "chord" => {
                 self.piano.chord_stamp = true;
                 Popup::Chord
+            }
+            "rack-param" => {
+                // Right-click on the saturator's drive in the first rack of the focused track.
+                let track = self.focused_track();
+                let Some(slot) = self.project.tracks[track].inserts.iter().position(|f| f.as_ref().is_some_and(|f| f.kind == "rack")) else { return };
+                let id = ponzik_engine::effects::fx_rack::unit_param(1, 2);
+                let target = ponzik_engine::AutoTarget::EffectParam { track, slot, id };
+                self.open_popup(Popup::Param { target, value: 0.5, default: 0.5 }, Rect::new(980.0, 520.0, 0.0, 0.0));
+                return;
             }
             "newbus" => {
                 self.open_popup(Popup::NewBus, Rect::new(1600.0 - 128.0, 68.0, 76.0, 36.0));
@@ -858,6 +886,8 @@ impl App {
     /// À appeler après chaque modification du projet. Les gestes continus (même
     /// libellé à moins d'une seconde) forment une seule étape d'annulation.
     pub fn commit(&mut self, label: &str) {
+        // Modulations of a removed or replaced device go with it.
+        self.project.prune_modulators();
         if self.project == self.synced {
             return;
         }
@@ -2453,6 +2483,13 @@ impl App {
                 track_name(*track),
                 registry::effects().iter().map(|k| MenuItem::new(Icon::Effect, tr(k.name), Action::AddEffect(*track, k.id)).tip(tr(k.description))).collect(),
             ),
+            Popup::AddModulator { track, channel } => (tr("Modulators").into(), self.add_mod_items(*track, *channel)),
+            Popup::RackAdd { track, slot, chain } => (tr_fmt!("Chain {}", chain + 1), self.rack_add_items(*track, *slot, *chain)),
+            Popup::RackDevice { track, slot, unit } => {
+                let (kind, _) = self.device_kind(super::devices::Device::RackUnit { track: *track, slot: *slot, unit: *unit });
+                let name = registry::effect_kind(&kind).map_or(kind.clone(), |k| tr(k.name).to_string());
+                (name, self.rack_device_items(*track, *slot, *unit))
+            }
             Popup::AddNoteFx { channel, slot } => (
                 tr("Note effects").into(),
                 registry::note_fx()
@@ -2656,6 +2693,8 @@ impl App {
                     v.push(MenuItem::new(Icon::Trash, tr("Delete the automation"), Action::RemoveAutomation(*target)));
                 }
                 v.push(MenuItem::new(Icon::Reset, tr("Default value"), Action::SetParamValue(*target, *default)));
+                v.extend(self.macro_menu_items(*target));
+                v.extend(self.mod_menu_items(*target));
                 (label, v)
             }
             Popup::ImportMidi(files) => {
@@ -2899,6 +2938,8 @@ impl App {
     pub(super) fn run_action(&mut self, action: Action, anchor: Rect) {
         match action {
             Action::None => {}
+            Action::Rack(a) => self.run_rack_action(a),
+            Action::Mod(a) => self.run_mod_action(a),
             Action::AddInstrument(kind, None) => self.add_instrument(kind),
             Action::AddInstrument(kind, Some(ch)) => {
                 if let Some(info) = registry::instrument_kind(kind) {
@@ -3103,7 +3144,8 @@ impl App {
             },
             Action::LoadPreset(device, path) => match compat::load_preset(&path) {
                 Ok(params) => {
-                    self.apply_preset(device, &params);
+                    let rack = std::fs::read_to_string(&path).ok().and_then(|t| ponzik_project::presets::parse_rack(&t));
+                    self.apply_preset(device, &params, rack);
                     let name = path.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
                     self.toast(&tr_fmt!("Preset loaded: {}", name));
                 }
@@ -3112,7 +3154,7 @@ impl App {
             Action::LoadFactoryPreset(device, name) => {
                 let (kind, _) = self.device_kind(device);
                 if let Some(params) = ponzik_project::presets::factory_preset(&kind, name) {
-                    self.apply_preset(device, &params);
+                    self.apply_preset(device, &params, None);
                     self.toast(&tr_fmt!("Preset loaded: {}", name));
                 }
             }
