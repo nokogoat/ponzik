@@ -95,7 +95,7 @@ template" (V1-12)**.
 |---|---|---|---|---|---|---|
 | V2-1 | **Sidechain**: every dynamics effect (Compressor, Gate, Pump, Multiband) can listen to another track | House and EDM pumping; nothing replaces it | M | engine (`Effect::process_sidechain`, routing order), ui | – | ✅ key track per insert for the compressor, gate and the new Ducking effect |
 | V2-2 | **Plugin delay compensation (PDC)**: `Effect::latency()`, compensated delay on tracks and sends; latency also read from CLAP plugins | The lookahead limiter and CLAP plugins already shift the sound | M | engine (mixer.rs), clap | – | ✅ tracks, sends and sidechain keys; CLAP and VST3 latency; trimmed from exports |
-| V2-3 | **Group tracks and VCAs**: a mixer track as a collapsible group, and a VCA fader that drives several tracks without the audio passing through it | Mixing drums or backing vocals (every DAW) | M | project, engine, ui (mixer.rs) | – | ⬜ |
+| V2-3 | **Group tracks and VCAs**: a mixer track as a collapsible group, and a VCA fader that drives several tracks without the audio passing through it | Mixing drums or backing vocals (every DAW) | M | project, engine, ui (mixer.rs) | – | ✅ (buses come from the fixed 33 tracks; no nested VCAs, no group pre-listen) |
 | V2-4 | **Dynamic mixer tracks**: replace the fixed `TRACKS = 33` with a variable count | FL 2025 goes up to 500 tracks; 33 limits large projects | M | engine, project, ui | – | ⬜ |
 | V2-5 | **Device macros and racks**: a chain of stacked effects or instruments, 8 mappable macros with ranges, saved as a preset | The core of Ableton's "calm": 8 knobs instead of 80 | L | engine (effect rack), project, ui | – | ⬜ |
 | V2-6 | **Modulators**: LFO, envelope, envelope follower, step, random, patched by dragging onto any parameter, tracks and sends included, with a per-target depth | Bitwig 5, Cubase 14; this is what brings sounds to life | L | engine (per-block modulation), dsp (lfo.rs), ui | V2-5 recommended | ⬜ |
@@ -215,7 +215,7 @@ already has are not listed here.
   freeze and bounce (V2-15), clip panel and fades (V2-23), pitch correction
   (V3-5), spectral editing (V3-6), audio to MIDI (V3-7), stems (V3-8), resampling
   (V3-16).
-- **Mixing**: groups and VCAs (V2-3), dynamic tracks (V2-4), mid/side in the EQ
+- **Mixing**: dynamic tracks (V2-4), mid/side in the EQ
   and compressor (Wave 2, as part of the dynamic EQ), cue and pre-listen (outside
   the waves).
 - **Sound design**: macros and racks (V2-5), modulators (V2-6), A/B (V2-21),
