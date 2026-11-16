@@ -17,4 +17,5 @@ pub mod noise;
 pub mod osc;
 pub mod oversample;
 pub mod smooth;
+pub mod spectrum;
 pub mod util;
