@@ -106,6 +106,10 @@ pub enum Icon {
     Dice,
     /// Horloge : historique des modifications.
     History,
+    /// Trois traits : menu principal.
+    Menu,
+    /// Pastille mi-pleine : thème.
+    Theme,
 }
 
 /// Dessine une icône au trait, dans un carré de `size` centré sur (`cx`, `cy`).
@@ -272,6 +276,17 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
         Icon::History => {
             c.stroke_circle(cx, cy, 6.8 * s, stroke, col);
             c.stroke_polyline(&[p(0.0, -4.0), p(0.0, 0.0), p(3.0, 2.0)], stroke, col);
+        }
+        Icon::Menu => {
+            for y in [-4.5, 0.0, 4.5] {
+                c.stroke_polyline(&[p(-6.0, y), p(6.0, y)], stroke, col);
+            }
+        }
+        Icon::Theme => {
+            c.stroke_circle(cx, cy, 6.5 * s, stroke, col);
+            let mut half = Path::new();
+            half.polygon(&[p(0.0, -6.5), p(4.6, -4.6), p(6.5, 0.0), p(4.6, 4.6), p(0.0, 6.5)]);
+            c.fill_path(&half, col);
         }
         Icon::Check => c.stroke_polyline(&[p(-6.0, 0.5), p(-2.0, 4.5), p(6.0, -4.5)], stroke * 1.15, col),
         Icon::Play => {

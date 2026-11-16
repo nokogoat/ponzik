@@ -118,6 +118,10 @@ pub enum Popup {
     Humanize,
     /// Historique des modifications.
     History,
+    /// Menu principal : fichier, export, démos, thème.
+    MainMenu,
+    /// Choix du thème.
+    Themes,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -254,6 +258,8 @@ impl MenuItem {
 pub struct PopupState {
     pub kind: Popup,
     pub anchor: Rect,
+    /// Ouvert pendant cette image : le clic qui l'a ouvert ne doit pas le refermer.
+    pub fresh: bool,
 }
 
 /// Geste en cours : widget saisi et valeurs de départ.
@@ -563,6 +569,11 @@ impl App {
             "chord" => {
                 self.piano.chord_stamp = true;
                 Popup::Chord
+            }
+            "menu" | "themes" => {
+                let kind = if name == "menu" { Popup::MainMenu } else { Popup::Themes };
+                self.open_popup(kind, Rect::new(1600.0 - 44.0, 8.0, 32.0, 32.0));
+                return;
             }
             _ => return,
         };
@@ -1584,11 +1595,10 @@ impl App {
         // Droite : fichier et historique, puis la charge DSP si la place le permet.
         let mut rx = r.w - 12.0 - 32.0;
         let buttons = [
+            (Icon::Menu, "tb-menu", ("Menu", "")),
             (Icon::Search, "tb-search", ("Tout trouver", "Ctrl K")),
             (Icon::Panel, "tb-panel", ("Appareils", "")),
-            (Icon::Export, "tb-export", ("Exporter en WAV", "Ctrl R")),
             (Icon::Save, "tb-save", ("Enregistrer", "Ctrl S")),
-            (Icon::Folder, "tb-open", ("Ouvrir", "Ctrl O")),
             (Icon::Redo, "tb-redo", ("Rétablir", "Ctrl Y")),
             (Icon::Undo, "tb-undo", ("Annuler", "Ctrl Z")),
             (Icon::History, "tb-history", ("Historique", "")),
@@ -1599,17 +1609,15 @@ impl App {
             }
             let on = icon == Icon::Panel && self.panel;
             if self.icon_button(c, input, wid(name, 0, 0), Rect::new(rx, cy - 16.0, 32.0, 32.0), icon, on, tip) {
+                let anchor = Rect::new(rx, cy - 16.0, 32.0, 32.0);
                 match icon {
+                    Icon::Menu => self.open_popup(Popup::MainMenu, anchor),
                     Icon::Search => self.open_palette(),
                     Icon::Panel => self.panel = !self.panel,
-                    Icon::Export => self.export(),
                     Icon::Save => self.save(),
-                    Icon::Folder => {
-                        self.open_popup(Popup::OpenProject(compat::list_projects()), Rect::new(rx, cy - 16.0, 32.0, 32.0))
-                    }
                     Icon::Redo => self.redo(),
                     Icon::Undo => self.undo(),
-                    Icon::History => self.open_popup(Popup::History, Rect::new(rx, cy - 16.0, 32.0, 32.0)),
+                    Icon::History => self.open_popup(Popup::History, anchor),
                     _ => {}
                 }
             }
@@ -1912,29 +1920,6 @@ impl App {
         let inner_x = r.right() - SIDEBAR + 12.0;
         let w = SIDEBAR - 24.0;
 
-        // Thèmes, en bas : une pastille de couleur par thème.
-        let theme_y = r.bottom() - 34.0;
-        c.fill_rect(Rect::new(r.x, theme_y - 18.0, r.w - 1.0, 1.0), t.hairline);
-        for (i, th) in THEMES.iter().enumerate() {
-            let cx = inner_x + 18.0 + i as f32 * 34.0;
-            let hit = Rect::new(cx - 15.0, theme_y - 15.0, 30.0, 30.0);
-            let id = wid("theme", i, 0);
-            let hov = self.hovered(input, id, hit);
-            let hv = self.hover_anim(id, hov);
-            let cur = th.name == self.theme.name;
-            if cur || hv > 0.01 {
-                c.stroke_circle(cx, theme_y, 12.0, 1.5, if cur { t.text2 } else { t.hairline.alpha(2.0 * hv) });
-            }
-            c.fill_circle(cx, theme_y, 8.0, th.bg_deep.mix(th.raised_hi, 0.5));
-            c.fill_circle(cx + 2.5, theme_y + 2.5, 4.5, th.accent);
-            if hov {
-                self.set_tip(&format!("Thème {}", th.name), "");
-                if input.pressed {
-                    self.theme = *th;
-                }
-            }
-        }
-
         // Recherche : filtre instruments, effets et échantillons.
         let field = Rect::new(inner_x, r.y + 12.0, w, 36.0);
         let fid = wid("sb-search", 0, 0);
@@ -1995,7 +1980,7 @@ impl App {
             self.sidebar_query.clear();
         }
 
-        let list = Rect::new(r.x, cats.bottom() + 6.0, r.w, theme_y - 18.0 - cats.bottom() - 6.0);
+        let list = Rect::new(r.x, cats.bottom() + 6.0, r.w, r.bottom() - 8.0 - cats.bottom() - 6.0);
         let hov_list = input.inside && list.contains(input.x, input.y);
         if hov_list && input.wheel != 0.0 {
             self.sidebar_scroll = (self.sidebar_scroll - input.wheel * 60.0).max(0.0);
@@ -2074,7 +2059,7 @@ impl App {
     // --- Menus ---
 
     pub fn open_popup(&mut self, kind: Popup, anchor: Rect) {
-        self.popup = Some(PopupState { kind, anchor });
+        self.popup = Some(PopupState { kind, anchor, fresh: true });
         self.anim.set(wid("popup", 0, 0), 0.0);
         self.anim.set(wid("popup-scroll", 0, 0), 0.0);
     }
@@ -2233,17 +2218,25 @@ impl App {
             ),
             Popup::Chord => {
                 let cur = self.piano.chord;
-                let mut v = vec![
-                    MenuItem::new(Icon::Scale, "Gamme", Action::SetChord(None))
-                        .tip("L'accord de la gamme du projet sur la note cliquée")
-                        .on(cur.is_none()),
-                ];
-                for (i, kind) in ChordKind::ALL.into_iter().enumerate() {
-                    let it = MenuItem::plain(super::piano::chord_name(kind), Action::SetChord(Some(kind)))
-                        .detail(super::piano::chord_symbol(kind).into())
-                        .on(cur == Some(kind));
-                    v.push(if i == 0 { it.sep() } else { it });
+                if self.project.scale != ponzik_project::ScaleKind::Chromatic {
+                    // Gamme fixée : on choisit une forme, la gamme décide majeur ou mineur.
+                    let shape = super::piano::scale_shape(cur).0;
+                    let title = format!("Accord · {} {}", key_name(self.project.key), self.project.scale.name());
+                    let v = super::piano::SCALE_SHAPES
+                        .iter()
+                        .map(|&(kind, name, sym)| MenuItem::plain(name, Action::SetChord(kind)).detail(sym.into()).on(name == shape))
+                        .collect();
+                    return (title, v);
                 }
+                let cur = cur.unwrap_or(ChordKind::Major);
+                let v = ChordKind::ALL
+                    .into_iter()
+                    .map(|kind| {
+                        MenuItem::plain(super::piano::chord_name(kind), Action::SetChord(Some(kind)))
+                            .detail(super::piano::chord_symbol(kind).into())
+                            .on(cur == kind)
+                    })
+                    .collect();
                 ("Accord".into(), v)
             }
             Popup::History => {
@@ -2271,6 +2264,38 @@ impl App {
                         MenuItem::new(Icon::Dice, name, Action::Humanize(ticks, vel))
                             .detail(format!("±{ticks} · ±{:.0} %", vel * 100.0))
                             .tip("Début (ticks) et vélocité, au hasard")
+                    })
+                    .collect(),
+            ),
+            Popup::MainMenu => {
+                let key = |k: &str| k.to_string();
+                let theme = THEMES.iter().position(|th| th.name == self.theme.name).unwrap_or(0);
+                (
+                    "Ponzik".into(),
+                    vec![
+                        MenuItem::new(Icon::Plus, "Nouveau", Action::NewProject).detail(key("Ctrl N")),
+                        MenuItem::new(Icon::Folder, "Ouvrir", Action::OpenMenu).detail(key("Ctrl O")),
+                        MenuItem::new(Icon::Save, "Enregistrer", Action::Save).detail(key("Ctrl S")),
+                        MenuItem::new(Icon::Pencil, "Enregistrer sous", Action::SaveAs),
+                        MenuItem::new(Icon::Export, "Exporter en WAV", Action::Export).detail(key("Ctrl R")).sep(),
+                        MenuItem::new(Icon::Columns, "Exporter les pistes", Action::ExportStems).tip("Un WAV par piste du mixer"),
+                        MenuItem::new(Icon::Piano, "Importer du MIDI", Action::ImportMidiMenu).sep(),
+                        MenuItem::new(Icon::Piano, "Exporter en MIDI", Action::ExportMidi).tip("Le pattern actuel"),
+                        MenuItem::new(Icon::Play, "Démo house", Action::LoadDemo(0)).sep(),
+                        MenuItem::new(Icon::Play, "Démo breakcore", Action::LoadDemo(1)),
+                        MenuItem::new(Icon::Theme, "Thème", Action::Popup(Popup::Themes)).detail(THEMES[theme].name.into()).sep(),
+                    ],
+                )
+            }
+            Popup::Themes => (
+                "Thème".into(),
+                THEMES
+                    .iter()
+                    .enumerate()
+                    .map(|(i, th)| {
+                        let mut it = MenuItem::plain(th.name, Action::SetTheme(i)).on(th.name == self.theme.name);
+                        it.color = Some(th.accent);
+                        it
                     })
                     .collect(),
             ),
@@ -2524,10 +2549,19 @@ impl App {
     fn popup_layer(&mut self, c: &mut Canvas, input: &Input, screen: Rect) {
         let Some(mut state) = self.popup.take() else { return };
         let t = self.theme;
+        // Le clic qui vient d'ouvrir le menu est déjà consommé par son bouton.
+        let masked;
+        let input = if state.fresh {
+            masked = Input { pressed: false, right_pressed: false, double: false, ..input.clone() };
+            &masked
+        } else {
+            input
+        };
+        state.fresh = false;
         if let Popup::Palette { query, selected } = &state.kind {
             let (run, next) = self.palette(c, input, screen, query.clone(), *selected);
             if let Some(kind) = next {
-                self.popup = Some(PopupState { kind, anchor: state.anchor });
+                self.popup = Some(PopupState { kind, anchor: state.anchor, fresh: false });
             }
             if let Some(action) = run {
                 self.run_action(action, Rect::new(screen.w * 0.5 - 150.0, screen.h * 0.2, 300.0, 0.0));
@@ -2634,7 +2668,8 @@ impl App {
 
         let mut chosen = None;
         let mut hover_tip = None;
-        let prev = c.push_clip(Rect::new(r.x, r.y + 36.0, r.w, r.h - 40.0));
+        let list = Rect::new(r.x, r.y + 36.0, r.w, r.h - 40.0);
+        let prev = c.push_clip(list);
         let mut ry = r.y + 38.0 - scroll;
         for (i, it) in items.iter().enumerate() {
             if it.sep {
@@ -2644,7 +2679,7 @@ impl App {
             let row = Rect::new(r.x + 6.0, ry, r.w - 12.0, row_h - 4.0);
             ry += row_h;
             let id = wid("popup-row", i, 0);
-            let hov = input.inside && row.contains(input.x, input.y) && r.contains(input.x, input.y);
+            let hov = input.inside && row.contains(input.x, input.y) && list.contains(input.x, input.y);
             let hv = self.hover_anim(id, hov);
             let current = it.on;
             if hv > 0.01 || current {
