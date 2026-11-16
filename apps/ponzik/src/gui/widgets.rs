@@ -102,6 +102,8 @@ pub enum Icon {
     Scale,
     /// Trois têtes de note empilées : accord.
     Chord,
+    /// Dé : humaniser.
+    Dice,
 }
 
 /// Dessine une icône au trait, dans un carré de `size` centré sur (`cx`, `cy`).
@@ -258,6 +260,12 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
                 c.fill_circle(cx - 3.2 * s, cy + y * s, 2.0 * s, col);
             }
             c.stroke_polyline(&[p(-0.7, 5.2), p(-0.7, -7.5), p(4.5, -5.0)], stroke, col);
+        }
+        Icon::Dice => {
+            c.stroke_rrect(rr(-6.5, -6.5, 13.0, 13.0), 3.0 * s, stroke, col);
+            for (x, y) in [(-3.0, -3.0), (0.0, 0.0), (3.0, 3.0)] {
+                c.fill_circle(cx + x * s, cy + y * s, 1.4 * s.max(0.9), col);
+            }
         }
         Icon::Check => c.stroke_polyline(&[p(-6.0, 0.5), p(-2.0, 4.5), p(6.0, -4.5)], stroke * 1.15, col),
         Icon::Play => {

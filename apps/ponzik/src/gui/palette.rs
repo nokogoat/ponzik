@@ -122,6 +122,9 @@ impl App {
             "",
             Action::Popup(Popup::Rename { target: Rename::Project, text: self.project.name.clone() }),
         );
+        for (name, ticks, vel) in super::piano::HUMANIZE {
+            add(format!("Humaniser les notes : {}", name.to_lowercase()), "Piano roll", "", Action::Humanize(ticks, vel));
+        }
         add("Annuler".into(), "Édition", "Ctrl Z", Action::Undo);
         add("Rétablir".into(), "Édition", "Ctrl Y", Action::Redo);
         add("Démo : groove house".into(), "Démo", "", Action::LoadDemo(0));

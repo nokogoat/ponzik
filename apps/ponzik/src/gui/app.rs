@@ -108,6 +108,8 @@ pub enum Popup {
     Scale,
     /// Type d'accord posé par le tampon du piano roll.
     Chord,
+    /// Force de l'humanisation des notes.
+    Humanize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -182,6 +184,8 @@ pub enum Action {
     RemoveAutomation(ponzik_engine::AutoTarget),
     /// Accord du tampon : un type, ou `None` pour l'accord de la gamme.
     SetChord(Option<ChordKind>),
+    /// Humanise les notes du piano roll : écart de début (ticks), écart relatif de vélocité.
+    Humanize(u32, f32),
     SetParamValue(ponzik_engine::AutoTarget, f32),
 }
 
@@ -520,6 +524,7 @@ impl App {
                 self.piano.scale_snap = true;
                 return;
             }
+            "humanize" => Popup::Humanize,
             "chord" => {
                 self.piano.chord_stamp = true;
                 Popup::Chord
@@ -2173,6 +2178,17 @@ impl App {
                 }
                 ("Accord".into(), v)
             }
+            Popup::Humanize => (
+                "Humaniser".into(),
+                super::piano::HUMANIZE
+                    .iter()
+                    .map(|&(name, ticks, vel)| {
+                        MenuItem::new(Icon::Dice, name, Action::Humanize(ticks, vel))
+                            .detail(format!("±{ticks} · ±{:.0} %", vel * 100.0))
+                            .tip("Début (ticks) et vélocité, au hasard")
+                    })
+                    .collect(),
+            ),
             Popup::Rename { .. } | Popup::Palette { .. } | Popup::Scale => (String::new(), Vec::new()),
         }
     }
@@ -2339,6 +2355,7 @@ impl App {
                 self.project.session_grid[col][row] = Some(p);
                 self.commit("Remplir une case");
             }
+            Action::Humanize(ticks, vel) => self.humanize(ticks, vel),
             Action::SetChord(kind) => {
                 self.piano.chord = kind;
                 self.piano.chord_stamp = true;

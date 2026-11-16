@@ -37,6 +37,9 @@ fn is_black(key: u8) -> bool {
     matches!(key % 12, 1 | 3 | 6 | 8 | 10)
 }
 
+/// Forces d'humanisation : nom, écart de début (ticks, ±), écart de vélocité (±, relatif).
+pub const HUMANIZE: [(&str, u32, f32); 3] = [("Léger", 3, 0.05), ("Moyen", 6, 0.1), ("Fort", 12, 0.2)];
+
 pub fn chord_name(kind: ChordKind) -> &'static str {
     match kind {
         ChordKind::Major => "Majeur",
@@ -187,6 +190,12 @@ impl App {
         }
         if chov && input.pressed {
             self.open_popup(Popup::Chord, chip);
+        }
+
+        hx += chip.w + 12.0;
+        let hum = Rect::new(hx, header.y, 36.0, header.h);
+        if self.icon_button(c, input, wid("pr-humanize", 0, 0), hum, Icon::Dice, false, ("Humaniser\nLa sélection, sinon tout le canal", "")) {
+            self.open_popup(Popup::Humanize, hum);
         }
 
         let snap_box = Rect::new(header.right() - 236.0, header.y, 236.0, header.h);
@@ -586,6 +595,28 @@ impl App {
         self.tip_zone(input, Rect::new(inner.x, vel_lane.y, KEYBOARD, vel_lane.h), "Vélocité\nGlisser dans le couloir pour la dessiner", "");
     }
 
+    /// Décale au hasard le début (±`ticks`) et la vélocité (±`vel`, relatif) des
+    /// notes sélectionnées, ou de tout le canal.
+    pub(super) fn humanize(&mut self, ticks: u32, vel: f32) {
+        let Some(ch) = self.piano_channel() else { return };
+        let targets: Vec<usize> = if self.piano.selected.is_empty() { (0..self.notes(ch).len()).collect() } else { self.piano.selected.clone() };
+        if targets.is_empty() {
+            self.toast("Aucune note à humaniser");
+            return;
+        }
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos() as u64);
+        let mut rng = Jitter(nanos | 1);
+        for &i in &targets {
+            let (dt, dv) = (rng.next() * ticks as f32, rng.next() * vel);
+            if let Some(n) = self.notes_mut(ch).get_mut(i) {
+                n.start = (n.start as f32 + dt).round().max(0.0) as u32;
+                n.vel = (n.vel * (1.0 + dv)).clamp(0.05, 1.0);
+            }
+        }
+        self.finish_note_edit(ch, "Humaniser");
+        self.toast(&format!("{} note(s) humanisée(s)", targets.len()));
+    }
+
     /// Raccourcis d'édition du piano roll, ceux de FL Studio.
     fn piano_keys(&mut self, input: &Input, ch: usize) {
         let snap = self.piano.snap;
@@ -679,5 +710,33 @@ impl App {
                 _ => {}
             }
         }
+    }
+}
+
+/// Hasard sans dépendance (xorshift64*), uniforme dans [−1, 1].
+struct Jitter(u64);
+
+impl Jitter {
+    fn next(&mut self) -> f32 {
+        self.0 ^= self.0 >> 12;
+        self.0 ^= self.0 << 25;
+        self.0 ^= self.0 >> 27;
+        let x = self.0.wrapping_mul(0x2545_f491_4f6c_dd1d);
+        (x >> 40) as f32 / (1u64 << 24) as f32 * 2.0 - 1.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Jitter;
+
+    #[test]
+    fn jitter_stays_in_range_and_varies() {
+        let mut j = Jitter(12345);
+        let v: Vec<f32> = (0..1000).map(|_| j.next()).collect();
+        assert!(v.iter().all(|x| (-1.0..=1.0).contains(x)));
+        let mean = v.iter().sum::<f32>() / v.len() as f32;
+        assert!(mean.abs() < 0.1, "{mean}");
+        assert!(v.iter().any(|&x| x > 0.8) && v.iter().any(|&x| x < -0.8));
     }
 }
