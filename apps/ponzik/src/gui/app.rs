@@ -10,7 +10,7 @@ use ponzik_engine::mixer::{MASTER, TRACKS};
 use ponzik_engine::registry;
 use ponzik_engine::{Command, EngineHandle, PlayMode, Sample, TICKS_PER_BAR, TICKS_PER_STEP};
 use ponzik_project::autosave::{self, Autosaver};
-use ponzik_project::{ChordKind, EffectDef, InstrumentDef, Project, ScaleKind};
+use ponzik_project::{ChordKind, EffectDef, InstrumentDef, Project, ScaleKind, TrackKind};
 use ponzik_ui::{Anim, Canvas, Color, FontId, Fonts, Rect, embedded};
 use ponzik_window::Key;
 
@@ -101,6 +101,12 @@ pub enum Popup {
     Send(usize),
     /// Piste clé (entrée latérale) d'un insert.
     Sidechain { track: usize, slot: usize },
+    /// Nouveau bus, retour d'effet ou VCA (bouton du mixer).
+    NewBus,
+    /// Bus de retour d'effet nourri par un envoi de la piste.
+    NewReturn(usize),
+    /// VCA qui pilote la piste.
+    Vca(usize),
     Rename { target: Rename, text: String },
     /// Palette touche-à-tout (Ctrl+K).
     Palette { query: String, selected: usize },
@@ -228,6 +234,18 @@ pub enum Action {
     DeleteClip(usize),
     /// Recopie la sélection de temps de la playlist juste après elle.
     DuplicateTime,
+    /// Nouveau bus dans lequel sortent ces pistes (aucune : bus vide).
+    NewBus(Vec<usize>),
+    /// Bus de retour (type d'effet), avec un envoi depuis la piste donnée.
+    NewReturn(&'static str, Option<usize>),
+    /// Nouveau VCA qui pilote ces pistes.
+    NewVca(Vec<usize>),
+    /// VCA d'une piste, ou aucun.
+    SetVca(usize, Option<usize>),
+    /// Replie ou déplie un bus.
+    ToggleFold(usize),
+    /// Défait un bus ou un VCA.
+    Dissolve(usize),
 }
 
 /// Ligne de menu : une icône (ou la couleur d'un pattern), un nom court, une
@@ -401,6 +419,8 @@ pub struct App {
     pub sidebar_focus: bool,
     pub chain_scroll: f32,
     pub mixer_scroll: f32,
+    /// Tranches du mixer choisies par Ctrl+clic (à grouper dans un bus ou un VCA).
+    pub mixer_sel: Vec<usize>,
     pub samples: HashMap<String, Arc<Sample>>,
     /// Crêtes (min, max) par paquets d'échantillons, pour dessiner les formes d'onde.
     waveforms: HashMap<String, Arc<Vec<(f32, f32)>>>,
@@ -537,6 +557,7 @@ impl App {
             sidebar_focus: false,
             chain_scroll: 0.0,
             mixer_scroll: 0.0,
+            mixer_sel: Vec::new(),
             samples: HashMap::new(),
             waveforms: HashMap::new(),
             responses: HashMap::new(),
@@ -659,6 +680,15 @@ impl App {
             "chord" => {
                 self.piano.chord_stamp = true;
                 Popup::Chord
+            }
+            "newbus" => {
+                self.open_popup(Popup::NewBus, Rect::new(1600.0 - 128.0, 68.0, 76.0, 36.0));
+                return;
+            }
+            "track" => {
+                let t = self.focused_track();
+                self.open_popup(Popup::TrackMenu(t), Rect::new(560.0, 146.0, 0.0, 0.0));
+                return;
             }
             "menu" | "themes" => {
                 let kind = if name == "menu" { Popup::MainMenu } else { Popup::Themes };
@@ -1017,6 +1047,10 @@ impl App {
 
     pub fn add_effect(&mut self, track: usize, kind: &str) {
         let Some(info) = registry::effect_kind(kind) else { return };
+        if self.project.tracks[track].kind == TrackKind::Vca {
+            self.toast("Un VCA ne fait passer aucun son : mettez l'effet sur un bus");
+            return;
+        }
         let Some(slot) = self.project.tracks[track].inserts.iter().position(Option::is_none) else {
             self.toast("Plus d'emplacement libre sur cette piste");
             return;
@@ -1031,28 +1065,54 @@ impl App {
     /// Un second appui (ou un autre solo) rétablit l'état muet du projet.
     pub fn toggle_solo(&mut self, track: usize) {
         self.solo = if self.solo == Some(track) { None } else { Some(track) };
-        let mut keep = vec![MASTER];
-        if let Some(mut t) = self.solo {
-            for _ in 0..TRACKS {
-                keep.push(t);
-                let out = self.project.tracks[t].output;
-                if out == t || out == MASTER {
-                    break;
-                }
-                t = out;
-            }
-            // Les pistes qui alimentent la piste en solo (canaux routés vers elle) restent aussi.
-            let solo = self.solo.unwrap_or(MASTER);
-            for (i, tr) in self.project.tracks.iter().enumerate() {
-                if tr.output == solo {
-                    keep.push(i);
-                }
-            }
-        }
+        let keep = self.solo.map(|solo| self.solo_keep(solo)).unwrap_or_default();
         for t in 0..TRACKS {
             let muted = if self.solo.is_some() { !keep.contains(&t) } else { self.project.tracks[t].muted };
             self.send(Command::SetTrackMute { track: t, muted: muted || self.project.tracks[t].muted });
         }
+    }
+
+    /// Pistes qui restent audibles quand `solo` est en solo : elle et ses
+    /// destinations jusqu'au master, tout ce qui y sort (bus imbriqués compris),
+    /// les pistes d'un VCA en solo, et les VCA qui pilotent ce qui reste.
+    pub(super) fn solo_keep(&self, solo: usize) -> Vec<usize> {
+        let p = &self.project;
+        let mut keep = vec![MASTER, solo];
+        let mut roots = vec![solo];
+        if p.tracks[solo].kind == TrackKind::Vca {
+            roots.extend(p.vca_members(solo));
+        }
+        let reaches = |mut t: usize, target: usize| {
+            for _ in 0..TRACKS {
+                if t == target {
+                    return true;
+                }
+                let out = p.tracks[t].output;
+                if out == t || t == MASTER {
+                    return false;
+                }
+                t = out;
+            }
+            false
+        };
+        for &r in &roots {
+            // Vers le master, puis tout ce qui y sort.
+            let mut t = r;
+            for _ in 0..TRACKS {
+                keep.push(t);
+                let out = p.tracks[t].output;
+                if out == t || t == MASTER {
+                    break;
+                }
+                t = out;
+            }
+            keep.extend((1..TRACKS).filter(|&i| i != r && reaches(i, r)));
+        }
+        let vcas: Vec<usize> = keep.iter().filter_map(|&t| p.tracks[t].vca).collect();
+        keep.extend(vcas);
+        keep.sort_unstable();
+        keep.dedup();
+        keep
     }
 
     /// Arme ou désarme l'enregistrement audio d'une piste. L'entrée audio n'est
@@ -1470,6 +1530,7 @@ impl App {
             match key {
                 Key::Escape => {
                     self.popup = None;
+                    self.mixer_sel.clear();
                     self.piano.selected.clear();
                     self.playlist.selected = None;
                     if let Some((v, _, _)) = self.time_selection.take() {
@@ -1510,6 +1571,10 @@ impl App {
                 Key::Char('n') if mods.ctrl => self.open_popup(Popup::Templates, Rect::new(60.0, 8.0, 0.0, TOP_BAR - 12.0)),
                 Key::Char('r') if mods.ctrl => self.export(),
                 Key::Char('k') if mods.ctrl => self.open_palette(),
+                Key::Char('g') if mods.ctrl && self.view == View::Mixer => {
+                    let group = self.group_for(self.focused_track());
+                    self.new_bus(&group);
+                }
                 Key::Char('f') if mods.ctrl => {
                     self.sidebar = true;
                     self.sidebar_focus = true;
@@ -2377,42 +2442,135 @@ impl App {
             }
             Popup::TrackMenu(t) => {
                 let t = *t;
-                let rename = Popup::Rename { target: Rename::Track(t), text: p.tracks[t].name.clone() };
+                let tr = &p.tracks[t];
+                let rename = Popup::Rename { target: Rename::Track(t), text: tr.name.clone() };
                 let mut v = vec![MenuItem::new(Icon::Pencil, "Renommer", Action::Popup(rename))];
-                if t != MASTER {
-                    v.push(MenuItem::new(Icon::Route, "Sortie", Action::Popup(Popup::Output(t))).detail(track_name(p.tracks[t].output)));
+                let vca = tr.kind == TrackKind::Vca;
+                if t != MASTER && !vca {
+                    v.push(MenuItem::new(Icon::Route, "Sortie", Action::Popup(Popup::Output(t))).detail(track_name(tr.output)));
                     v.push(MenuItem::new(Icon::Send, "Envoi", Action::Popup(Popup::Send(t))));
                 }
-                v.push(MenuItem::new(Icon::Effect, "Effet", Action::Popup(Popup::AddEffect { track: t })));
+                if !vca {
+                    v.push(MenuItem::new(Icon::Effect, "Effet", Action::Popup(Popup::AddEffect { track: t })));
+                }
+                if t != MASTER && !vca {
+                    // Grouper : la sélection si la piste en fait partie, sinon la piste seule.
+                    let group = self.group_for(t);
+                    let item = if group.len() > 1 {
+                        MenuItem::new(Icon::Bus, "Grouper dans un bus", Action::NewBus(group.clone()))
+                            .detail("Ctrl+G".into())
+                            .tip(&format!("Les {} pistes choisies sortent dans un nouveau bus", group.len()))
+                    } else {
+                        MenuItem::new(Icon::Bus, "Envoyer vers un nouveau bus", Action::NewBus(group.clone()))
+                            .detail("Ctrl+G".into())
+                            .tip("Crée un bus et y fait sortir cette piste")
+                    };
+                    v.push(item.sep());
+                    v.push(
+                        MenuItem::new(Icon::Send, "Nouveau bus d'envoi", Action::Popup(Popup::NewReturn(t)))
+                            .tip("Un bus de retour avec une réverbe ou un délai, et un envoi vers lui"),
+                    );
+                    let detail = tr.vca.map_or(String::new(), track_name);
+                    v.push(MenuItem::new(Icon::Vca, "VCA", Action::Popup(Popup::Vca(t))).detail(detail).tip("Un fader qui pilote le volume de plusieurs pistes"));
+                }
+                match tr.kind {
+                    TrackKind::Bus => {
+                        let members = p.bus_members(t).len();
+                        if members > 0 {
+                            let (icon, name) = if tr.folded { (Icon::ChevronRight, "Déplier") } else { (Icon::ChevronLeft, "Replier") };
+                            v.push(MenuItem::new(icon, name, Action::ToggleFold(t)).detail(members.to_string()).sep());
+                        }
+                        let it = MenuItem::new(Icon::Close, "Défaire le bus", Action::Dissolve(t)).tip("Ses pistes sortent là où il sortait");
+                        v.push(if members > 0 { it } else { it.sep() });
+                    }
+                    TrackKind::Vca => {
+                        v.push(MenuItem::new(Icon::Close, "Supprimer le VCA", Action::Dissolve(t)).tip("Ses pistes gardent leur volume propre").sep());
+                    }
+                    TrackKind::Normal => {}
+                }
                 v.push(MenuItem::new(Icon::Reset, "Réinitialiser", Action::ResetTrack(t)).tip("Volume 0 dB, pan au centre"));
-                (p.tracks[t].name.clone(), v)
+                (tr.name.clone(), v)
             }
             Popup::Output(t) | Popup::Send(t) => {
                 let t = *t;
                 let send = matches!(kind, Popup::Send(_));
-                let v = (0..TRACKS)
-                    .filter(|&d| d != t && self.routing_ok(t, d, send))
+                let mut v: Vec<MenuItem> = (0..TRACKS)
+                    .filter(|&d| d != t && p.tracks[d].kind != TrackKind::Vca && self.routing_ok(t, d, send))
                     .filter(|&d| d == MASTER || self.track_in_use(d))
                     .map(|d| {
                         let action = if send { Action::AddSend(t, d) } else { Action::SetOutput(t, d) };
-                        MenuItem::plain(&track_name(d), action).detail(if d == MASTER { "M".into() } else { d.to_string() })
+                        let mut it = MenuItem::plain(&track_name(d), action)
+                            .detail(if d == MASTER { "M".into() } else { d.to_string() })
+                            .on(!send && p.tracks[t].output == d);
+                        if p.tracks[d].kind == TrackKind::Bus {
+                            it.color = Some(self.track_tint(d));
+                        }
+                        it
                     })
                     .collect();
+                let new = if send {
+                    MenuItem::new(Icon::Plus, "Nouveau bus d'envoi", Action::Popup(Popup::NewReturn(t)))
+                } else {
+                    MenuItem::new(Icon::Plus, "Nouveau bus", Action::NewBus(vec![t]))
+                };
+                v.push(new.sep());
                 (if send { "Envoyer vers" } else { "Sortie vers" }.into(), v)
+            }
+            Popup::NewBus => {
+                let sel = self.mixer_sel.clone();
+                let n = sel.len();
+                let group = if n > 0 {
+                    MenuItem::new(Icon::Bus, "Grouper la sélection", Action::NewBus(sel.clone()))
+                        .detail(format!("{n} · Ctrl+G"))
+                        .tip("Les pistes choisies (Ctrl+clic sur leur nom) sortent dans un nouveau bus")
+                } else {
+                    MenuItem::new(Icon::Bus, "Bus", Action::NewBus(Vec::new())).tip("Un bus vide ; Ctrl+clic sur des tranches puis Ctrl+G pour les grouper")
+                };
+                let mut v = vec![group];
+                for (kind, name, _) in ponzik_project::RETURN_EFFECTS {
+                    v.push(MenuItem::new(Icon::Send, &format!("Retour {}", name.to_lowercase()), Action::NewReturn(kind, None)).tip("Bus de retour, effet 100 % mouillé"));
+                }
+                let vca = MenuItem::new(Icon::Vca, "VCA", Action::NewVca(sel)).tip("Un fader qui pilote le volume de plusieurs pistes sans faire passer leur son");
+                v.push(if n > 0 { vca.detail(n.to_string()).sep() } else { vca.sep() });
+                ("Nouveau".into(), v)
+            }
+            Popup::NewReturn(t) => {
+                let t = *t;
+                let v = ponzik_project::RETURN_EFFECTS
+                    .iter()
+                    .map(|&(kind, name, _)| {
+                        MenuItem::new(Icon::Effect, name, Action::NewReturn(kind, Some(t))).tip("Nouveau bus de retour, envoi à −10 dB depuis cette piste")
+                    })
+                    .collect();
+                ("Bus d'envoi".into(), v)
+            }
+            Popup::Vca(t) => {
+                let t = *t;
+                let current = p.tracks[t].vca;
+                let mut v = vec![MenuItem::new(Icon::Close, "Aucun", Action::SetVca(t, None)).on(current.is_none())];
+                for d in (1..TRACKS).filter(|&d| p.tracks[d].kind == TrackKind::Vca) {
+                    let mut it = MenuItem::plain(&track_name(d), Action::SetVca(t, Some(d))).detail(d.to_string()).on(current == Some(d));
+                    it.color = Some(self.track_tint(d));
+                    v.push(it);
+                }
+                let group = self.group_for(t);
+                v.push(MenuItem::new(Icon::Plus, "Nouveau VCA", Action::NewVca(group)).sep());
+                ("VCA".into(), v)
             }
             Popup::Sidechain { track, slot } => {
                 let (t, slot) = (*track, *slot);
                 let current = p.tracks[t].inserts[slot].as_ref().and_then(|d| d.sidechain);
                 let none = MenuItem::new(Icon::Close, "Aucune", Action::SetSidechain(t, slot, None));
                 let mut v = vec![none.on(current.is_none())];
-                for d in (1..TRACKS).filter(|&d| d != t && (self.track_in_use(d) || current == Some(d))) {
+                let audible = |d: usize| p.tracks[d].kind != TrackKind::Vca;
+                for d in (1..TRACKS).filter(|&d| d != t && audible(d) && (self.track_in_use(d) || current == Some(d))) {
                     let ok = self.sidechain_ok(t, slot, d);
                     let detail = if ok { d.to_string() } else { "boucle".into() };
                     let mut it = MenuItem::plain(&track_name(d), Action::SetSidechain(t, slot, Some(d)))
                         .detail(detail)
                         .on(current == Some(d))
                         .dim(!ok);
-                    it.color = Some(super::mixer::track_color(d).alpha(if ok { 1.0 } else { 0.3 }));
+                    it.color = Some(self.track_tint(d).alpha(if ok { 1.0 } else { 0.3 }));
                     if !ok {
                         it = it.tip("Impossible : créerait une boucle de routage");
                     }
@@ -2597,9 +2755,7 @@ impl App {
     }
 
     pub fn track_in_use(&self, t: usize) -> bool {
-        self.project.channels.iter().any(|c| c.track == t)
-            || self.project.tracks[t].inserts.iter().any(Option::is_some)
-            || !self.project.tracks[t].name.starts_with("Piste ")
+        self.project.track_in_use(t)
     }
 
     /// Vrai si router `from` vers `to` (sortie ou envoi) ne crée pas de boucle.
@@ -2661,6 +2817,15 @@ impl App {
                 }
             }
             Action::DuplicateTime => self.duplicate_time(),
+            Action::NewBus(members) => self.new_bus(&members),
+            Action::NewReturn(kind, from) => self.new_return(kind, from),
+            Action::NewVca(members) => self.new_vca(&members),
+            Action::SetVca(t, vca) => {
+                self.project.tracks[t].vca = vca;
+                self.commit(if vca.is_some() { "Piloter par un VCA" } else { "Retirer du VCA" });
+            }
+            Action::ToggleFold(t) => self.toggle_fold(t),
+            Action::Dissolve(t) => self.dissolve_track(t),
             Action::NewPattern => {
                 let p = self.project.add_pattern();
                 self.select_pattern(p);

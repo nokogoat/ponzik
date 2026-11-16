@@ -121,6 +121,10 @@ pub enum Icon {
     Detach,
     /// Flèche qui rentre dans le panneau du bas : réancrer.
     Dock,
+    /// Trois lignes qui se rejoignent : bus.
+    Bus,
+    /// Deux faders liés : VCA.
+    Vca,
 }
 
 /// Dessine une icône au trait, dans un carré de `size` centré sur (`cx`, `cy`).
@@ -321,6 +325,22 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
             c.stroke_polyline(&[p(-1.0, -6.5), p(-7.0, -6.5), p(-7.0, 6.5), p(6.5, 6.5), p(6.5, 1.0)], stroke, col);
             c.stroke_polyline(&[p(-1.5, 1.5), p(6.5, -6.5)], stroke, col);
             c.stroke_polyline(&[p(1.5, -6.5), p(6.5, -6.5), p(6.5, -1.5)], stroke, col);
+        }
+        Icon::Bus => {
+            for y in [-5.5, 0.0, 5.5] {
+                c.stroke_polyline(&[p(-7.0, y), p(-4.5, y), p(0.5, 0.0)], stroke, col);
+            }
+            c.stroke_polyline(&[p(0.5, 0.0), p(7.0, 0.0)], stroke, col);
+            c.fill_circle(cx + 0.5 * s, cy, 2.1 * s, col);
+        }
+        Icon::Vca => {
+            for x in [-4.0, 4.0] {
+                c.stroke_polyline(&[p(x, -7.0), p(x, 7.0)], stroke * 0.8, col.alpha(0.55));
+            }
+            c.stroke_polyline(&[p(-4.0, -1.0), p(4.0, -1.0)], stroke, col);
+            for x in [-4.0, 4.0] {
+                c.fill_rrect(rr(x - 2.8, -3.0, 5.6, 4.0), 1.2 * s, col);
+            }
         }
         Icon::Dock => {
             c.stroke_rrect(rr(-7.0, -6.5, 14.0, 13.0), 2.0 * s, stroke, col);

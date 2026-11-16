@@ -1,6 +1,7 @@
 //! Palette « touche-à-tout » (Ctrl+K) : toutes les actions de Ponzik, trouvées
 //! en quelques lettres.
 
+use ponzik_engine::mixer::MASTER;
 use ponzik_engine::registry;
 use ponzik_ui::{Canvas, Color, Rect};
 use ponzik_window::Key;
@@ -106,6 +107,21 @@ impl App {
             add(format!("Ajouter {}", k.name), "Instrument", "", Action::AddInstrument(k.id, None));
         }
         let track = self.focused_track();
+        let group = self.group_for(track);
+        let title = match group.len() {
+            0 => "Nouveau bus".to_string(),
+            1 => format!("Envoyer {} vers un nouveau bus", self.project.tracks[track].name),
+            n => format!("Grouper {n} pistes dans un bus"),
+        };
+        add(title, "Mixer", "Ctrl G", Action::NewBus(group.clone()));
+        for (kind, name, _) in ponzik_project::RETURN_EFFECTS {
+            let from = (track != MASTER).then_some(track);
+            add(format!("Nouveau bus d'envoi : {name}"), "Mixer", "", Action::NewReturn(kind, from));
+        }
+        add("Nouveau VCA".into(), "Mixer", "", Action::NewVca(group));
+        if self.project.tracks[track].kind == ponzik_project::TrackKind::Bus {
+            add(format!("Replier ou déplier {}", self.project.tracks[track].name), "Mixer", "", Action::ToggleFold(track));
+        }
         for k in registry::effects() {
             add(format!("{} sur {}", k.name, self.project.tracks[track].name), "Effet", "", Action::AddEffect(track, k.id));
         }

@@ -336,6 +336,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
         }
         app.commit("Effets de capture");
     }
+    // PONZIK_MIXER=bus:1,2,3,4;fold;vca:2,5;sel:4,5;return:delay@3 : bus, repli du
+    // dernier bus, VCA, sélection et retours d'effet créés pour la capture.
+    if let Ok(spec) = std::env::var("PONZIK_MIXER") {
+        app.screenshot_mixer(&spec);
+    }
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {
         app.screenshot_popup(&name);

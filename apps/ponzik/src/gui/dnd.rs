@@ -193,6 +193,10 @@ impl App {
 
     /// Pose un effet sur une piste : dans `slot` (remplacé), sinon au premier libre.
     pub fn insert_effect(&mut self, track: usize, slot: Option<usize>, kind: &str) {
+        if self.project.tracks[track].kind == ponzik_project::TrackKind::Vca {
+            self.toast("Un VCA ne fait passer aucun son : mettez l'effet sur un bus");
+            return;
+        }
         let inserts = &self.project.tracks[track].inserts;
         let Some(slot) = slot.filter(|&s| s < INSERT_SLOTS).or_else(|| inserts.iter().position(Option::is_none)) else {
             self.toast("Plus d'emplacement libre sur cette piste");
