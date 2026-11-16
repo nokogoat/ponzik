@@ -6,6 +6,7 @@ use crate::effects::{
     AutoFilter, Bitcrusher, Chorus, Compressor, Delay, Ducker, Eq, Gate, Imager, Limiter, Ott, Phaser, PitchShifter,
     Pompe, Reverb, Saturator, Shimmer, Tranche, Transient, Utility,
 };
+use crate::effects::BusComp;
 use crate::instrument::Instrument;
 use crate::instruments::{
     Bass303, DrumKind, DrumSynth, EPiano, FmSynth, Granular, Kick, Pluck, Pulse, Sampler, Slicer, WaveSynth,
@@ -258,6 +259,13 @@ pub fn effects() -> &'static [EffectKind] {
             category: "Utilitaires",
             description: "Largeur stéréo sur trois bandes et graves en mono",
             create: || Box::new(Imager::default()),
+        },
+        EffectKind {
+            id: "bus_comp",
+            name: "Compresseur de bus",
+            category: "Dynamique",
+            description: "Colle de bus : modes propre, opto et VCA, relâche automatique, mesure de réduction",
+            create: || Box::new(BusComp::default()),
         },
     ]
 }
