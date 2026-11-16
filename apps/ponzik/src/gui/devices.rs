@@ -337,7 +337,7 @@ impl App {
             self.sample_view(c, input, Rect::new(x, body.y + 4.0, SAMPLE_W, body.h - 10.0), device, params);
             x += SAMPLE_W + GROUP_GAP;
         } else if super::visuals::response_kind(&kind).is_some() {
-            self.response_graph(c, Rect::new(x, body.y + 4.0, RESPONSE_W, body.h - 10.0), device, &kind, params);
+            self.response_graph(c, input, Rect::new(x, body.y + 4.0, RESPONSE_W, body.h - 10.0), device, &kind, params);
             x += RESPONSE_W + GROUP_GAP;
         }
         let key = device_key(device);

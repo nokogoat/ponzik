@@ -1,6 +1,10 @@
 //! Visuels des appareils : réponse de l'EQ, courbes de transfert, enveloppes,
 //! filtres. Tout se manipule directement à la souris.
 
+use std::cell::RefCell;
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
+
 use ponzik_dsp::biquad::{BUTTERWORTH4_Q, BiquadCoefs};
 use ponzik_engine::ParamInfo;
 use ponzik_ui::{Canvas, Path, Rect};
@@ -534,34 +538,122 @@ impl App {
     }
 }
 
-/// Signal de test d'une réponse d'effet.
+/// Signal de test d'une réponse d'effet, ou visuel dessiné sans simulation.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Probe {
     /// Impulsion : queues de réverbe, échos.
     Impulse,
     /// Signal constant : gains rythmiques (pompe, tranche).
     Constant,
+    /// Impulsion, canaux gauche et droit séparés, effet seul : échos d'un délai.
+    Echoes,
+    /// Impulsion, effet seul : queue d'une réverbe, avec pré-délai et gel.
+    Tail,
+    /// Visuel calculé directement à partir des réglages (et des VU-mètres).
+    Drawn,
 }
 
-/// Effets dont on montre la réponse temporelle, avec le signal et la durée.
+/// Effets dont on montre la réponse temporelle (ou un visuel dédié), avec le signal
+/// et la durée (0 : une ou deux mesures au tempo du projet).
 pub fn response_kind(kind: &str) -> Option<(Probe, f32)> {
     match kind {
         "reverb" | "shimmer" => Some((Probe::Impulse, 4.0)),
         "delay" => Some((Probe::Impulse, 2.5)),
         "pompe" | "tranche" => Some((Probe::Constant, 0.0)),
+        "char_delay" => Some((Probe::Echoes, 0.0)),
+        "vintage_verb" => Some((Probe::Tail, 5.0)),
+        "bus_comp" | "master_limiter" | "char_saturation" | "lofi" => Some((Probe::Drawn, 0.0)),
         _ => None,
     }
 }
 
 const PROBE_SR: f32 = 16_000.0;
 
+/// Plage des échos et des queues, en dB.
+const TAIL_DB: f32 = 60.0;
+
+/// Historique de réduction de gain par appareil (une valeur par image).
+const GR_HISTORY: usize = 72;
+
+thread_local! {
+    static GR: RefCell<HashMap<usize, VecDeque<f32>>> = RefCell::new(HashMap::new());
+}
+
+/// « −1,0 » : une décimale, virgule et vrai signe moins.
+fn fmt_db1(d: f32) -> String {
+    let s = format!("{:.1}", d.abs()).replace('.', ",");
+    if d < -0.05 { format!("−{s}") } else { s }
+}
+
+/// Réduction de gain (dB, positive) au niveau `x`, genou doux de largeur `knee`.
+fn reduction(x: f32, threshold: f32, ratio: f32, knee: f32) -> f32 {
+    let over = x - threshold;
+    let slope = 1.0 - 1.0 / ratio.max(1.0);
+    if 2.0 * over <= -knee {
+        0.0
+    } else if knee > 0.0 && 2.0 * over.abs() <= knee {
+        slope * (over + knee / 2.0).powi(2) / (2.0 * knee)
+    } else {
+        slope * over
+    }
+}
+
+/// Courbes des caractères de la saturation (mêmes formules que le moteur).
+fn saturation_shape(character: usize, x: f32) -> f32 {
+    let cubic = |x: f32| {
+        let u = x.clamp(-1.0, 1.0);
+        1.5 * u - 0.5 * u * u * u
+    };
+    match character {
+        0 => {
+            let b = 0.3f32.tanh();
+            ((x + 0.3).tanh() - b) / (1.0 + b)
+        }
+        1 => x / (1.0 + x * x).sqrt(),
+        2 if x >= 0.0 => cubic(x),
+        2 => 0.8 * cubic(x / 0.8),
+        _ => {
+            let t = x.tanh();
+            if t >= 0.0 { t } else { 0.15 * t }
+        }
+    }
+}
+
+/// Bruit déterministe 0..1.
+fn hash01(n: u32) -> f32 {
+    let mut x = n.wrapping_mul(0x9E37_79B9) ^ 0x85EB_CA6B;
+    x ^= x >> 15;
+    x = x.wrapping_mul(0x2C1B_3C6D);
+    x ^= x >> 12;
+    (x & 0xFFFF) as f32 / 65_535.0
+}
+
 impl App {
     /// Enveloppe de la réponse de l'effet (crête par colonne), mise en cache par réglages.
-    fn effect_response(&mut self, kind: &str, params: &'static [ParamInfo], device: Device, cols: usize) -> Option<std::sync::Arc<Vec<f32>>> {
+    /// Pour [`Probe::Echoes`], les colonnes du canal gauche puis celles du droit.
+    fn effect_response(&mut self, kind: &str, params: &'static [ParamInfo], device: Device, cols: usize) -> Option<Arc<Vec<f32>>> {
         let (probe, secs) = response_kind(kind)?;
-        // Les effets rythmiques sont montrés sur une mesure au tempo du projet.
-        let secs = if secs > 0.0 { secs } else { 4.0 * 60.0 / self.project.bpm };
-        let values: Vec<f32> = params.iter().map(|p| self.param_value(device, p)).collect();
+        if probe == Probe::Drawn {
+            return None;
+        }
+        // Les effets rythmiques sont montrés sur une mesure (deux pour les échos) au tempo du projet.
+        let bar = 4.0 * 60.0 / self.project.bpm;
+        let secs = match (probe, secs > 0.0) {
+            (_, true) => secs,
+            (Probe::Echoes, false) => 2.0 * bar,
+            _ => bar,
+        };
+        let mut values: Vec<f32> = params.iter().map(|p| self.param_value(device, p)).collect();
+        // Échos et queues : l'effet seul, sans le direct ni le ducking, gel coupé.
+        if matches!(probe, Probe::Echoes | Probe::Tail) {
+            for (p, v) in params.iter().zip(values.iter_mut()) {
+                match p.name {
+                    "Mix" => *v = 1.0,
+                    "Ducking" | "Figer" => *v = 0.0,
+                    _ => {}
+                }
+            }
+        }
         let key = format!("{kind}|{cols}|{}|{:?}", self.project.bpm, values);
         if let Some(r) = self.responses.get(&key) {
             return Some(r.clone());
@@ -575,15 +667,16 @@ impl App {
         fx.reset();
         let n = (secs * PROBE_SR) as usize;
         let per_col = (n / cols.max(1)).max(1);
-        let mut env = vec![0.0f32; cols];
+        let stereo = probe == Probe::Echoes;
+        let mut env = vec![0.0f32; if stereo { 2 * cols } else { cols }];
         let (mut l, mut r) = (vec![0.0f32; 256], vec![0.0f32; 256]);
         let mut done = 0;
         while done < n {
             let m = 256.min(n - done);
             for k in 0..m {
                 let x = match probe {
-                    Probe::Impulse => (done + k == 0) as u8 as f32,
                     Probe::Constant => 0.5,
+                    _ => (done + k == 0) as u8 as f32,
                 };
                 l[k] = x;
                 r[k] = x;
@@ -591,7 +684,12 @@ impl App {
             fx.process(&mut l[..m], &mut r[..m]);
             for k in 0..m {
                 let col = ((done + k) / per_col).min(cols - 1);
-                env[col] = env[col].max(l[k].abs().max(r[k].abs()));
+                if stereo {
+                    env[col] = env[col].max(l[k].abs());
+                    env[cols + col] = env[cols + col].max(r[k].abs());
+                } else {
+                    env[col] = env[col].max(l[k].abs().max(r[k].abs()));
+                }
             }
             done += m;
         }
@@ -603,28 +701,474 @@ impl App {
         if self.responses.len() > 64 {
             self.responses.clear();
         }
-        let env = std::sync::Arc::new(env);
+        let env = Arc::new(env);
         self.responses.insert(key, env.clone());
         Some(env)
     }
 
-    /// Réponse temporelle : queue en dB pour une impulsion, gain linéaire pour un signal constant.
-    pub(super) fn response_graph(&mut self, c: &mut Canvas, r: Rect, device: Device, kind: &str, params: &'static [ParamInfo]) {
+    /// Visuel d'un effet temporel ou dédié : queue en dB pour une impulsion, gain
+    /// linéaire pour un signal constant, échos, réverbe, dynamique, saturation, usure.
+    pub(super) fn response_graph(&mut self, c: &mut Canvas, input: &Input, r: Rect, device: Device, kind: &str, params: &'static [ParamInfo]) {
         let t = self.theme;
         c.fill_rrect(r, 10.0, t.well);
+        let Some((probe, _)) = response_kind(kind) else { return };
+        match (probe, kind) {
+            (Probe::Drawn, "bus_comp") => return self.bus_comp_graph(c, input, r, device, params),
+            (Probe::Drawn, "master_limiter") => return self.limiter_graph(c, input, r, device, params),
+            (Probe::Drawn, "char_saturation") => return self.char_saturation_graph(c, input, r, device, params),
+            (Probe::Drawn, _) => return self.lofi_graph(c, input, r, device, params),
+            (Probe::Echoes, _) => return self.echoes_graph(c, input, r, device, kind, params),
+            (Probe::Tail, _) => return self.tail_graph(c, input, r, device, kind, params),
+            _ => {}
+        }
         let g = r.inset_xy(10.0, 12.0);
         let cols = (g.w / 2.0) as usize;
         let Some(env) = self.effect_response(kind, params, device, cols) else { return };
-        let Some((probe, _)) = response_kind(kind) else { return };
         let y_of = |v: f32| match probe {
-            Probe::Impulse => {
+            Probe::Constant => g.bottom() - (v / 1.2).clamp(0.0, 1.0) * g.h,
+            _ => {
                 let db = 20.0 * v.max(1e-6).log10();
                 g.bottom() - ((db + 60.0) / 60.0).clamp(0.0, 1.0) * g.h
             }
-            Probe::Constant => g.bottom() - (v / 1.2).clamp(0.0, 1.0) * g.h,
         };
         let pts: Vec<(f32, f32)> = env.iter().enumerate().map(|(i, &v)| (g.x + i as f32 * 2.0, y_of(v))).collect();
         filled_curve(c, &pts, g.bottom(), t.accent.alpha(0.14), t.accent);
+    }
+
+    /// Niveau crête de la piste de l'appareil, en dB.
+    fn device_level_db(&self, device: Device) -> f32 {
+        match device {
+            Device::Effect { track, .. } => {
+                let m = self.track_meters.get(track).map_or(0.0, |m| m.level[0].max(m.level[1]));
+                db(m)
+            }
+            Device::Instrument(_) => -120.0,
+        }
+    }
+
+    /// Glisser horizontalement : `drag_id` de `range` unités sur toute la largeur ;
+    /// molette : `wheel_id`, multiplié (`mul`) ou décalé de `step` par cran.
+    #[allow(clippy::too_many_arguments)]
+    fn graph_gestures(
+        &mut self,
+        input: &Input,
+        id: u64,
+        r: Rect,
+        device: Device,
+        params: &'static [ParamInfo],
+        drag: (u32, f32),
+        wheel: Option<(u32, f32, bool)>,
+    ) -> bool {
+        let hov = self.hovered(input, id, r);
+        if hov && input.pressed {
+            let start = self.value_of(device, params, drag.0);
+            self.begin_drag(id, input, start);
+            self.drag = self.drag.map(|mut d| {
+                d.y0 = input.x;
+                d
+            });
+        }
+        if let Some(d) = self.drag.filter(|d| d.id == id) {
+            let dx = (input.x - d.y0) / r.w.max(1.0);
+            self.set_value_of(device, params, drag.0, d.v0 + dx * drag.1);
+        }
+        if hov
+            && input.wheel != 0.0
+            && let Some((wid_p, step, mul)) = wheel
+        {
+            let cur = self.value_of(device, params, wid_p);
+            let v = if mul { cur * step.powf(input.wheel) } else { cur + step * input.wheel };
+            self.set_value_of(device, params, wid_p, v);
+        }
+        hov || self.is_dragging(id)
+    }
+
+    /// Compresseur de bus : courbe de transfert du caractère, point de
+    /// fonctionnement, aiguille et historique de la réduction de gain.
+    fn bus_comp_graph(&mut self, c: &mut Canvas, input: &Input, r: Rect, device: Device, params: &'static [ParamInfo]) {
+        let t = self.theme;
+        let v = |app: &App, id| app.value_of(device, params, id);
+        let (mode, thr, ratio, makeup) = (v(self, 0).round() as usize, v(self, 1), v(self, 2), v(self, 7));
+        let knee = [6.0, 12.0, 2.0][mode.min(2)];
+        let side = r.h.min(r.w - 70.0);
+        let sq = Rect::new(r.x, r.y, side, r.h);
+        let g = sq.inset(10.0);
+        let id = wid("bc-xfer", device_key(device), 0);
+        let hot = self.graph_gestures(input, id, sq, device, params, (1, 40.0), Some((2, 1.15, true)));
+
+        let (lo, hi) = (-48.0f32, 0.0f32);
+        let to_x = |d: f32| g.x + (d - lo) / (hi - lo) * g.w;
+        let to_y = |d: f32| g.y + (1.0 - (d.clamp(lo - 6.0, hi + 6.0) - lo) / (hi - lo)) * g.h;
+        c.stroke_polyline(&[(g.x, g.bottom()), (g.right(), g.y)], 1.0, t.hairline.alpha(2.0));
+        c.fill_rect(Rect::new(to_x(thr).round(), g.y, 1.0, g.h), t.select.alpha(if hot { 0.8 } else { 0.5 }));
+        let curve = |x: f32| x - reduction(x, thr, ratio, knee) + makeup;
+        let pts: Vec<(f32, f32)> = (0..=64)
+            .map(|i| {
+                let x = lo + (hi - lo) * i as f32 / 64.0;
+                (to_x(x), to_y(curve(x)))
+            })
+            .collect();
+        let prev = c.push_clip(sq.inset(2.0));
+        c.stroke_polyline(&pts, 2.2, t.accent);
+        // Point de fonctionnement : le niveau de la piste sur la courbe.
+        let level = self.device_level_db(device);
+        let gr = reduction(level, thr, ratio, knee);
+        if level > lo {
+            c.fill_circle(to_x(level), to_y(curve(level)), 4.0, t.text);
+        }
+        c.set_clip(Some(prev));
+
+        // Historique (à gauche, le plus récent contre l'aiguille) et aiguille.
+        let key = device_key(device);
+        let hist: Vec<f32> = GR.with(|h| {
+            let mut h = h.borrow_mut();
+            let q = h.entry(key).or_default();
+            if self.playing || q.back().is_some_and(|&x| x > 0.01) {
+                // Attaque immédiate, relâche lissée, comme une aiguille.
+                let target = if self.playing { gr } else { 0.0 };
+                let prev = q.back().copied().unwrap_or(0.0);
+                q.push_back(if target > prev { target } else { prev + (target - prev) * 0.12 });
+            }
+            while q.len() > GR_HISTORY {
+                q.pop_front();
+            }
+            q.iter().copied().collect()
+        });
+        const GR_RANGE: f32 = 18.0;
+        let meter = Rect::new(r.right() - 22.0, r.y + 14.0, 8.0, r.h - 28.0);
+        let lane = Rect::new(sq.right() + 4.0, meter.y, meter.x - sq.right() - 12.0, meter.h);
+        let y_gr = |d: f32| meter.y + (d / GR_RANGE).clamp(0.0, 1.0) * meter.h;
+        for d in [0.0, 6.0, 12.0, 18.0] {
+            let y = y_gr(d).round();
+            c.fill_rect(Rect::new(lane.x, y, lane.w, 1.0), t.hairline.alpha(if d == 0.0 { 1.6 } else { 0.7 }));
+            if d > 0.0 {
+                self.text(c, self.f.mono, 9.0, lane.x + 2.0, y - 6.0, &format!("−{d:.0}"), t.muted);
+            }
+        }
+        if hist.len() > 1 && lane.w > 8.0 {
+            let n = hist.len();
+            let dx = lane.w / (GR_HISTORY - 1) as f32;
+            let pts: Vec<(f32, f32)> =
+                hist.iter().enumerate().map(|(i, &d)| (lane.right() - (n - 1 - i) as f32 * dx, y_gr(d))).collect();
+            let mut area = vec![(pts[0].0, meter.y)];
+            area.extend(&pts);
+            area.push((lane.right(), meter.y));
+            let mut p = Path::new();
+            p.polygon(&area);
+            c.fill_path(&p, t.accent.alpha(0.16));
+            c.stroke_polyline(&pts, 1.4, t.accent.alpha(0.8));
+        }
+        c.fill_rrect(meter, 4.0, t.raised);
+        let now = hist.last().copied().unwrap_or(0.0);
+        if now > 0.05 {
+            c.fill_rrect(Rect::new(meter.x, meter.y, meter.w, y_gr(now) - meter.y), 4.0, t.accent);
+        }
+        if hot {
+            self.set_tip("Transfert\nGlisser : seuil · molette : ratio", "");
+        } else if input.inside && Rect::new(lane.x, r.y, r.right() - lane.x, r.h).contains(input.x, input.y) {
+            let tip = format!("Réduction de gain : {} dB\nEstimée d'après le niveau de la piste", fmt_db1(-now));
+            self.set_tip(&tip, "");
+        }
+    }
+
+    /// Limiteur de master : transfert (gain d'entrée jusqu'au plafond), plafond
+    /// marqué, crête de sortie de la piste à droite.
+    fn limiter_graph(&mut self, c: &mut Canvas, input: &Input, r: Rect, device: Device, params: &'static [ParamInfo]) {
+        let t = self.theme;
+        let v = |app: &App, id| app.value_of(device, params, id);
+        let (algo, gain, ceiling, true_peak) = (v(self, 0).round() as usize, v(self, 1), v(self, 2), v(self, 5) > 0.5);
+        let plot = Rect::new(r.x, r.y, r.w - 30.0, r.h);
+        let g = plot.inset(10.0);
+        let id = wid("lim-xfer", device_key(device), 0);
+        let hot = self.graph_gestures(input, id, plot, device, params, (1, 24.0), Some((2, 0.5, false)));
+
+        let (lo, hi) = (-30.0f32, 3.0f32);
+        let to_x = |d: f32| g.x + (d - lo) / (hi - lo) * g.w;
+        let to_y = |d: f32| g.y + (1.0 - (d.clamp(lo - 6.0, hi) - lo) / (hi - lo)) * g.h;
+        for d in [-24.0f32, -12.0, 0.0] {
+            let y = to_y(d).round();
+            c.fill_rect(Rect::new(g.x, y, g.w, 1.0), t.hairline.alpha(if d == 0.0 { 1.8 } else { 0.8 }));
+        }
+        c.stroke_polyline(&[(to_x(lo), to_y(lo)), (to_x(hi), to_y(hi))], 1.0, t.hairline.alpha(2.0));
+        let cl = 10f32.powf(ceiling / 20.0);
+        let g_lin = 10f32.powf(gain / 20.0);
+        let curve = |x: f32| -> f32 {
+            let lin = 10f32.powf(x / 20.0) * g_lin;
+            let y = if algo == 2 {
+                // Agressif : écrêteur doux sous le plafond, comme le moteur.
+                let knee = 0.7 * cl;
+                if lin <= knee { lin } else { knee + (cl - knee) * ((lin - knee) / (cl - knee)).tanh() }
+            } else {
+                lin.min(cl)
+            };
+            db(y)
+        };
+        let pts: Vec<(f32, f32)> = (0..=96)
+            .map(|i| {
+                let x = lo + (hi - lo) * i as f32 / 96.0;
+                (to_x(x), to_y(curve(x)))
+            })
+            .collect();
+        let prev = c.push_clip(plot.inset(2.0));
+        filled_curve(c, &pts, g.bottom(), t.accent.alpha(0.1), t.accent);
+        // Plafond : la ligne qu'aucune crête ne franchit.
+        let cy = to_y(ceiling).round();
+        c.fill_rect(Rect::new(g.x, cy, g.w, 1.0), t.select.alpha(0.8));
+        c.set_clip(Some(prev));
+        let label = fmt_db1(ceiling);
+        self.text(c, self.f.mono, 10.0, g.x + 2.0, cy - 8.0, &label, t.select);
+        if true_peak {
+            self.text_right(c, self.f.mono, 9.0, g.right(), g.bottom() - 6.0, "TP", t.muted);
+        }
+
+        // Crête de sortie de la piste, avec le plafond en repère.
+        let bar = Rect::new(plot.right() + 4.0, g.y, 8.0, g.h);
+        c.fill_rrect(bar, 4.0, t.raised);
+        let level = self.device_level_db(device);
+        if level > lo {
+            let top = to_y(level);
+            let col = if level > ceiling + 0.1 { t.negative } else { t.accent };
+            c.fill_rrect(Rect::new(bar.x, top, bar.w, bar.bottom() - top), 4.0, col);
+        }
+        c.fill_rect(Rect::new(bar.x - 2.0, cy, bar.w + 4.0, 1.5), t.select);
+        if hot {
+            self.set_tip("Transfert\nGlisser : gain d'entrée · molette : plafond", "");
+        }
+    }
+
+    /// Saturation à caractère : courbe du caractère choisi (les autres en filigrane)
+    /// et, à droite, les trois bandes avec leur drive et la bascule de ton.
+    fn char_saturation_graph(&mut self, c: &mut Canvas, input: &Input, r: Rect, device: Device, params: &'static [ParamInfo]) {
+        let t = self.theme;
+        let v = |app: &App, id| app.value_of(device, params, id);
+        let character = v(self, 0).round() as usize;
+        let drive = 10f32.powf(v(self, 1) / 20.0);
+        let multiband = v(self, 2) > 0.5;
+        let (out, mix) = (10f32.powf(v(self, 9) / 20.0), v(self, 10));
+        let side = r.h.min(r.w * 0.6);
+        let sq = Rect::new(r.x, r.y, side, r.h);
+        let g = sq.inset(10.0);
+        let id = wid("cs-xfer", device_key(device), 0);
+        let hot = self.graph_gestures(input, id, sq, device, params, (1, 36.0), None);
+
+        c.fill_rect(Rect::new(g.x, (g.y + g.h * 0.5).round(), g.w, 1.0), t.hairline.alpha(1.2));
+        c.fill_rect(Rect::new((g.x + g.w * 0.5).round(), g.y, 1.0, g.h), t.hairline.alpha(1.2));
+        let curve = |ch: usize, full: bool| -> Vec<(f32, f32)> {
+            (0..=64)
+                .map(|i| {
+                    let x = -1.0 + 2.0 * i as f32 / 64.0;
+                    let s = saturation_shape(ch, x * drive);
+                    let y = if full { (mix * s * out + (1.0 - mix) * x).clamp(-1.2, 1.2) } else { s };
+                    (g.x + (x + 1.0) * 0.5 * g.w, g.y + (1.0 - (y + 1.0) * 0.5) * g.h)
+                })
+                .collect()
+        };
+        let prev = c.push_clip(sq.inset(2.0));
+        for ch in (0..4).filter(|&ch| ch != character) {
+            c.stroke_polyline(&curve(ch, false), 1.0, t.text2.alpha(0.18));
+        }
+        c.stroke_polyline(&curve(character, true), 2.2, t.accent);
+        c.set_clip(Some(prev));
+
+        // Bandes : graves, médiums, aigus sur un axe logarithmique.
+        let bands = Rect::new(sq.right() + 2.0, r.y + 10.0, r.right() - sq.right() - 12.0, r.h - 20.0);
+        let mid = (bands.y + bands.h * 0.5).round();
+        c.fill_rect(Rect::new(bands.x, mid, bands.w, 1.0), t.hairline.alpha(1.6));
+        let (lo_split, hi_split) = (v(self, 3), v(self, 4));
+        let xs = [bands.x, x_of_freq(bands, lo_split), x_of_freq(bands, hi_split), bands.right()];
+        let y_of = |d: f32| mid - d.clamp(-12.0, 12.0) / 12.0 * (bands.h * 0.5 - 4.0);
+        for b in 0..3 {
+            let d = v(self, 5 + b as u32);
+            let (x0, x1) = (xs[b] + 1.5, xs[b + 1] - 1.5);
+            let y = y_of(d);
+            let (top, h) = if d >= 0.0 { (y, mid - y) } else { (mid, y - mid) };
+            if multiband {
+                c.fill_rrect(Rect::new(x0, top, (x1 - x0).max(1.0), h.max(2.0)), 3.0, t.accent.alpha(0.55));
+            } else {
+                c.stroke_rrect(Rect::new(x0, mid - 8.0, (x1 - x0).max(1.0), 16.0), 3.0, 1.0, t.hairline.alpha(1.6));
+            }
+        }
+        for &x in &xs[1..3] {
+            c.fill_rect(Rect::new(x.round(), bands.y, 1.0, bands.h), t.select.alpha(if multiband { 0.6 } else { 0.25 }));
+        }
+        // Ton : bascule autour de 1 kHz.
+        let tone = v(self, 8);
+        let tilt = |f: f32| tone * 0.5 * (f / 1_000.0).log2().clamp(-4.0, 4.0) / 4.0;
+        let pts: Vec<(f32, f32)> = (0..=16)
+            .map(|i| {
+                let x = bands.x + bands.w * i as f32 / 16.0;
+                (x, y_of(tilt(freq_of_x(bands, x)) * 2.0))
+            })
+            .collect();
+        c.stroke_polyline(&pts, 1.2, t.text2.alpha(0.6));
+        if hot {
+            self.set_tip("Transfert du caractère\nGlisser : drive", "");
+        } else if input.inside && bands.contains(input.x, input.y) {
+            let tip = if multiband { "Drive par bande\nTrait : ton" } else { "Multibande coupée\nTrait : ton" };
+            self.set_tip(tip, "");
+        }
+    }
+
+    /// Bruits et texture : un vinyle qui tourne pendant la lecture (craquements,
+    /// poussière d'âge) et une onde qui pleure, souffle et perd ses bits.
+    fn lofi_graph(&mut self, c: &mut Canvas, input: &Input, r: Rect, device: Device, params: &'static [ParamInfo]) {
+        let t = self.theme;
+        let v = |app: &App, id| app.value_of(device, params, id);
+        let (crackle, hiss, wow) = (v(self, 0), v(self, 1), v(self, 2));
+        let (flutter, bits, age) = (v(self, 3), v(self, 4), v(self, 5));
+        let time = if self.playing { self.time } else { 0.0 };
+
+        // Disque.
+        let radius = (r.h * 0.5 - 12.0).min(r.w * 0.25);
+        let (cx, cy) = (r.x + 12.0 + radius, r.y + r.h * 0.5);
+        c.fill_circle(cx, cy, radius, t.bg_deep);
+        let mut k = 0.42;
+        while k < 0.97 {
+            c.stroke_circle(cx, cy, radius * k, 1.0, t.text2.alpha(0.07 + 0.04 * (k * 31.0).sin().abs()));
+            k += 0.075;
+        }
+        c.stroke_circle(cx, cy, radius, 1.0, t.hairline.alpha(2.0));
+        // 33 tours par minute ; le reflet tourne avec le disque.
+        let angle = time * std::f32::consts::TAU * 0.55;
+        for (a, w) in [(angle, 0.18), (angle + std::f32::consts::PI, 0.1)] {
+            c.stroke_arc(cx, cy, radius * 0.72, a - 0.35, a + 0.35, radius * 0.5, t.text.alpha(w * 0.25));
+        }
+        let label = t.accent.mix(t.muted, age * 0.6);
+        c.fill_circle(cx, cy, radius * 0.3, label);
+        let (dx, dy) = (angle.cos() * radius * 0.18, angle.sin() * radius * 0.18);
+        c.fill_circle(cx + dx, cy + dy, radius * 0.04, t.bg_deep.alpha(0.6));
+        c.fill_circle(cx, cy, 2.0, t.well);
+        // Poussière fixe (âge) et craquements qui scintillent.
+        for i in 0..(age * 24.0) as u32 {
+            let (rr, th) = (radius * (0.35 + 0.6 * hash01(i * 2 + 1)), hash01(i * 2 + 2) * std::f32::consts::TAU + angle);
+            c.fill_circle(cx + th.cos() * rr, cy + th.sin() * rr, 1.0, t.text2.alpha(0.35));
+        }
+        let frame = (time * 14.0) as u32;
+        for i in 0..(crackle * 7.0).ceil() as u32 {
+            let seed = frame.wrapping_mul(31).wrapping_add(i * 7);
+            if hash01(seed) > crackle.max(0.05) {
+                continue;
+            }
+            let (rr, th) = (radius * (0.35 + 0.6 * hash01(seed + 3)), hash01(seed + 5) * std::f32::consts::TAU);
+            c.fill_circle(cx + th.cos() * rr, cy + th.sin() * rr, 1.6, t.text.alpha(0.9));
+        }
+
+        // Onde : pleurage et scintillement déforment le temps, le souffle ajoute du
+        // bruit, la perte de bits l'escalier, l'âge éteint l'amplitude.
+        let wave = Rect::new(cx + radius + 14.0, r.y + 14.0, r.right() - (cx + radius + 24.0), r.h - 28.0);
+        let mid = wave.y + wave.h * 0.5;
+        c.fill_rect(Rect::new(wave.x, mid.round(), wave.w, 1.0), t.hairline.alpha(1.2));
+        let levels = 2f32.powf(16.0 - 12.0 * bits - 1.0);
+        let amp = 0.85 * (1.0 - 0.45 * age);
+        let n = (wave.w / 1.5) as usize;
+        let pts: Vec<(f32, f32)> = (0..=n)
+            .map(|i| {
+                let u = i as f32 / n as f32;
+                let warp = wow * 0.12 * (std::f32::consts::TAU * (0.45 * time + u * 0.6)).sin()
+                    + flutter * 0.02 * (std::f32::consts::TAU * (2.0 * time + u * 9.0)).sin();
+                let mut y = amp * (std::f32::consts::TAU * (2.0 * u + warp)).sin();
+                y += hiss * 0.18 * (hash01(i as u32 + frame * 977) - 0.5);
+                y = (y * levels).round() / levels;
+                (wave.x + u * wave.w, mid - y.clamp(-1.0, 1.0) * wave.h * 0.5)
+            })
+            .collect();
+        c.stroke_polyline(&pts, 1.6, t.accent);
+        // Craquements : quelques pointes dans l'onde.
+        for i in 0..(crackle * 4.0).ceil() as u32 {
+            let seed = frame.wrapping_mul(17).wrapping_add(i * 13 + 1);
+            if hash01(seed) > crackle {
+                continue;
+            }
+            let x = wave.x + hash01(seed + 2) * wave.w;
+            let h = wave.h * 0.5 * (0.4 + 0.5 * hash01(seed + 4));
+            c.fill_rect(Rect::new(x.round(), mid - h, 1.0, 2.0 * h), t.text.alpha(0.8));
+        }
+        if input.inside && r.contains(input.x, input.y) {
+            self.set_tip("Disque : craquements et âge\nOnde : pleurage, souffle, perte de bits", "");
+        }
+    }
+
+    /// Délai à caractère : chaque écho dans le temps, gauche en haut et droite en
+    /// bas (le ping-pong alterne), sur deux mesures avec les temps marqués.
+    fn echoes_graph(&mut self, c: &mut Canvas, input: &Input, r: Rect, device: Device, kind: &str, params: &'static [ParamInfo]) {
+        let t = self.theme;
+        let g = r.inset_xy(10.0, 10.0);
+        let cols = (g.w / 2.0) as usize;
+        let Some(env) = self.effect_response(kind, params, device, cols) else { return };
+        let mid = (g.y + g.h * 0.5).round();
+        // Temps et mesures.
+        for beat in 0..8 {
+            let x = (g.x + g.w * beat as f32 / 8.0).round();
+            c.fill_rect(Rect::new(x, g.y, 1.0, g.h), t.hairline.alpha(if beat % 4 == 0 { 1.8 } else { 0.7 }));
+        }
+        c.fill_rect(Rect::new(g.x, mid, g.w, 1.0), t.hairline.alpha(1.6));
+        let half = g.h * 0.5 - 2.0;
+        let h_of = |v: f32| ((db(v) + TAIL_DB) / TAIL_DB).clamp(0.0, 1.0) * half;
+        for i in 0..cols {
+            let x = g.x + i as f32 * 2.0;
+            let (hl, hr) = (h_of(env[i]), h_of(env[cols + i]));
+            if hl > 0.5 {
+                c.fill_rect(Rect::new(x, mid - hl, 1.6, hl), t.accent.alpha(0.35 + 0.6 * hl / half));
+            }
+            if hr > 0.5 {
+                c.fill_rect(Rect::new(x, mid + 1.0, 1.6, hr), t.accent.alpha(0.35 + 0.6 * hr / half));
+            }
+        }
+        self.text(c, self.f.mono, 9.0, g.right() - 8.0, g.y + 6.0, "G", t.muted);
+        self.text(c, self.f.mono, 9.0, g.right() - 8.0, g.bottom() - 6.0, "D", t.muted);
+        if input.inside && r.contains(input.x, input.y) {
+            self.set_tip("Échos sur deux mesures\nHaut : gauche · bas : droite", "");
+        }
+    }
+
+    /// Réverbe : queue en dB, pré-délai et déclin marqués, gel en ligne continue.
+    fn tail_graph(&mut self, c: &mut Canvas, input: &Input, r: Rect, device: Device, kind: &str, params: &'static [ParamInfo]) {
+        let t = self.theme;
+        let g = r.inset_xy(10.0, 12.0);
+        let cols = (g.w / 2.0) as usize;
+        let Some(env) = self.effect_response(kind, params, device, cols) else { return };
+        let secs = response_kind(kind).map_or(5.0, |k| k.1);
+        let find = |n: &str| params.iter().find(|p| p.name == n);
+        let get = |app: &App, n: &str| find(n).map_or(0.0, |p| app.param_value(device, p));
+        let (predelay, decay, frozen) = (get(self, "Pré-délai"), get(self, "Déclin"), get(self, "Figer") > 0.5);
+        let x_of = |s: f32| g.x + (s / secs).clamp(0.0, 1.0) * g.w;
+        for s in 1..secs as u32 {
+            c.fill_rect(Rect::new(x_of(s as f32).round(), g.y, 1.0, g.h), t.hairline.alpha(0.7));
+        }
+        // Relatif au début de la queue diffuse (les premières réflexions peuvent
+        // dépasser) : la pente se lit alors comme le déclin à −60 dB.
+        let start = (((predelay + 0.08) / secs) * cols as f32) as usize;
+        let peak = env.iter().skip(start.min(cols.saturating_sub(1))).fold(1e-6f32, |m, &v| m.max(v));
+        let y_of = |v: f32| g.bottom() - ((db(v / peak) + TAIL_DB) / TAIL_DB).clamp(0.0, 1.0) * g.h;
+        let mut pts: Vec<(f32, f32)> = env.iter().enumerate().map(|(i, &v)| (g.x + i as f32 * 2.0, y_of(v))).collect();
+        let col = if frozen { t.select } else { t.accent };
+        if frozen {
+            // Gel : la queue ne décroît plus, elle tient au niveau atteint juste après l'attaque.
+            let hold_at = ((predelay + 0.15) / secs * cols as f32) as usize;
+            let level = pts.get(hold_at.min(cols.saturating_sub(1))).map_or(g.bottom(), |p| p.1);
+            for p in pts.iter_mut().skip(hold_at) {
+                p.1 = p.1.min(level);
+            }
+        }
+        filled_curve(c, &pts, g.bottom(), col.alpha(0.14), col);
+        // Pré-délai.
+        let px = x_of(predelay).round();
+        c.fill_rect(Rect::new(px, g.y, 1.0, g.h), t.select.alpha(0.6));
+        // Déclin (−60 dB), s'il tient dans la fenêtre.
+        if !frozen && decay < secs {
+            let dx = x_of(predelay + decay).round();
+            c.fill_rect(Rect::new(dx, g.bottom() - 10.0, 1.0, 10.0), t.text2.alpha(0.7));
+        }
+        let label = if frozen { "∞".to_string() } else { format!("{} s", fmt_db1(decay).replace('−', "")) };
+        self.text_right(c, self.f.mono, 10.0, g.right(), g.y + 4.0, &label, if frozen { t.select } else { t.muted });
+        if input.inside && r.contains(input.x, input.y) {
+            let tip = if frozen {
+                "Queue figée\nElle tient tant que « Figer » est actif"
+            } else {
+                "Queue sur 5 s\nTrait : pré-délai · repère : déclin"
+            };
+            self.set_tip(tip, "");
+        }
     }
 }
 
