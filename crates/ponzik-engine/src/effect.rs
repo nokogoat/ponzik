@@ -22,6 +22,14 @@ pub trait Effect: Params + Send {
     /// post-fader de la piste clé. Sans clé, n'est pas appelé.
     fn sidechain(&mut self, _left: &[f32], _right: &[f32]) {}
 
+    /// Retard introduit par l'effet, en échantillons (anticipation, suréchantillonnage,
+    /// plugin externe). Le mixer le compense sur les autres chemins pour que tout
+    /// arrive aligné au master. Lu au début de chaque bloc depuis le thread audio :
+    /// ni allocation ni verrou.
+    fn latency(&self) -> usize {
+        0
+    }
+
     /// Traitement sur place d'un bloc stéréo (`left.len() == right.len()`).
     fn process(&mut self, left: &mut [f32], right: &mut [f32]);
 }

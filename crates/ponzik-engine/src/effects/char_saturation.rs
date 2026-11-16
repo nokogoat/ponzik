@@ -199,6 +199,11 @@ impl Effect for CharSaturation {
         "char_saturation"
     }
 
+    /// Aller-retour du suréchantillonnage 2× (le signal sec est retardé d'autant).
+    fn latency(&self) -> usize {
+        LATENCY
+    }
+
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         self.channels = [Channel::new(sample_rate), Channel::new(sample_rate)];

@@ -144,11 +144,6 @@ impl Default for Lofi {
 }
 
 impl Lofi {
-    /// Latence introduite par la tête de lecture, en échantillons.
-    pub fn latency(&self) -> usize {
-        self.base_delay - 1
-    }
-
     fn update(&mut self) {
         let sr = self.sample_rate;
         let age = self.values.get(P_AGE);
@@ -196,6 +191,11 @@ impl Params for Lofi {
 impl Effect for Lofi {
     fn kind(&self) -> &'static str {
         "lofi"
+    }
+
+    /// Tête de lecture de la bande, au repos.
+    fn latency(&self) -> usize {
+        self.base_delay - 1
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {

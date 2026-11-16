@@ -189,11 +189,6 @@ impl Default for MasterLimiter {
 }
 
 impl MasterLimiter {
-    /// Latence introduite, en échantillons : écrêteur, détecteur et anticipation.
-    pub fn latency(&self) -> usize {
-        OS_LATENCY + self.ramp_len + TP_SPAN - 1
-    }
-
     /// Réduction de gain courante en dB (positive), pour l'afficheur.
     pub fn gain_reduction_db(&self) -> f32 {
         -gain_to_db(self.gain)
@@ -235,6 +230,11 @@ impl Params for MasterLimiter {
 impl Effect for MasterLimiter {
     fn kind(&self) -> &'static str {
         "master_limiter"
+    }
+
+    /// Écrêteur suréchantillonné, détecteur de crête vraie et anticipation.
+    fn latency(&self) -> usize {
+        OS_LATENCY + self.ramp_len + TP_SPAN - 1
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {

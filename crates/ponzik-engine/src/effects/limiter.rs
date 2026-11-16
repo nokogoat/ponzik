@@ -94,11 +94,6 @@ impl Default for Limiter {
 }
 
 impl Limiter {
-    /// Latence introduite, en échantillons.
-    pub fn latency(&self) -> usize {
-        self.lookahead - 1
-    }
-
     fn update(&mut self) {
         self.release = decay_coef(self.values.get(P_RELEASE), self.sample_rate);
         self.input.set_target(db_to_gain(self.values.get(P_INPUT)));
@@ -124,6 +119,11 @@ impl Params for Limiter {
 impl Effect for Limiter {
     fn kind(&self) -> &'static str {
         "limiter"
+    }
+
+    /// Anticipation du détecteur.
+    fn latency(&self) -> usize {
+        self.lookahead - 1
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {

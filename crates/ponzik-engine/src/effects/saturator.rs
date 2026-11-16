@@ -128,6 +128,11 @@ impl Effect for Saturator {
         "saturator"
     }
 
+    /// Aller-retour du suréchantillonnage 2× (le signal sec est retardé d'autant).
+    fn latency(&self) -> usize {
+        LATENCY
+    }
+
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         for ch in &mut self.channels {
