@@ -297,7 +297,7 @@ should guide the order.
 | V4-34 | **Surround and immersive mixing** (5.1, 7.1.4 beds, object panner) | Atmos delivery for streaming and film (Logic, Cubase, Reaper) | L | engine, ui | V4-23 | ⬜ |
 | V4-35 | **Scripting and extension API**: an in-house script language over the palette actions and the project model | Power users extend the DAW (ReaScript, Ardour Lua, FL Python, Max for Live) | L | new crate, ui | V3-11 | ⬜ |
 | V4-36 | **Accessibility**: visible focus everywhere, screen-reader bridge (UI Automation on Windows, AT-SPI on Linux) | Reaper with OSARA is the only real option for blind musicians today | L | window, ui | – | ⬜ |
-| V4-37 | **UI scaling and HiDPI** (per-monitor scale, settings slider) | 4K and laptop screens; Cubase 15 made every stock effect scalable | M | window, ui | – | ⬜ |
+| V4-37 | **UI scaling and HiDPI** (per-monitor scale, settings slider) | 4K and laptop screens; Cubase 15 made every stock effect scalable | M | window, ui | – | ✅ |
 | V4-38 | **Touch and pen input** for pads, faders and drawing | Touch screens and tablets (FL, Ardour 9) | M | window, ui | V4-37 | ⬜ |
 | V4-39 | **Looper device** with overdub, undo layer and tempo detection | Live layering for performers and guitarists (Live, Bitwig) | M | engine, ui | – | ⬜ |
 | V4-40 | **Microtonal tuning**: Scala files, per-project tuning, piano roll that shows it | Non-Western scales and experimental music (Live, Bitwig, Logic) | M | engine, project, ui | V1-3 | ⬜ |
