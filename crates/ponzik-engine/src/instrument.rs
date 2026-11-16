@@ -45,4 +45,10 @@ pub trait Instrument: Params + Send {
     /// ce sous-bloc (plus le décalage propre de chaque message). Thread audio :
     /// ni allocation, ni blocage.
     fn drain_midi(&mut self, _out: &mut dyn FnMut(MidiOutEvent)) {}
+
+    /// The plugin's own interface (CLAP or VST 3 plugin), fetched by the UI
+    /// before the instrument is sent to the engine.
+    fn editor(&self) -> Option<crate::Editor> {
+        None
+    }
 }

@@ -46,6 +46,12 @@ pub trait Effect: Params + Send {
         None
     }
 
+    /// The plugin's own interface (CLAP or VST 3 plugin), fetched by the UI
+    /// before the effect is sent to the engine.
+    fn editor(&self) -> Option<crate::Editor> {
+        None
+    }
+
     /// Traitement sur place d'un bloc stéréo (`left.len() == right.len()`).
     fn process(&mut self, left: &mut [f32], right: &mut [f32]);
 }

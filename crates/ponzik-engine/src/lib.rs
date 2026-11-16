@@ -7,6 +7,7 @@
 
 pub mod audition;
 pub mod effect;
+pub mod editor;
 pub mod effects;
 pub mod input;
 pub mod engine;
@@ -27,6 +28,7 @@ pub mod sequence;
 pub mod tempo_map;
 pub mod wav;
 
+pub use editor::{Editor, EditorEvent, EditorSize, ParentWindow, PluginEditor, RunLoop};
 pub use effect::Effect;
 pub use effects::fx_rack::{MacroMap, RackLayout};
 pub use modulation::{ModClock, ModKind, ModLink, ModMeters, ModParam, ModSet, Modulator};

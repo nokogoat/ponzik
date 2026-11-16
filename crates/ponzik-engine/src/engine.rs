@@ -598,6 +598,11 @@ impl Engine {
         self.pool.as_ref().map_or(0, WorkerPool::workers)
     }
 
+    /// Channels, to inspect them before the engine goes to the audio thread.
+    pub fn channels(&self) -> &[Channel] {
+        &self.channels
+    }
+
     /// Accès direct au mixer, pour préparer l'état avant le premier bloc.
     pub fn mixer_mut(&mut self) -> &mut Mixer {
         &mut self.mixer
