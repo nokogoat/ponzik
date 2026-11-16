@@ -31,7 +31,7 @@ const FLOOR_DB: f32 = 60.0;
 /// Écart minimal entre deux attaques, en secondes.
 const MIN_GAP: f32 = 0.03;
 
-const MODES: &[&str] = &["Parts égales", "Transitoires", "Marqueurs"];
+const MODES: &[&str] = &["Parts égales", "Transitoires", "Markers"];
 const COUNTS: &[&str] = &["4", "8", "16", "32"];
 const COUNT_VALUES: [usize; 4] = [4, 8, 16, 32];
 const OFF_ON: &[&str] = &["Non", "Oui"];
