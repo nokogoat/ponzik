@@ -115,10 +115,14 @@ pub enum Rename {
     Track(usize),
 }
 
-/// Nom lisible d'un type d'appareil hors registre (plugin CLAP : son identifiant).
+/// Nom lisible d'un type d'appareil hors registre (plugin CLAP : son
+/// identifiant ; plugin VST 3 : le nom de son paquet).
 pub fn display_kind(kind: &str) -> String {
-    match ponzik_clap::parse_kind(kind) {
-        Some((_, id)) => id.rsplit('.').next().unwrap_or(id).to_string(),
+    if let Some((_, id)) = ponzik_clap::parse_kind(kind) {
+        return id.rsplit('.').next().unwrap_or(id).to_string();
+    }
+    match ponzik_vst3::parse_kind(kind) {
+        Some((path, id)) => path.file_stem().map_or_else(|| id.to_string(), |s| s.to_string_lossy().into_owned()),
         None => kind.to_string(),
     }
 }
@@ -323,6 +327,8 @@ pub struct App {
     pub sample_files: Vec<PathBuf>,
     /// Plugins CLAP trouvés au démarrage.
     pub plugins: Vec<ponzik_clap::PluginInfo>,
+    /// Plugins VST 3 trouvés au démarrage.
+    pub vst3_plugins: Vec<ponzik_vst3::PluginInfo>,
 
     pub playing: bool,
     pub metronome: bool,
@@ -426,6 +432,7 @@ impl App {
             responses: HashMap::new(),
             sample_files: compat::scan_samples(),
             plugins: ponzik_clap::scan(),
+            vst3_plugins: ponzik_vst3::scan(),
             playing: false,
             metronome: false,
             position: 0.0,
@@ -1573,23 +1580,25 @@ impl App {
             let folder = p.parent().and_then(|p| p.file_name()).map_or(String::new(), |s| s.to_string_lossy().into_owned());
             v.push((2, name, folder, Payload::Sample(p.clone())));
         }
-        for p in &self.plugins {
-            let kind = ponzik_clap::kind_for(&p.path, &p.id);
-            let what = if p.is_instrument { "Instrument" } else { "Effet" };
-            let detail = if p.vendor.is_empty() { what.to_string() } else { format!("{what} · {}", p.vendor) };
-            let payload = if p.is_instrument {
-                Payload::Instrument { kind, name: p.name.clone() }
+        let clap = self.plugins.iter().map(|p| ("CLAP", p.kind(), &p.name, &p.vendor, p.is_instrument));
+        let vst3 = self.vst3_plugins.iter().map(|p| ("VST 3", p.kind(), &p.name, &p.vendor, p.is_instrument));
+        for (format, kind, name, vendor, is_instrument) in clap.chain(vst3) {
+            let what = if is_instrument { "Instrument" } else { "Effet" };
+            let detail =
+                if vendor.is_empty() { format!("{what} {format}") } else { format!("{what} {format} · {vendor}") };
+            let payload = if is_instrument {
+                Payload::Instrument { kind, name: name.clone() }
             } else {
-                Payload::Effect { kind, name: p.name.clone() }
+                Payload::Effect { kind, name: name.clone() }
             };
-            v.push((3, p.name.clone(), detail, payload));
+            v.push((3, name.clone(), detail, payload));
         }
         v
     }
 
     fn sidebar_area(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
         const CATS: [(Icon, &str); 4] =
-            [(Icon::Instrument, "Instruments"), (Icon::Effect, "Effets"), (Icon::Sample, "Échantillons"), (Icon::Plugin, "Plugins CLAP")];
+            [(Icon::Instrument, "Instruments"), (Icon::Effect, "Effets"), (Icon::Sample, "Échantillons"), (Icon::Plugin, "Plugins CLAP et VST 3")];
         let t = self.theme;
         c.fill_rect(r, t.bg_deep);
         c.fill_rect(Rect::new(r.right() - 1.0, r.y, 1.0, r.h), t.hairline);
@@ -1725,7 +1734,7 @@ impl App {
             let (icon, line) = match (searching, self.sidebar_tab) {
                 (true, _) => (Icon::Search, "Rien de trouvé"),
                 (_, 2) => (Icon::Sample, "Aucun fichier WAV"),
-                (_, 3) => (Icon::Plugin, "Aucun plugin CLAP"),
+                (_, 3) => (Icon::Plugin, "Aucun plugin CLAP ni VST 3"),
                 _ => (Icon::Info, "Vide"),
             };
             self.empty_state(c, Rect::new(inner_x, list.y + 20.0, w, 120.0), icon, line);

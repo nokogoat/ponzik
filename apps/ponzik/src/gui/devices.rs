@@ -62,6 +62,13 @@ pub fn params_of(kind: &str, instrument: bool) -> &'static [ParamInfo] {
                 } else {
                     ponzik_clap::effect_from_kind(kind).map_or(&[], |e| e.params())
                 }
+            } else if kind.starts_with(ponzik_vst3::KIND_PREFIX) {
+                // Plugin VST 3 : idem, fiches partagées entre instances.
+                if instrument {
+                    ponzik_vst3::instrument_from_kind(kind).map_or(&[], |i| i.params())
+                } else {
+                    ponzik_vst3::effect_from_kind(kind).map_or(&[], |e| e.params())
+                }
             } else if instrument {
                 registry::create_instrument(kind).map_or(&[], |i| i.params())
             } else {

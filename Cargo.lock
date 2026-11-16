@@ -13,6 +13,7 @@ dependencies = [
  "ponzik-midi",
  "ponzik-project",
  "ponzik-ui",
+ "ponzik-vst3",
  "ponzik-window",
 ]
 
