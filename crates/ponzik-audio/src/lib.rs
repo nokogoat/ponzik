@@ -7,11 +7,24 @@
 //! Le pilote ne connaît pas le moteur : il appelle une fonction de rendu
 //! `FnMut(&mut [f32], canaux)` depuis son propre thread audio, et, pour la
 //! capture, une fonction `FnMut(&[f32], canaux)` depuis le thread de capture.
+//!
+//! Duplex intégral ([`Output::start_duplex`], [`OutputStream::set_input`]) :
+//! l'entrée est remise à la fonction de rendu, dans le même appel que la
+//! sortie, pour une écoute de contrôle sans retard ajouté. Sous ALSA, la
+//! capture est lue directement par le thread de sortie ; sous WASAPI, son
+//! thread dépose les trames dans une file sans verrou relue par la sortie.
 
 use std::fmt;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::mpsc;
 use std::thread::JoinHandle;
+
+mod fifo;
+
+pub(crate) use fifo::InputFifo;
+#[cfg_attr(not(windows), allow(unused_imports))]
+pub(crate) use fifo::{RingConsumer, ring};
 
 #[cfg(target_os = "linux")]
 #[path = "alsa.rs"]
@@ -34,8 +47,9 @@ pub fn target_latency_ms() -> u32 {
 /// Ce qu'on demande au système quand il nous laisse le choix.
 const PREFERRED: OutputConfig = OutputConfig { sample_rate: 48_000, channels: 2 };
 
-pub(crate) type RenderFn = Box<dyn FnMut(&mut [f32], usize) + Send + 'static>;
 pub(crate) type CaptureFn = Box<dyn FnMut(&[f32], usize) + Send + 'static>;
+/// Rendu duplex : (entrée entrelacée, canaux d'entrée, sortie, canaux de sortie).
+pub(crate) type DuplexFn = Box<dyn FnMut(&[f32], usize, &mut [f32], usize) + Send + 'static>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OutputConfig {
@@ -93,12 +107,121 @@ impl Output {
     }
 
     /// Lance le thread audio ; `render` reçoit un tampon `f32` entrelacé et le nombre de canaux.
-    pub fn start<F>(self, render: F) -> Result<OutputStream, AudioError>
+    pub fn start<F>(self, mut render: F) -> Result<OutputStream, AudioError>
     where
         F: FnMut(&mut [f32], usize) + Send + 'static,
     {
-        let thread = self.pending.start(Box::new(render))?;
-        Ok(OutputStream { config: self.config, device_name: self.device_name, thread })
+        self.start_duplex(move |_, _, out, channels| render(out, channels))
+    }
+
+    /// Lance le thread audio en duplex : `render(entrée, canaux d'entrée, sortie,
+    /// canaux de sortie)`. L'entrée est vide (0 canal) tant qu'aucune capture
+    /// n'est branchée par [`OutputStream::set_input`] ; sinon elle a autant de
+    /// trames que la sortie, captées au plus près.
+    pub fn start_duplex<F>(self, render: F) -> Result<OutputStream, AudioError>
+    where
+        F: FnMut(&[f32], usize, &mut [f32], usize) + Send + 'static,
+    {
+        let (control_tx, control_rx) = mpsc::channel();
+        let (back_tx, back_rx) = mpsc::channel();
+        let info = Arc::new(StreamInfo::default());
+        let duplex = Duplex { render: Box::new(render), control: control_rx, back: back_tx, attached: None, info: info.clone() };
+        let thread = self.pending.start(duplex)?;
+        Ok(OutputStream {
+            config: self.config,
+            device_name: self.device_name,
+            thread,
+            info,
+            control: control_tx,
+            returned: back_rx,
+            capture: None,
+            input: None,
+        })
+    }
+}
+
+/// Latences mesurées par le thread de sortie, en trames.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Latency {
+    /// D'un échantillon rendu à sa sortie du convertisseur (tampons du système compris).
+    pub output: u32,
+    /// D'un son capté à sa remise au rendu (tampons du système et file d'entrée).
+    pub input: u32,
+}
+
+impl Latency {
+    /// Aller-retour : ce qu'on joue revient enregistré `round_trip` trames plus tard.
+    pub fn round_trip(&self) -> u32 {
+        self.output + self.input
+    }
+
+    /// Trames → millisecondes à la fréquence `sample_rate`.
+    pub fn ms(frames: u32, sample_rate: u32) -> f32 {
+        frames as f32 * 1000.0 / sample_rate.max(1) as f32
+    }
+}
+
+/// Ce que le thread de sortie publie.
+#[derive(Default)]
+pub(crate) struct StreamInfo {
+    output: AtomicU32,
+    input: AtomicU32,
+    underruns: AtomicU32,
+}
+
+/// Une capture lue par le thread de sortie.
+pub(crate) trait CaptureSource: Send {
+    /// Verse dans `fifo` tout ce qui est arrivé, sans bloquer ; renvoie le
+    /// retard (en trames) de la capture pas encore lue côté système.
+    fn pump(&mut self, fifo: &mut InputFifo) -> u32;
+}
+
+/// Capture prête à brancher : source, canaux, thread de capture éventuel.
+pub(crate) type Attachment = (Box<dyn CaptureSource>, usize, Option<AudioThread>);
+
+/// Capture branchée sur la sortie, avec ses tampons alloués hors du thread audio.
+pub(crate) struct Attached {
+    source: Box<dyn CaptureSource>,
+    fifo: InputFifo,
+    buf: Vec<f32>,
+}
+
+/// Trames gardées par la file d'entrée du duplex.
+const DUPLEX_FIFO: usize = 16_384;
+
+/// État du rendu duplex, propre au thread de sortie.
+pub(crate) struct Duplex {
+    render: DuplexFn,
+    control: mpsc::Receiver<Option<Box<Attached>>>,
+    back: mpsc::Sender<Box<Attached>>,
+    attached: Option<Box<Attached>>,
+    info: Arc<StreamInfo>,
+}
+
+impl Duplex {
+    /// Un cycle : relève la capture, puis rend `out`. `out_delay` : trames déjà
+    /// en attente côté système avant celles-ci.
+    pub(crate) fn render(&mut self, out: &mut [f32], channels: usize, out_delay: u32) {
+        while let Ok(msg) = self.control.try_recv() {
+            if let Some(old) = std::mem::replace(&mut self.attached, msg) {
+                // Libérée par l'interface, pas ici.
+                let _ = self.back.send(old);
+            }
+        }
+        self.info.output.store(out_delay, Ordering::Relaxed);
+        let frames = out.len() / channels.max(1);
+        match self.attached.as_deref_mut() {
+            Some(Attached { source, fifo, buf }) => {
+                let pending = source.pump(fifo);
+                let ch = fifo.channels();
+                let n = frames.min(buf.len() / ch);
+                let waited = fifo.pull(&mut buf[..n * ch]);
+                self.info.input.store(pending.saturating_add(waited as u32), Ordering::Relaxed);
+                self.info.underruns.store(fifo.underruns(), Ordering::Relaxed);
+                (self.render)(&buf[..n * ch], ch, out, channels);
+            }
+            None => (self.render)(&[], 0, out, channels),
+        }
     }
 }
 
@@ -107,6 +230,12 @@ pub struct OutputStream {
     config: OutputConfig,
     device_name: String,
     thread: AudioThread,
+    info: Arc<StreamInfo>,
+    control: mpsc::Sender<Option<Box<Attached>>>,
+    returned: mpsc::Receiver<Box<Attached>>,
+    /// Thread de capture séparé (WASAPI), arrêté quand l'entrée change.
+    capture: Option<AudioThread>,
+    input: Option<(InputConfig, String)>,
 }
 
 impl OutputStream {
@@ -122,6 +251,50 @@ impl OutputStream {
     pub fn is_running(&self) -> bool {
         self.thread.handle.as_ref().is_some_and(|h| !h.is_finished())
     }
+
+    /// Branche une entrée sur le rendu duplex (`None` : la débranche). L'entrée
+    /// doit tourner à la fréquence de la sortie.
+    pub fn set_input(&mut self, input: Option<Input>) -> Result<(), AudioError> {
+        self.collect();
+        let old_thread = self.capture.take();
+        let attached = match input {
+            Some(input) => {
+                let (source, channels, thread) = backend::attach(input.pending)?;
+                self.capture = thread;
+                self.input = Some((input.config, input.device_name));
+                let fifo = InputFifo::new(DUPLEX_FIFO, channels);
+                Some(Box::new(Attached { source, fifo, buf: vec![0.0; DUPLEX_FIFO * channels.max(1)] }))
+            }
+            None => {
+                self.input = None;
+                None
+            }
+        };
+        self.control.send(attached).map_err(|_| AudioError::System("le thread audio s'est arrêté".into()))?;
+        drop(old_thread);
+        Ok(())
+    }
+
+    /// Configuration et nom de l'entrée branchée.
+    pub fn input(&self) -> Option<(InputConfig, &str)> {
+        self.input.as_ref().map(|(c, n)| (*c, n.as_str()))
+    }
+
+    /// Latences mesurées au dernier cycle.
+    pub fn latency(&self) -> Latency {
+        self.collect();
+        Latency { output: self.info.output.load(Ordering::Relaxed), input: self.info.input.load(Ordering::Relaxed) }
+    }
+
+    /// Famines de l'entrée (trames arrivées trop tard) depuis son branchement.
+    pub fn input_underruns(&self) -> u32 {
+        self.info.underruns.load(Ordering::Relaxed)
+    }
+
+    /// Libère les captures remplacées.
+    fn collect(&self) {
+        while self.returned.try_recv().is_ok() {}
+    }
 }
 
 /// Entrée (capture) ouverte mais pas encore lancée.
@@ -133,8 +306,29 @@ pub struct Input {
 
 /// Ouvre l'entrée audio par défaut du système (micro, entrée ligne…).
 pub fn open_default_input() -> Result<Input, AudioError> {
-    let (config, device_name, pending) = backend::open_default_input(PREFERRED)?;
+    open_input(None, PREFERRED.sample_rate)
+}
+
+/// Ouvre une entrée par son identifiant ([`input_devices`]), ou celle par
+/// défaut, à la fréquence voulue quand le système la laisse choisir.
+pub fn open_input(id: Option<&str>, sample_rate: u32) -> Result<Input, AudioError> {
+    let preferred = OutputConfig { sample_rate, ..PREFERRED };
+    let (config, device_name, pending) = backend::open_input(preferred, id)?;
     Ok(Input { config, device_name, pending })
+}
+
+/// Périphérique audio proposé par le système.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeviceInfo {
+    /// Identifiant à passer à [`open_input`].
+    pub id: String,
+    /// Nom lisible.
+    pub name: String,
+}
+
+/// Entrées disponibles, celle par défaut en premier.
+pub fn input_devices() -> Vec<DeviceInfo> {
+    backend::input_devices()
 }
 
 impl Input {
@@ -292,6 +486,50 @@ mod tests {
         let b: Vec<u8> = [1i32 << 30, i32::MIN].iter().flat_map(|s| s.to_ne_bytes()).collect();
         SampleKind::I32.decode(&b, &mut out);
         assert_eq!(out, [0.5, -1.0]);
+    }
+
+    /// À lancer à la main : `cargo test -p ponzik-audio -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "nécessite une entrée et une sortie audio"]
+    fn duplex_delivers_input_with_the_output() {
+        let output = open_default().expect("sortie");
+        let rate = output.config().sample_rate;
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut frames = 0usize;
+        let mut sent = false;
+        let mut stream = output
+            .start_duplex(move |input, in_ch, out, ch| {
+                out.fill(0.0);
+                if let Some(n) = input.len().checked_div(in_ch) {
+                    assert_eq!(n, out.len() / ch, "autant de trames en entrée qu'en sortie");
+                    frames += n;
+                }
+                if frames >= rate as usize && !sent {
+                    sent = true;
+                    let _ = tx.send(frames);
+                }
+            })
+            .expect("lancement");
+        let device = std::env::var("PONZIK_INPUT").ok();
+        let input = match open_input(device.as_deref(), rate) {
+            Ok(i) => i,
+            Err(e) => {
+                println!("pas d'entrée : {e}");
+                return;
+            }
+        };
+        println!("entrée : {}", input.device_name());
+        stream.set_input(Some(input)).expect("branchement");
+        let got = rx.recv_timeout(std::time::Duration::from_secs(3));
+        let lat = stream.latency();
+        println!(
+            "duplex : {got:?} · sortie {:.1} ms · entrée {:.1} ms · famines {}",
+            Latency::ms(lat.output, rate),
+            Latency::ms(lat.input, rate),
+            stream.input_underruns()
+        );
+        assert!(got.is_ok(), "aucune trame d'entrée en 3 s");
+        stream.set_input(None).expect("débranchement");
     }
 
     /// À lancer à la main : `cargo test -p ponzik-audio -- --ignored --nocapture`.
