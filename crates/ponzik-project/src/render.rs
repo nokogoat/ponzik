@@ -91,6 +91,8 @@ pub fn render_song(project: &Project, sample_rate: u32, loader: SampleLoader, mo
     let silent =
         Sequence { patterns: Vec::new(), clips: Vec::new(), mode: PlayMode::Pattern(0), ..Sequence::default() };
     let _ = handle.send(Command::SetSequence(Box::new(silent)));
+    // Latence compensée par le mixer : tout le morceau sort retardé d'autant.
+    let latency = handle.latency();
     let body = out.len();
     let mut last_loud = body;
     let mut tail = 0;
@@ -107,6 +109,8 @@ pub fn render_song(project: &Project, sample_rate: u32, loader: SampleLoader, mo
         handle.collect_garbage();
     }
     out.truncate(last_loud);
+    // On retire ce retard pour que l'export commence au premier temps.
+    out.drain(..(2 * latency).min(out.len()));
     out
 }
 
@@ -278,6 +282,21 @@ mod tests {
         assert!(peak(&out[..2 * frames]) > 0.05);
         // Pattern absent : borné au dernier, sans paniquer.
         assert!(!render_song(&p, SR, &no_samples, RenderMode::Pattern(99, 1)).is_empty());
+    }
+
+    #[test]
+    fn export_removes_the_compensated_latency() {
+        let mut p = Project::empty();
+        let a = p.add_channel("A", InstrumentDef::new("pulse"), 60);
+        p.add_note(0, a, Note { start: 0, len: TICKS_PER_STEP * 2, key: 60, vel: 0.5 });
+        let onset = |p: &Project| {
+            let out = render_song(p, SR, &no_samples, RenderMode::Pattern(0, 1));
+            out.iter().position(|s| s.abs() > 1e-4).unwrap()
+        };
+        let dry = onset(&p);
+        let track = p.channels[a].track;
+        p.tracks[track].inserts[0] = Some(crate::EffectDef::new("limiter"));
+        assert_eq!(onset(&p), dry, "le limiteur ne décale pas l'export");
     }
 
     #[test]
