@@ -169,6 +169,9 @@ pub struct RecordState {
     panel_anchor: (f32, f32),
     panel_rect: Option<Rect>,
     device_list: bool,
+    /// Dernière erreur d'ouverture de l'entrée : affichée dans le panneau, et on
+    /// ne réessaie pas à chaque image tant que rien n'a changé.
+    input_error: Option<String>,
     /// VU-mètre d'entrée : niveau, crête maintenue, âge de la crête.
     level: [f32; 2],
     hold: [f32; 2],
@@ -244,9 +247,12 @@ impl App {
         if old.monitor != settings.monitor || old.source != settings.source {
             self.update_monitors();
         }
-        if old.device != settings.device && self.rec.input.is_some() {
-            self.close_input();
-            self.open_input();
+        if old.device != settings.device {
+            self.rec.input_error = None;
+            if self.rec.input.is_some() {
+                self.close_input();
+                self.open_input();
+            }
         }
         self.save_record_settings();
     }
@@ -267,13 +273,28 @@ impl App {
         }
         let Some(output) = self.rec.output.as_mut() else { return false };
         let device = self.rec.settings.device.clone();
-        let opened = ponzik_audio::open_input(device.as_deref(), self.sample_rate).and_then(|input| {
-            let config = input.config();
-            let name = input.device_name().to_string();
-            output.set_input(Some(input)).map(|()| (name, config))
-        });
+        let rate = self.sample_rate;
+        let mut attach = |id: Option<&str>| {
+            ponzik_audio::open_input(id, rate).and_then(|input| {
+                let config = input.config();
+                let name = input.device_name().to_string();
+                output.set_input(Some(input)).map(|()| (name, config))
+            })
+        };
+        let mut opened = attach(device.as_deref());
+        // Micro enregistré introuvable ou occupé : on retombe sur celui du système.
+        if opened.is_err()
+            && let Some(id) = device.as_deref()
+            && let Ok(ok) = attach(None)
+        {
+            opened = Ok(ok);
+            self.rec.settings.device = None;
+            self.save_record_settings();
+            self.toast(&format!("Microphone \"{id}\" unavailable: using the system default input"));
+        }
         match opened {
             Ok((name, config)) => {
+                self.rec.input_error = None;
                 if config.sample_rate != self.sample_rate {
                     self.toast("Warning: the input and output run at different sample rates");
                 }
@@ -285,7 +306,7 @@ impl App {
                 true
             }
             Err(e) => {
-                self.toast(&format!("Audio input: {e}"));
+                self.rec.input_error = Some(format!("Can't open the microphone: {e}"));
                 false
             }
         }
@@ -342,6 +363,7 @@ impl App {
         }
         self.rec.panel = true;
         self.rec.device_list = false;
+        self.rec.input_error = None;
         if self.rec.devices.is_empty() && !self.rec.demo {
             self.rec.devices = ponzik_audio::input_devices();
         }
@@ -359,11 +381,17 @@ impl App {
     pub(super) fn record_tick(&mut self, dt: f32) {
         // L'entrée reste ouverte tant qu'on en a besoin (piste armée, panneau ouvert).
         let want_input = !self.rec.armed.is_empty() || self.rec.panel;
-        if want_input && self.rec.input.is_none() && self.rec.output.is_some() && !self.rec.demo {
-            // Un seul essai par ouverture du panneau : pas de toast d'erreur à chaque image.
+        if want_input && self.rec.input.is_none() && self.rec.output.is_some() && !self.rec.demo && self.rec.input_error.is_none() {
+            // Échec : le panneau reste ouvert sur la liste des micros, avec l'erreur ;
+            // on ne réessaie qu'au prochain choix de micro ou à la réouverture.
             if !self.open_input() {
-                self.rec.panel = false;
                 self.rec.armed.clear();
+                self.rec.device_list = true;
+                self.rec.devices = ponzik_audio::input_devices();
+                if !self.rec.panel {
+                    self.open_record_panel(None);
+                    self.rec.device_list = true;
+                }
             }
         } else if !want_input && self.rec.input.is_some() {
             self.close_input();
@@ -697,6 +725,11 @@ impl App {
             }
         }
         y += 42.0;
+        if let Some(err) = self.rec.input_error.clone() {
+            self.text_fit(c, self.f.sans_med, 12.0, inner.x, y + 8.0, &err, inner.w, t.negative);
+            self.text_fit(c, self.f.sans, 11.0, inner.x, y + 24.0, "Pick another microphone below", inner.w, t.text2);
+            y += 36.0;
+        }
         if self.rec.device_list {
             self.device_list(c, input, Rect::new(inner.x, y, inner.w, inner.bottom() - y));
             return;
