@@ -54,6 +54,7 @@ unsafe extern "C" {
 
 const SND_PCM_STREAM_PLAYBACK: c_int = 0;
 const SND_PCM_STREAM_CAPTURE: c_int = 1;
+const SND_PCM_NONBLOCK: c_int = 1;
 const SND_PCM_ACCESS_RW_INTERLEAVED: c_int = 3;
 const SND_PCM_STATE_PREPARED: c_int = 2;
 const EAGAIN: c_long = 11;
@@ -330,7 +331,7 @@ pub(crate) fn input_devices() -> Vec<DeviceInfo> {
             let hint = *at as *const c_void;
             at = at.add(1);
             let Some(name) = hint_field(hint, c"NAME") else { continue };
-            if hint_field(hint, c"IOID").is_some_and(|io| io == "Output") || !useful_capture(&name) {
+            if hint_field(hint, c"IOID").is_some_and(|io| io == "Output") || !useful_capture(&name) || !opens_for_capture(&name) {
                 continue;
             }
             let desc = hint_field(hint, c"DESC").unwrap_or_default();
@@ -342,6 +343,21 @@ pub(crate) fn input_devices() -> Vec<DeviceInfo> {
         snd_device_name_free_hint(hints);
     }
     out
+}
+
+/// Vrai si le périphérique s'ouvre vraiment en capture (JACK arrêté, carte
+/// tenue en exclusivité par PipeWire… sont écartés de la liste).
+fn opens_for_capture(name: &str) -> bool {
+    let Ok(cname) = std::ffi::CString::new(name) else { return false };
+    let mut pcm = null_mut();
+    // SAFETY: ouverture non bloquante, refermée aussitôt si elle réussit.
+    unsafe {
+        if snd_pcm_open(&mut pcm, cname.as_ptr(), SND_PCM_STREAM_CAPTURE, SND_PCM_NONBLOCK) < 0 || pcm.is_null() {
+            return false;
+        }
+        snd_pcm_close(pcm);
+    }
+    true
 }
 
 fn useful_capture(name: &str) -> bool {
