@@ -219,6 +219,8 @@ pub enum Action {
     Automate(ponzik_engine::AutoTarget, f32),
     SaveAs,
     ExportStems,
+    /// One WAV per arrangement section.
+    ExportSections(ponzik_project::ExportOptions),
     LoadPreset(super::devices::Device, PathBuf),
     /// A factory preset of the device, by name.
     LoadFactoryPreset(super::devices::Device, &'static str),
@@ -1150,6 +1152,18 @@ impl App {
         keep.sort_unstable();
         keep.dedup();
         keep
+    }
+
+    /// Renders every section (marker to marker) to its own WAV file.
+    pub fn export_sections(&mut self, options: ponzik_project::ExportOptions) {
+        let result = {
+            let loader = self.sample_loader();
+            compat::export_regions(&self.project, self.sample_rate, &loader, options)
+        };
+        match result {
+            Ok((dir, n)) => self.toast(&ponzik_i18n::tr_fmt_n!("{} section exported to {}", "{} sections exported to {}", n, n, dir.display().to_string())),
+            Err(e) => self.toast(&e),
+        }
     }
 
     pub fn export_stems(&mut self) {
@@ -2733,6 +2747,8 @@ impl App {
                         MenuItem::new(Icon::Pencil, tr("Save as"), Action::SaveAs).detail(key(S::SaveAs)),
                         MenuItem::new(Icon::Export, tr("Export as WAV"), Action::Export).detail(key(S::Export)).sep(),
                         MenuItem::new(Icon::Columns, tr("Export stems"), Action::ExportStems).tip(tr("One WAV per mixer track")),
+                        MenuItem::new(Icon::Columns, tr("Export sections"), Action::ExportSections(Default::default()))
+                            .tip(tr("One WAV per arrangement section: \"<project> - <section>.wav\"")),
                         MenuItem::new(Icon::Piano, tr("Import MIDI"), Action::ImportMidiMenu).sep(),
                         MenuItem::new(Icon::Folder, tr("Import an FL Studio project"), Action::ImportFlpMenu),
                         MenuItem::new(Icon::Piano, tr("Export as MIDI"), Action::ExportMidi).tip(tr("The current pattern")),
@@ -3012,6 +3028,7 @@ impl App {
                 self.open_popup(Popup::Rename { target: Rename::SaveAs, text }, anchor);
             }
             Action::ExportStems => self.export_stems(),
+            Action::ExportSections(options) => self.export_sections(options),
             Action::ImportMidiMenu => self.open_popup(Popup::ImportMidi(compat::scan_midi()), anchor),
             Action::ImportFlpMenu => self.open_popup(Popup::ImportFlp(compat::scan_flp()), anchor),
             Action::ImportFlp(path) => self.import_flp(&path),

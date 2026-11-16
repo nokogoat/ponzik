@@ -29,6 +29,8 @@ pub enum RenderMode {
     Song,
     /// Un pattern joué en boucle pendant `bars` mesures, puis la queue.
     Pattern(usize, u32),
+    /// The song from tick `.0` to tick `.1` (a section), then the tail.
+    Region(u32, u32),
 }
 
 /// Nombre d'images (échantillons par canal) que dure `ticks` au tempo du projet,
@@ -39,13 +41,14 @@ pub fn ticks_to_frames(ticks: u32, bpm: f32, sample_rate: u32) -> usize {
     ((ticks as f64 - 1e-9) * spt).ceil().max(0.0) as usize
 }
 
-/// Durée jouée (sans la queue), en ticks, et mode de lecture correspondant.
-fn span(project: &Project, mode: RenderMode) -> (u32, PlayMode) {
+/// Plage jouée (sans la queue), en ticks, et mode de lecture correspondant.
+fn span(project: &Project, mode: RenderMode) -> (u32, u32, PlayMode) {
     match mode {
-        RenderMode::Song => (project.song_len(), PlayMode::Song),
+        RenderMode::Song => (0, project.song_len(), PlayMode::Song),
         RenderMode::Pattern(p, bars) => {
-            (bars.max(1) * TICKS_PER_BAR, PlayMode::Pattern(p.min(project.patterns.len().saturating_sub(1))))
+            (0, bars.max(1) * TICKS_PER_BAR, PlayMode::Pattern(p.min(project.patterns.len().saturating_sub(1))))
         }
+        RenderMode::Region(a, b) => (a, b.max(a + 1), PlayMode::Song),
     }
 }
 
@@ -66,17 +69,21 @@ pub fn render_song_threads(
     workers: usize,
 ) -> Vec<f32> {
     let sample_rate = sample_rate.max(1);
-    let (ticks, play_mode) = span(project, mode);
+    let (from, to, play_mode) = span(project, mode);
     let mut project = project.clone();
     project.mode = play_mode;
-    // L'export ignore la boucle de travail.
-    project.loop_range = None;
+    // L'export ignore la boucle de travail ; a region loops on itself, so the
+    // engine stops at its end.
+    project.loop_range = matches!(mode, RenderMode::Region(..)).then_some((from, to));
     // La séquence initiale du moteur est déjà complète (clips audio compris).
     let (mut engine, mut handle) = project.build_engine(sample_rate as f32, loader);
     engine.set_worker_threads(workers);
+    if from > 0 {
+        let _ = handle.send(Command::Locate(from as f64));
+    }
     let _ = handle.send(Command::Play);
 
-    let frames = ticks_to_frames(ticks, project.bpm, sample_rate);
+    let frames = ticks_to_frames(to - from, project.bpm, sample_rate);
     let max_tail = (MAX_TAIL * sample_rate as f64) as usize;
     let hold = (SILENCE_HOLD * sample_rate as f64) as usize;
     let mut out = Vec::with_capacity(2 * (frames + max_tail.min(sample_rate as usize * 2)));
@@ -106,7 +113,7 @@ pub fn render_song_threads(
     }
 
     // Queue : plus aucune note (pas de pattern, pas de boucle), les voix s'éteignent.
-    let last_bpm = project.tempo_map().bpm_at(ticks as f64);
+    let last_bpm = if play_mode == PlayMode::Song { project.tempo_map().bpm_at(to as f64) } else { project.bpm as f64 };
     let silent = Sequence {
         patterns: Vec::new(),
         clips: Vec::new(),
@@ -148,7 +155,7 @@ pub fn render_stems(
     mode: RenderMode,
 ) -> Vec<(usize, Vec<f32>)> {
     let mut tracks: Vec<usize> = project.channels.iter().filter(|c| !c.muted).map(|c| c.track).collect();
-    if matches!(mode, RenderMode::Song) {
+    if !matches!(mode, RenderMode::Pattern(..)) {
         tracks.extend(project.audio_clips.iter().map(|c| c.track));
     }
     tracks.sort_unstable();
@@ -172,6 +179,32 @@ pub fn render_stems(
         s.resize(len, 0.0);
     }
     stems
+}
+
+/// One render per section (see [`Project::sections`]): (section name, render).
+/// Each one starts on its marker and ends with its own tail.
+pub fn render_regions(project: &Project, sample_rate: u32, loader: SampleLoader) -> Vec<(String, Vec<f32>)> {
+    project
+        .sections()
+        .into_iter()
+        .zip(&project.markers)
+        .map(|((a, b), m)| (m.name.clone(), render_song(project, sample_rate, loader, RenderMode::Region(a, b))))
+        .collect()
+}
+
+/// File name of a region export: "<project> - <section>.wav", with a number
+/// for unnamed or repeated sections (`index` is 0-based).
+pub fn region_file_name(project: &str, section: &str, index: usize, taken: &[String]) -> String {
+    let clean = |s: &str| s.chars().map(|c| if "/\\\\:*?\"<>|".contains(c) || c.is_control() { '_' } else { c }).collect::<String>();
+    let section = section.trim();
+    let base = if section.is_empty() { format!("{:02}", index + 1) } else { clean(section) };
+    let mut name = format!("{} - {}.wav", clean(project.trim()), base);
+    let mut k = 2;
+    while taken.contains(&name) {
+        name = format!("{} - {} {}.wav", clean(project.trim()), base, k);
+        k += 1;
+    }
+    name
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -427,6 +460,40 @@ mod tests {
         let tail = &out[2 * frames..];
         assert!(peak(&tail[tail.len().saturating_sub(2 * 64)..]) < 0.01);
         assert!(peak(&out[2 * (len - 1)..]) >= SILENCE || len == frames);
+    }
+
+    #[test]
+    fn regions_render_one_file_per_section_through_the_tempo_map() {
+        let mut p = Project::empty();
+        let a = p.add_channel("A", InstrumentDef::new("pulse"), 60);
+        p.add_note(0, a, Note { start: 0, len: TICKS_PER_STEP, key: 60, vel: 0.5 });
+        for bar in 0..6 {
+            p.clips.push(crate::ClipDef { pattern: 0, lane: 0, start: bar * TICKS_PER_BAR, len: TICKS_PER_BAR, offset: 0 });
+        }
+        p.set_tempo_change(2 * TICKS_PER_BAR, 90.0, false);
+        p.set_tempo_change(4 * TICKS_PER_BAR, 150.0, true);
+        for (bar, name) in [(0, "Intro"), (2, "Drop"), (4, "Outro")] {
+            p.add_marker(bar * TICKS_PER_BAR, name);
+        }
+        let regions = render_regions(&p, SR, &no_samples);
+        assert_eq!(regions.len(), 3);
+        let map = p.tempo_map();
+        for (((a, b), (name, out)), m) in p.sections().into_iter().zip(&regions).zip(&p.markers) {
+            assert_eq!(name, &m.name);
+            let frames = map.frames_between(a as f64, b as f64, SR as f64);
+            let len = out.len() / 2;
+            assert!(len >= frames && len <= frames + SR as usize, "{name}: {len} / {frames}");
+            // The section's first note sounds at its very start.
+            let onset = out.iter().position(|s| s.abs() > 1e-4).unwrap() / 2;
+            assert!(onset < 4, "{name}: {onset}");
+            // And the next bar's note at the right place for this tempo.
+            let bar = map.frames_between(a as f64, (a + TICKS_PER_BAR) as f64, SR as f64);
+            assert!(peak(&out[2 * bar..2 * (bar + 64)]) > 0.05, "{name}");
+        }
+        let taken = vec!["Song - Drop.wav".to_string()];
+        assert_eq!(region_file_name("Song", "Drop", 1, &taken), "Song - Drop 2.wav");
+        assert_eq!(region_file_name("Song", " ", 0, &[]), "Song - 01.wav");
+        assert_eq!(region_file_name("A/B", "x:y", 0, &[]), "A_B - x_y.wav");
     }
 
     #[test]

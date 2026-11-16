@@ -5151,3 +5151,21 @@ msgstr "Outro"
 
 msgid "Verse"
 msgstr "Couplet"
+
+msgid "Export each section as its own WAV (render by regions)"
+msgstr "Exporter chaque section dans son propre WAV (rendu par régions)"
+
+msgid "Export sections"
+msgstr "Exporter les sections"
+
+msgid "No sections: add markers on the arrangement lane first"
+msgstr "Aucune section : ajoutez d'abord des marqueurs sur la piste d'arrangement"
+
+msgid "One WAV per arrangement section: \"<project> - <section>.wav\""
+msgstr "Un WAV par section : « <projet> - <section>.wav »"
+
+msgid "{} section exported to {}"
+msgstr "{} section exportée dans {}"
+
+msgid "{} sections exported to {}"
+msgstr "{} sections exportées dans {}"

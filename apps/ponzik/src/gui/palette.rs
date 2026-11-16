@@ -187,6 +187,7 @@ impl App {
             }
         }
         add(tr("Export separate tracks (stems)").into(), tr("File"), none(), Action::ExportStems);
+        add(tr("Export each section as its own WAV (render by regions)").into(), tr("File"), none(), Action::ExportSections(Default::default()));
         add(tr("Import a MIDI file").into(), tr("File"), none(), Action::ImportMidiMenu);
         add(tr("Import an FL Studio project (.flp)").into(), tr("File"), none(), Action::ImportFlpMenu);
         add(tr("Show the FL Studio import report").into(), tr("File"), none(), Action::Popup(Popup::ImportReport));

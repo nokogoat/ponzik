@@ -100,6 +100,29 @@ pub fn export_song(
     Ok((audio.len() as f32 / 2.0 / sample_rate as f32, gain))
 }
 
+/// Renders each section (marker to marker) to "<project> - <section>.wav" in
+/// the exports folder; returns the folder and the number of files.
+pub fn export_regions(
+    project: &Project,
+    sample_rate: u32,
+    loader: &dyn Fn(&str) -> Option<Arc<Sample>>,
+    options: ExportOptions,
+) -> Result<(PathBuf, usize), String> {
+    if project.markers.is_empty() {
+        return Err(tr("No sections: add markers on the arrangement lane first").into());
+    }
+    let dir = projects_dir().join("Exports");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let mut taken = Vec::new();
+    for (i, (name, mut audio)) in ponzik_project::render_regions(project, sample_rate, loader).into_iter().enumerate() {
+        let file = ponzik_project::region_file_name(&project.name, &name, i, &taken);
+        let path = dir.join(&file);
+        ponzik_project::export_wav(&path, &mut audio, sample_rate, options).map_err(|e| format!("{}: {e}", path.display()))?;
+        taken.push(file);
+    }
+    Ok((dir, taken.len()))
+}
+
 pub fn load_sample(path: &str) -> Result<Sample, String> {
     ponzik_engine::wav::load_wav(path)
 }
