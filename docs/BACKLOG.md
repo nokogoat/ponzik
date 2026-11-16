@@ -1,249 +1,250 @@
-# Backlog produit
+# Product backlog
 
-Novembre 2026. Comparé à FL Studio 2025.2, Ableton Live 12.3, Bitwig Studio 5.3,
-Logic Pro 11, Reaper 7, Studio One 7, Cubase 14, et aux plugins les plus utilisés
-(Serum 2, Vital, Pro-Q 4, Pro-C, Pro-L, Valhalla, Soundtoys, OTT, Kickstart,
-Gross Beat, Melodyne, Ozone).
+November 2026. Benchmarked against FL Studio 2025.2, Ableton Live 12.3, Bitwig
+Studio 5.3, Logic Pro 11, Reaper 7, Studio One 7, Cubase 14, and the most widely
+used plugins (Serum 2, Vital, Pro-Q 4, Pro-C, Pro-L, Valhalla, Soundtoys, OTT,
+Kickstart, Gross Beat, Melodyne, Ozone).
 
-**Mode d'emploi.** Prendre les éléments de la Vague 1 dans l'ordre. Chaque ligne
-indique la taille (**S** ≤ 1 h, **M** ½ à 2 jours, **L** une semaine ou plus),
-les zones touchées (**engine** = `ponzik-engine`, **dsp** = `ponzik-dsp`,
+**How to use this document.** Work through the open Wave 2 items in order. Each
+row gives the size (**S** ≤ 1 hour, **M** half a day to 2 days, **L** a week or
+more), the areas touched (**engine** = `ponzik-engine`, **dsp** = `ponzik-dsp`,
 **project** = `ponzik-project`, **ui** = `apps/ponzik/src/gui`, **window** =
-`ponzik-window`) et ce dont l'élément dépend.
+`ponzik-window`), what it depends on, and its status (✅ done · 🟡 partial ·
+⬜ to do).
 
-**Déjà fait mais encore marqué ⬜ dans `FEATURES.md`** (à corriger) : hôte CLAP
-(audio, paramètres, notes), enregistrement audio sur les pistes du mixer avec
-écoute, import et export `.mid`, presets d'appareils, projets récents, swing du
-Channel Rack, couloir de vélocité du piano roll, inversion de phase (Utilitaire).
-
----
-
-## 1. Règles d'interface : le calme d'Ableton, la puissance de FL
-
-FL Studio est dense : fenêtres flottantes, chaque plugin a son propre style,
-beaucoup de petits boutons sans libellé. Live et Bitwig paraissent calmes parce
-qu'ils ont une seule fenêtre, une seule grammaire visuelle et un panneau du bas
-qui affiche toujours le détail de la sélection. Les règles à suivre, à vérifier
-à chaque revue d'interface :
-
-1. **Une sélection, un panneau de détail.** Ce qu'on sélectionne (canal, clip,
-   piste, note) s'affiche dans le panneau du bas (appareils ou clip). Pas de
-   fenêtres flottantes par défaut.
-2. **Barre d'aide permanente.** Au survol, elle affiche le nom, une phrase qui
-   explique et le raccourci. Tout widget doit avoir un texte d'aide : c'est
-   l'Info View d'Ableton et la hint bar de FL.
-3. **Divulgation progressive.** Chaque appareil montre d'abord 4 à 8 macros avec
-   son visuel, et le reste dans « Avancé ». Les groupes de paramètres
-   (`ParamInfo::group`) servent d'onglets. Rien de caché n'est inaccessible : la
-   palette Ctrl+K trouve tout.
-4. **Une couleur veut dire une chose.** La couleur d'accent sert à la sélection et
-   à la lecture, le rouge à l'enregistrement et à l'écrêtage, la couleur du canal
-   à son identité. Pas de dégradés décoratifs.
-5. **Pictogrammes et libellés ensemble.** Un pictogramme seul ne suffit que pour
-   les gestes universels (lecture, enregistrement, boucle, métronome). Partout
-   ailleurs, on met un mot.
-6. **Les gestes de FL, les mêmes partout.** Le clic gauche pose, le clic droit
-   maintenu efface, la molette règle, Ctrl+glisser copie, Maj ou Ctrl donnent la
-   précision fine et le double-clic remet la valeur par défaut. Tout ça doit
-   marcher de la même façon dans toutes les vues.
-7. **Tout se fait au clavier.** Chaque action est dans la palette, avec son
-   raccourci affiché. Les flèches et Entrée doivent suffire pour naviguer.
-8. **Aucune modale bloquante.** La confirmation se remplace par l'annulation :
-   on supprime tout de suite et on affiche « Annulé : … » avec Ctrl+Z.
-9. **Le glisser-déposer partout.** Du navigateur vers le rack, la playlist, un
-   insert ou un pad ; de l'OS vers la fenêtre ; d'une piste à une autre.
-10. **Chaque nombre a un visuel.** Un paramètre qui a un effet audible doit avoir
-    une courbe, une forme d'onde ou un indicateur qui bouge pendant la lecture.
-11. **Des valeurs par défaut qui sonnent.** Un appareil inséré doit déjà faire
-    quelque chose d'utile, et un projet neuf doit être prêt pour faire un beat.
-12. **Des états vides qui guident.** Une vue vide dit en une phrase quoi faire,
-    comme le font déjà le piano roll et la Session.
+**Status.** Wave 1 is complete apart from the permanent help bar (tooltips
+already cover every widget). From Wave 2, sidechain, plugin delay compensation
+and the Drum Machine have shipped; from Wave 3, the VST3 host and floating device
+windows. `FEATURES.md` is up to date with all of this.
 
 ---
 
-## 2. Vague 1 : les prochaines 2 à 3 heures
+## 1. Interface rules: Ableton's calm, FL's power
 
-Ce sont les éléments au meilleur rapport valeur/effort, presque tous en S. Chacun
-est indépendant sauf mention contraire.
+FL Studio is dense: floating windows, every plugin with its own style, lots of
+small unlabeled buttons. Live and Bitwig feel calm because they have a single
+window, a single visual grammar, and a bottom panel that always shows the details
+of the current selection. These are the rules to follow, and to check at every UI
+review:
 
-| # | Élément | Pourquoi | Taille | Zone | Dépend de |
-|---|---|---|---|---|---|
-| V1-1 | **Barre d'aide au survol** : en bas de la fenêtre, nom, description et raccourci du widget survolé (descriptions du registre pour les appareils, `ParamInfo` pour les potards) | Plus grand gain de lisibilité pour les débutants ; règle 2 | S | ui (widgets.rs, app.rs) | – |
-| V1-2 | **Sauvegarde automatique et reprise après crash** : écrit `~/Musique/Ponzik/.autosave/<nom>.ponzik` toutes les 2 min si le projet a changé ; au démarrage, propose de restaurer le fichier s'il est plus récent | Perdre un projet fait fuir un utilisateur pour de bon | S | project (io.rs), ui (compat.rs) | – |
-| V1-3 | **Gamme du projet** : tonalité et mode (majeur, mineur, dorien, penta…) dans `Project` ; les lignes hors gamme sont grisées dans le piano roll ; option « coller à la gamme » | Base de tous les outils d'harmonie (Live 12, FL, Logic, Cubase) | S | project, ui (piano.rs) | – |
-| V1-4 | **Accords en un clic** : un outil du piano roll pose triade, septième, sus ou power chord sur la gamme, avec renversement à la molette | Fonction préférée des débutants (FL chord stamps, Cubase Chord Pads) | S | ui (piano.rs) | V1-3 (sinon accords chromatiques) |
-| V1-5 | **Humaniser et randomiser** : décalage de timing et de vélocité aléatoire réglable sur la sélection (palette + menu du piano roll) | Rend un beat moins mécanique en un geste | S | ui (piano.rs) | – |
-| V1-6 | **Tap tempo et pré-compte** : bouton TAP (moyenne des 4 derniers appuis) ; pré-compte de 1 mesure avant l'enregistrement, au métronome | Indispensable pour enregistrer et caler un sample | S | engine (count-in dans le transport), ui | – |
-| V1-7 | **Panneau d'historique** : liste des étiquettes d'annulation ; un clic revient à cet état | `History` stocke déjà les étiquettes ; Live, FL et Reaper l'ont tous | S | project (history.rs : itérateur des libellés, `goto(n)`), ui | – |
-| V1-8 | **Glisser-déposer depuis le navigateur** : un WAV va dans un nouveau canal Sampler ou un clip audio de la playlist, un instrument va dans le rack, un effet dans un slot d'insert | Règle 9 ; c'est le geste naturel de FL comme d'Ableton | M | ui (app.rs : charge utile de glisser, cibles de dépôt) | – |
-| V1-9 | **Mesure LUFS sur le master** : intégrée, court terme, momentanée, plus crête vraie (pondération K = 2 biquads, crête suréchantillonnée ×4) ; affichée à côté du VU master | Toute la musique publiée vise une cible LUFS ; Ozone et Pro-L l'affichent | S | dsp (pondération K), engine (meter.rs), ui (mixer.rs) | – |
-| V1-10 | **Analyseur de spectre** : FFT radix-2 maison, courbe lissée en 1/6 d'octave derrière la courbe de l'EQ et dans un visuel du master | L'EQ sans spectre, c'est régler à l'aveugle (Pro-Q, Spectrum de Live) | M | dsp (fft.rs), engine (tampon d'analyse sans verrou), ui (visuals.rs) | – |
-| V1-11 | **Make unique** et **renommer ou colorer par clic droit** les patterns et les clips | Le seul ⬜ qui reste dans la ligne Patterns ; geste FL de base | S | project, ui (playlist.rs) | – |
-| V1-12 | **Modèles de projet** : « Enregistrer comme modèle » et « Nouveau depuis un modèle » dans la palette (dossier `Modèles/`) | Démarre une session en 2 s ; FL, Live et Studio One l'ont tous | S | ui (compat.rs, palette.rs) | – |
-| V1-13 | **Normalisation et dithering à l'export** (TPDF en 16 bits, normalisation crête ou LUFS cible) | Un export propre sans avoir à passer par un autre logiciel | S | project (render.rs), dsp | V1-9 pour la cible LUFS |
-| V1-14 | **Dupliquer la sélection de temps** (Ctrl+B sur la règle : tout le contenu de la plage est recopié juste après) | Façon la plus rapide d'allonger un arrangement (Live : Cmd+D) | S | ui (playlist.rs), project | – |
-
-Les cinq à prendre en premier : **V1-1, V1-2, V1-3 puis V1-4, V1-7, V1-9.**
-
----
-
-## 3. Vague 2 : les prochaines semaines
-
-| # | Élément | Pourquoi | Taille | Zone | Dépend de |
-|---|---|---|---|---|---|
-| V2-1 | **Sidechain** : chaque effet de dynamique (Compresseur, Porte, Pompe, Multibande) peut écouter une autre piste | Le pompage de la house et de l'EDM ; rien ne le remplace | M | engine (`Effect::process_sidechain`, ordre de routage), ui | – |
-| V2-2 | **Compensation de latence (PDC)** : `Effect::latency()`, retard compensé sur les pistes et les envois ; latence lue aussi sur les CLAP | Le Limiteur à anticipation et les CLAP décalent déjà le son | M | engine (mixer.rs), clap | – |
-| V2-3 | **Pistes de groupe et VCA** : une piste de mixage en groupe repliable, et un fader VCA qui pilote plusieurs pistes sans faire passer l'audio par lui | Mixage d'une batterie ou de chœurs (toutes les STAN) | M | project, engine, ui (mixer.rs) | – |
-| V2-4 | **Pistes de mixage dynamiques** : remplacer `TRACKS = 33` fixe par un nombre variable | FL 2025 monte à 500 pistes ; 33 limite les gros projets | M | engine, project, ui | – |
-| V2-5 | **Macros d'appareil et racks** : chaîne d'effets ou d'instruments empilés, 8 macros mappables avec plage, enregistrée en preset | Cœur du « calme » d'Ableton : 8 potards au lieu de 80 | L | engine (rack d'effets), project, ui | – |
-| V2-6 | **Modulateurs** : LFO, enveloppe, suiveur d'enveloppe, pas à pas, aléatoire, branchés par glisser sur n'importe quel paramètre, piste ou envoi compris, avec une profondeur par cible | Bitwig 5, Cubase 14 ; c'est ce qui donne du mouvement aux sons | L | engine (modulation par bloc), dsp (lfo.rs), ui | V2-5 conseillé |
-| V2-7 | **MIDI learn** : clic droit, « Lier au contrôleur », bouger un CC ; table des liens enregistrée dans le projet | Le contrôleur MIDI branché ne sert aujourd'hui qu'aux notes | S | engine, project, ui | – |
-| V2-8 | **Enregistrement d'automation en direct** (modes écriture, touch, latch) | Pour garder un geste fait à la main | M | engine, ui (automation.rs) | V2-7 utile |
-| V2-9 | **Marqueurs de section et piste d'arrangement** : couplet, refrain…, que l'on peut glisser pour déplacer toute la section (Arranger de Studio One et Cubase) | Restructurer un morceau en un geste | M | project, ui (playlist.rs) | – |
-| V2-10 | **Changements de tempo et de signature** : piste globale de tempo, rendu et séquence sur une carte de tempo | Indispensable dès qu'on sort de la boucle à 4/4 | M | engine (sequence.rs), project | – |
-| V2-11 | **Warp des clips audio** : tempo d'origine détecté, étirement temporel (WSOLA pour la batterie, vocodeur de phase pour les sons tonals), transposition par clip, marqueurs de warp | Caler une boucle au tempo, la base de Live | L | dsp (stretch), engine (lecture des clips), ui | – |
-| V2-12 | **Découpe aux transitoires vers pads ou MIDI** : le Découpeur exporte ses tranches dans un pattern de notes, ou un clip audio est découpé dans la playlist | Le flip de breaks (Slicex, Fruity Slicer 2, Simpler Slice) | M | engine (détection déjà dans le Découpeur), ui | – |
-| V2-13 | **Pads de batterie** (rack de 16 pads, un échantillon et une chaîne par pad, chokes, glisser un WAV sur un pad) | Remplace FPC et Drum Rack | M | engine (instrument), ui | V1-8 |
-| V2-14 | **Comping de prises** : boucle d'enregistrement, une lane par prise, balayer pour choisir les morceaux gardés (Reaper 7, Logic) | Voix et instruments enregistrés | L | engine (enregistrement), project, ui | – |
-| V2-15 | **Freeze, bounce sur place, consolider** : rendre une piste ou un clip en audio, coller l'audio bouncé (Live 12.3) | Économiser le processeur et figer un son | M | project (render.rs hors ligne), ui | – |
-| V2-16 | **Capture MIDI** : tampon permanent des notes jouées ; Ctrl+Maj+C crée le pattern même sans avoir enregistré | Ne plus perdre une bonne idée jouée en impro (Live, FL Score logger) | S | engine (anneau de notes), ui | – |
-| V2-17 | **Transformations MIDI** : arpéger, strum, flam, legato, inverser, renverser, étirer, enchaîner (glue) | Outils du piano roll de FL et Transformations de Live 12 | M | ui (piano.rs), project | V1-3 |
-| V2-18 | **Générateurs MIDI** : euclidien, rythme, motif sur la gamme, basse qui suit les accords (Bassline Generator de FL 2025) | Démarrer quand on bloque | M | project (génération pure), ui | V1-3, V1-4 |
-| V2-19 | **Probabilité et répétitions par pas** (ratchets, condition 1:2, 3:4) dans le Channel Rack et le piano roll | Grooves vivants façon Elektron, Live, Bitwig Stepwise | M | engine (sequence.rs), project, ui | – |
-| V2-20 | **Glisser des fichiers depuis l'OS** : XDND sur X11, `WM_DROPFILES` sur Win32, nouvel `Event::FileDrop` | Règle 9 ; on prend les samples dans le gestionnaire de fichiers | M | window, ui | V1-8 |
-| V2-21 | **A/B d'appareil** : deux états par appareil et un bouton pour basculer (Live 12.3, plugins FabFilter) | Comparer les réglages honnêtement | S | project, ui (devices.rs) | – |
-| V2-22 | **Favoris, tags et aperçu sonore dans le navigateur** : écoute au survol, au tempo, étoile, filtres par catégorie | Trouver un son vite, c'est ce qui fait rester sur FL | M | ui, engine (voix de pré-écoute) | – |
-| V2-23 | **Panneau de clip** : gain, fondus réglables, inversion, transposition, boucle et couleur du clip sélectionné, en bas d'écran (Clip View de Live) | Règle 1 ; aujourd'hui les fondus sont fixes | M | project, engine, ui | – |
-| V2-24 | **Mode de lancement et follow actions** dans la Session (trigger, gate, toggle, legato ; suivant, aléatoire, avec probabilité) | Live sur scène, jam génératif | M | engine (session), project, ui | – |
-| V2-25 | **Export FLAC** (encodeur maison sans perte, prédiction LPC fixe) | Format libre et sans perte, faisable sans dépendance | M | project | – |
-| V2-26 | **Onboarding** : première ouverture avec 3 étapes guidées (faire un beat, ajouter une basse, exporter) et des bulles sur les vrais widgets | Promesse « un beat en 30 s » | M | ui | V1-1 |
+1. **One selection, one detail panel.** Whatever is selected (channel, clip,
+   track, note) shows up in the bottom panel (devices or clip). Devices can be
+   detached into floating windows, but the docked panel stays the default.
+2. **A permanent help bar.** On hover, it shows the name, a one-sentence
+   explanation and the shortcut. Every widget must have help text: this is
+   Ableton's Info View and FL's hint bar.
+3. **Progressive disclosure.** Each device first shows 4 to 8 macros alongside its
+   visual, with the rest under "Advanced". Parameter groups (`ParamInfo::group`)
+   act as tabs. Nothing hidden is out of reach: the Ctrl+K palette finds
+   everything.
+4. **One color, one meaning.** The accent color is for selection and playback, red
+   for recording and clipping, the channel color for its identity. No decorative
+   gradients.
+5. **Icons and labels together.** An icon alone is only enough for universal
+   gestures (play, record, loop, metronome). Everywhere else, add a word or a
+   tooltip.
+6. **FL's gestures, the same everywhere.** Left-click places, held right-click
+   erases, the wheel adjusts, Ctrl+drag copies, Shift or Ctrl gives fine
+   precision, and double-click resets to the default. All of this must behave the
+   same way in every view.
+7. **Everything from the keyboard.** Every action is in the palette, with its
+   shortcut shown. Arrow keys and Enter must be enough to navigate.
+8. **No blocking modals.** Undo replaces confirmation: delete right away and show
+   "Undone: …" with Ctrl+Z.
+9. **Drag and drop everywhere.** From the browser to the rack, the playlist, an
+   insert or a pad; from the OS into the window; from one track to another.
+10. **Every number has a visual.** An audible parameter must have a curve, a
+    waveform or an indicator that moves during playback.
+11. **Defaults that sound good.** A freshly inserted device should already do
+    something useful, and a new project should be ready to make a beat.
+12. **Empty states that guide.** An empty view says in one sentence what to do,
+    as the piano roll and the Session view already do.
 
 ---
 
-## 4. Vague 3 : chantiers longs
+## 2. Wave 1: the next 2 to 3 hours
 
-| # | Élément | Pourquoi | Taille | Zone | Dépend de |
-|---|---|---|---|---|---|
-| V3-1 | **Piste d'accords globale et instruments qui la suivent** : clips MIDI et audio transposés selon l'accord (Logic 11, Studio One, Cubase) | Changer l'harmonie de tout le morceau d'un geste | L | project, engine | V1-3, V2-17 |
-| V3-2 | **Musiciens virtuels** : batteur, bassiste, claviériste qui jouent sur la piste d'accords, réglés par complexité et intensité (Session Players de Logic) | Aide énorme pour les débutants | L | project (génération), ui | V3-1 |
-| V3-3 | **Brouillons (scratch pads)** : arrangement alternatif dans le même projet (Studio One), arrangements multiples (FL) | Tester une structure sans rien casser | M | project, ui | V2-9 |
-| V3-4 | **Versions du projet** : instantanés nommés, comparaison et retour en arrière, avec la sauvegarde auto en continu | Remplace « projet_final_v7_VRAI.flp » | M | project, ui | V1-2 |
-| V3-5 | **Correction de hauteur** : détection YIN, notes en blobs éditables (hauteur, vibrato, durée, formants), mode automatique accordé à la gamme | Melodyne et Newtone ; incontournable pour la voix | L | dsp (PSOLA), engine, ui | V1-3, V2-11 |
-| V3-6 | **Édition spectrale** : spectrogramme d'un clip, gomme et atténuation au pinceau, réduction de bruit | Nettoyer des prises (Edison, RX, Spectral Layers) | L | dsp (STFT), ui | V1-10 |
-| V3-7 | **Audio vers MIDI** (batterie, mélodie, harmonie) | Live le fait ; utile pour reprendre un sample | L | dsp | V3-5 |
-| V3-8 | **Séparation de stems** locale | Live 12.3, FL, Studio One 7 et Cubase 15 l'ont tous. Sans dépendance, il faut un petit réseau écrit à la main, donc c'est le chantier le plus lourd | L | dsp | – |
-| V3-9 | **Grille modulaire** : patch de modules (osc, filtre, enveloppe, logique, retard) pour faire ses instruments et effets (The Grid de Bitwig, Patcher de FL) | Puissance illimitée pour les sound designers | L | engine, ui | V2-6 |
-| V3-10 | **MPE** : pression, glide et timbre par note, en entrée, dans le piano roll et dans les instruments natifs | Contrôleurs expressifs, Meld, Push 3 | L | midi, engine, project, ui | – |
-| V3-11 | **Actions personnalisées et macros de commandes** : enchaîner des actions de la palette, les nommer, leur donner un raccourci (actions de Reaper) | Flux de travail des pros sans scripts | M | ui (palette.rs) | – |
-| V3-12 | **Rendu par régions** : un fichier par marqueur de section, des modèles de nommage (Reaper) | Exporter un EP ou des boucles d'un coup | S | project (render.rs) | V2-9 |
-| V3-13 | **Ableton Link et horloge MIDI** (entrée et sortie) | Jouer avec d'autres machines | M | engine, midi (réseau UDP maison) | – |
-| V3-14 | **Hôte VST3 et LV2**, plugins isolés dans un processus séparé | Accès à tout l'écosystème de plugins | L | nouveau crate | – |
-| V3-15 | **Import DAWproject** (et `.als` partiel) | Arriver avec ses projets d'ailleurs | L | project | – |
-| V3-16 | **Enregistrement du master (resampling)** depuis la barre de transport (Bitwig 5.3) | Garder un jam improvisé | S | engine, ui | – |
-| V3-17 | **Recherche partout** : la palette cherche aussi dans les presets, les samples, les canaux, les pistes et les marqueurs, et y emmène | Règle 7 | M | ui (palette.rs) | V2-22 |
-| V3-18 | **Fenêtres détachables, multi-écran** | Pros sur deux écrans | L | window, ui | – |
+The best value-for-effort items, almost all of them S. Each one is independent
+unless stated otherwise.
 
----
+| # | Item | Why | Size | Area | Depends on | Status |
+|---|---|---|---|---|---|---|
+| V1-1 | **Hover help bar**: at the bottom of the window, the name, description and shortcut of the hovered widget (registry descriptions for devices, `ParamInfo` for knobs) | The biggest readability win for beginners; rule 2 | S | ui (widgets.rs, app.rs) | – | 🟡 tooltips everywhere; no permanent bar |
+| V1-2 | **Autosave and crash recovery**: writes `~/Musique/Ponzik/.autosave/<name>.ponzik` every 2 minutes if the project changed; at startup, offers to restore the file if it is newer | Losing a project drives a user away for good | S | project (io.rs), ui (compat.rs) | – | ✅ |
+| V1-3 | **Project scale**: key and mode (major, minor, dorian, pentatonic…) in `Project`; out-of-scale rows dimmed in the piano roll; "snap to scale" option | The foundation of every harmony tool (Live 12, FL, Logic, Cubase) | S | project, ui (piano.rs) | – | ✅ |
+| V1-4 | **One-click chords**: a piano roll tool that places triads, sevenths, sus or power chords on the scale, with inversion on the mouse wheel | Beginners' favorite feature (FL chord stamps, Cubase Chord Pads) | S | ui (piano.rs) | V1-3 (otherwise chromatic chords) | ✅ plus a chord grid with voicings |
+| V1-5 | **Humanize and randomize**: adjustable random timing and velocity offsets on the selection (palette and piano roll menu) | Makes a beat less mechanical in one gesture | S | ui (piano.rs) | – | ✅ |
+| V1-6 | **Tap tempo and count-in**: a TAP button (average of the last 4 taps); a one-bar count-in on the metronome before recording | Essential for recording and lining up a sample | S | engine (count-in in the transport), ui | – | ✅ |
+| V1-7 | **History panel**: list of undo labels; one click returns to that state | `History` already stores the labels; Live, FL and Reaper all have it | S | project (history.rs: label iterator, `goto(n)`), ui | – | ✅ |
+| V1-8 | **Drag and drop from the browser**: a WAV goes into a new Sampler channel or a playlist audio clip, an instrument into the rack, an effect into an insert slot | Rule 9; it is the natural gesture in both FL and Ableton | M | ui (app.rs: drag payload, drop targets) | – | ✅ |
+| V1-9 | **LUFS metering on the master**: integrated, short-term, momentary, plus true peak (K-weighting = 2 biquads, 4x oversampled peak); shown next to the master meter | All released music targets a LUFS level; Ozone and Pro-L show it | S | dsp (K-weighting), engine (meter.rs), ui (mixer.rs) | – | ✅ |
+| V1-10 | **Spectrum analyzer**: in-house radix-2 FFT, curve smoothed to 1/6 octave behind the EQ curve and in a master visual | EQ without a spectrum is tuning blind (Pro-Q, Live's Spectrum) | M | dsp (fft.rs), engine (lock-free analysis buffer), ui (visuals.rs) | – | ✅ |
+| V1-11 | **Make unique** and **rename or color via right-click** for patterns and clips | The last ⬜ in the Patterns row; a basic FL gesture | S | project, ui (playlist.rs) | – | ✅ |
+| V1-12 | **Project templates**: "Save as template" and "New from template" in the palette (`Modèles/` folder) | Starts a session in 2 seconds; FL, Live and Studio One all have it | S | ui (compat.rs, palette.rs) | – | 🟡 built-in templates (Ctrl+N, palette); no "Save as template" yet |
+| V1-13 | **Normalization and dithering on export** (TPDF at 16 bits, peak or target LUFS normalization) | A clean export without going through another program | S | project (render.rs), dsp | V1-9 for the LUFS target | ✅ |
+| V1-14 | **Duplicate the time selection** (Ctrl+B on the ruler: everything in the range is copied right after it) | The fastest way to extend an arrangement (Live: Cmd+D) | S | ui (playlist.rs), project | – | ✅ |
 
-## 4 bis. Signature Ponzik : la Pyramide (à faire une fois la parité atteinte)
-
-Un mode de création propre à Ponzik, qui donne son nom au logiciel : on
-construit un morceau **par étages, de la base vers la pointe**.
-
-- **Base** : le rythme et le grave (kick, basse, groove), la fondation qui tient tout.
-- **Étages du milieu** : l'harmonie (accords, nappes), puis les textures et percussions.
-- **Pointe** : la mélodie, les voix, les ornements, ce qui attire l'oreille.
-
-Idées de départ :
-- une vue en pyramide où chaque étage est une couche (canaux et patterns qui
-  lui appartiennent) ; l'étage suivant ne s'ouvre qu'avec une base qui sonne,
-  pour guider un débutant sans brider un pro ;
-- chaque étage propose des générateurs adaptés (grooves, basse qui suit les
-  accords, progressions, mélodies sur la gamme) et écoute les étages du dessous
-  (tonalité, accords, énergie) ;
-- la pyramide se « déroule » en arrangement : retirer ou ajouter des étages au
-  fil des sections donne intro, montée, drop, break ;
-- visuel : la pyramide s'illumine étage par étage pendant la lecture ; on peut
-  couper ou isoler un étage en un clic.
-
-Dépend de : gamme et accords (fait), générateurs MIDI (V2-18), sections (V2-9).
-
-## 5. Plugins natifs à créer
-
-Les noms sont fonctionnels ; l'inspiration est entre parenthèses et ne doit pas
-apparaître dans le produit.
-
-| Plugin | Fonction | Inspiré de | Vague |
-|---|---|---|---|
-| **Spectre** | Analyseur FFT, comparaison de deux pistes, mesure LUFS | Pro-Q (analyseur), SPAN, Youlean | 1 (V1-9, V1-10) |
-| **EQ dynamique** | Bandes de l'EQ actuel avec seuil, en mode dynamique ou spectral (seulement les fréquences qui dépassent), solo de bande, dessin de courbe à main levée | Pro-Q 4 (Spectral Dynamics, EQ Sketch) | 2 |
-| **Pompe sidechain** | La Pompe actuelle avec une courbe dessinée et une entrée externe ou une détection de kick | Kickstart, LFOTool | 2 (V2-1) |
-| **Hachoir de volume et de hauteur** | Deux courbes dessinées par mesure (volume, position de lecture), retours en arrière, ralentis, presets de rythme | Gross Beat | 2 |
-| **Compresseur de bus** | Colle et caractère : modes propre, opto, VCA, mesure de réduction de gain avec historique déroulant | Pro-C 2, Glue | 2 |
-| **Limiteur de mastering** | Plusieurs algorithmes (transparent, punchy, agressif), crête vraie, cible LUFS, historique du niveau | Pro-L 2, Emphasis | 2 |
-| **Assistant de mastering** | Analyse le mix, propose une chaîne EQ, multibande, image, limiteur vers une cible de genre ou un morceau de référence, avec 4 potards | Ozone Master Assistant | 3 |
-| **Multibande extrême** | Mode « tout écraser » du Multibande actuel avec préréglage 1 potard et visuel par bande | OTT | 1 (preset) |
-| **Réverbe algorithmique** | Modes salle, plaque, nuage de diffusion, modulation riche, très longues queues | ValhallaVintageVerb, Supermassive | 2 |
-| **Délai à caractère** | Bande, analogique, ping-pong, saturation dans la boucle, wow et flutter, ducking | EchoBoy, Valhalla Delay | 2 |
-| **Saturation à caractère** | Lampe, bande, transistor, redresseur, en multibande, avec un mix | Decapitator, Saturn 2 | 2 |
-| **Filtre animé** | Filtre à enveloppe, LFO dessiné et pas à pas, modes vowel et comb | FilterFreak, MicroShift | 2 |
-| **Vocodeur** | 16 à 32 bandes, porteuse interne ou sidechain, formants | Vocodex, Vocoder de Live | 2 (V2-1) |
-| **Correcteur de hauteur** | Accordage automatique en temps réel sur la gamme, vitesse réglable (effet « T-Pain » à 0 ms) | Auto-Tune, Pitcher, Melodyne | 3 (V3-5) |
-| **Synthé tables d'ondes 2** | Ponzik Wave étendu : 3 oscillateurs + sub + bruit, modes spectral, granulaire et multi-échantillon, matrice de modulation, distorsion de phase, import de tables | Serum 2, Vital | 3 (V2-6) |
-| **Synthé de batterie modulaire** | Kick, caisse, charleston par couches (transitoire + corps + bruit), une famille de presets par machine | Bitwig v8, v9 et v0 | 2 |
-| **Bruits et texture** | Craquements de vinyle, souffle de bande, perte de bits par bloc, pleurage | RC-20 | 2 |
-| **Arpégiateur et effets MIDI** | Arpège, accords, gamme, écho de notes, aléatoire, en appareils MIDI placés avant l'instrument | Effets MIDI de Live | 2 (V2-17) |
+What is left in Wave 1: **the permanent help bar (V1-1)** and **"Save as
+template" (V1-12)**.
 
 ---
 
-## 6. Catalogue des absences par domaine
+## 3. Wave 2: the next few weeks
 
-Ce qui manque à Ponzik et ce qui le couvre dans le backlog. Les fonctions déjà
-présentes dans Ponzik ne figurent pas ici.
+| # | Item | Why | Size | Area | Depends on | Status |
+|---|---|---|---|---|---|---|
+| V2-1 | **Sidechain**: every dynamics effect (Compressor, Gate, Pump, Multiband) can listen to another track | House and EDM pumping; nothing replaces it | M | engine (`Effect::process_sidechain`, routing order), ui | – | ✅ key track per insert for the compressor, gate and the new Ducking effect |
+| V2-2 | **Plugin delay compensation (PDC)**: `Effect::latency()`, compensated delay on tracks and sends; latency also read from CLAP plugins | The lookahead limiter and CLAP plugins already shift the sound | M | engine (mixer.rs), clap | – | ✅ tracks, sends and sidechain keys; CLAP and VST3 latency; trimmed from exports |
+| V2-3 | **Group tracks and VCAs**: a mixer track as a collapsible group, and a VCA fader that drives several tracks without the audio passing through it | Mixing drums or backing vocals (every DAW) | M | project, engine, ui (mixer.rs) | – | ⬜ |
+| V2-4 | **Dynamic mixer tracks**: replace the fixed `TRACKS = 33` with a variable count | FL 2025 goes up to 500 tracks; 33 limits large projects | M | engine, project, ui | – | ⬜ |
+| V2-5 | **Device macros and racks**: a chain of stacked effects or instruments, 8 mappable macros with ranges, saved as a preset | The core of Ableton's "calm": 8 knobs instead of 80 | L | engine (effect rack), project, ui | – | ⬜ |
+| V2-6 | **Modulators**: LFO, envelope, envelope follower, step, random, patched by dragging onto any parameter, tracks and sends included, with a per-target depth | Bitwig 5, Cubase 14; this is what brings sounds to life | L | engine (per-block modulation), dsp (lfo.rs), ui | V2-5 recommended | ⬜ |
+| V2-7 | **MIDI learn**: right-click, "Link to controller", move a CC; the mapping table is saved in the project | A connected MIDI controller is currently only good for notes | S | engine, project, ui | – | ⬜ |
+| V2-8 | **Live automation recording** (write, touch and latch modes) | To keep a gesture made by hand | M | engine, ui (automation.rs) | V2-7 helps | ⬜ |
+| V2-9 | **Section markers and an arranger track**: verse, chorus…, which can be dragged to move the whole section (Studio One and Cubase Arranger) | Restructure a song in one gesture | M | project, ui (playlist.rs) | – | ⬜ |
+| V2-10 | **Tempo and time signature changes**: a global tempo track, rendering and sequencing on a tempo map | Essential as soon as you leave the 4/4 loop | M | engine (sequence.rs), project | – | ⬜ |
+| V2-11 | **Audio clip warping**: detected original tempo, time stretching (WSOLA for drums, phase vocoder for tonal sounds), per-clip transposition, warp markers | Fitting a loop to the tempo, the foundation of Live | L | dsp (stretch), engine (clip playback), ui | – | ⬜ |
+| V2-12 | **Transient slicing to pads or MIDI**: the Slicer exports its slices into a note pattern, or an audio clip is sliced in the playlist | Flipping breaks (Slicex, Fruity Slicer 2, Simpler Slice) | M | engine (detection already in the Slicer), ui | – | ⬜ |
+| V2-13 | **Drum pads** (a 16-pad rack, one sample and one chain per pad, chokes, drop a WAV onto a pad) | Replaces FPC and Drum Rack | M | engine (instrument), ui | V1-8 | 🟡 Drum Machine: eight synthesized layered pads with hi-hat choke and pad UI; no samples or per-pad chains yet |
+| V2-14 | **Take comping**: loop recording, one lane per take, swipe to pick the parts to keep (Reaper 7, Logic) | Recorded vocals and instruments | L | engine (recording), project, ui | – | ⬜ |
+| V2-15 | **Freeze, bounce in place, consolidate**: render a track or clip to audio, paste bounced audio (Live 12.3) | Save CPU and commit a sound | M | project (offline render.rs), ui | – | ⬜ |
+| V2-16 | **MIDI capture**: a permanent buffer of played notes; Ctrl+Shift+C creates the pattern even without recording | Never lose a good improvised idea again (Live, FL Score logger) | S | engine (note ring buffer), ui | – | ⬜ |
+| V2-17 | **MIDI transformations**: arpeggiate, strum, flam, legato, reverse, invert, stretch, glue | FL's piano roll tools and Live 12's Transformations | M | ui (piano.rs), project | V1-3 | ⬜ (real-time arpeggiator available as a note effect) |
+| V2-18 | **MIDI generators**: Euclidean, rhythm, scale motif, a bassline that follows the chords (FL 2025's Bassline Generator) | Getting started when you are stuck | M | project (pure generation), ui | V1-3, V1-4 | ⬜ |
+| V2-19 | **Per-step probability and ratchets** (ratchets, 1:2 and 3:4 conditions) in the Channel Rack and the piano roll | Living grooves in the style of Elektron, Live, Bitwig Stepwise | M | engine (sequence.rs), project, ui | – | ⬜ |
+| V2-20 | **Dropping files from the OS**: XDND on X11, `WM_DROPFILES` on Win32, a new `Event::FileDrop` | Rule 9; grabbing samples from the file manager | M | window, ui | V1-8 | ⬜ |
+| V2-21 | **Device A/B**: two states per device and a button to switch between them (Live 12.3, FabFilter plugins) | Comparing settings honestly | S | project, ui (devices.rs) | – | ⬜ |
+| V2-22 | **Favorites, tags and sound preview in the browser**: preview on hover, in tempo, stars, category filters | Finding a sound fast is what keeps people on FL | M | ui, engine (preview voice) | – | ⬜ |
+| V2-23 | **Clip panel**: gain, adjustable fades, reverse, transposition, loop and color of the selected clip, at the bottom of the screen (Live's Clip View) | Rule 1; fades are currently fixed | M | project, engine, ui | – | ⬜ |
+| V2-24 | **Launch modes and follow actions** in the Session (trigger, gate, toggle, legato; next, random, with probability) | Live on stage, generative jams | M | engine (session), project, ui | – | ⬜ |
+| V2-25 | **FLAC export** (in-house lossless encoder, fixed LPC prediction) | A free, lossless format, doable without dependencies | M | project | – | ⬜ |
+| V2-26 | **Onboarding**: a first launch with 3 guided steps (make a beat, add a bass, export) and callouts on the real widgets | The "a beat in 30 seconds" promise | M | ui | V1-1 | ⬜ (the two essential gestures are shown at startup) |
 
-- **Composition** : gamme (V1-3), accords (V1-4), humanisation (V1-5),
-  transformations (V2-17), générateurs (V2-18), probabilité (V2-19), capture
-  (V2-16), piste d'accords (V3-1), musiciens virtuels (V3-2), MPE (V3-10),
-  pattern sequencer polyphonique (Cubase 14, V2-19), micro-tonalité (hors
-  vagues).
-- **Arrangement** : sections (V2-9), tempo et signature (V2-10), brouillons et
-  arrangements multiples (V3-3), duplication de plage (V1-14), modes de
-  lancement et follow actions (V2-24), performance mode de FL (dans V2-24).
-- **Audio** : warp et stretch (V2-11), découpe (V2-12), comping (V2-14), freeze
-  et bounce (V2-15), panneau de clip et fondus (V2-23), correction de hauteur
-  (V3-5), spectral (V3-6), audio vers MIDI (V3-7), stems (V3-8), resampling
+---
+
+## 4. Wave 3: long-term projects
+
+| # | Item | Why | Size | Area | Depends on | Status |
+|---|---|---|---|---|---|---|
+| V3-1 | **Global chord track and instruments that follow it**: MIDI and audio clips transposed to match the chord (Logic 11, Studio One, Cubase) | Change the harmony of the whole song in one gesture | L | project, engine | V1-3, V2-17 | ⬜ |
+| V3-2 | **Virtual musicians**: a drummer, bassist and keyboardist who play along with the chord track, tuned by complexity and intensity (Logic's Session Players) | A huge help for beginners | L | project (generation), ui | V3-1 | ⬜ |
+| V3-3 | **Scratch pads**: an alternative arrangement in the same project (Studio One), multiple arrangements (FL) | Try out a structure without breaking anything | M | project, ui | V2-9 | ⬜ |
+| V3-4 | **Project versions**: named snapshots, comparison and rollback, with continuous autosave | Replaces "project_final_v7_REAL.flp" | M | project, ui | V1-2 | ⬜ |
+| V3-5 | **Pitch correction**: YIN detection, notes as editable blobs (pitch, vibrato, length, formants), an automatic mode tuned to the scale | Melodyne and Newtone; a must for vocals | L | dsp (PSOLA), engine, ui | V1-3, V2-11 | ⬜ (YIN tuner already in the DSP crate) |
+| V3-6 | **Spectral editing**: a clip spectrogram, brush eraser and attenuation, noise reduction | Cleaning up takes (Edison, RX, SpectraLayers) | L | dsp (STFT), ui | V1-10 | ⬜ |
+| V3-7 | **Audio to MIDI** (drums, melody, harmony) | Live does it; useful for reworking a sample | L | dsp | V3-5 | ⬜ |
+| V3-8 | Local **stem separation** | Live 12.3, FL, Studio One 7 and Cubase 15 all have it. Without dependencies it needs a small hand-written neural network, which makes it the heaviest project | L | dsp | – | ⬜ |
+| V3-9 | **Modular grid**: patch modules (oscillator, filter, envelope, logic, delay) to build your own instruments and effects (Bitwig's The Grid, FL's Patcher) | Unlimited power for sound designers | L | engine, ui | V2-6 | ⬜ |
+| V3-10 | **MPE**: per-note pressure, glide and timbre, on input, in the piano roll and in the native instruments | Expressive controllers, Meld, Push 3 | L | midi, engine, project, ui | – | ⬜ |
+| V3-11 | **Custom actions and command macros**: chain palette actions, name them, give them a shortcut (Reaper actions) | Pro workflows without scripting | M | ui (palette.rs) | – | ⬜ |
+| V3-12 | **Region rendering**: one file per section marker, naming templates (Reaper) | Export an EP or a set of loops in one go | S | project (render.rs) | V2-9 | ⬜ |
+| V3-13 | **Ableton Link and MIDI clock** (input and output) | Playing along with other machines | M | engine, midi (in-house UDP networking) | – | ⬜ |
+| V3-14 | **VST3 and LV2 hosting**, plugins sandboxed in a separate process | Access to the whole plugin ecosystem | L | new crate | – | 🟡 VST3 host shipped (`ponzik-vst3`); no LV2 or sandboxing |
+| V3-15 | **DAWproject import** (and partial `.als`) | Bring your projects over from elsewhere | L | project | – | ⬜ |
+| V3-16 | **Master recording (resampling)** from the transport bar (Bitwig 5.3) | Keep an improvised jam | S | engine, ui | – | ⬜ |
+| V3-17 | **Search everywhere**: the palette also searches presets, samples, channels, tracks and markers, and takes you there | Rule 7 | M | ui (palette.rs) | V2-22 | ⬜ |
+| V3-18 | **Detachable windows, multiple monitors** | Pros on two screens | L | window, ui | – | 🟡 devices in stacked floating windows inside the main window; no separate OS windows |
+
+---
+
+## 4b. Ponzik's signature: the Pyramid (once parity is reached)
+
+A creation mode unique to Ponzik, which gives the software its name: you build a
+track **layer by layer, from the base up to the tip**.
+
+- **Base**: rhythm and low end (kick, bass, groove), the foundation that holds
+  everything up.
+- **Middle layers**: harmony (chords, pads), then textures and percussion.
+- **Tip**: melody, vocals, ornaments, whatever catches the ear.
+
+Starting ideas:
+- a pyramid view where each layer is a stratum (the channels and patterns that
+  belong to it); the next layer only opens once the base sounds good, guiding a
+  beginner without holding back a pro;
+- each layer offers suitable generators (grooves, a bassline that follows the
+  chords, progressions, melodies on the scale) and listens to the layers below it
+  (key, chords, energy);
+- the pyramid "unfolds" into an arrangement: removing or adding layers across
+  sections gives you the intro, build-up, drop and break;
+- visual: the pyramid lights up layer by layer during playback; a layer can be
+  muted or soloed in one click.
+
+Depends on: scale and chords (done), MIDI generators (V2-18), sections (V2-9).
+
+## 5. Native plugins to build
+
+The names are functional; the inspiration is in parentheses and must not appear
+in the product.
+
+| Plugin | Function | Inspired by | Wave | Status |
+|---|---|---|---|---|
+| **Spectrum** | FFT analyzer, comparison of two tracks, LUFS metering | Pro-Q (analyzer), SPAN, Youlean | 1 (V1-9, V1-10) | 🟡 master spectrum and LUFS; no standalone device or track comparison |
+| **Dynamic EQ** | The current EQ's bands with a threshold, in dynamic or spectral mode (only the frequencies that exceed it), band solo, freehand curve drawing | Pro-Q 4 (Spectral Dynamics, EQ Sketch) | 2 | ⬜ |
+| **Sidechain pump** | The current Pump with a drawn curve and an external input or kick detection | Kickstart, LFOTool | 2 (V2-1) | 🟡 Pump plus a sidechain Ducking effect; no drawn curve |
+| **Volume and pitch chopper** | Two curves drawn per bar (volume, playback position), rewinds, slowdowns, rhythm presets | Gross Beat | 2 | ⬜ |
+| **Bus compressor** | Glue and character: clean, opto and VCA modes, gain reduction meter with scrolling history | Pro-C 2, Glue | 2 | ✅ |
+| **Mastering limiter** | Several algorithms (transparent, punchy, aggressive), true peak, LUFS target, level history | Pro-L 2, Emphasis | 2 | 🟡 three algorithms, true peak, lookahead; no LUFS target or level history |
+| **Mastering assistant** | Analyzes the mix and suggests an EQ, multiband, imaging and limiter chain toward a genre target or a reference track, with 4 knobs | Ozone Master Assistant | 3 | ⬜ |
+| **Extreme multiband** | An "OTT" mode for the current Multiband with a one-knob preset and per-band visual | OTT | 1 (preset) | ✅ the Multiband is OTT-style (upward and downward, depth control) |
+| **Algorithmic reverb** | Hall, plate and diffusion cloud modes, rich modulation, very long tails | ValhallaVintageVerb, Supermassive | 2 | ✅ hall, plate, cloud, freeze |
+| **Character delay** | Tape, analog, ping-pong, saturation in the feedback loop, wow and flutter, ducking | EchoBoy, Valhalla Delay | 2 | ✅ tape, analog, digital |
+| **Character saturation** | Tube, tape, transistor, rectifier, multiband, with a mix control | Decapitator, Saturn 2 | 2 | ✅ |
+| **Animated filter** | Envelope filter, drawn and step LFO, vowel and comb modes | FilterFreak, MicroShift | 2 | ⬜ |
+| **Vocoder** | 16 to 32 bands, internal or sidechain carrier, formants | Vocodex, Live's Vocoder | 2 (V2-1) | ⬜ |
+| **Pitch corrector** | Real-time automatic tuning to the scale, adjustable speed (the "T-Pain" effect at 0 ms) | Auto-Tune, Pitcher, Melodyne | 3 (V3-5) | ⬜ |
+| **Wavetable synth 2** | Ponzik Wave extended: 3 oscillators + sub + noise, spectral, granular and multisample modes, modulation matrix, phase distortion, table import | Serum 2, Vital | 3 (V2-6) | ⬜ |
+| **Modular drum synth** | Kick, snare, hi-hat in layers (transient + body + noise), a preset family per machine | Bitwig v8, v9 and v0 | 2 | ✅ Drum Machine (eight layered pads); no per-machine preset families yet |
+| **Noise and texture** | Vinyl crackle, tape hiss, block bit loss, wow | RC-20 | 2 | ✅ |
+| **Arpeggiator and MIDI effects** | Arpeggio, chords, scale, note echo, random, as MIDI devices placed before the instrument | Live's MIDI effects | 2 (V2-17) | ✅ arpeggiator, chord, scale, random, repeat |
+
+---
+
+## 6. Gap catalog by area
+
+What Ponzik is still missing, and where the backlog covers it. Features Ponzik
+already has are not listed here.
+
+- **Composition**: transformations (V2-17), generators (V2-18), probability
+  (V2-19), capture (V2-16), chord track (V3-1), virtual musicians (V3-2), MPE
+  (V3-10), polyphonic pattern sequencer (Cubase 14, V2-19), microtonality
+  (outside the waves).
+- **Arrangement**: sections (V2-9), tempo and time signature (V2-10), scratch pads
+  and multiple arrangements (V3-3), launch modes and follow actions (V2-24), FL's
+  performance mode (part of V2-24).
+- **Audio**: warping and stretching (V2-11), slicing (V2-12), comping (V2-14),
+  freeze and bounce (V2-15), clip panel and fades (V2-23), pitch correction
+  (V3-5), spectral editing (V3-6), audio to MIDI (V3-7), stems (V3-8), resampling
   (V3-16).
-- **Mixage** : LUFS (V1-9), spectre (V1-10), sidechain (V2-1), PDC (V2-2),
-  groupes et VCA (V2-3), pistes dynamiques (V2-4), mid/side dans l'EQ et le
-  compresseur (V2, dans EQ dynamique), cue et pré-écoute (hors vagues).
-- **Sound design** : macros et racks (V2-5), modulateurs (V2-6), A/B (V2-21),
-  grille modulaire (V3-9).
-- **Workflow et confort** : aide au survol (V1-1), sauvegarde auto (V1-2),
-  historique (V1-7), glisser-déposer (V1-8, V2-20), make unique (V1-11), modèles
-  (V1-12), MIDI learn (V2-7), automation enregistrée (V2-8), navigateur avec
-  favoris et pré-écoute (V2-22), onboarding (V2-26), versions (V3-4), actions
-  (V3-11), recherche partout (V3-17), outil intelligent (un outil qui pose,
-  déplace et redimensionne selon la zone survolée : à vérifier sur chaque vue
-  pendant V1).
-- **Live** : follow actions (V2-24), Link et horloge MIDI (V3-13), looper (hors
-  vagues).
-- **Export et partage** : normalisation et dithering (V1-13), FLAC (V2-25), rendu
-  par régions (V3-12), DAWproject (V3-15). MP3 et OGG demandent un encodeur
-  maison : à faire après FLAC.
+- **Mixing**: groups and VCAs (V2-3), dynamic tracks (V2-4), mid/side in the EQ
+  and compressor (Wave 2, as part of the dynamic EQ), cue and pre-listen (outside
+  the waves).
+- **Sound design**: macros and racks (V2-5), modulators (V2-6), A/B (V2-21),
+  modular grid (V3-9).
+- **Workflow and comfort**: permanent help bar (V1-1), "Save as template"
+  (V1-12), dropping files from the OS (V2-20), MIDI learn (V2-7), recorded
+  automation (V2-8), browser with favorites and preview (V2-22), onboarding
+  (V2-26), versions (V3-4), actions (V3-11), search everywhere (V3-17), a smart
+  tool (one tool that places, moves and resizes depending on the hovered zone:
+  to be checked in every view).
+- **Live**: follow actions (V2-24), Link and MIDI clock (V3-13), looper (outside
+  the waves).
+- **Plugins**: LV2 and sandboxed plugins (V3-14).
+- **Export and sharing**: FLAC (V2-25), region rendering (V3-12), DAWproject
+  (V3-15). MP3 and OGG need an in-house encoder: to do after FLAC.
 
 ---
 
 ## Sources
 
-- Ableton Live 12.3 : https://www.ableton.com/en/blog/live-12-3-is-coming/ · https://cdm.link/live-12-3-arrives/ · https://www.musicradar.com/music-tech/stem-separation-splice-integration-ableton-is-playing-catch-up-with-live-12-3-but-its-best-new-features-are-the-ones-hidden-beyond-the-headlines
-- Info View d'Ableton : https://www.ableton.com/en/live-manual/12/first-steps/
-- FL Studio 2025 : https://www.image-line.com/fl-studio-news/fl-studio-2025-whats-new-2 · https://www.image-line.com/fl-studio-news/history/fl-studio-2025-2 · https://www.attackmagazine.com/news/fl-studio-2025-adds-ai-support-and-workflow-improvements-in-annual-update/
-- Bitwig Studio 5 et 5.3 : https://musictech.net/news/gear/bitwig-studio-5-update-new-features/ · https://synthanatomy.com/2025/02/bitwig-studio-5-3-new-drum-devices-sequencer-background-recording-and-winter-sale.html
-- Logic Pro 11 : https://apple.com/newsroom/2024/05/logic-pro-takes-music-making-to-the-next-level-with-new-ai-features · https://www.soundonsound.com/techniques/logic-pro-session-players
-- Studio One Pro 7 : https://prnewswire.com/news-releases/presonus-introduces-the-daw-for-all-studio-one-pro-7-with-all-new-innovative-production-tools-302270757.html · https://www.soundonsound.com/reviews/presonus-studio-one-pro-7
-- Cubase 14 : https://www.musicradar.com/music-tech/daws/make-composing-producing-and-mixing-more-inspirational-than-ever-steinberg-launches-cubase-14-with-new-pattern-editor-drum-machine-effects-plugins-modulators-and-more
-- Reaper 7 : https://www.reaper.fm/userguide/WhatsNewReaper7Summary_r2.pdf · https://www.soundonsound.com/news/cockos-launch-reaper-7
-- Serum 2 : https://www.kvraudio.com/news/xfer-records-releases-serum-2---free-update-63286 · https://splice.com/blog/serum-2-advanced-features/
-- FabFilter Pro-Q 4 : https://www.fabfilter.com/news/1733994000/fabfilter-releases-pro-q-4-equalizer-plug-in · https://www.soundonsound.com/reviews/fabfilter-pro-q-4
-- iZotope Ozone 11 : https://izotope.com/en/products/ozone/features/also-includes/master-assistant-view.html · https://www.soundonsound.com/reviews/izotope-ozone-11-advanced
-- Melodyne 5 : https://www.pluginboutique.com/products/6442-Melodyne-5-Studio
+- Ableton Live 12.3: https://www.ableton.com/en/blog/live-12-3-is-coming/ · https://cdm.link/live-12-3-arrives/ · https://www.musicradar.com/music-tech/stem-separation-splice-integration-ableton-is-playing-catch-up-with-live-12-3-but-its-best-new-features-are-the-ones-hidden-beyond-the-headlines
+- Ableton's Info View: https://www.ableton.com/en/live-manual/12/first-steps/
+- FL Studio 2025: https://www.image-line.com/fl-studio-news/fl-studio-2025-whats-new-2 · https://www.image-line.com/fl-studio-news/history/fl-studio-2025-2 · https://www.attackmagazine.com/news/fl-studio-2025-adds-ai-support-and-workflow-improvements-in-annual-update/
+- Bitwig Studio 5 and 5.3: https://musictech.net/news/gear/bitwig-studio-5-update-new-features/ · https://synthanatomy.com/2025/02/bitwig-studio-5-3-new-drum-devices-sequencer-background-recording-and-winter-sale.html
+- Logic Pro 11: https://apple.com/newsroom/2024/05/logic-pro-takes-music-making-to-the-next-level-with-new-ai-features · https://www.soundonsound.com/techniques/logic-pro-session-players
+- Studio One Pro 7: https://prnewswire.com/news-releases/presonus-introduces-the-daw-for-all-studio-one-pro-7-with-all-new-innovative-production-tools-302270757.html · https://www.soundonsound.com/reviews/presonus-studio-one-pro-7
+- Cubase 14: https://www.musicradar.com/music-tech/daws/make-composing-producing-and-mixing-more-inspirational-than-ever-steinberg-launches-cubase-14-with-new-pattern-editor-drum-machine-effects-plugins-modulators-and-more
+- Reaper 7: https://www.reaper.fm/userguide/WhatsNewReaper7Summary_r2.pdf · https://www.soundonsound.com/news/cockos-launch-reaper-7
+- Serum 2: https://www.kvraudio.com/news/xfer-records-releases-serum-2---free-update-63286 · https://splice.com/blog/serum-2-advanced-features/
+- FabFilter Pro-Q 4: https://www.fabfilter.com/news/1733994000/fabfilter-releases-pro-q-4-equalizer-plug-in · https://www.soundonsound.com/reviews/fabfilter-pro-q-4
+- iZotope Ozone 11: https://izotope.com/en/products/ozone/features/also-includes/master-assistant-view.html · https://www.soundonsound.com/reviews/izotope-ozone-11-advanced
+- Melodyne 5: https://www.pluginboutique.com/products/6442-Melodyne-5-Studio
