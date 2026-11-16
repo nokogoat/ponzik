@@ -10,6 +10,7 @@ use crate::effects::BusComp;
 use crate::effects::CharDelay;
 use crate::effects::MasterLimiter;
 use crate::effects::CharSaturation;
+use crate::effects::Lofi;
 use crate::instrument::Instrument;
 use crate::instruments::{
     Bass303, DrumKind, DrumSynth, EPiano, FmSynth, Granular, Kick, Pluck, Pulse, Sampler, Slicer, WaveSynth,
@@ -290,6 +291,13 @@ pub fn effects() -> &'static [EffectKind] {
             category: "Saturation",
             description: "Lampe, bande, transistor ou redresseur, sur tout le spectre ou trois bandes, avec ton et mix",
             create: || Box::new(CharSaturation::default()),
+        },
+        EffectKind {
+            id: "lofi",
+            name: "Bruits et texture",
+            category: "Saturation",
+            description: "Craquements de vinyle, souffle de bande, pleurage, perte de bits par bloc et usure du spectre",
+            create: || Box::new(Lofi::default()),
         },
     ]
 }
