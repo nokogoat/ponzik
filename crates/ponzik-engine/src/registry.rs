@@ -7,6 +7,7 @@ use crate::effects::{
     Pompe, Reverb, Saturator, Shimmer, Tranche, Transient, Utility,
 };
 use crate::effects::BusComp;
+use crate::effects::CharDelay;
 use crate::effects::MasterLimiter;
 use crate::instrument::Instrument;
 use crate::instruments::{
@@ -274,6 +275,13 @@ pub fn effects() -> &'static [EffectKind] {
             category: "Dynamique",
             description: "Limiteur à crête vraie et anticipation : transparent, punchy ou agressif",
             create: || Box::new(MasterLimiter::default()),
+        },
+        EffectKind {
+            id: "char_delay",
+            name: "Délai à caractère",
+            category: "Espace",
+            description: "Écho de bande, analogique ou numérique : saturation et filtres dans la boucle, pleurage, ping-pong",
+            create: || Box::new(CharDelay::default()),
         },
     ]
 }

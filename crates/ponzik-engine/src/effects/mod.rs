@@ -7,6 +7,7 @@
 mod autofilter;
 mod bitcrusher;
 mod bus_comp;
+mod char_delay;
 mod chorus;
 mod compressor;
 mod delay;
@@ -30,6 +31,7 @@ mod utility;
 pub use autofilter::AutoFilter;
 pub use bitcrusher::Bitcrusher;
 pub use bus_comp::BusComp;
+pub use char_delay::CharDelay;
 pub use chorus::Chorus;
 pub use compressor::Compressor;
 pub use delay::Delay;
