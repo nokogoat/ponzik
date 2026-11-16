@@ -7,12 +7,12 @@
 use std::path::Path;
 
 use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS, TRACKS};
-use ponzik_engine::{Note, PlayMode, TICKS_PER_BAR};
+use ponzik_engine::{NOTE_FX_SLOTS, Note, PlayMode, TICKS_PER_BAR};
 
 use crate::json::{self, Json};
 use crate::{
     AudioClipDef, AutoPoint, AutoScope, AutoTarget, AutomationDef, ChannelDef, ClipDef, EffectDef, InstrumentDef,
-    PatternDef, Project, TrackDef,
+    NoteFxDef, PatternDef, Project, TrackDef,
 };
 
 pub const FORMAT: &str = "ponzik-project";
@@ -30,7 +30,7 @@ fn params_json(params: &[(u32, f32)]) -> Json {
 }
 
 fn channel_json(c: &ChannelDef) -> Json {
-    obj(vec![
+    let mut pairs = vec![
         ("name", c.name.as_str().into()),
         (
             "instrument",
@@ -46,7 +46,20 @@ fn channel_json(c: &ChannelDef) -> Json {
         ("track", c.track.into()),
         ("root_note", c.root_note.into()),
         ("color", c.color.into()),
-    ])
+    ];
+    // Champ facultatif : absent tant que le canal n'a pas d'effet de notes.
+    if !c.note_fx.is_empty() {
+        let slots = c
+            .note_fx
+            .iter()
+            .map(|fx| match fx {
+                None => Json::Null,
+                Some(fx) => obj(vec![("kind", fx.kind.as_str().into()), ("params", params_json(&fx.params))]),
+            })
+            .collect();
+        pairs.push(("note_fx", Json::Arr(slots)));
+    }
+    obj(pairs)
 }
 
 fn pattern_json(p: &PatternDef) -> Json {
@@ -266,6 +279,18 @@ fn load_params(v: Option<&Json>) -> Vec<(u32, f32)> {
     out
 }
 
+/// Emplacements d'effets de notes (`null` ou malformé : vide), au plus [`NOTE_FX_SLOTS`].
+fn load_note_fx(v: Option<&Json>) -> Vec<Option<NoteFxDef>> {
+    arr(v)
+        .iter()
+        .take(NOTE_FX_SLOTS)
+        .map(|fx| {
+            let kind = fx.get("kind")?.as_str()?.to_string();
+            Some(NoteFxDef { kind, params: load_params(fx.get("params")) })
+        })
+        .collect()
+}
+
 fn load_channel(v: &Json) -> ChannelDef {
     let inst = v.get("instrument");
     let field = |k| inst.and_then(|i| i.get(k));
@@ -276,6 +301,7 @@ fn load_channel(v: &Json) -> ChannelDef {
             params: load_params(field("params")),
             sample: field("sample").and_then(Json::as_str).map(String::from),
         },
+        note_fx: load_note_fx(v.get("note_fx")),
         gain: gain(v.get("gain"), 0.8),
         pan: pan(v.get("pan")),
         muted: bool_or(v.get("muted"), false),
@@ -741,6 +767,38 @@ mod tests {
         let p = load(text).unwrap();
         assert!(p.tracks.iter().flat_map(|t| t.inserts.iter().flatten()).all(|f| f.sidechain.is_none()));
         assert!(p.routing_order().is_some());
+    }
+
+    #[test]
+    fn note_fx_round_trip_and_build() {
+        let mut p = demo_project();
+        p.channels[1].note_fx =
+            vec![Some(NoteFxDef::new("scale").with(0, 9.0)), None, Some(NoteFxDef::new("arpeggiator").with(3, 0.25))];
+        p.channels[2].note_fx = vec![None];
+        let text = save(&p);
+        assert!(text.contains("\"note_fx\""));
+        let back = load(&text).unwrap();
+        assert_eq!(back, p);
+        assert_eq!(save(&back), text);
+        // Sans effet de notes, pas de champ : les anciens fichiers restent identiques.
+        assert!(!save(&demo_project()).contains("note_fx"));
+
+        let ch = back.make_channel(1, 48_000.0, &|_| None);
+        let kinds: Vec<_> = ch.note_fx.iter().map(|fx| fx.as_ref().map(|f| f.kind())).collect();
+        assert_eq!(kinds, [Some("scale"), None, Some("arpeggiator"), None]);
+        assert_eq!(ch.note_fx[2].as_ref().unwrap().get_param(3), 0.25);
+
+        // Malformés, inconnus, en trop : vides ou ignorés ; un type inconnu ne se construit pas.
+        let text = r#"{"format": "ponzik-project", "channels": [{"note_fx": [
+          {"kind": "chord", "params": [[0, 3]]}, {"params": []}, "x", {"kind": "lune"}, {"kind": "repeat"}
+        ]}]}"#;
+        let p = load(text).unwrap();
+        let fx = &p.channels[0].note_fx;
+        assert_eq!(fx.len(), NOTE_FX_SLOTS);
+        assert_eq!(fx[0], Some(NoteFxDef::new("chord").with(0, 3.0)));
+        assert_eq!((fx[1].is_none(), fx[2].is_none()), (true, true));
+        let ch = p.make_channel(0, 48_000.0, &|_| None);
+        assert!(ch.note_fx[0].is_some() && ch.note_fx[3].is_none());
     }
 
     #[test]

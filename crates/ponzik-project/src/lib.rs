@@ -9,8 +9,8 @@ use std::sync::Arc;
 use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS, TRACKS, routing_order};
 use ponzik_engine::registry;
 use ponzik_engine::{
-    AudioClip, AutomationLane, Channel, Clip, Command, Effect, Engine, EngineHandle, Instrument, Note, Pattern,
-    PlayMode, Sample, Sequence, TICKS_PER_BAR, TICKS_PER_STEP,
+    AudioClip, AutomationLane, Channel, Clip, Command, Effect, Engine, EngineHandle, Instrument, NOTE_FX_SLOTS, Note,
+    NoteFx, Pattern, PlayMode, Sample, Sequence, TICKS_PER_BAR, TICKS_PER_STEP,
 };
 pub use ponzik_engine::{AutoPoint, AutoScope, AutoTarget, SessionSlot};
 
@@ -100,10 +100,44 @@ impl EffectDef {
     }
 }
 
+/// Un effet de notes (arpégiateur, accord…) et ses paramètres.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NoteFxDef {
+    /// Identifiant du registre natif ([`registry::note_fx`]).
+    pub kind: String,
+    /// Valeurs qui diffèrent des défauts : (identifiant, valeur).
+    pub params: Vec<(u32, f32)>,
+}
+
+impl NoteFxDef {
+    pub fn new(kind: &str) -> Self {
+        Self { kind: kind.into(), params: Vec::new() }
+    }
+
+    pub fn with(mut self, id: u32, value: f32) -> Self {
+        self.set(id, value);
+        self
+    }
+
+    pub fn set(&mut self, id: u32, value: f32) {
+        match self.params.iter_mut().find(|(i, _)| *i == id) {
+            Some(p) => p.1 = value,
+            None => self.params.push((id, value)),
+        }
+    }
+
+    pub fn get(&self, id: u32) -> Option<f32> {
+        self.params.iter().find(|(i, _)| *i == id).map(|p| p.1)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChannelDef {
     pub name: String,
     pub instrument: InstrumentDef,
+    /// Effets de notes avant l'instrument, dans l'ordre de la chaîne ; au plus
+    /// [`NOTE_FX_SLOTS`] emplacements (les suivants sont ignorés), vides compris.
+    pub note_fx: Vec<Option<NoteFxDef>>,
     pub gain: f32,
     pub pan: f32,
     pub muted: bool,
@@ -425,6 +459,17 @@ impl Project {
         Some(fx)
     }
 
+    /// `None` si l'identifiant est inconnu.
+    pub fn make_note_fx(def: &NoteFxDef, sample_rate: f32, bpm: f32) -> Option<Box<dyn NoteFx>> {
+        let mut fx = registry::create_note_fx(&def.kind)?;
+        fx.set_sample_rate(sample_rate);
+        fx.set_tempo(bpm);
+        for &(id, v) in &def.params {
+            fx.set_param(id, v);
+        }
+        Some(fx)
+    }
+
     pub fn make_channel(&self, idx: usize, sample_rate: f32, loader: SampleLoader) -> Channel {
         let c = &self.channels[idx];
         let mut ch = Channel::new(c.name.clone(), Self::make_instrument(&c.instrument, sample_rate, loader))
@@ -432,6 +477,9 @@ impl Project {
             .with_pan(c.pan)
             .with_track(c.track);
         ch.muted = c.muted;
+        for (slot, def) in c.note_fx.iter().enumerate().take(NOTE_FX_SLOTS) {
+            ch.note_fx[slot] = def.as_ref().and_then(|d| Self::make_note_fx(d, sample_rate, self.bpm));
+        }
         ch
     }
 
@@ -523,6 +571,7 @@ impl Project {
         self.channels.push(ChannelDef {
             name,
             instrument,
+            note_fx: Vec::new(),
             gain: 0.8,
             pan: 0.0,
             muted: false,
