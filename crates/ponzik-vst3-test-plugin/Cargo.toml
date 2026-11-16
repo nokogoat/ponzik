@@ -1,0 +1,14 @@
+[package]
+name = "ponzik-vst3-test-plugin"
+description = "Plugin VST 3 minimal servant de banc d'essai à ponzik-vst3 (gain et sinus)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ponzik-vst3.workspace = true

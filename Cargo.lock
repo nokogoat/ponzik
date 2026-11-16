@@ -70,5 +70,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ponzik-vst3-test-plugin"
+version = "0.1.0"
+dependencies = [
+ "ponzik-vst3",
+]
+
+[[package]]
 name = "ponzik-window"
 version = "0.1.0"
