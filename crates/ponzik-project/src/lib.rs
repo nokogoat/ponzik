@@ -36,6 +36,7 @@ pub use io::{load, load_from_file, save, save_to_file};
 pub use midi_file::{MidiFile, MidiTrack, import_midi, read_smf, write_smf};
 pub use render::{
     BitDepth, ExportOptions, Levels, Normalize, RenderMode, export_wav, normalize, render_song, render_stems, write_wav,
+    write_wav_channels,
 };
 pub use scale::{ChordKind, ScaleKind, Voicing, chord, revoice};
 pub use templates::templates;
@@ -200,6 +201,11 @@ pub struct AudioClipDef {
     /// Fondus en secondes.
     pub fade_in: f32,
     pub fade_out: f32,
+    /// Groupe de prises (0 : aucun) : les passages d'un même enregistrement en
+    /// boucle le partagent, pour choisir la bonne (et compiler plus tard).
+    pub take: u32,
+    /// Clip muet : gardé dans la playlist (prise de côté), pas joué.
+    pub muted: bool,
 }
 
 /// Rôle d'une piste de mixer.
@@ -385,6 +391,7 @@ impl Project {
             audio_clips: self
                 .audio_clips
                 .iter()
+                .filter(|c| !c.muted)
                 .filter_map(|c| {
                     Some(AudioClip {
                         sample: loader(&c.path)?,
@@ -1075,6 +1082,8 @@ mod tests {
             gain: 1.0,
             fade_in: 0.01,
             fade_out: 0.01,
+            take: 0,
+            muted: false,
         });
         let gain = AutoTarget::TrackGain(1);
         p.add_automation_point(gain, AutoScope::Song, 0, 0.0);
@@ -1124,6 +1133,8 @@ mod tests {
             gain: 1.0,
             fade_in: 0.01,
             fade_out: 0.02,
+            take: 0,
+            muted: false,
         };
         p.audio_clips.push(clip);
         p.clear_time(bar, 2 * bar);
@@ -1179,6 +1190,15 @@ mod tests {
         assert!(pos(4) < pos(3));
     }
 
+    #[test]
+    fn muted_takes_stay_in_the_project_but_do_not_play() {
+        let mut p = Project::empty();
+        p.audio_clips.push(audio("a.wav", 0, 96));
+        p.audio_clips.push(AudioClipDef { muted: true, take: 1, ..audio("b.wav", 0, 96) });
+        let loader = |_: &str| Some(Arc::new(Sample { sample_rate: 48_000.0, left: vec![0.0; 4], right: vec![0.0; 4], ..Default::default() }));
+        assert_eq!(p.sequence_with(&loader).audio_clips.len(), 1);
+    }
+
     fn audio(path: &str, start: u32, len: u32) -> AudioClipDef {
         AudioClipDef {
             path: path.into(),
@@ -1190,6 +1210,8 @@ mod tests {
             gain: 1.0,
             fade_in: 0.0,
             fade_out: 0.0,
+            take: 0,
+            muted: false,
         }
     }
 

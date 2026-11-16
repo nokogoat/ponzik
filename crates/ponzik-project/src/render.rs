@@ -268,6 +268,20 @@ pub fn write_wav(path: impl AsRef<Path>, samples: &[f32], sample_rate: u32, dept
     w.flush()
 }
 
+/// Écrit un WAV de `channels` canaux (1 ou 2), sans dither : pour les prises
+/// enregistrées (24 bits ou flottant 32 bits, où le dither n'apporte rien).
+pub fn write_wav_channels(
+    path: impl AsRef<Path>,
+    samples: &[f32],
+    channels: u16,
+    sample_rate: u32,
+    depth: BitDepth,
+) -> io::Result<()> {
+    let mut w = BufWriter::new(File::create(path)?);
+    encode_wav_channels(&mut w, samples, channels, sample_rate, depth, false)?;
+    w.flush()
+}
+
 /// Encode un WAV stéréo, avec dither TPDF en 16 bits.
 pub fn encode_wav(w: &mut impl Write, samples: &[f32], sample_rate: u32, depth: BitDepth) -> io::Result<()> {
     encode_wav_with(w, samples, sample_rate, depth, true)
@@ -283,7 +297,20 @@ pub fn encode_wav_with(
     depth: BitDepth,
     dither: bool,
 ) -> io::Result<()> {
-    const CHANNELS: u16 = 2;
+    encode_wav_channels(w, samples, 2, sample_rate, depth, dither)
+}
+
+/// Encode un WAV de `channels` canaux entrelacés (voir [`encode_wav_with`]).
+/// Les échantillons sont bornés à ±1, flottant compris.
+pub fn encode_wav_channels(
+    w: &mut impl Write,
+    samples: &[f32],
+    channels: u16,
+    sample_rate: u32,
+    depth: BitDepth,
+    dither: bool,
+) -> io::Result<()> {
+    let channels = channels.max(1);
     let bytes = (depth.bits() / 8) as usize;
     let data_len = u32::try_from(samples.len() * bytes)
         .ok()
@@ -295,14 +322,14 @@ pub fn encode_wav_with(
     let fmt_len: u32 = if float { 18 } else { 16 };
     let fact_len: u32 = if float { 12 } else { 0 };
     let riff_len = 4 + (8 + fmt_len) + fact_len + 8 + data_len + pad;
-    let block_align = CHANNELS * depth.bits() / 8;
+    let block_align = channels * depth.bits() / 8;
 
     w.write_all(b"RIFF")?;
     w.write_all(&riff_len.to_le_bytes())?;
     w.write_all(b"WAVEfmt ")?;
     w.write_all(&fmt_len.to_le_bytes())?;
     w.write_all(&(if float { 3u16 } else { 1u16 }).to_le_bytes())?;
-    w.write_all(&CHANNELS.to_le_bytes())?;
+    w.write_all(&channels.to_le_bytes())?;
     w.write_all(&sample_rate.to_le_bytes())?;
     w.write_all(&(sample_rate * block_align as u32).to_le_bytes())?;
     w.write_all(&block_align.to_le_bytes())?;
@@ -311,7 +338,7 @@ pub fn encode_wav_with(
         w.write_all(&0u16.to_le_bytes())?;
         w.write_all(b"fact")?;
         w.write_all(&4u32.to_le_bytes())?;
-        w.write_all(&((samples.len() / CHANNELS as usize) as u32).to_le_bytes())?;
+        w.write_all(&((samples.len() / channels as usize) as u32).to_le_bytes())?;
     }
     w.write_all(b"data")?;
     w.write_all(&data_len.to_le_bytes())?;
@@ -447,6 +474,8 @@ mod tests {
             gain: 0.5,
             fade_in: 0.0,
             fade_out: 0.0,
+            take: 0,
+            muted: false,
         });
         p.add_automation_point(AutoTarget::TrackGain(2), AutoScope::Song, 0, 1.0);
         p.add_automation_point(AutoTarget::TrackGain(2), AutoScope::Song, TICKS_PER_BAR * 2, 1.0);
@@ -519,6 +548,21 @@ mod tests {
             for (v, want) in values.iter().zip([0.0, 1.0, -1.0, 0.5, 1.0, 0.0]) {
                 assert!((v - want).abs() <= lsb + 1e-9, "{depth:?} : {v} ≠ {want}");
             }
+        }
+    }
+
+    #[test]
+    fn mono_takes_round_trip_in_24_bits_and_float() {
+        let take = [0.0, 0.25, -0.5, 0.999];
+        for depth in [BitDepth::Pcm24, BitDepth::Float32] {
+            let mut buf = Vec::new();
+            encode_wav_channels(&mut buf, &take, 1, 48_000, depth, false).unwrap();
+            let s = ponzik_engine::wav::decode_wav(&buf, "prise").unwrap();
+            assert_eq!((s.len(), s.sample_rate), (4, 48_000.0));
+            for (a, b) in s.left.iter().zip(&take) {
+                assert!((a - b).abs() < 1e-6, "{depth:?} : {a} ≠ {b}");
+            }
+            assert_eq!(s.left, s.right, "le mono se relit sur les deux canaux");
         }
     }
 

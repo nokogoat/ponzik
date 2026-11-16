@@ -177,6 +177,8 @@ fn audio_clip_json(c: &AudioClipDef) -> Json {
         ("gain", c.gain.into()),
         ("fade_in", c.fade_in.into()),
         ("fade_out", c.fade_out.into()),
+        ("take", c.take.into()),
+        ("muted", c.muted.into()),
     ])
 }
 
@@ -473,6 +475,8 @@ fn load_audio_clip(v: &Json) -> Option<AudioClipDef> {
         gain: gain(v.get("gain"), 1.0),
         fade_in: f32_or(v.get("fade_in"), 0.0).max(0.0),
         fade_out: f32_or(v.get("fade_out"), 0.0).max(0.0),
+        take: u32_or(v.get("take"), 0),
+        muted: v.get("muted").and_then(Json::as_bool).unwrap_or(false),
     })
 }
 
@@ -711,6 +715,8 @@ mod tests {
             gain: 0.8,
             fade_in: 0.01,
             fade_out: 0.25,
+            take: 3,
+            muted: true,
         });
         let text = save(&p);
         let back = load(&text).unwrap();

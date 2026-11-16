@@ -1008,6 +1008,8 @@ impl App {
             gain: 1.0,
             fade_in: 0.002,
             fade_out: 0.002,
+            take: 0,
+            muted: false,
         });
         self.commit("Poser un clip audio");
         self.toast(&format!("{name} posé dans la playlist"));
@@ -1206,6 +1208,8 @@ impl App {
                 gain: 1.0,
                 fade_in: 0.002,
                 fade_out: 0.002,
+                take: 0,
+                muted: false,
             });
             self.commit("Enregistrer de l'audio");
             self.toast(&format!("Prise enregistrée : {name} ({secs:.1} s)"));
