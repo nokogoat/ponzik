@@ -288,7 +288,7 @@ static PROCESSOR_VTBL: IAudioProcessorVtbl = IAudioProcessorVtbl {
     set_bus_arrangements,
     get_bus_arrangement,
     can_process_sample_size,
-    get_latency_samples: zero,
+    get_latency_samples: latency_samples,
     setup_processing,
     set_processing,
     process,
@@ -577,6 +577,14 @@ unsafe extern "system" fn can_process_sample_size(_: *mut c_void, size: i32) -> 
 
 unsafe extern "system" fn zero(_: *mut c_void) -> u32 {
     0
+}
+
+/// Latence annoncée : seulement déclarée (le signal n'est pas retardé), pour
+/// vérifier que l'hôte la lit.
+pub const LATENCY: u32 = 32;
+
+unsafe extern "system" fn latency_samples(_: *mut c_void) -> u32 {
+    LATENCY
 }
 
 unsafe extern "system" fn setup_processing(this: *mut c_void, setup: *mut ProcessSetup) -> TResult {

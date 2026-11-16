@@ -122,7 +122,10 @@ fn gain_param_halves_the_level() {
     assert_eq!((params[0].id, params[0].name, params[0].min, params[0].max), (7, "Gain", 0.0, 1.0));
     // Valeur lue sur le contrôleur séparé après transmission de l'état du composant.
     assert_eq!(fx.get_param(7), 0.5);
+    assert_eq!(fx.latency(), 0, "inactif : latence inconnue");
     fx.set_sample_rate(SR);
+    // `getLatencySamples` du banc d'essai (`LATENCY`), lu à l'activation.
+    assert_eq!(fx.latency(), 32);
 
     // Le gain n'est audible que si contrôleur et processeur ont été connectés.
     let input: Vec<f32> = (0..512).map(|i| (i as f32 * 0.05).sin()).collect();

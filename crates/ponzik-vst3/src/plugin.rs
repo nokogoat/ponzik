@@ -130,6 +130,8 @@ struct Core {
     outputs: Buses,
     context: Box<ProcessContext>,
     has_events: bool,
+    /// `IAudioProcessor::getLatencySamples`, lu à l'activation.
+    latency: usize,
     held: u128,
     active: bool,
     processing: bool,
@@ -321,6 +323,7 @@ impl Core {
             context,
             has_events,
             held: 0,
+            latency: 0,
             active: false,
             processing: false,
             _handler: handler,
@@ -342,6 +345,9 @@ impl Core {
             return;
         }
         self.active = call!(self.component, IComponentVtbl, set_active, 1) == K_RESULT_OK;
+        // Valable une fois le composant actif (`setupProcessing` puis `setActive`).
+        self.latency =
+            if self.active { call!(self.processor, IAudioProcessorVtbl, get_latency_samples) as usize } else { 0 };
     }
 
     fn stop(&mut self) {
@@ -626,6 +632,11 @@ impl Effect for Vst3Effect {
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.0.set_sample_rate(sample_rate);
+    }
+
+    /// Lue à l'activation : un `restartComponent(kLatencyChanged)` ultérieur n'est pas suivi.
+    fn latency(&self) -> usize {
+        self.0.latency
     }
 
     /// VST 3 n'a pas de `reset` : on arrête le traitement, relancé au bloc suivant.
