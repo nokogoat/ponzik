@@ -101,6 +101,29 @@ impl History {
         self.redo.last().map(|e| e.label.as_str())
     }
 
+    /// Libellés des étapes annulables, de la plus ancienne à la plus récente
+    /// (panneau d'historique).
+    pub fn labels(&self) -> impl DoubleEndedIterator<Item = &str> + ExactSizeIterator {
+        self.undo.iter().map(|e| e.label.as_str())
+    }
+
+    /// Libellés des étapes rétablissables, de la prochaine à la plus lointaine.
+    pub fn redo_labels(&self) -> impl DoubleEndedIterator<Item = &str> + ExactSizeIterator {
+        self.redo.iter().rev().map(|e| e.label.as_str())
+    }
+
+    /// Annule `steps_back` étapes d'un coup (clic dans le panneau d'historique) ;
+    /// renvoie le nombre d'étapes réellement annulées. Les étapes sautées restent
+    /// rétablissables.
+    pub fn jump(&mut self, project: &mut Project, steps_back: usize) -> usize {
+        (0..steps_back).take_while(|_| self.undo(project).is_some()).count()
+    }
+
+    /// Rétablit `steps` étapes d'un coup ; renvoie le nombre d'étapes rétablies.
+    pub fn jump_forward(&mut self, project: &mut Project, steps: usize) -> usize {
+        (0..steps).take_while(|_| self.redo(project).is_some()).count()
+    }
+
     pub fn len(&self) -> usize {
         self.undo.len()
     }
@@ -183,6 +206,35 @@ mod tests {
         assert_eq!(h.len(), 4);
         while h.undo(&mut p).is_some() {}
         assert_eq!(p.bpm, 100.0);
+    }
+
+    #[test]
+    fn labels_and_jumps() {
+        let mut h = History::default();
+        let mut p = with_bpm(100.0);
+        for (i, label) in ["A", "B", "C", "D"].into_iter().enumerate() {
+            h.push(label, &p, i as f64 * 10.0);
+            p.bpm = 101.0 + i as f32;
+        }
+        assert_eq!(h.labels().collect::<Vec<_>>(), ["A", "B", "C", "D"]);
+        assert_eq!(h.labels().next_back(), h.undo_label());
+
+        // Revenir à l'état d'avant « C » : deux étapes en arrière.
+        assert_eq!(h.jump(&mut p, 2), 2);
+        assert_eq!(p.bpm, 102.0);
+        assert_eq!(h.labels().collect::<Vec<_>>(), ["A", "B"]);
+        assert_eq!(h.redo_labels().collect::<Vec<_>>(), ["C", "D"]);
+        assert_eq!(h.redo_labels().next(), h.redo_label());
+
+        assert_eq!(h.jump_forward(&mut p, 1), 1);
+        assert_eq!(p.bpm, 103.0);
+        assert_eq!(h.jump_forward(&mut p, 10), 1, "borné à ce qui reste");
+        assert_eq!(p.bpm, 104.0);
+        assert_eq!(h.jump(&mut p, 0), 0);
+        assert_eq!(h.jump(&mut p, 99), 4);
+        assert_eq!(p.bpm, 100.0);
+        assert_eq!(h.labels().len(), 0);
+        assert_eq!(h.redo_labels().len(), 4);
     }
 
     #[test]
