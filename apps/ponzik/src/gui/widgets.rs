@@ -141,6 +141,8 @@ pub enum Icon {
     Mic,
     /// Globe : langue de l'interface.
     Globe,
+    /// Window with a knob and a fader: a plugin's own interface.
+    PluginWindow,
 }
 
 /// Dessine une icône au trait, dans un carré de `size` centré sur (`cx`, `cy`).
@@ -404,6 +406,15 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
             c.stroke_polyline(&[p(-7.0, 0.0), p(7.0, 0.0)], stroke * 0.8, col);
             c.stroke_polyline(&[p(-5.6, -3.6), p(5.6, -3.6)], stroke * 0.6, col.alpha(0.6));
             c.stroke_polyline(&[p(-5.6, 3.6), p(5.6, 3.6)], stroke * 0.6, col.alpha(0.6));
+        }
+        Icon::PluginWindow => {
+            // Frame and title bar, a knob turned up, a fader.
+            c.stroke_rrect(rr(-7.5, -6.5, 15.0, 13.0), 2.2 * s, stroke, col);
+            c.fill_rrect(rr(-7.5, -6.5, 15.0, 3.4), 1.6 * s, col);
+            c.stroke_circle(cx - 2.6 * s, cy + 1.9 * s, 2.5 * s, stroke * 0.9, col);
+            c.stroke_polyline(&[p(-2.6, 1.9), p(-1.1, 0.3)], stroke * 0.9, col);
+            c.stroke_polyline(&[p(3.6, -0.6), p(3.6, 4.6)], stroke * 0.7, col.alpha(0.5));
+            c.fill_rrect(rr(2.1, 1.2, 3.0, 1.8), 0.8 * s, col);
         }
         Icon::Stretch => {
             c.stroke_polyline(&[p(-7.0, 0.0), p(7.0, 0.0)], stroke, col);

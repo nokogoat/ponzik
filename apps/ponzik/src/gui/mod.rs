@@ -11,6 +11,7 @@ mod automation;
 mod compat;
 mod devices;
 mod dnd;
+mod editors;
 mod float;
 mod keymap;
 mod keys;
@@ -21,6 +22,7 @@ mod modulators;
 mod notefx;
 mod pads;
 mod palette;
+mod plugins;
 mod piano;
 mod playlist;
 mod rack;
@@ -207,6 +209,8 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     let none = |_: &str| None;
     let (mut engine, handle) = project.build_engine(config.sample_rate as f32, &none);
     engine.set_worker_threads(ponzik_engine::default_worker_threads());
+    // The plugin instances' editors, before the engine leaves for the audio thread.
+    let editors = editors::PluginEditors::from_engine(&mut engine);
     let output_name = output.device_name().to_string();
     // Duplex : l'entrée, une fois branchée, arrive dans le même appel que la sortie.
     let stream = output
@@ -215,6 +219,8 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
 
     let mut window = Window::open("Ponzik", 1600, 960).map_err(|e| e.to_string())?;
     let mut app = App::new(handle, project, config.sample_rate);
+    app.editors = editors;
+    app.editors.set_owner(window.native_handle());
     app.set_output(stream);
     app.start_midi_out();
     for m in &app.midi_inputs {
@@ -224,10 +230,13 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     app.start_tour_if_new();
     app.start_autosave();
     app.start_library();
+    app.start_plugin_scan(false);
     let (play, find) = (app.key_label(keymap::Shortcut::PlayStop), app.key_label(keymap::Shortcut::Palette));
     app.toast(&tr_fmt!("{} to play · {} to find anything", play, find));
     eprintln!("Ponzik · {} · {} Hz · {}", window.backend_name(), config.sample_rate, output_name);
     let result = event_loop(&mut window, &mut app);
+    // Plugin interfaces go before their windows, and both before the instances.
+    app.editors.close_all();
     // Sortie normale (fermeture ou erreur rapportée) : le verrou de session est retiré,
     // les panneaux ouverts sont retenus pour la prochaine fois.
     app.close_autosave();
@@ -268,7 +277,13 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
             }
         } else {
             // Avec un contrôleur MIDI branché, on se réveille souvent pour ses notes.
-            let idle = if app.midi_inputs.is_empty() { 500 } else { 4 };
+            let mut idle = if app.midi_inputs.is_empty() { 500 } else { 4 };
+            // Plugin interfaces run on our loop: their timers and descriptors want pumping.
+            if app.editors.any_open() {
+                idle = idle.min(15);
+            } else if app.editors.has_editors() {
+                idle = idle.min(50);
+            }
             window.wait_events(Duration::from_millis(idle), &mut events);
         }
         window.poll_events(&mut events);
@@ -299,6 +314,8 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
         dirty |= app.poll_midi();
         app.autosave_tick(started.elapsed().as_secs_f64());
         dirty |= app.library_tick();
+        dirty |= app.plugin_scan_tick();
+        dirty |= app.editors_tick();
         if app.rec.output.as_ref().is_some_and(|s| !s.is_running()) {
             return Err(tr("the audio driver stopped").into());
         }
@@ -339,12 +356,24 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     };
     let none = |_: &str| None;
     let (mut engine, handle) = project.build_engine(SR as f32, &none);
+    let editors = editors::PluginEditors::from_engine(&mut engine);
     let mut app = App::new(handle, project, SR);
+    app.editors = editors;
     // PONZIK_PRESET=n : profil d'espace de travail (0 Complet … 4 Minimal).
     if let Some(i) = std::env::var("PONZIK_PRESET").ok().and_then(|v| v.parse().ok()) {
         if let Some((_, _, ws)) = settings::presets().into_iter().nth(i) {
             app.apply_workspace(ws, false);
         }
+    }
+    // PONZIK_SCAN=1: plugins scanned now (child processes, cache untouched).
+    if std::env::var_os("PONZIK_SCAN").is_some() {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let scanner = |path: &std::path::Path| {
+            let mut c = std::process::Command::new(&exe);
+            c.arg("scan-plugin").arg(path);
+            c
+        };
+        app.set_plugins(ponzik_project::plugins::scan(&scanner, None, false, ponzik_project::plugins::SCAN_TIMEOUT));
     }
     // PONZIK_BROWSER=n: browser tab (0 instruments, 1 effects, 2 samples, 3 plugins).
     if let Some(i) = std::env::var("PONZIK_BROWSER").ok().and_then(|v| v.parse::<usize>().ok()) {
@@ -389,6 +418,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
         // PONZIK_PADS=kit[,pad] : Drum Pads with the starter kit, pad n played.
         if let Ok(spec) = std::env::var("PONZIK_PADS") {
             app.screenshot_pads(ch, &spec);
+        }
+        // PONZIK_OPEN_EDITOR=1: the instrument's plugin window opens during the capture.
+        if std::env::var_os("PONZIK_OPEN_EDITOR").is_some() {
+            app.toggle_editor(devices::Device::Instrument(ch));
         }
         if let Ok(list) = std::env::var("PONZIK_NOTE_FX") {
             for (slot, kind) in list.split(',').enumerate() {
@@ -504,10 +537,12 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     let mut drawing = Duration::ZERO;
     for _ in 0..96 {
         engine.process(&mut audio, 2);
+        app.editors_tick();
         let t0 = Instant::now();
         app.frame(&mut canvas, &input, 1.0 / 60.0);
         drawing += t0.elapsed();
     }
+    app.editors.close_all();
     // PONZIK_BENCH : temps de dessin moyen d'une image, pour comparer les échelles.
     if std::env::var_os("PONZIK_BENCH").is_some() {
         eprintln!("{view:?} · {pw}×{ph} (×{scale}) · {:.2} ms/image", drawing.as_secs_f64() * 1000.0 / 96.0);

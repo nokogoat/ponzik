@@ -153,6 +153,24 @@ impl App {
         for k in registry::effects() {
             add(tr_fmt!("{} on {}", tr(k.name), self.project.tracks[track].name.as_str()), tr("Effect"), none(), Action::AddEffect(track, k.id));
         }
+        // Plugins: scan, their own windows, the parameter last moved in one.
+        add(tr("Rescan plugins").into(), tr("Plugins"), none(), Action::RescanPlugins);
+        for d in self.panel_devices() {
+            if super::app::plugin_badge(&self.device_kind(d).0).is_some() {
+                let name = self.editor_title(d);
+                let title = if self.editors.is_open(d) {
+                    tr_fmt!("Close the plugin window: {}", name)
+                } else {
+                    tr_fmt!("Open the plugin window: {}", name)
+                };
+                add(title, tr("Plugins"), none(), Action::ToggleEditor(d));
+            }
+        }
+        if let Some((target, value)) = self.last_plugin_param()
+            && let Some((name, _)) = self.target_info(target)
+        {
+            add(tr_fmt!("Automate {}", name), tr("Plugins"), none(), Action::Automate(target, value));
+        }
         if let Some(ch) = self.selected_channel()
             && let Some(slot) = (0..ponzik_engine::NOTE_FX_SLOTS).find(|&s| self.project.channels[ch].note_fx.get(s).is_none_or(Option::is_none))
         {

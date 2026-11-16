@@ -5609,3 +5609,65 @@ msgstr "plantage au chargement (code {})"
 
 msgid "the scan failed (exit code {})"
 msgstr "l'analyse a échoué (code {})"
+
+# --- Plugin windows and browser ---
+
+msgid "Plugins"
+msgstr "Plugins"
+
+msgid "Rescan plugins"
+msgstr "Réanalyser les plugins"
+
+msgid "Scanning the plugins…"
+msgstr "Analyse des plugins…"
+
+msgid "Loads every plugin again, each in its own process"
+msgstr "Recharge chaque plugin, chacun dans son propre processus"
+
+msgid "Plugins: {} found"
+msgstr "Plugins : {} trouvés"
+
+msgid "Plugins: {} found, {} could not be loaded (see the browser)"
+msgstr "Plugins : {} trouvés, {} impossibles à charger (voir le navigateur)"
+
+msgid "Could not be loaded"
+msgstr "Impossibles à charger"
+
+msgid "{}\n{}\nFix it, then rescan the plugins"
+msgstr "{}\n{}\nCorrigez-le, puis réanalysez les plugins"
+
+msgid "Open the plugin window"
+msgstr "Ouvrir la fenêtre du plugin"
+
+msgid "Close the plugin window"
+msgstr "Fermer la fenêtre du plugin"
+
+msgid "Open the plugin window: {}"
+msgstr "Ouvrir la fenêtre du plugin : {}"
+
+msgid "Close the plugin window: {}"
+msgstr "Fermer la fenêtre du plugin : {}"
+
+msgid "Double-click: open the plugin window\nDrag upward: detach"
+msgstr "Double-clic : ouvrir la fenêtre du plugin\nGlisser vers le haut : détacher"
+
+msgid "Can't open the plugin window: {}"
+msgstr "Impossible d'ouvrir la fenêtre du plugin : {}"
+
+msgid "Edit in the plugin window"
+msgstr "Réglage dans la fenêtre du plugin"
+
+msgid "Automate {}"
+msgstr "Automatiser {}"
+
+msgid "this device is not a plugin"
+msgstr "cet appareil n'est pas un plugin"
+
+msgid "the plugin is no longer loaded"
+msgstr "le plugin n'est plus chargé"
+
+msgid "no window system"
+msgstr "aucun système de fenêtres"
+
+msgid "this plugin has no interface of its own"
+msgstr "ce plugin n'a pas d'interface à lui"

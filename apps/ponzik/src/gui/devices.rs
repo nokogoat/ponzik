@@ -27,7 +27,7 @@ const TRANSFER: f32 = 168.0;
 const EQ_W: f32 = 640.0;
 
 /// Ce que montre une carte d'appareil.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Device {
     Instrument(usize),
     Effect { track: usize, slot: usize },
@@ -341,12 +341,18 @@ impl App {
 
         let (name, bypass, color) = match device {
             Device::Instrument(_) => {
-                let name = registry::instrument_kind(&kind).map_or_else(|| super::app::display_kind(&kind), |k| tr(k.name).to_string());
+                let name = registry::instrument_kind(&kind)
+                    .map(|k| tr(k.name).to_string())
+                    .or_else(|| self.plugin_name(&kind))
+                    .unwrap_or_else(|| super::app::display_kind(&kind));
                 (name, false, t.accent)
             }
             Device::Effect { track, slot } => {
                 let def = self.project.tracks[track].inserts[slot].as_ref().expect("effect in its slot");
-                let name = registry::effect_kind(&def.kind).map_or_else(|| super::app::display_kind(&def.kind), |k| tr(k.name).to_string());
+                let name = registry::effect_kind(&def.kind)
+                    .map(|k| tr(k.name).to_string())
+                    .or_else(|| self.plugin_name(&def.kind))
+                    .unwrap_or_else(|| super::app::display_kind(&def.kind));
                 (name, def.bypass, pattern_color(1))
             }
             Device::RackUnit { .. } => (super::app::display_kind(&kind), false, pattern_color(1)),
@@ -360,7 +366,20 @@ impl App {
         let cpu = (cpu >= 0.0005).then(|| ponzik_i18n::tr_fmt!("{:.1}%", cpu * 100.0));
         let title_w = if matches!(device, Device::Effect { .. }) { head.w - 158.0 } else { head.w - 98.0 };
         let title_w = title_w - if cpu.is_some() { 36.0 } else { 0.0 };
+        // CLAP or VST 3 plugin: a button right after its name (visible even on
+        // a very wide card) opens its own interface in a window.
+        let plugin = super::app::plugin_badge(&kind).is_some() && self.editors.editor(device).is_some_and(|e| e.has_gui());
+        let title_w = title_w - if plugin { 32.0 } else { 0.0 };
         self.text_fit(c, self.f.sans_med, 13.0, head.x + 22.0, head.y + 18.0, &name, title_w, if bypass { t.muted } else { t.text });
+        let name_w = self.fonts.measure(self.f.sans_med, 13.0, &name).min(title_w);
+        let editor = Rect::new(head.x + 22.0 + name_w + 6.0, head.y + 5.0, 26.0, 26.0);
+        if plugin {
+            let open = self.editors.is_open(device);
+            let tip = if open { tr("Close the plugin window") } else { tr("Open the plugin window") };
+            if self.icon_button(c, input, wid("fx-editor", device_key(device), 0), editor, Icon::PluginWindow, open, (tip, "")) {
+                self.toggle_editor(device);
+            }
+        }
 
         // Presets de l'appareil.
         let preset_x = if matches!(device, Device::Effect { .. }) { head.right() - 92.0 } else { head.right() - 32.0 };
@@ -377,7 +396,25 @@ impl App {
         if self.icon_button(c, input, wid("fx-float", device_key(device), 0), float, icon, false, (tip, "")) {
             if floating { self.dock(device) } else { self.detach(device, Some(card)) }
         }
-        self.float_grip(input, Rect::new(head.x, head.y, float.x - head.x - 2.0, head.h), card, device, floating);
+        // The header drags like a title bar, around the plugin button; a
+        // double-click on a plugin's name opens its window (elsewhere, it
+        // detaches the card as for any device).
+        let grip = Rect::new(head.x, head.y, float.x - head.x - 2.0, head.h);
+        let on_name = plugin && input.inside && Rect::new(head.x, head.y, editor.x - head.x, head.h).contains(input.x, input.y);
+        if on_name && input.pressed && input.double {
+            self.layout.cancel_gesture();
+            self.drag = None;
+            self.toggle_editor(device);
+        } else if plugin {
+            self.float_grip(input, Rect::new(head.x, head.y, editor.x - head.x - 2.0, head.h), card, device, floating);
+            let rest = Rect::new(editor.right() + 2.0, head.y, (float.x - editor.right() - 4.0).max(0.0), head.h);
+            self.float_grip(input, rest, card, device, floating);
+            if on_name && self.drag.is_none() {
+                self.set_tip(tr("Double-click: open the plugin window\nDrag upward: detach"), "");
+            }
+        } else {
+            self.float_grip(input, grip, card, device, floating);
+        }
 
         if let Device::Effect { track, slot } = device {
             let power = Rect::new(head.right() - 60.0, head.y + 5.0, 26.0, 26.0);

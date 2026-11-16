@@ -166,6 +166,17 @@ pub enum Rename {
     Marker(usize),
 }
 
+/// Format badge of a plugin device kind (`CLAP`, `VST3`), none for native devices.
+pub fn plugin_badge(kind: &str) -> Option<&'static str> {
+    if kind.starts_with(ponzik_clap::KIND_PREFIX) {
+        Some("CLAP")
+    } else if kind.starts_with(ponzik_vst3::KIND_PREFIX) {
+        Some("VST3")
+    } else {
+        None
+    }
+}
+
 /// Nom lisible d'un type d'appareil hors registre (plugin CLAP : son
 /// identifiant ; plugin VST 3 : le nom de son paquet).
 pub fn display_kind(kind: &str) -> String {
@@ -286,6 +297,10 @@ pub enum Action {
     ToggleViewShown(View),
     /// Edit of a Drum Pads pad: channel, pad, operation.
     Pad(usize, usize, super::pads::PadOp),
+    /// Scans every plugin again, cache ignored.
+    RescanPlugins,
+    /// Opens or closes a plugin device's own window.
+    ToggleEditor(super::devices::Device),
 }
 
 /// Ligne de menu : une icône (ou la couleur d'un pattern), un nom court, une
@@ -471,10 +486,18 @@ pub struct App {
     pub sample_files: Vec<PathBuf>,
     /// Sound library being built in the background.
     pub library_build: Option<std::sync::mpsc::Receiver<Result<usize, String>>>,
-    /// Plugins CLAP trouvés au démarrage.
+    /// CLAP plugins found by the scan, by name.
     pub plugins: Vec<ponzik_clap::PluginInfo>,
-    /// Plugins VST 3 trouvés au démarrage.
+    /// VST 3 plugins found by the scan, by name.
     pub vst3_plugins: Vec<ponzik_vst3::PluginInfo>,
+    /// Plugin files the scan could not load, shown in the browser.
+    pub scan_errors: Vec<ponzik_project::plugins::ScanError>,
+    /// Background scan in progress.
+    pub plugin_scan: Option<super::plugins::PluginScan>,
+    /// Editors of the plugin instances and their windows.
+    pub editors: super::editors::PluginEditors,
+    /// Plugin parameter last moved in a plugin window, and its value.
+    pub last_plugin_param: Option<(ponzik_engine::AutoTarget, f32)>,
 
     pub playing: bool,
     pub metronome: bool,
@@ -579,7 +602,7 @@ impl App {
             mono_med: load(embedded::MONO_MEDIUM),
         };
         let channels = project.channels.len();
-        Self {
+        let mut app = Self {
             engine,
             synced: project.clone(),
             project,
@@ -622,8 +645,12 @@ impl App {
             responses: HashMap::new(),
             sample_files: compat::scan_samples(),
             library_build: None,
-            plugins: ponzik_clap::scan(),
-            vst3_plugins: ponzik_vst3::scan(),
+            plugins: Vec::new(),
+            vst3_plugins: Vec::new(),
+            scan_errors: Vec::new(),
+            plugin_scan: None,
+            editors: Default::default(),
+            last_plugin_param: None,
             playing: false,
             metronome: false,
             position: 0.0,
@@ -681,7 +708,15 @@ impl App {
             rack_sel: HashMap::new(),
             rack_chip: None,
             mod_ui: Default::default(),
-        }
+        };
+        // What the cache knows; the background scan brings the rest.
+        app.set_plugins(super::plugins::cached());
+        app
+    }
+
+    /// The next edit starts its own undo step (a new gesture in a plugin window).
+    pub fn break_undo_merge(&mut self) {
+        self.last_edit = None;
     }
 
     /// Ouvre un menu par son nom (captures d'écran).
@@ -877,6 +912,7 @@ impl App {
         };
         for cmd in cmds {
             super::assistant::capture(&cmd);
+            self.editors.capture(&cmd);
             self.send(cmd);
         }
         self.synced = self.project.clone();
@@ -2279,9 +2315,12 @@ impl App {
             };
             v.push((2, name, folder, Payload::Sample(p.clone())));
         }
-        let clap = self.plugins.iter().map(|p| ("CLAP", p.kind(), &p.name, &p.vendor, p.is_instrument));
-        let vst3 = self.vst3_plugins.iter().map(|p| ("VST 3", p.kind(), &p.name, &p.vendor, p.is_instrument));
-        for (format, kind, name, vendor, is_instrument) in clap.chain(vst3) {
+        // Instruments then effects; by name, CLAP before VST 3 for the same plugin.
+        let clap = self.plugins.iter().map(|p| (0, "CLAP", p.kind(), &p.name, &p.vendor, p.is_instrument));
+        let vst3 = self.vst3_plugins.iter().map(|p| (1, "VST 3", p.kind(), &p.name, &p.vendor, p.is_instrument));
+        let mut plugins: Vec<_> = clap.chain(vst3).collect();
+        plugins.sort_by_cached_key(|p| (!p.5, p.3.to_lowercase(), p.0));
+        for (_, format, kind, name, vendor, is_instrument) in plugins {
             let what = if is_instrument { tr("Instrument") } else { tr("Effect") };
             let detail =
                 if vendor.is_empty() { format!("{what} {format}") } else { format!("{what} {format} · {vendor}") };
@@ -2401,8 +2440,14 @@ impl App {
         let mut last_group = "";
         let lib_prefix = tr_fmt!("Library · {}", "");
         for (k, (cat, name, detail, payload)) in entries.iter().enumerate() {
-            // Samples: the library first, one heading per folder, then the rest.
-            let group = if *cat != 2 { "" } else { detail.strip_prefix(lib_prefix.as_str()).unwrap_or(tr("Your samples")) };
+            // Samples: the library first, one heading per folder, then the rest;
+            // plugins: instruments, then effects.
+            let group = match (cat, payload) {
+                (2, _) => detail.strip_prefix(lib_prefix.as_str()).unwrap_or(tr("Your samples")),
+                (3, Payload::Instrument { .. }) => tr("Instruments"),
+                (3, _) => tr("Effects"),
+                _ => "",
+            };
             if !searching && group != last_group {
                 y += if last_group.is_empty() { 4.0 } else { 10.0 };
                 self.text(c, self.f.sans_med, 11.5, inner_x + 12.0, y + 8.0, group, t.muted);
@@ -2418,19 +2463,29 @@ impl App {
                 last_cat = *cat;
             }
             let row = Rect::new(inner_x, y, w, 34.0);
-            if row.bottom() > list.y && row.y < list.bottom() && self.browser_row(c, input, wid("br", *cat, k), row, name, detail) {
+            let badge = match payload {
+                Payload::Instrument { kind, .. } | Payload::Effect { kind, .. } => plugin_badge(kind),
+                Payload::Sample(_) => None,
+            };
+            if row.bottom() > list.y && row.y < list.bottom() && self.browser_row(c, input, wid("br", *cat, k), row, name, detail, badge) {
                 self.begin_dnd(input, payload.clone());
             }
             y += 36.0;
         }
-        if entries.is_empty() {
+        let plugins_tab = !searching && self.sidebar_tab == 3;
+        if entries.is_empty() && (!plugins_tab || self.scan_errors.is_empty()) {
             let (icon, line) = match (searching, self.sidebar_tab) {
                 (true, _) => (Icon::Search, tr("Nothing found")),
                 (_, 2) => (Icon::Sample, tr("No WAV files")),
+                (_, 3) if self.plugin_scan_running() => (Icon::Plugin, tr("Scanning the plugins…")),
                 (_, 3) => (Icon::Plugin, tr("No CLAP or VST 3 plugins")),
                 _ => (Icon::Info, tr("Empty")),
             };
             self.empty_state(c, Rect::new(inner_x, list.y + 20.0, w, 120.0), icon, line);
+            y = y.max(list.y + 150.0 - scroll);
+        }
+        if plugins_tab {
+            y = self.plugin_scan_rows(c, input, list, inner_x, w, y);
         }
         let content_h = y + scroll - list.y + 16.0;
         self.sidebar_scroll = self.sidebar_scroll.min((content_h - list.h).max(0.0));
@@ -2439,15 +2494,29 @@ impl App {
     }
 
     /// Ligne du navigateur : le nom seul, la description en infobulle. Renvoie
-    /// vrai à la saisie (clic : ajout, glisser : dépôt où l'on veut).
-    fn browser_row(&mut self, c: &mut Canvas, input: &Input, id: u64, row: Rect, title: &str, detail: &str) -> bool {
+    /// vrai à la saisie (clic : ajout, glisser : dépôt où l'on veut). `badge` :
+    /// format d'un plugin (CLAP, VST3), en pastille à droite.
+    #[allow(clippy::too_many_arguments)]
+    fn browser_row(&mut self, c: &mut Canvas, input: &Input, id: u64, row: Rect, title: &str, detail: &str, badge: Option<&str>) -> bool {
         let t = self.theme;
         let hov = self.hovered(input, id, row) && !self.dnd_active();
         let hv = self.hover_anim(id, hov);
         if hv > 0.01 {
             c.fill_rrect(row, 8.0, t.raised.alpha(hv));
         }
-        self.text_fit(c, self.f.sans_med, 13.0, row.x + 12.0, row.y + row.h * 0.5, title, row.w - 40.0, t.text2.mix(t.text, hv));
+        let mut title_w = row.w - 40.0;
+        if let Some(badge) = badge {
+            let bw = self.fonts.measure(self.f.mono_med, 9.0, badge) + 10.0;
+            let pill = Rect::new(row.right() - 30.0 - bw, row.y + row.h * 0.5 - 8.0, bw, 16.0);
+            // CLAP in the accent, VST 3 in the select tint: told apart at a glance.
+            let tint = if badge == "CLAP" { t.accent } else { t.select };
+            c.fill_rrect(pill, 8.0, tint.alpha(0.14 + 0.1 * hv));
+            c.stroke_rrect(pill, 8.0, 1.0, tint.alpha(0.45));
+            let (px, py) = pill.center();
+            self.text_center(c, self.f.mono_med, 9.0, px, py, badge, tint);
+            title_w -= bw + 8.0;
+        }
+        self.text_fit(c, self.f.sans_med, 13.0, row.x + 12.0, row.y + row.h * 0.5, title, title_w, t.text2.mix(t.text, hv));
         if hv > 0.01 {
             draw_icon(c, Icon::Plus, row.right() - 16.0, row.y + row.h * 0.5, 13.0, t.accent.alpha(hv));
         }
@@ -3101,6 +3170,8 @@ impl App {
             Action::SetLanguage(lang) => self.set_language(lang),
             Action::ToggleViewShown(v) => self.toggle_view_shown(v),
             Action::Pad(channel, pad, op) => self.pad_action(channel, pad, op),
+            Action::RescanPlugins => self.start_plugin_scan(true),
+            Action::ToggleEditor(device) => self.toggle_editor(device),
             Action::Automate(target, value) => self.create_automation(target, value),
             Action::SaveAs => {
                 let text = self.project.name.clone();

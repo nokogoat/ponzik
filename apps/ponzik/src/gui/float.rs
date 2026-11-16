@@ -104,6 +104,11 @@ impl Layout {
         self.wins.iter().any(|w| w.device == d)
     }
 
+    /// Drops the move or tear in progress (the click meant something else).
+    pub fn cancel_gesture(&mut self) {
+        self.gesture = None;
+    }
+
     fn index(&self, id: usize) -> Option<usize> {
         self.wins.iter().position(|w| w.id == id)
     }
