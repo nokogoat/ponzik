@@ -29,6 +29,7 @@ mod shimmer;
 mod tranche;
 mod transient;
 mod utility;
+mod vintage_verb;
 
 pub use autofilter::AutoFilter;
 pub use bitcrusher::Bitcrusher;
@@ -55,6 +56,7 @@ pub use shimmer::Shimmer;
 pub use tranche::Tranche;
 pub use transient::Transient;
 pub use utility::Utility;
+pub use vintage_verb::VintageVerb;
 
 use ponzik_dsp::biquad::{Biquad, BiquadCoefs};
 

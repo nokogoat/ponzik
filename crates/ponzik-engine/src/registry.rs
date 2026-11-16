@@ -11,6 +11,7 @@ use crate::effects::CharDelay;
 use crate::effects::MasterLimiter;
 use crate::effects::CharSaturation;
 use crate::effects::Lofi;
+use crate::effects::VintageVerb;
 use crate::instrument::Instrument;
 use crate::instruments::{
     Bass303, DrumKind, DrumSynth, EPiano, FmSynth, Granular, Kick, Pluck, Pulse, Sampler, Slicer, WaveSynth,
@@ -298,6 +299,13 @@ pub fn effects() -> &'static [EffectKind] {
             category: "Saturation",
             description: "Craquements de vinyle, souffle de bande, pleurage, perte de bits par bloc et usure du spectre",
             create: || Box::new(Lofi::default()),
+        },
+        EffectKind {
+            id: "vintage_verb",
+            name: "Réverbe algorithmique",
+            category: "Espace",
+            description: "Salle, plaque ou nuage de diffusion, modulation riche, queues jusqu'à une minute et gel",
+            create: || Box::new(VintageVerb::default()),
         },
     ]
 }
