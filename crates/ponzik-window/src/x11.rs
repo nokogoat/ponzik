@@ -257,6 +257,11 @@ impl Keymap {
     }
 
     fn key(&self, keycode: u8) -> Option<Key> {
+        // Rangée des chiffres en AZERTY : « à » seul, « 0 » avec Maj. Comme sous
+        // Windows (VK_0…VK_9), la touche est rapportée par son chiffre.
+        if let Some(digit @ 0x30..=0x39) = self.sym(keycode, 1) {
+            return Some(Key::Char(digit as u8 as char));
+        }
         keysym_to_key(self.sym(keycode, 0)?)
     }
 
@@ -1029,6 +1034,17 @@ mod tests {
         assert_eq!(req.len(), 16);
         assert_eq!(&req[..4], &[OP_CHANGE_WINDOW_ATTRIBUTES, 0, 4, 0]);
         assert_eq!((u32_at(&req, 4), u32_at(&req, 8), u32_at(&req, 12)), (0x10, CW_CURSOR, 0x20));
+    }
+
+    #[test]
+    fn digit_row_reports_digits_on_azerty() {
+        // Keycodes 10, 11, 12 : AZERTY « à/0 », QWERTY « 0/) », lettre « a/A ».
+        let keymap = Keymap { min_keycode: 10, per_keycode: 2, syms: vec![0xe0, 0x30, 0x30, 0x29, 0x61, 0x41] };
+        assert_eq!(keymap.key(10), Some(Key::Char('0')));
+        assert_eq!(keymap.key(11), Some(Key::Char('0')));
+        assert_eq!(keymap.key(12), Some(Key::Char('a')));
+        // Le texte saisi, lui, suit toujours la disposition.
+        assert_eq!(keymap.text(10, 0), Some('à'));
     }
 
     #[test]
