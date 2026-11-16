@@ -122,7 +122,27 @@ impl App {
         for (i, (name, _)) in ponzik_project::templates().into_iter().enumerate() {
             add(format!("Nouveau projet : {name}"), "Modèle", "", Action::NewFromTemplate(i));
         }
-        add("Exporter en WAV".into(), "Fichier", "Ctrl R", Action::Export);
+        add("Exporter en WAV 24 bits".into(), "Fichier", "Ctrl R", Action::Export);
+        {
+            use ponzik_project::{BitDepth, ExportOptions, Normalize};
+            let wav = ExportOptions::default();
+            let exports = [
+                ("Exporter en WAV 16 bits (dither TPDF)", ExportOptions { depth: BitDepth::Pcm16, ..wav }),
+                ("Exporter en WAV 32 bits flottant", ExportOptions { depth: BitDepth::Float32, ..wav }),
+                ("Exporter normalisé (crête à −0,3 dBFS)", ExportOptions { normalize: Normalize::Peak(-0.3), ..wav }),
+                (
+                    "Exporter pour le streaming (−14 LUFS, −1 dBTP)",
+                    ExportOptions { normalize: Normalize::Loudness { lufs: -14.0, ceiling: -1.0 }, ..wav },
+                ),
+                (
+                    "Exporter fort pour le club (−9 LUFS, −1 dBTP)",
+                    ExportOptions { normalize: Normalize::Loudness { lufs: -9.0, ceiling: -1.0 }, ..wav },
+                ),
+            ];
+            for (title, options) in exports {
+                add(title.into(), "Fichier", "", Action::ExportWith(options));
+            }
+        }
         add("Exporter les pistes séparées (stems)".into(), "Fichier", "", Action::ExportStems);
         add("Importer un fichier MIDI".into(), "Fichier", "", Action::ImportMidiMenu);
         add("Exporter le pattern en MIDI".into(), "Fichier", "", Action::ExportMidi);

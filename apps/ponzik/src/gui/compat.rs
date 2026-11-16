@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ponzik_engine::Sample;
-use ponzik_project::{BitDepth, Project, RenderMode};
+use ponzik_project::{BitDepth, ExportOptions, Project, RenderMode};
 
 const SAMPLE_SCAN_LIMIT: usize = 400;
 
@@ -67,16 +67,18 @@ pub fn export_song(
     sample_rate: u32,
     loader: &dyn Fn(&str) -> Option<Arc<Sample>>,
     path: &Path,
-) -> Result<f32, String> {
+    options: ExportOptions,
+) -> Result<(f32, f32), String> {
     if project.clips.is_empty() {
         return Err("La playlist est vide : place des patterns avant d'exporter".into());
     }
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{} : {e}", dir.display()))?;
     }
-    let audio = ponzik_project::render_song(project, sample_rate, loader, RenderMode::Song);
-    ponzik_project::write_wav(path, &audio, sample_rate, BitDepth::Pcm24).map_err(|e| format!("{} : {e}", path.display()))?;
-    Ok(audio.len() as f32 / 2.0 / sample_rate as f32)
+    let mut audio = ponzik_project::render_song(project, sample_rate, loader, RenderMode::Song);
+    let gain = ponzik_project::export_wav(path, &mut audio, sample_rate, options)
+        .map_err(|e| format!("{} : {e}", path.display()))?;
+    Ok((audio.len() as f32 / 2.0 / sample_rate as f32, gain))
 }
 
 pub fn load_sample(path: &str) -> Result<Sample, String> {

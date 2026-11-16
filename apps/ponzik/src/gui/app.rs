@@ -193,6 +193,8 @@ pub enum Action {
     /// Nouveau projet à partir du modèle n.
     NewFromTemplate(usize),
     Export,
+    /// Export WAV avec un format et une normalisation.
+    ExportWith(ponzik_project::ExportOptions),
     Undo,
     Redo,
     LoadDemo(usize),
@@ -593,6 +595,9 @@ impl App {
                 Popup::Sidechain { track, slot }
             }
             "notefx" => Popup::AddNoteFx { channel: self.selected_channel().unwrap_or(0), slot: 0 },
+            _ if name.starts_with("palette:") => {
+                Popup::Palette { query: name["palette:".len()..].to_string(), selected: 0 }
+            }
             "countin" => {
                 self.stop();
                 self.record = true;
@@ -1344,13 +1349,21 @@ impl App {
     }
 
     pub fn export(&mut self) {
+        self.export_with(ponzik_project::ExportOptions::default());
+    }
+
+    pub fn export_with(&mut self, options: ponzik_project::ExportOptions) {
         let path = compat::default_export_path(&self.project.name);
         let result = {
             let loader = self.sample_loader();
-            compat::export_song(&self.project, self.sample_rate, &loader, &path)
+            compat::export_song(&self.project, self.sample_rate, &loader, &path, options)
         };
         match result {
-            Ok(secs) => self.toast(&format!("Exporté : {} ({secs:.1} s)", path.display())),
+            Ok((secs, gain)) if gain.abs() >= 0.05 => {
+                let gain = format!("{gain:+.1}").replace('.', ",");
+                self.toast(&format!("Exporté : {} ({secs:.1} s, {gain} dB)", path.display()));
+            }
+            Ok((secs, _)) => self.toast(&format!("Exporté : {} ({secs:.1} s)", path.display())),
             Err(e) => self.toast(&e),
         }
     }
@@ -2621,6 +2634,7 @@ impl App {
                 }
             }
             Action::Export => self.export(),
+            Action::ExportWith(options) => self.export_with(options),
             Action::Undo => self.undo(),
             Action::Redo => self.redo(),
             Action::LoadDemo(i) => {
