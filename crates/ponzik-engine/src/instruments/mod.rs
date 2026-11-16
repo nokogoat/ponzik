@@ -2,6 +2,7 @@
 
 mod bass303;
 mod common;
+mod drum_machine;
 mod drums;
 mod epiano;
 mod fm;
@@ -14,6 +15,7 @@ mod slicer;
 mod wavetable;
 
 pub use bass303::Bass303;
+pub use drum_machine::DrumMachine;
 pub use drums::{DrumKind, DrumSynth};
 pub use epiano::EPiano;
 pub use fm::FmSynth;

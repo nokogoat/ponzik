@@ -12,6 +12,7 @@ use crate::effects::MasterLimiter;
 use crate::effects::CharSaturation;
 use crate::effects::Lofi;
 use crate::effects::VintageVerb;
+use crate::instruments::DrumMachine;
 use crate::instrument::Instrument;
 use crate::instruments::{
     Bass303, DrumKind, DrumSynth, EPiano, FmSynth, Granular, Kick, Pluck, Pulse, Sampler, Slicer, WaveSynth,
@@ -119,6 +120,13 @@ pub fn instruments() -> &'static [InstrumentKind] {
             category: "Claviers",
             description: "Piano électrique FM, lame et cloche, trémolo stéréo",
             create: || Box::new(EPiano::new()),
+        },
+        InstrumentKind {
+            id: "drum_machine",
+            name: "Boîte à rythmes",
+            category: "Batterie",
+            description: "Huit pads synthétisés en couches (transitoire, corps, bruit), accord, déclin et niveau par pad",
+            create: || Box::new(DrumMachine::new()),
         },
     ]
 }
