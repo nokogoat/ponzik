@@ -533,6 +533,18 @@ impl App {
     }
 
     /// Texte tronqué avec « … » pour tenir dans `max_w`.
+    /// Shrinks the text by up to 2 px before cutting it: the largest size from
+    /// `size` down to `size - 2` where `s` fits, otherwise `s` cut at the smallest.
+    pub(super) fn fit_shrink(&self, f: FontId, size: f32, s: &str, max_w: f32) -> (f32, String) {
+        for k in 0..=2 {
+            let sz = size - k as f32;
+            if self.fonts.measure(f, sz, s) <= max_w {
+                return (sz, s.to_string());
+            }
+        }
+        (size - 2.0, self.fit(f, size - 2.0, s, max_w))
+    }
+
     pub(super) fn fit(&self, f: FontId, size: f32, s: &str, max_w: f32) -> String {
         if self.fonts.measure(f, size, s) <= max_w {
             return s.to_string();
@@ -640,7 +652,8 @@ impl App {
             match *opt {
                 Seg::Text(s) => {
                     let col = t.muted.mix(t.text2, hv).mix(t.text, selected);
-                    self.text_center(c, self.f.sans_med, 13.0, cx, cy, s, col);
+                    let (size, s) = self.fit_shrink(self.f.sans_med, 13.0, s, seg_w - 10.0);
+                    self.text_center(c, self.f.sans_med, size, cx, cy, &s, col);
                 }
                 Seg::Icon(icon) => {
                     let col = t.muted.mix(t.text, hv * 0.7).mix(t.accent, selected);
@@ -861,11 +874,17 @@ impl App {
             changed = Some(((cur - input.wheel.signum() as i32).clamp(0, count - 1)) as f32);
         }
         let (fx, fy) = field.center();
-        draw_icon(c, Icon::ChevronLeft, field.x + 10.0, fy, 12.0, t.muted.mix(t.text2, hv));
-        draw_icon(c, Icon::ChevronRight, field.right() - 10.0, fy, 12.0, t.muted.mix(t.text2, hv));
         let label = info.format(changed.unwrap_or(value));
-        let label = self.fit(self.f.sans_med, 12.0, &label, field.w - 34.0);
-        self.text_center(c, self.f.sans_med, 12.0, fx, fy, &label, t.text);
+        // A long choice pulls the arrows to the edges before it gets cut.
+        let (mut size, mut shown) = self.fit_shrink(self.f.sans_med, 12.0, &label, field.w - 34.0);
+        let mut inset = 10.0;
+        if shown != label {
+            (size, shown) = self.fit_shrink(self.f.sans_med, 12.0, &label, field.w - 22.0);
+            inset = 6.0;
+        }
+        draw_icon(c, Icon::ChevronLeft, field.x + inset, fy, 12.0 - (10.0 - inset) * 0.5, t.muted.mix(t.text2, hv));
+        draw_icon(c, Icon::ChevronRight, field.right() - inset, fy, 12.0 - (10.0 - inset) * 0.5, t.muted.mix(t.text2, hv));
+        self.text_center(c, self.f.sans_med, size, fx, fy, &shown, t.text);
         changed
     }
 
