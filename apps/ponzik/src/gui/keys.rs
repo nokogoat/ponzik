@@ -5,6 +5,7 @@
 //! les dièses sur les rangées intermédiaires.
 
 use ponzik_engine::{Command, Note, PlayMode, TICKS_PER_STEP};
+use ponzik_i18n::{tr, tr_fmt};
 
 use super::Input;
 use super::app::App;
@@ -99,7 +100,7 @@ impl App {
         let note = Note { start: q as u32, len: (len.round() as u32).max(TICKS_PER_STEP / 2), key: h.key, vel: h.vel };
         if h.channel < self.project.channels.len() {
             self.project.add_note(pat, h.channel, note);
-            self.commit("Enregistrer des notes");
+            self.commit(tr("Record notes"));
         }
     }
 
@@ -120,11 +121,11 @@ impl App {
             match (code, down) {
                 (OCTAVE_DOWN, true) => {
                     self.keyboard_octave = (self.keyboard_octave - 1).max(0);
-                    self.toast(&format!("Clavier : octave {}", self.keyboard_octave));
+                    self.toast(&tr_fmt!("Keyboard: octave {}", self.keyboard_octave));
                 }
                 (OCTAVE_UP, true) => {
                     self.keyboard_octave = (self.keyboard_octave + 1).min(8);
-                    self.toast(&format!("Clavier : octave {}", self.keyboard_octave));
+                    self.toast(&tr_fmt!("Keyboard: octave {}", self.keyboard_octave));
                 }
                 (code, true) => {
                     if self.held.iter().any(|h| h.code == code) {

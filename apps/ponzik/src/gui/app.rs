@@ -9,6 +9,7 @@ use ponzik_dsp::spectrum::SpectrumAnalyzer;
 use ponzik_engine::mixer::{MASTER, TRACKS};
 use ponzik_engine::registry;
 use ponzik_engine::{Command, EngineHandle, PlayMode, Sample, TICKS_PER_BAR, TICKS_PER_STEP};
+use ponzik_i18n::{tr, tr_ctx, tr_fmt, tr_noop};
 use ponzik_project::autosave::{self, Autosaver};
 use ponzik_project::{ChordKind, EffectDef, InstrumentDef, Project, ScaleKind, TrackKind};
 use ponzik_ui::{Anim, Canvas, Color, FontId, Fonts, Rect, embedded};
@@ -56,12 +57,12 @@ impl View {
 
     pub fn label(self) -> &'static str {
         match self {
-            View::Rack => "Channel Rack",
-            View::Piano => "Piano roll",
-            View::Playlist => "Playlist",
-            View::Session => "Session",
-            View::Mixer => "Mixer",
-            View::Lab => "Sample Lab",
+            View::Rack => tr("Channel Rack"),
+            View::Piano => tr("Piano roll"),
+            View::Playlist => tr("Playlist"),
+            View::Session => tr("Session"),
+            View::Mixer => tr("Mixer"),
+            View::Lab => tr("Sample Lab"),
         }
     }
 
@@ -684,7 +685,7 @@ impl App {
                 return;
             }
             "history" => {
-                for label in ["Poser une note", "Déplacer des notes", "Tempo", "Gamme", "Ajouter un effet"] {
+                for label in [tr("Place a note"), tr("Move notes"), tr("Tempo"), tr("Scale"), tr("Add an effect")] {
                     self.project.bpm += 1.0;
                     self.commit(label);
                     self.last_edit = None;
@@ -733,7 +734,7 @@ impl App {
         });
         match Autosaver::start(&dir, &self.project, 0.0) {
             Ok(a) => self.autosaver = Some(a),
-            Err(e) => eprintln!("sauvegarde automatique : {e}"),
+            Err(e) => eprintln!("autosave: {e}"),
         }
     }
 
@@ -742,7 +743,7 @@ impl App {
         if let Some(a) = &mut self.autosaver
             && let Err(e) = a.tick(&self.project, now)
         {
-            eprintln!("sauvegarde automatique : {e}");
+            eprintln!("autosave: {e}");
         }
     }
 
@@ -751,7 +752,7 @@ impl App {
         if let Some(a) = self.autosaver.take()
             && let Err(e) = a.close()
         {
-            eprintln!("sauvegarde automatique : {e}");
+            eprintln!("autosave: {e}");
         }
     }
 
@@ -777,22 +778,22 @@ impl App {
         let cy = r.y + r.h * 0.5;
         c.fill_circle(r.x + 28.0, cy, 16.0, t.accent.alpha(0.14 * a));
         draw_icon(c, Icon::Reset, r.x + 28.0, cy, 16.0, t.accent.alpha(a));
-        self.text(c, self.f.sans_med, 14.0, r.x + 54.0, cy - 8.0, "Récupérer ?", t.text.alpha(a));
+        self.text(c, self.f.sans_med, 14.0, r.x + 54.0, cy - 8.0, tr("Recover?"), t.text.alpha(a));
         self.text_fit(c, self.f.sans, 11.0, r.x + 54.0, cy + 10.0, &detail, r.w - 54.0 - 88.0, t.muted.alpha(a));
         let yes = Rect::new(r.right() - 82.0, cy - 17.0, 34.0, 34.0);
         let no = Rect::new(r.right() - 44.0, cy - 17.0, 34.0, 34.0);
-        if self.icon_button(c, input, wid("recover-yes", 0, 0), yes, Icon::Check, true, ("Rouvrir la sauvegarde automatique", "")) {
+        if self.icon_button(c, input, wid("recover-yes", 0, 0), yes, Icon::Check, true, (tr("Reopen the autosave"), "")) {
             self.recovery = None;
             match compat::load_project(&path) {
                 Ok(p) => {
                     self.replace_project(p, None);
                     self.modified = true;
-                    self.toast("Projet récupéré · Ctrl+S pour l'enregistrer");
+                    self.toast(tr("Project recovered · Ctrl+S to save it"));
                 }
                 Err(e) => self.toast(&e),
             }
         }
-        if self.icon_button(c, input, wid("recover-no", 0, 0), no, Icon::Close, false, ("Ignorer", "")) {
+        if self.icon_button(c, input, wid("recover-no", 0, 0), no, Icon::Close, false, (tr("Dismiss"), "")) {
             self.recovery = None;
         }
     }
@@ -801,7 +802,7 @@ impl App {
 
     pub fn send(&mut self, cmd: Command) {
         if let Err(cmd) = self.engine.send(cmd) {
-            eprintln!("file de commandes pleine : {cmd:?}");
+            eprintln!("command queue full: {cmd:?}");
         }
     }
 
@@ -846,7 +847,7 @@ impl App {
         if let Some((label, prev)) = self.past.pop() {
             let current = std::mem::replace(&mut self.project, prev);
             self.future.push((label.clone(), current));
-            self.after_history(&format!("Annulé : {label}"));
+            self.after_history(&tr_fmt!("Undone: {}", label));
         }
     }
 
@@ -854,7 +855,7 @@ impl App {
         if let Some((label, next)) = self.future.pop() {
             let current = std::mem::replace(&mut self.project, next);
             self.past.push((label.clone(), current));
-            self.after_history(&format!("Rétabli : {label}"));
+            self.after_history(&tr_fmt!("Redone: {}", label));
         }
     }
 
@@ -876,7 +877,7 @@ impl App {
             moved = true;
         }
         if moved {
-            let msg = self.past.last().map_or("Retour au départ".to_string(), |(l, _)| format!("Retour à : {l}"));
+            let msg = self.past.last().map_or(tr("Back to the start").to_string(), |(l, _)| tr_fmt!("Back to: {}", l));
             self.after_history(&msg);
         }
     }
@@ -1003,7 +1004,7 @@ impl App {
         }
         let secs = self.samples[path].duration() as f64;
         let ticks = (secs * self.project.bpm as f64 / 60.0 * ponzik_engine::PPQ as f64).round().max(24.0) as u32;
-        let name = std::path::Path::new(path).file_stem().map_or("Audio".to_string(), |s| s.to_string_lossy().into_owned());
+        let name = std::path::Path::new(path).file_stem().map_or(tr("Audio").to_string(), |s| s.to_string_lossy().into_owned());
         let used: Vec<usize> = self.project.channels.iter().map(|c| c.track).collect();
         let track = (1..TRACKS).find(|t| !used.contains(t) && !self.track_in_use(*t)).unwrap_or(1);
         self.project.tracks[track].name = name.clone();
@@ -1023,8 +1024,8 @@ impl App {
             take: 0,
             muted: false,
         });
-        self.commit("Poser un clip audio");
-        self.toast(&format!("{name} posé dans la playlist"));
+        self.commit(tr("Place an audio clip"));
+        self.toast(&tr_fmt!("{} placed in the playlist", name));
     }
 
     pub fn selected_channel(&self) -> Option<usize> {
@@ -1044,10 +1045,10 @@ impl App {
 
     pub fn add_instrument(&mut self, kind: &str) {
         let Some(info) = registry::instrument_kind(kind) else { return };
-        let idx = self.project.add_channel(info.name, InstrumentDef::new(kind), 60);
+        let idx = self.project.add_channel(tr(info.name), InstrumentDef::new(kind), 60);
         self.focus = Focus::Channel(idx);
-        self.commit("Ajouter un canal");
-        self.toast(&format!("{} ajouté au rack", info.name));
+        self.commit(tr("Add a channel"));
+        self.toast(&tr_fmt!("{} added to the rack", tr(info.name)));
     }
 
     pub fn add_sample_channel(&mut self, path: &str) {
@@ -1056,33 +1057,33 @@ impl App {
         }
         let name = std::path::Path::new(path)
             .file_stem()
-            .map_or("Échantillon".to_string(), |s| s.to_string_lossy().into_owned());
+            .map_or(tr("Sample").to_string(), |s| s.to_string_lossy().into_owned());
         let mut def = InstrumentDef::new("sampler");
         def.sample = Some(path.to_string());
         if registry::instrument_kind("sampler").is_none() {
-            self.toast("Le sampler n'est pas encore disponible");
+            self.toast(tr("The sampler is not available yet"));
             return;
         }
         let idx = self.project.add_channel(name.clone(), def, 60);
         self.focus = Focus::Channel(idx);
-        self.commit("Ajouter un échantillon");
-        self.toast(&format!("{name} ajouté au rack"));
+        self.commit(tr("Add a sample"));
+        self.toast(&tr_fmt!("{} added to the rack", name));
     }
 
     pub fn add_effect(&mut self, track: usize, kind: &str) {
         let Some(info) = registry::effect_kind(kind) else { return };
         if self.project.tracks[track].kind == TrackKind::Vca {
-            self.toast("Un VCA ne fait passer aucun son : mettez l'effet sur un bus");
+            self.toast(tr("A VCA carries no sound: put the effect on a bus"));
             return;
         }
         let Some(slot) = self.project.tracks[track].inserts.iter().position(Option::is_none) else {
-            self.toast("Plus d'emplacement libre sur cette piste");
+            self.toast(tr("No free slot left on this track"));
             return;
         };
         self.project.tracks[track].inserts[slot] = Some(EffectDef::new(kind));
-        self.commit("Ajouter un effet");
+        self.commit(tr("Add an effect"));
         let name = self.project.tracks[track].name.clone();
-        self.toast(&format!("{} ajouté sur {name}", info.name));
+        self.toast(&tr_fmt!("{} added on {}", tr(info.name), name));
     }
 
     /// Solo d'une piste : elle, ses destinations jusqu'au master, et rien d'autre.
@@ -1145,7 +1146,7 @@ impl App {
             compat::export_stems(&self.project, self.sample_rate, &loader)
         };
         match result {
-            Ok((dir, n)) => self.toast(&format!("{n} stems exportés dans {}", dir.display())),
+            Ok((dir, n)) => self.toast(&tr_fmt!("{} stems exported to {}", n, dir.display().to_string())),
             Err(e) => self.toast(&e),
         }
     }
@@ -1165,7 +1166,7 @@ impl App {
         }
         if self.project.mode != mode {
             self.project.mode = mode;
-            self.commit("Mode de lecture");
+            self.commit(tr("Playback mode"));
             self.send(Command::Locate(0.0));
         }
     }
@@ -1178,7 +1179,7 @@ impl App {
         if let PlayMode::Pattern(_) = self.project.mode {
             self.project.mode = PlayMode::Pattern(p);
         }
-        self.commit("Changer de pattern");
+        self.commit(tr("Change pattern"));
     }
 
     /// Lecture / pause : la pause garde la position.
@@ -1218,14 +1219,14 @@ impl App {
             let bpm = ((bpm * 10.0).round() / 10.0).clamp(40.0, 300.0);
             if bpm != self.project.bpm {
                 self.project.bpm = bpm;
-                self.commit("Tempo");
+                self.commit(tr("Tempo"));
             }
         }
     }
 
     pub fn toggle_count_in(&mut self) {
         self.count_in = !self.count_in;
-        self.toast(if self.count_in { "Pré-compte d'une mesure activé" } else { "Pré-compte désactivé" });
+        self.toast(if self.count_in { tr("One-bar count-in on") } else { tr("Count-in off") });
     }
 
     /// Lecture / arrêt façon FL Studio (Espace) : l'arrêt revient au marqueur de départ.
@@ -1365,7 +1366,7 @@ impl App {
                 self.project_path = Some(path.clone());
                 self.modified = false;
                 self.mark_saved();
-                self.toast(&format!("Enregistré dans {}", path.display()));
+                self.toast(&tr_fmt!("Saved to {}", path.display().to_string()));
             }
             Err(e) => self.toast(&e),
         }
@@ -1379,7 +1380,7 @@ impl App {
             Ok(p) => {
                 let name = p.name.clone();
                 self.replace_project(p, Some(path));
-                self.toast(&format!("{name} ouvert"));
+                self.toast(&tr_fmt!("{} opened", name));
             }
             Err(e) => self.toast(&e),
         }
@@ -1411,10 +1412,9 @@ impl App {
         };
         match result {
             Ok((secs, gain)) if gain.abs() >= 0.05 => {
-                let gain = format!("{gain:+.1}").replace('.', ",");
-                self.toast(&format!("Exporté : {} ({secs:.1} s, {gain} dB)", path.display()));
+                self.toast(&tr_fmt!("Exported: {} ({:.1} s, {:+.1} dB)", path.display().to_string(), secs, gain));
             }
-            Ok((secs, _)) => self.toast(&format!("Exporté : {} ({secs:.1} s)", path.display())),
+            Ok((secs, _)) => self.toast(&tr_fmt!("Exported: {} ({:.1} s)", path.display().to_string(), secs)),
             Err(e) => self.toast(&e),
         }
     }
@@ -1523,15 +1523,15 @@ impl App {
         self.release_all_held();
         let key = self.key_label(super::keymap::Shortcut::TypingKeyboard);
         self.toast(&if self.typing_keyboard {
-            format!("Clavier musical activé : les lettres jouent des notes ({key} pour revenir)")
+            tr_fmt!("Musical typing on: letters play notes ({} to go back)", key)
         } else {
-            "Clavier musical désactivé".into()
+            tr("Musical typing off").into()
         });
     }
 
     pub fn set_view(&mut self, v: View) {
         if !self.view_shown(v) {
-            self.toast(&format!("{} est masqué · ☰ Réglages pour l'afficher", v.label()));
+            self.toast(&tr_fmt!("{} is hidden · ☰ Settings to show it", v.label()));
             return;
         }
         if v != self.view {
@@ -1639,7 +1639,7 @@ impl App {
         let k_browser = key(S::ToggleBrowser);
         let (k_pal, k_save, k_redo, k_undo, k_panel, k_hist) =
             (key(S::Palette), key(S::Save), key(S::Redo), key(S::Undo), key(S::TogglePanel), key(S::History));
-        if self.icon_button(c, input, wid("tb-sidebar", 0, 0), Rect::new(12.0, cy - 16.0, 32.0, 32.0), Icon::Sidebar, self.sidebar, ("Navigateur", &k_browser)) {
+        if self.icon_button(c, input, wid("tb-sidebar", 0, 0), Rect::new(12.0, cy - 16.0, 32.0, 32.0), Icon::Sidebar, self.sidebar, (tr("Browser"), &k_browser)) {
             self.sidebar = !self.sidebar;
         }
         // Marque : le nom et sa LED, qui s'allume quand ça joue.
@@ -1660,7 +1660,7 @@ impl App {
             self.toggle_play();
         }
         if hov {
-            self.set_tip(if self.playing { "Pause" } else { "Lecture" }, &k_play);
+            self.set_tip(if self.playing { tr("Pause") } else { tr("Play") }, &k_play);
         }
         let hv = self.hover_anim(wid("tb-play", 0, 0), hov);
         let on = self.anim.to(wid("tb-play-on", 0, 0), self.playing as u8 as f32, T_HOVER);
@@ -1669,7 +1669,7 @@ impl App {
         let (px, py) = play.center();
         draw_icon(c, if self.playing { Icon::Pause } else { Icon::Play }, px, py, 16.0, t.bg_deep.mix(t.on_accent, on));
         x += 46.0;
-        if self.icon_button(c, input, wid("tb-stop", 0, 0), Rect::new(x, cy - 18.0, 40.0, 36.0), Icon::Stop, false, ("Arrêt", "")) {
+        if self.icon_button(c, input, wid("tb-stop", 0, 0), Rect::new(x, cy - 18.0, 40.0, 36.0), Icon::Stop, false, (tr("Stop"), "")) {
             self.stop();
         }
         x += 54.0;
@@ -1681,7 +1681,7 @@ impl App {
             PlayMode::Session => 2,
         };
         let icons = [Icon::Rack, Icon::Playlist, Icon::Session];
-        let tips = [("Jouer le pattern", k_mode.as_str()), ("Jouer le morceau", k_mode.as_str()), ("Jouer la session", "")];
+        let tips = [(tr("Play the pattern"), k_mode.as_str()), (tr("Play the song"), k_mode.as_str()), (tr("Play the session"), "")];
         if self.bar_shown(Bar::Mode) {
             if let Some(m) = self.icon_segmented(c, input, wid("tb-mode", 0, 0), Rect::new(x, cy - 18.0, 132.0, 36.0), &icons, &tips, mode) {
                 let cur = self.project.current_pattern;
@@ -1701,16 +1701,16 @@ impl App {
             x += 198.0;
         }
 
-        let bpm_text = format!("{:.1}", self.project.bpm).replace('.', ",");
+        let bpm_text = ponzik_i18n::num(self.project.bpm as f64, 1);
         let bpm_r = Rect::new(x, cy - 18.0, 116.0, 36.0);
         if let Some(bpm) = self.drag_field(c, input, wid("tb-bpm", 0, 0), bpm_r, self.project.bpm, 0.25, 1.0, &bpm_text, "BPM") {
             let bpm = ((bpm * 10.0).round() / 10.0).clamp(40.0, 300.0);
             if bpm != self.project.bpm {
                 self.project.bpm = bpm;
-                self.commit("Tempo");
+                self.commit(tr("Tempo"));
             }
         }
-        self.tip_zone(input, bpm_r, "Tempo\nGlisser ou molette · Maj : fin", "");
+        self.tip_zone(input, bpm_r, tr("Tempo\nDrag or scroll · Shift: fine"), "");
         x += 120.0;
         if self.bar_shown(Bar::Tap) {
             self.tap_button(c, input, Rect::new(x, cy - 18.0, 40.0, 36.0), &k_tap);
@@ -1719,7 +1719,7 @@ impl App {
         if self.bar_shown(Bar::Position) {
             let pos_r = Rect::new(x, cy - 18.0, 132.0, 36.0);
             self.position_field(c, pos_r);
-            self.tip_zone(input, pos_r, "Position\nmesure . temps . pas", "");
+            self.tip_zone(input, pos_r, tr("Position\nbar . beat . step"), "");
             x += 138.0;
         }
         if self.bar_shown(Bar::Scale) {
@@ -1727,7 +1727,7 @@ impl App {
             x += 134.0;
         }
         if self.bar_shown(Bar::Metronome) {
-            if self.icon_button(c, input, wid("tb-metro", 0, 0), Rect::new(x, cy - 18.0, 36.0, 36.0), Icon::Metronome, self.metronome, ("Métronome", &k_metro)) {
+            if self.icon_button(c, input, wid("tb-metro", 0, 0), Rect::new(x, cy - 18.0, 36.0, 36.0), Icon::Metronome, self.metronome, (tr("Metronome"), &k_metro)) {
                 self.metronome = !self.metronome;
                 let m = self.metronome;
                 self.send(Command::SetMetronome(m));
@@ -1738,7 +1738,7 @@ impl App {
             self.record_button(c, input, Rect::new(x, cy - 18.0, 36.0, 36.0), &k_rec);
             x += 40.0;
             let mic = Rect::new(x, cy - 18.0, 36.0, 36.0);
-            if self.icon_button(c, input, wid("tb-input", 0, 0), mic, Icon::Mic, self.rec.panel, ("Recording panel: input, level, monitoring, latency", "")) {
+            if self.icon_button(c, input, wid("tb-input", 0, 0), mic, Icon::Mic, self.rec.panel, (tr("Recording panel: input, level, monitoring, latency"), "")) {
                 self.toggle_record_panel((mic.x + mic.w * 0.5, mic.bottom() + 6.0));
             }
             // Témoin de niveau d'entrée sous l'icône, quand une piste est armée.
@@ -1750,7 +1750,7 @@ impl App {
             x += 40.0;
         }
         if self.bar_shown(Bar::Keyboard) {
-            if self.icon_button(c, input, wid("tb-keys", 0, 0), Rect::new(x, cy - 18.0, 36.0, 36.0), Icon::Keyboard, self.typing_keyboard, ("Clavier musical", &k_keys)) {
+            if self.icon_button(c, input, wid("tb-keys", 0, 0), Rect::new(x, cy - 18.0, 36.0, 36.0), Icon::Keyboard, self.typing_keyboard, (tr("Musical typing"), &k_keys)) {
                 self.toggle_typing_keyboard();
             }
             x += 40.0;
@@ -1760,13 +1760,13 @@ impl App {
         // Droite : fichier et historique, puis la charge DSP si la place le permet.
         let mut rx = r.w - 12.0 - 32.0;
         let buttons = [
-            (Icon::Menu, "tb-menu", ("Menu", "")),
-            (Icon::Search, "tb-search", ("Tout trouver", k_pal.as_str())),
-            (Icon::Panel, "tb-panel", ("Appareils", k_panel.as_str())),
-            (Icon::Save, "tb-save", ("Enregistrer", k_save.as_str())),
-            (Icon::Redo, "tb-redo", ("Rétablir", k_redo.as_str())),
-            (Icon::Undo, "tb-undo", ("Annuler", k_undo.as_str())),
-            (Icon::History, "tb-history", ("Historique", k_hist.as_str())),
+            (Icon::Menu, "tb-menu", (tr("Menu"), "")),
+            (Icon::Search, "tb-search", (tr("Find anything"), k_pal.as_str())),
+            (Icon::Panel, "tb-panel", (tr("Devices"), k_panel.as_str())),
+            (Icon::Save, "tb-save", (tr("Save"), k_save.as_str())),
+            (Icon::Redo, "tb-redo", (tr("Redo"), k_redo.as_str())),
+            (Icon::Undo, "tb-undo", (tr("Undo"), k_undo.as_str())),
+            (Icon::History, "tb-history", (tr("History"), k_hist.as_str())),
         ];
         for (icon, name, tip) in buttons {
             if rx < cluster_end + 8.0 {
@@ -1805,7 +1805,7 @@ impl App {
                 let col = if load > 0.85 { t.negative } else { t.muted.mix(t.text2, load) };
                 c.fill_rrect(Rect::new(gauge.x, gauge.y, (gauge.w * load).max(6.0), gauge.h), 3.0, col);
             }
-            let tip = format!("Charge DSP : {:.0} %", self.load * 100.0);
+            let tip = tr_fmt!("DSP load: {:.0}%", self.load * 100.0);
             self.tip_zone(input, gauge.inset(-8.0), &tip, "");
         }
 
@@ -1824,7 +1824,7 @@ impl App {
                 c.fill_rrect(area, 8.0, t.raised.alpha(hv));
             }
             if hov {
-                self.set_tip("Projet\nDouble-clic : renommer", "");
+                self.set_tip(tr("Project\nDouble-click: rename"), "");
             }
             if hov && input.double {
                 self.open_popup(Popup::Rename { target: Rename::Project, text: name }, area);
@@ -1843,17 +1843,17 @@ impl App {
         let next = Rect::new(r.right() - 30.0, r.y + 2.0, 28.0, r.h - 4.0);
         use super::keymap::Shortcut as S;
         let (k_prev, k_next, k_new) = (self.key_label(S::PrevPattern), self.key_label(S::NextPattern), self.key_label(S::NewPattern));
-        if self.icon_button(c, input, wid("pat-prev", 0, 0), prev, Icon::ChevronLeft, false, ("Pattern précédent", &k_prev)) && cur > 0 {
+        if self.icon_button(c, input, wid("pat-prev", 0, 0), prev, Icon::ChevronLeft, false, (tr("Previous pattern"), &k_prev)) && cur > 0 {
             self.select_pattern(cur - 1);
         }
-        let next_tip = if cur + 1 < n { ("Pattern suivant", k_next.as_str()) } else { ("Nouveau pattern", k_new.as_str()) };
+        let next_tip = if cur + 1 < n { (tr("Next pattern"), k_next.as_str()) } else { (tr("New pattern"), k_new.as_str()) };
         if self.icon_button(c, input, wid("pat-next", 0, 0), next, Icon::ChevronRight, false, next_tip) {
             if cur + 1 < n {
                 self.select_pattern(cur + 1);
             } else {
                 let p = self.project.add_pattern();
                 self.select_pattern(p);
-                self.toast("Nouveau pattern");
+                self.toast(tr("New pattern"));
             }
         }
         let mid = Rect::new(prev.right(), r.y, next.x - prev.right(), r.h);
@@ -1864,7 +1864,7 @@ impl App {
             self.open_popup(Popup::Patterns, r);
         }
         if hov {
-            self.set_tip("Patterns", "");
+            self.set_tip(tr("Patterns"), "");
         }
         if hov && input.wheel != 0.0 {
             let p = (cur as i32 - input.wheel.signum() as i32).clamp(0, n as i32 - 1) as usize;
@@ -1896,9 +1896,9 @@ impl App {
         self.text_fit(c, self.f.sans_med, 13.0, r.x + 34.0, cy, &label, r.w - 42.0, if chromatic { t.text2 } else { t.text });
         if hov {
             let tip = if chromatic {
-                "Gamme du projet\nAucune : toutes les notes".to_string()
+                tr("Project scale\nNone: every note").to_string()
             } else {
-                format!("Gamme du projet\n{} {} · molette : tonalité", key_name(key), scale.name().to_lowercase())
+                tr_fmt!("Project scale\n{} {} · scroll: key", key_name(key), tr(scale.name()).to_lowercase())
             };
             self.set_tip(&tip, "");
         }
@@ -1907,7 +1907,7 @@ impl App {
         }
         if hov && input.wheel != 0.0 && !chromatic {
             self.project.key = ((key as i32 + input.wheel.signum() as i32).rem_euclid(12)) as u8;
-            self.commit("Tonalité");
+            self.commit(tr("Key"));
         }
     }
 
@@ -1936,7 +1936,7 @@ impl App {
         c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, Color::rgba(0, 0, 0, (90.0 * open) as u8));
         c.fill_rrect(r, 14.0, t.panel);
         c.stroke_rrect(r, 14.0, 1.0, t.hairline.alpha(1.6));
-        self.text(c, self.f.sans_med, 12.0, r.x + 16.0, r.y + 20.0, "Gamme", t.muted);
+        self.text(c, self.f.sans_med, 12.0, r.x + 16.0, r.y + 20.0, tr("Scale"), t.muted);
 
         let (key, scale) = (self.project.key, self.project.scale);
         let chromatic = scale == ScaleKind::Chromatic;
@@ -1957,7 +1957,7 @@ impl App {
             }
             if hov && input.pressed && !cur {
                 self.project.key = k;
-                self.commit("Tonalité");
+                self.commit(tr("Key"));
             }
         }
         let sep_y = r.y + 36.0 + 2.0 * key_h + GAP + 8.0;
@@ -1967,7 +1967,7 @@ impl App {
         let mut y = sep_y + 4.0;
         let mut cells = Vec::new();
         for (g, list) in &groups {
-            self.text(c, self.f.sans_med, 11.0, r.x + 16.0, y + HEAD * 0.5 + 2.0, g, t.muted);
+            self.text(c, self.f.sans_med, 11.0, r.x + 16.0, y + HEAD * 0.5 + 2.0, tr(g), t.muted);
             y += HEAD;
             for (j, &sc) in list.iter().enumerate() {
                 cells.push((sc, Rect::new(r.x + 12.0 + (j % 2) as f32 * (col_w + GAP), y + (j / 2) as f32 * row_h, col_w, row_h - 4.0)));
@@ -1986,10 +1986,10 @@ impl App {
                 c.fill_rrect(Rect::new(row.x + 4.0, cy - 6.0, 3.0, 12.0), 1.5, t.accent);
             }
             let ink = t.text2.mix(t.text, hv.max(cur as u8 as f32));
-            self.text_fit(c, self.f.sans_med, 12.0, row.x + 14.0, cy, sc.name(), row.w - 20.0, ink);
+            self.text_fit(c, self.f.sans_med, 12.0, row.x + 14.0, cy, tr(sc.name()), row.w - 20.0, ink);
             if hov && input.pressed && !cur {
                 self.project.scale = sc;
-                self.commit("Gamme");
+                self.commit(tr("Scale"));
             }
         }
         c.set_clip(Some(prev));
@@ -2036,7 +2036,7 @@ impl App {
         c.fill_rrect(body, 10.0, t.raised.mix(t.raised_hi, hv).mix(t.accent, flash * 0.35));
         c.stroke_rrect(body, 10.0, 1.0, t.hairline.mix(t.accent, flash));
         let (cx, cy) = r.center();
-        self.text_center(c, self.f.mono_med, 11.0, cx, cy - 3.0, "TAP", t.text2.mix(t.text, hv).mix(t.accent, flash));
+        self.text_center(c, self.f.mono_med, 11.0, cx, cy - 3.0, tr("TAP"), t.text2.mix(t.text, hv).mix(t.accent, flash));
         let fresh = self.taps.last().is_some_and(|&last| self.time - last <= 2.0);
         let n = if fresh { self.taps.len() } else { 0 };
         for k in 0..4 {
@@ -2044,7 +2044,7 @@ impl App {
             c.fill_circle(cx - 7.5 + k as f32 * 5.0, cy + 8.0, 1.3, t.raised_hi.mix(t.accent, on));
         }
         if hov {
-            self.set_tip("Tap tempo\nTape le temps : moyenne des 4 derniers appuis", key);
+            self.set_tip(tr("Tap tempo\nTap the beat: average of the last 4 taps"), key);
         }
     }
 
@@ -2083,15 +2083,15 @@ impl App {
         }
         if rhov {
             let tip = if self.count_in {
-                "Enregistrer les notes et l'audio\nPré-compte d'une mesure · clic droit : couper"
+                tr("Record notes and audio\nOne-bar count-in · right-click: turn off")
             } else {
-                "Enregistrer les notes et l'audio\nSans pré-compte · clic droit : l'activer"
+                tr("Record notes and audio\nNo count-in · right-click: turn on")
             };
             self.set_tip(tip, key);
         }
         if rhov && input.pressed {
             self.record = !self.record;
-            self.toast(if self.record { "Enregistrement armé" } else { "Enregistrement désarmé" });
+            self.toast(if self.record { tr("Recording armed") } else { tr("Recording disarmed") });
         }
         if rhov && input.right_pressed {
             self.toggle_count_in();
@@ -2165,12 +2165,12 @@ impl App {
     fn browser_entries(&self) -> Vec<(usize, String, String, Payload)> {
         let mut v = Vec::new();
         for k in registry::instruments() {
-            let payload = Payload::Instrument { kind: k.id.into(), name: k.name.into() };
-            v.push((0, k.name.to_string(), k.description.to_string(), payload));
+            let payload = Payload::Instrument { kind: k.id.into(), name: tr(k.name).into() };
+            v.push((0, tr(k.name).to_string(), tr(k.description).to_string(), payload));
         }
         for k in registry::effects() {
-            let payload = Payload::Effect { kind: k.id.into(), name: k.name.into() };
-            v.push((1, k.name.to_string(), k.description.to_string(), payload));
+            let payload = Payload::Effect { kind: k.id.into(), name: tr(k.name).into() };
+            v.push((1, tr(k.name).to_string(), tr(k.description).to_string(), payload));
         }
         for p in &self.sample_files {
             let name = p.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
@@ -2180,7 +2180,7 @@ impl App {
         let clap = self.plugins.iter().map(|p| ("CLAP", p.kind(), &p.name, &p.vendor, p.is_instrument));
         let vst3 = self.vst3_plugins.iter().map(|p| ("VST 3", p.kind(), &p.name, &p.vendor, p.is_instrument));
         for (format, kind, name, vendor, is_instrument) in clap.chain(vst3) {
-            let what = if is_instrument { "Instrument" } else { "Effet" };
+            let what = if is_instrument { tr("Instrument") } else { tr("Effect") };
             let detail =
                 if vendor.is_empty() { format!("{what} {format}") } else { format!("{what} {format} · {vendor}") };
             let payload = if is_instrument {
@@ -2195,7 +2195,7 @@ impl App {
 
     fn sidebar_area(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
         const CATS: [(Icon, &str); 4] =
-            [(Icon::Instrument, "Instruments"), (Icon::Effect, "Effets"), (Icon::Sample, "Échantillons"), (Icon::Plugin, "Plugins CLAP et VST 3")];
+            [(Icon::Instrument, tr_noop("Instruments")), (Icon::Effect, tr_noop("Effects")), (Icon::Sample, tr_noop("Samples")), (Icon::Plugin, tr_noop("CLAP and VST 3 plugins"))];
         let t = self.theme;
         c.fill_rect(r, t.bg_deep);
         c.fill_rect(Rect::new(r.right() - 1.0, r.y, 1.0, r.h), t.hairline);
@@ -2243,7 +2243,7 @@ impl App {
         draw_icon(c, Icon::Search, field.x + 18.0, field.y + 18.0, 14.0, t.muted);
         let query = self.sidebar_query.clone();
         if query.is_empty() && !self.sidebar_focus {
-            self.text(c, self.f.sans, 13.0, field.x + 34.0, field.y + 18.0, "Rechercher", t.muted);
+            self.text(c, self.f.sans, 13.0, field.x + 34.0, field.y + 18.0, tr("Search"), t.muted);
             if fhv > 0.01 {
                 let key = self.key_label(super::keymap::Shortcut::Search);
                 if !key.is_empty() {
@@ -2263,7 +2263,7 @@ impl App {
         let searching = !query.trim().is_empty();
         let cats = Rect::new(inner_x, field.bottom() + 10.0, w, 36.0);
         let icons: Vec<Icon> = CATS.iter().map(|c| c.0).collect();
-        let tips: Vec<(&str, &str)> = CATS.iter().map(|c| (c.1, "")).collect();
+        let tips: Vec<(&str, &str)> = CATS.iter().map(|c| (tr(c.1), "")).collect();
         if let Some(i) = self.icon_segmented(c, input, wid("sb-cats", 0, 0), cats, &icons, &tips, self.sidebar_tab) {
             self.sidebar_tab = i;
             self.sidebar_scroll = 0.0;
@@ -2313,10 +2313,10 @@ impl App {
         }
         if entries.is_empty() {
             let (icon, line) = match (searching, self.sidebar_tab) {
-                (true, _) => (Icon::Search, "Rien de trouvé"),
-                (_, 2) => (Icon::Sample, "Aucun fichier WAV"),
-                (_, 3) => (Icon::Plugin, "Aucun plugin CLAP ni VST 3"),
-                _ => (Icon::Info, "Vide"),
+                (true, _) => (Icon::Search, tr("Nothing found")),
+                (_, 2) => (Icon::Sample, tr("No WAV files")),
+                (_, 3) => (Icon::Plugin, tr("No CLAP or VST 3 plugins")),
+                _ => (Icon::Info, tr("Empty")),
             };
             self.empty_state(c, Rect::new(inner_x, list.y + 20.0, w, 120.0), icon, line);
         }
@@ -2340,7 +2340,7 @@ impl App {
             draw_icon(c, Icon::Plus, row.right() - 16.0, row.y + row.h * 0.5, 13.0, t.accent.alpha(hv));
         }
         if hov {
-            let tip = if detail.is_empty() { "Clic : ajouter · glisser : déposer".to_string() } else { format!("{detail}\nClic : ajouter · glisser : déposer") };
+            let tip = if detail.is_empty() { tr("Click: add · drag: drop").to_string() } else { tr_fmt!("{}\nClick: add · drag: drop", detail) };
             self.set_tip(&tip, "");
         }
         hov && input.pressed
@@ -2361,21 +2361,21 @@ impl App {
         let bars = |len: u32| format!("{}", len.div_ceil(TICKS_PER_BAR));
         match kind {
             Popup::AddInstrument { replace } => (
-                if replace.is_some() { "Remplacer par" } else { "Instruments" }.into(),
+                if replace.is_some() { tr("Replace with") } else { tr("Instruments") }.into(),
                 registry::instruments()
                     .iter()
-                    .map(|k| MenuItem::new(Icon::Instrument, k.name, Action::AddInstrument(k.id, *replace)).tip(k.description))
+                    .map(|k| MenuItem::new(Icon::Instrument, tr(k.name), Action::AddInstrument(k.id, *replace)).tip(tr(k.description)))
                     .collect(),
             ),
             Popup::AddEffect { track } => (
                 track_name(*track),
-                registry::effects().iter().map(|k| MenuItem::new(Icon::Effect, k.name, Action::AddEffect(*track, k.id)).tip(k.description)).collect(),
+                registry::effects().iter().map(|k| MenuItem::new(Icon::Effect, tr(k.name), Action::AddEffect(*track, k.id)).tip(tr(k.description))).collect(),
             ),
             Popup::AddNoteFx { channel, slot } => (
-                "Effets de notes".into(),
+                tr("Note effects").into(),
                 registry::note_fx()
                     .iter()
-                    .map(|k| MenuItem::new(super::notefx::icon(k.id), k.name, Action::AddNoteFx(*channel, *slot, k.id)).tip(k.description))
+                    .map(|k| MenuItem::new(super::notefx::icon(k.id), tr(k.name), Action::AddNoteFx(*channel, *slot, k.id)).tip(tr(k.description)))
                     .collect(),
             ),
             Popup::Patterns => {
@@ -2389,19 +2389,19 @@ impl App {
                         it
                     })
                     .collect();
-                v.push(MenuItem::new(Icon::Plus, "Nouveau", Action::NewPattern).sep());
-                v.push(MenuItem::new(Icon::Duplicate, "Dupliquer", Action::DuplicatePattern));
+                v.push(MenuItem::new(Icon::Plus, tr("New"), Action::NewPattern).sep());
+                v.push(MenuItem::new(Icon::Duplicate, tr("Duplicate"), Action::DuplicatePattern));
                 let cur = p.current_pattern;
                 let rename = Popup::Rename { target: Rename::Pattern(cur), text: p.patterns[cur].name.clone() };
-                v.push(MenuItem::new(Icon::Pencil, "Renommer", Action::Popup(rename)));
+                v.push(MenuItem::new(Icon::Pencil, tr("Rename"), Action::Popup(rename)));
                 if p.patterns.len() > 1 {
-                    v.push(MenuItem::new(Icon::Trash, "Supprimer", Action::DeletePattern).tip("Retire aussi ses clips"));
+                    v.push(MenuItem::new(Icon::Trash, tr("Delete"), Action::DeletePattern).tip(tr("Also removes its clips")));
                 }
-                ("Patterns".into(), v)
+                (tr("Patterns").into(), v)
             }
             Popup::OpenProject(files) => {
                 let items = if files.is_empty() {
-                    vec![MenuItem::new(Icon::Folder, "Aucun projet", Action::None).tip(&compat::projects_dir().display().to_string())]
+                    vec![MenuItem::new(Icon::Folder, tr("No projects"), Action::None).tip(&compat::projects_dir().display().to_string())]
                 } else {
                     files
                         .iter()
@@ -2412,7 +2412,7 @@ impl App {
                         })
                         .collect()
                 };
-                ("Projets".into(), items)
+                (tr("Projects").into(), items)
             }
             Popup::ChannelMenu(ch) => {
                 let ch = *ch;
@@ -2421,64 +2421,64 @@ impl App {
                 (
                     c.name.clone(),
                     vec![
-                        MenuItem::new(Icon::Piano, "Piano roll", Action::ChannelPianoRoll(ch)),
-                        MenuItem::new(Icon::Pencil, "Renommer", Action::Popup(rename)),
-                        MenuItem::new(Icon::Swap, "Remplacer", Action::Popup(Popup::AddInstrument { replace: Some(ch) })),
-                        MenuItem::new(Icon::Duplicate, "Dupliquer", Action::DuplicateChannel(ch)).tip("Mêmes réglages, sans les notes"),
-                        MenuItem::new(Icon::Trash, "Supprimer", Action::DeleteChannel(ch)).tip("Retire aussi ses notes"),
+                        MenuItem::new(Icon::Piano, tr("Piano roll"), Action::ChannelPianoRoll(ch)),
+                        MenuItem::new(Icon::Pencil, tr("Rename"), Action::Popup(rename)),
+                        MenuItem::new(Icon::Swap, tr("Replace"), Action::Popup(Popup::AddInstrument { replace: Some(ch) })),
+                        MenuItem::new(Icon::Duplicate, tr("Duplicate"), Action::DuplicateChannel(ch)).tip(tr("Same settings, without the notes")),
+                        MenuItem::new(Icon::Trash, tr("Delete"), Action::DeleteChannel(ch)).tip(tr("Also removes its notes")),
                     ],
                 )
             }
             Popup::TrackMenu(t) => {
                 let t = *t;
-                let tr = &p.tracks[t];
-                let rename = Popup::Rename { target: Rename::Track(t), text: tr.name.clone() };
-                let mut v = vec![MenuItem::new(Icon::Pencil, "Renommer", Action::Popup(rename))];
-                let vca = tr.kind == TrackKind::Vca;
+                let trk = &p.tracks[t];
+                let rename = Popup::Rename { target: Rename::Track(t), text: trk.name.clone() };
+                let mut v = vec![MenuItem::new(Icon::Pencil, tr("Rename"), Action::Popup(rename))];
+                let vca = trk.kind == TrackKind::Vca;
                 if t != MASTER && !vca {
-                    v.push(MenuItem::new(Icon::Route, "Sortie", Action::Popup(Popup::Output(t))).detail(track_name(tr.output)));
-                    v.push(MenuItem::new(Icon::Send, "Envoi", Action::Popup(Popup::Send(t))));
+                    v.push(MenuItem::new(Icon::Route, tr("Output"), Action::Popup(Popup::Output(t))).detail(track_name(trk.output)));
+                    v.push(MenuItem::new(Icon::Send, tr("Send"), Action::Popup(Popup::Send(t))));
                 }
                 if !vca {
-                    v.push(MenuItem::new(Icon::Effect, "Effet", Action::Popup(Popup::AddEffect { track: t })));
+                    v.push(MenuItem::new(Icon::Effect, tr("Effect"), Action::Popup(Popup::AddEffect { track: t })));
                 }
                 if t != MASTER && !vca {
                     // Grouper : la sélection si la piste en fait partie, sinon la piste seule.
                     let group = self.group_for(t);
                     let item = if group.len() > 1 {
-                        MenuItem::new(Icon::Bus, "Grouper dans un bus", Action::NewBus(group.clone()))
+                        MenuItem::new(Icon::Bus, tr("Group into a bus"), Action::NewBus(group.clone()))
                             .detail("Ctrl+G".into())
-                            .tip(&format!("Les {} pistes choisies sortent dans un nouveau bus", group.len()))
+                            .tip(&tr_fmt!("The {} selected tracks go out into a new bus", group.len()))
                     } else {
-                        MenuItem::new(Icon::Bus, "Envoyer vers un nouveau bus", Action::NewBus(group.clone()))
+                        MenuItem::new(Icon::Bus, tr("Route to a new bus"), Action::NewBus(group.clone()))
                             .detail("Ctrl+G".into())
-                            .tip("Crée un bus et y fait sortir cette piste")
+                            .tip(tr("Creates a bus and routes this track into it"))
                     };
                     v.push(item.sep());
                     v.push(
-                        MenuItem::new(Icon::Send, "Nouveau bus d'envoi", Action::Popup(Popup::NewReturn(t)))
-                            .tip("Un bus de retour avec une réverbe ou un délai, et un envoi vers lui"),
+                        MenuItem::new(Icon::Send, tr("New send bus"), Action::Popup(Popup::NewReturn(t)))
+                            .tip(tr("A return bus with a reverb or a delay, and a send to it")),
                     );
-                    let detail = tr.vca.map_or(String::new(), track_name);
-                    v.push(MenuItem::new(Icon::Vca, "VCA", Action::Popup(Popup::Vca(t))).detail(detail).tip("Un fader qui pilote le volume de plusieurs pistes"));
+                    let detail = trk.vca.map_or(String::new(), track_name);
+                    v.push(MenuItem::new(Icon::Vca, tr("VCA"), Action::Popup(Popup::Vca(t))).detail(detail).tip(tr("A fader that controls the volume of several tracks")));
                 }
-                match tr.kind {
+                match trk.kind {
                     TrackKind::Bus => {
                         let members = p.bus_members(t).len();
                         if members > 0 {
-                            let (icon, name) = if tr.folded { (Icon::ChevronRight, "Déplier") } else { (Icon::ChevronLeft, "Replier") };
+                            let (icon, name) = if trk.folded { (Icon::ChevronRight, tr("Unfold")) } else { (Icon::ChevronLeft, tr("Fold")) };
                             v.push(MenuItem::new(icon, name, Action::ToggleFold(t)).detail(members.to_string()).sep());
                         }
-                        let it = MenuItem::new(Icon::Close, "Défaire le bus", Action::Dissolve(t)).tip("Ses pistes sortent là où il sortait");
+                        let it = MenuItem::new(Icon::Close, tr("Ungroup the bus"), Action::Dissolve(t)).tip(tr("Its tracks go out where it went out"));
                         v.push(if members > 0 { it } else { it.sep() });
                     }
                     TrackKind::Vca => {
-                        v.push(MenuItem::new(Icon::Close, "Supprimer le VCA", Action::Dissolve(t)).tip("Ses pistes gardent leur volume propre").sep());
+                        v.push(MenuItem::new(Icon::Close, tr("Delete the VCA"), Action::Dissolve(t)).tip(tr("Its tracks keep their own volume")).sep());
                     }
                     TrackKind::Normal => {}
                 }
-                v.push(MenuItem::new(Icon::Reset, "Réinitialiser", Action::ResetTrack(t)).tip("Volume 0 dB, pan au centre"));
-                (tr.name.clone(), v)
+                v.push(MenuItem::new(Icon::Reset, tr("Reset"), Action::ResetTrack(t)).tip(tr("Volume 0 dB, pan centered")));
+                (trk.name.clone(), v)
             }
             Popup::Output(t) | Popup::Send(t) => {
                 let t = *t;
@@ -2498,87 +2498,87 @@ impl App {
                     })
                     .collect();
                 let new = if send {
-                    MenuItem::new(Icon::Plus, "Nouveau bus d'envoi", Action::Popup(Popup::NewReturn(t)))
+                    MenuItem::new(Icon::Plus, tr("New send bus"), Action::Popup(Popup::NewReturn(t)))
                 } else {
-                    MenuItem::new(Icon::Plus, "Nouveau bus", Action::NewBus(vec![t]))
+                    MenuItem::new(Icon::Plus, tr("New bus"), Action::NewBus(vec![t]))
                 };
                 v.push(new.sep());
-                (if send { "Envoyer vers" } else { "Sortie vers" }.into(), v)
+                (if send { tr("Send to") } else { tr("Output to") }.into(), v)
             }
             Popup::NewBus => {
                 let sel = self.mixer_sel.clone();
                 let n = sel.len();
                 let group = if n > 0 {
-                    MenuItem::new(Icon::Bus, "Grouper la sélection", Action::NewBus(sel.clone()))
+                    MenuItem::new(Icon::Bus, tr("Group the selection"), Action::NewBus(sel.clone()))
                         .detail(format!("{n} · Ctrl+G"))
-                        .tip("Les pistes choisies (Ctrl+clic sur leur nom) sortent dans un nouveau bus")
+                        .tip(tr("The selected tracks (Ctrl+click on their name) go out into a new bus"))
                 } else {
-                    MenuItem::new(Icon::Bus, "Bus", Action::NewBus(Vec::new())).tip("Un bus vide ; Ctrl+clic sur des tranches puis Ctrl+G pour les grouper")
+                    MenuItem::new(Icon::Bus, tr("Bus"), Action::NewBus(Vec::new())).tip(tr("An empty bus; Ctrl+click strips then Ctrl+G to group them"))
                 };
                 let mut v = vec![group];
                 for (kind, name, _) in ponzik_project::RETURN_EFFECTS {
-                    v.push(MenuItem::new(Icon::Send, &format!("Retour {}", name.to_lowercase()), Action::NewReturn(kind, None)).tip("Bus de retour, effet 100 % mouillé"));
+                    v.push(MenuItem::new(Icon::Send, &tr_fmt!("Return with {}", tr(name).to_lowercase()), Action::NewReturn(kind, None)).tip(tr("Return bus, effect 100% wet")));
                 }
-                let vca = MenuItem::new(Icon::Vca, "VCA", Action::NewVca(sel)).tip("Un fader qui pilote le volume de plusieurs pistes sans faire passer leur son");
+                let vca = MenuItem::new(Icon::Vca, tr("VCA"), Action::NewVca(sel)).tip(tr("A fader that controls the volume of several tracks without carrying their sound"));
                 v.push(if n > 0 { vca.detail(n.to_string()).sep() } else { vca.sep() });
-                ("Nouveau".into(), v)
+                (tr("New").into(), v)
             }
             Popup::NewReturn(t) => {
                 let t = *t;
                 let v = ponzik_project::RETURN_EFFECTS
                     .iter()
                     .map(|&(kind, name, _)| {
-                        MenuItem::new(Icon::Effect, name, Action::NewReturn(kind, Some(t))).tip("Nouveau bus de retour, envoi à −10 dB depuis cette piste")
+                        MenuItem::new(Icon::Effect, tr(name), Action::NewReturn(kind, Some(t))).tip(tr("New return bus, send at −10 dB from this track"))
                     })
                     .collect();
-                ("Bus d'envoi".into(), v)
+                (tr("Send bus").into(), v)
             }
             Popup::Vca(t) => {
                 let t = *t;
                 let current = p.tracks[t].vca;
-                let mut v = vec![MenuItem::new(Icon::Close, "Aucun", Action::SetVca(t, None)).on(current.is_none())];
+                let mut v = vec![MenuItem::new(Icon::Close, tr("None"), Action::SetVca(t, None)).on(current.is_none())];
                 for d in (1..TRACKS).filter(|&d| p.tracks[d].kind == TrackKind::Vca) {
                     let mut it = MenuItem::plain(&track_name(d), Action::SetVca(t, Some(d))).detail(d.to_string()).on(current == Some(d));
                     it.color = Some(self.track_tint(d));
                     v.push(it);
                 }
                 let group = self.group_for(t);
-                v.push(MenuItem::new(Icon::Plus, "Nouveau VCA", Action::NewVca(group)).sep());
-                ("VCA".into(), v)
+                v.push(MenuItem::new(Icon::Plus, tr("New VCA"), Action::NewVca(group)).sep());
+                (tr("VCA").into(), v)
             }
             Popup::Sidechain { track, slot } => {
                 let (t, slot) = (*track, *slot);
                 let current = p.tracks[t].inserts[slot].as_ref().and_then(|d| d.sidechain);
-                let none = MenuItem::new(Icon::Close, "Aucune", Action::SetSidechain(t, slot, None));
+                let none = MenuItem::new(Icon::Close, tr_ctx("sidechain", "None"), Action::SetSidechain(t, slot, None));
                 let mut v = vec![none.on(current.is_none())];
                 let audible = |d: usize| p.tracks[d].kind != TrackKind::Vca;
                 for d in (1..TRACKS).filter(|&d| d != t && audible(d) && (self.track_in_use(d) || current == Some(d))) {
                     let ok = self.sidechain_ok(t, slot, d);
-                    let detail = if ok { d.to_string() } else { "boucle".into() };
+                    let detail = if ok { d.to_string() } else { tr("loop").into() };
                     let mut it = MenuItem::plain(&track_name(d), Action::SetSidechain(t, slot, Some(d)))
                         .detail(detail)
                         .on(current == Some(d))
                         .dim(!ok);
                     it.color = Some(self.track_tint(d).alpha(if ok { 1.0 } else { 0.3 }));
                     if !ok {
-                        it = it.tip("Impossible : créerait une boucle de routage");
+                        it = it.tip(tr("Not possible: would create a routing loop"));
                     }
                     v.push(it);
                 }
-                ("Piste clé".into(), v)
+                (tr("Sidechain track").into(), v)
             }
             Popup::Param { target, value, default } => {
                 let label = self.target_info(*target).map_or(String::new(), |(l, _)| l);
-                let mut v = vec![MenuItem::new(Icon::Automation, "Automatiser", Action::Automate(*target, *value)).tip("Une courbe dans la playlist")];
+                let mut v = vec![MenuItem::new(Icon::Automation, tr("Automate"), Action::Automate(*target, *value)).tip(tr("A curve in the playlist"))];
                 if self.is_automated(*target) {
-                    v.push(MenuItem::new(Icon::Trash, "Supprimer l'automation", Action::RemoveAutomation(*target)));
+                    v.push(MenuItem::new(Icon::Trash, tr("Delete the automation"), Action::RemoveAutomation(*target)));
                 }
-                v.push(MenuItem::new(Icon::Reset, "Valeur par défaut", Action::SetParamValue(*target, *default)));
+                v.push(MenuItem::new(Icon::Reset, tr("Default value"), Action::SetParamValue(*target, *default)));
                 (label, v)
             }
             Popup::ImportMidi(files) => {
                 let items = if files.is_empty() {
-                    vec![MenuItem::new(Icon::Piano, "Aucun fichier MIDI", Action::None).tip(&compat::projects_dir().display().to_string())]
+                    vec![MenuItem::new(Icon::Piano, tr("No MIDI files"), Action::None).tip(&compat::projects_dir().display().to_string())]
                 } else {
                     files
                         .iter()
@@ -2589,7 +2589,7 @@ impl App {
                         })
                         .collect()
                 };
-                ("Importer du MIDI".into(), items)
+                (tr("Import MIDI").into(), items)
             }
             Popup::ImportFlp(files) => {
                 let items = if files.is_empty() {
@@ -2622,16 +2622,16 @@ impl App {
             }
             Popup::Presets { device, kind } => {
                 let save = Popup::Rename { target: Rename::Preset(*device), text: String::new() };
-                let mut v = vec![MenuItem::new(Icon::Save, "Enregistrer…", Action::Popup(save)).tip("Les réglages actuels, sous un nom")];
+                let mut v = vec![MenuItem::new(Icon::Save, tr("Save…"), Action::Popup(save)).tip(tr("The current settings, under a name"))];
                 for (i, path) in compat::list_presets(kind).into_iter().enumerate() {
                     let name = path.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
                     let it = MenuItem::new(Icon::Preset, &name, Action::LoadPreset(*device, path));
                     v.push(if i == 0 { it.sep() } else { it });
                 }
-                ("Presets".into(), v)
+                (tr("Presets").into(), v)
             }
             Popup::SessionAssign { col, row } => (
-                format!("Piste {} · scène {}", col + 1, row + 1),
+                tr_fmt!("Track {} · scene {}", col + 1, row + 1),
                 p.patterns
                     .iter()
                     .enumerate()
@@ -2643,14 +2643,14 @@ impl App {
                     .collect(),
             ),
             Popup::Templates => (
-                "Nouveau projet".into(),
+                tr("New project").into(),
                 ponzik_project::templates()
                     .into_iter()
                     .enumerate()
                     .map(|(i, (name, make))| {
                         let p = make();
                         let bpm = format!("{:.0}", p.bpm);
-                        let it = MenuItem::new(template_icon(i), name, Action::NewFromTemplate(i)).detail(bpm);
+                        let it = MenuItem::new(template_icon(i), tr(name), Action::NewFromTemplate(i)).detail(bpm);
                         if i == 1 { it.sep() } else { it }
                     })
                     .collect(),
@@ -2669,17 +2669,17 @@ impl App {
                 v.extend(self.past.iter().enumerate().rev().map(|(j, (label, _))| {
                     mark(MenuItem::plain(label, Action::JumpHistory(j + 1)).on(j + 1 == past), self.theme.accent.alpha(0.7))
                 }));
-                v.push(mark(MenuItem::plain("Départ", Action::JumpHistory(0)).on(past == 0).dim(past > 0), self.theme.muted).sep());
-                ("Historique".into(), v)
+                v.push(mark(MenuItem::plain(tr("Start"), Action::JumpHistory(0)).on(past == 0).dim(past > 0), self.theme.muted).sep());
+                (tr("History").into(), v)
             }
             Popup::Humanize => (
-                "Humaniser".into(),
+                tr("Humanize").into(),
                 super::piano::HUMANIZE
                     .iter()
                     .map(|&(name, ticks, vel)| {
-                        MenuItem::new(Icon::Dice, name, Action::Humanize(ticks, vel))
-                            .detail(format!("±{ticks} · ±{:.0} %", vel * 100.0))
-                            .tip("Début (ticks) et vélocité, au hasard")
+                        MenuItem::new(Icon::Dice, tr(name), Action::Humanize(ticks, vel))
+                            .detail(tr_fmt!("±{} · ±{:.0}%", ticks, vel * 100.0))
+                            .tip(tr("Random start (ticks) and velocity"))
                     })
                     .collect(),
             ),
@@ -2690,31 +2690,31 @@ impl App {
                 (
                     "Ponzik".into(),
                     vec![
-                        MenuItem::new(Icon::Plus, "Nouveau", Action::NewProject).detail(key(S::NewProject)),
-                        MenuItem::new(Icon::Folder, "Ouvrir", Action::OpenMenu).detail(key(S::Open)),
-                        MenuItem::new(Icon::Save, "Enregistrer", Action::Save).detail(key(S::Save)),
-                        MenuItem::new(Icon::Pencil, "Enregistrer sous", Action::SaveAs).detail(key(S::SaveAs)),
-                        MenuItem::new(Icon::Export, "Exporter en WAV", Action::Export).detail(key(S::Export)).sep(),
-                        MenuItem::new(Icon::Columns, "Exporter les pistes", Action::ExportStems).tip("Un WAV par piste du mixer"),
-                        MenuItem::new(Icon::Piano, "Importer du MIDI", Action::ImportMidiMenu).sep(),
-                        MenuItem::new(Icon::Folder, "Import an FL Studio project", Action::ImportFlpMenu),
-                        MenuItem::new(Icon::Piano, "Exporter en MIDI", Action::ExportMidi).tip("Le pattern actuel"),
-                        MenuItem::new(Icon::Play, "Démo house", Action::LoadDemo(0)).sep(),
-                        MenuItem::new(Icon::Play, "Démo breakcore", Action::LoadDemo(1)),
-                        MenuItem::new(Icon::Theme, "Thème", Action::Popup(Popup::Themes)).detail(THEMES[theme].name.into()).sep(),
-                        MenuItem::new(Icon::Layout, "Réglages", Action::Popup(Popup::Settings { tab: 0 }))
+                        MenuItem::new(Icon::Plus, tr("New"), Action::NewProject).detail(key(S::NewProject)),
+                        MenuItem::new(Icon::Folder, tr("Open"), Action::OpenMenu).detail(key(S::Open)),
+                        MenuItem::new(Icon::Save, tr("Save"), Action::Save).detail(key(S::Save)),
+                        MenuItem::new(Icon::Pencil, tr("Save as"), Action::SaveAs).detail(key(S::SaveAs)),
+                        MenuItem::new(Icon::Export, tr("Export as WAV"), Action::Export).detail(key(S::Export)).sep(),
+                        MenuItem::new(Icon::Columns, tr("Export stems"), Action::ExportStems).tip(tr("One WAV per mixer track")),
+                        MenuItem::new(Icon::Piano, tr("Import MIDI"), Action::ImportMidiMenu).sep(),
+                        MenuItem::new(Icon::Folder, tr("Import an FL Studio project"), Action::ImportFlpMenu),
+                        MenuItem::new(Icon::Piano, tr("Export as MIDI"), Action::ExportMidi).tip(tr("The current pattern")),
+                        MenuItem::new(Icon::Play, tr("House demo"), Action::LoadDemo(0)).sep(),
+                        MenuItem::new(Icon::Play, tr("Breakcore demo"), Action::LoadDemo(1)),
+                        MenuItem::new(Icon::Theme, tr("Theme"), Action::Popup(Popup::Themes)).detail(tr(THEMES[theme].label).into()).sep(),
+                        MenuItem::new(Icon::Layout, tr("Settings"), Action::Popup(Popup::Settings { tab: 0 }))
                             .detail(key(S::Settings))
-                            .tip("Vues, panneaux et raccourcis"),
+                            .tip(tr("Views, panels and shortcuts")),
                     ],
                 )
             }
             Popup::Themes => (
-                "Thème".into(),
+                tr("Theme").into(),
                 THEMES
                     .iter()
                     .enumerate()
                     .map(|(i, th)| {
-                        let mut it = MenuItem::plain(ponzik_i18n::tr(th.label), Action::SetTheme(i)).on(th.name == self.theme.name);
+                        let mut it = MenuItem::plain(tr(th.label), Action::SetTheme(i)).on(th.name == self.theme.name);
                         it.color = Some(th.accent);
                         it
                     })
@@ -2725,53 +2725,53 @@ impl App {
                 let pat = clip.pattern;
                 let shared = p.clips.iter().filter(|c| c.pattern == pat).count();
                 let rename = Popup::Rename { target: Rename::Pattern(pat), text: p.patterns[pat].name.clone() };
-                let unique = MenuItem::new(Icon::Duplicate, "Rendre unique", Action::MakeUnique(*i));
+                let unique = MenuItem::new(Icon::Duplicate, tr("Make unique"), Action::MakeUnique(*i));
                 let unique = if shared > 1 {
-                    unique.detail(format!("{shared} clips")).tip("Copie du pattern pour ce clip seul")
+                    unique.detail(tr_fmt!("{} clips", shared)).tip(tr("Copy of the pattern for this clip alone"))
                 } else {
-                    unique.tip("Ce clip est déjà le seul à jouer ce pattern")
+                    unique.tip(tr("This clip is already the only one playing this pattern"))
                 };
-                let mut color = MenuItem::plain("Couleur", Action::Popup(Popup::PatternColor(pat)));
+                let mut color = MenuItem::plain(tr("Color"), Action::Popup(Popup::PatternColor(pat)));
                 color.color = Some(self.pattern_tint(pat));
                 (
                     p.patterns[pat].name.clone(),
                     vec![
                         unique,
-                        MenuItem::new(Icon::Pencil, "Renommer", Action::Popup(rename)).tip("Renomme le pattern et tous ses clips"),
+                        MenuItem::new(Icon::Pencil, tr("Rename"), Action::Popup(rename)).tip(tr("Renames the pattern and all its clips")),
                         color,
-                        MenuItem::new(Icon::Rack, "Éditer", Action::EditPattern(pat)).detail("double-clic".into()),
-                        MenuItem::new(Icon::Trash, "Supprimer le clip", Action::DeleteClip(*i)).tip("Clic droit maintenu : effacer en balayant"),
+                        MenuItem::new(Icon::Rack, tr("Edit"), Action::EditPattern(pat)).detail(tr("double-click").into()),
+                        MenuItem::new(Icon::Trash, tr("Delete the clip"), Action::DeleteClip(*i)).tip(tr("Hold right-click: sweep to erase")),
                     ],
                 )
             }
             Popup::PatternMenu(pat) => {
                 let pat = *pat;
                 let rename = Popup::Rename { target: Rename::Pattern(pat), text: p.patterns[pat].name.clone() };
-                let mut color = MenuItem::plain("Couleur", Action::Popup(Popup::PatternColor(pat)));
+                let mut color = MenuItem::plain(tr("Color"), Action::Popup(Popup::PatternColor(pat)));
                 color.color = Some(self.pattern_tint(pat));
                 let mut v = vec![
-                    MenuItem::new(Icon::Rack, "Éditer", Action::EditPattern(pat)).detail(self.key_label(super::keymap::Shortcut::ViewRack)),
-                    MenuItem::new(Icon::Pencil, "Renommer", Action::Popup(rename)),
+                    MenuItem::new(Icon::Rack, tr("Edit"), Action::EditPattern(pat)).detail(self.key_label(super::keymap::Shortcut::ViewRack)),
+                    MenuItem::new(Icon::Pencil, tr("Rename"), Action::Popup(rename)),
                     color,
-                    MenuItem::new(Icon::Duplicate, "Dupliquer", Action::DuplicatePattern),
+                    MenuItem::new(Icon::Duplicate, tr("Duplicate"), Action::DuplicatePattern),
                 ];
                 if p.patterns.len() > 1 {
-                    v.push(MenuItem::new(Icon::Trash, "Supprimer", Action::DeletePattern).tip("Retire aussi ses clips"));
+                    v.push(MenuItem::new(Icon::Trash, tr("Delete"), Action::DeletePattern).tip(tr("Also removes its clips")));
                 }
                 (p.patterns[pat].name.clone(), v)
             }
             Popup::PatternColor(pat) => {
                 let pat = *pat;
                 let cur = p.patterns[pat].color;
-                let mut auto = MenuItem::plain("Automatique", Action::SetPatternColor(pat, 0)).on(cur == 0);
+                let mut auto = MenuItem::plain(tr("Automatic"), Action::SetPatternColor(pat, 0)).on(cur == 0);
                 auto.color = Some(super::playlist::pattern_color(pat));
                 let mut v = vec![auto];
                 for (i, &(name, hex)) in super::playlist::PATTERN_COLORS.iter().enumerate() {
-                    let mut it = MenuItem::plain(name, Action::SetPatternColor(pat, hex)).on(cur == hex);
+                    let mut it = MenuItem::plain(tr(name), Action::SetPatternColor(pat, hex)).on(cur == hex);
                     it.color = Some(Color::hex(hex));
                     v.push(if i == 0 { it.sep() } else { it });
                 }
-                (format!("Couleur · {}", p.patterns[pat].name), v)
+                (tr_fmt!("Color · {}", p.patterns[pat].name.as_str()), v)
             }
             Popup::Rename { .. } | Popup::Palette { .. } | Popup::Scale | Popup::Chord | Popup::Settings { .. } => (String::new(), Vec::new()),
         }
@@ -2812,10 +2812,12 @@ impl App {
                 if let Some(info) = registry::instrument_kind(kind) {
                     let c = &mut self.project.channels[ch];
                     c.instrument = InstrumentDef::new(kind);
-                    if c.name.is_empty() || registry::instruments().iter().any(|k| k.name == c.name) {
-                        c.name = info.name.to_string();
+                    // Nom par défaut, dans n'importe quelle langue (anciens projets en français).
+                    let default_name = |k: &registry::InstrumentKind| ponzik_i18n::Lang::all().any(|l| ponzik_i18n::with_lang(l, || tr(k.name)) == c.name);
+                    if c.name.is_empty() || registry::instruments().iter().any(default_name) {
+                        c.name = tr(info.name).to_string();
                     }
-                    self.commit("Remplacer l'instrument");
+                    self.commit(tr("Replace the instrument"));
                 }
             }
             Action::AddEffect(track, kind) => self.add_effect(track, kind),
@@ -2825,7 +2827,7 @@ impl App {
             Action::SetPatternColor(pat, color) => {
                 if let Some(p) = self.project.patterns.get_mut(pat) {
                     p.color = color;
-                    self.commit("Couleur du pattern");
+                    self.commit(tr("Pattern color"));
                 }
             }
             Action::EditPattern(pat) => {
@@ -2836,7 +2838,7 @@ impl App {
                 if clip < self.project.clips.len() {
                     self.project.clips.remove(clip);
                     self.playlist.selected = None;
-                    self.commit("Effacer un clip");
+                    self.commit(tr("Erase a clip"));
                 }
             }
             Action::DuplicateTime => self.duplicate_time(),
@@ -2845,7 +2847,7 @@ impl App {
             Action::NewVca(members) => self.new_vca(&members),
             Action::SetVca(t, vca) => {
                 self.project.tracks[t].vca = vca;
-                self.commit(if vca.is_some() { "Piloter par un VCA" } else { "Retirer du VCA" });
+                self.commit(if vca.is_some() { tr("Control with a VCA") } else { tr("Remove from the VCA") });
             }
             Action::ToggleFold(t) => self.toggle_fold(t),
             Action::Dissolve(t) => self.dissolve_track(t),
@@ -2855,7 +2857,7 @@ impl App {
             }
             Action::DuplicatePattern => {
                 let mut copy = self.project.patterns[self.project.current_pattern].clone();
-                copy.name = format!("{} (copie)", copy.name);
+                copy.name = tr_fmt!("{} (copy)", copy.name.as_str());
                 self.project.patterns.push(copy);
                 let p = self.project.patterns.len() - 1;
                 self.select_pattern(p);
@@ -2865,19 +2867,19 @@ impl App {
             Action::Popup(kind) => self.open_popup(kind, anchor),
             Action::DuplicateChannel(ch) => {
                 let src = self.project.channels[ch].clone();
-                let idx = self.project.add_channel(format!("{} (copie)", src.name), src.instrument.clone(), src.root_note);
+                let idx = self.project.add_channel(tr_fmt!("{} (copy)", src.name.as_str()), src.instrument.clone(), src.root_note);
                 let c = &mut self.project.channels[idx];
                 c.gain = src.gain;
                 c.pan = src.pan;
                 self.focus = Focus::Channel(idx);
-                self.commit("Dupliquer un canal");
+                self.commit(tr("Duplicate a channel"));
             }
             Action::DeleteChannel(ch) => {
                 let name = self.project.channels[ch].name.clone();
                 self.project.remove_channel(ch);
                 self.clamp_selection();
-                self.commit("Supprimer un canal");
-                self.toast(&format!("{name} supprimé · Ctrl+Z pour annuler"));
+                self.commit(tr("Delete a channel"));
+                self.toast(&tr_fmt!("{} deleted · Ctrl+Z to undo", name));
             }
             Action::ChannelPianoRoll(ch) => {
                 self.focus = Focus::Channel(ch);
@@ -2885,32 +2887,32 @@ impl App {
             }
             Action::SetOutput(t, d) => {
                 self.project.tracks[t].output = d;
-                self.commit("Sortie de piste");
+                self.commit(tr("Track output"));
             }
             Action::AddSend(t, d) => {
                 let sends = &mut self.project.tracks[t].sends;
                 match sends.iter().position(|s| s.0 == d && s.1 > 0.0).or_else(|| sends.iter().position(|s| s.1 <= 0.0)) {
                     Some(slot) => {
                         sends[slot] = (d, 0.5);
-                        self.commit("Ajouter un envoi");
+                        self.commit(tr("Add a send"));
                     }
-                    None => self.toast("Plus d'envoi libre sur cette piste"),
+                    None => self.toast(tr("No free send left on this track")),
                 }
             }
             Action::SetSidechain(t, slot, Some(k)) if !self.sidechain_ok(t, slot, k) => {
                 let name = self.project.tracks[k].name.clone();
-                self.toast(&format!("{name} ne peut pas servir de clé : boucle de routage"));
+                self.toast(&tr_fmt!("{} can't be used as a sidechain: routing loop", name));
             }
             Action::SetSidechain(t, slot, key) => {
                 if let Some(fx) = self.project.tracks[t].inserts[slot].as_mut() {
                     fx.sidechain = key;
-                    self.commit(if key.is_some() { "Brancher une clé" } else { "Débrancher la clé" });
+                    self.commit(if key.is_some() { tr("Connect a sidechain") } else { tr("Disconnect the sidechain") });
                 }
             }
             Action::ResetTrack(t) => {
                 self.project.tracks[t].gain = 1.0;
                 self.project.tracks[t].pan = 0.0;
-                self.commit("Réinitialiser une piste");
+                self.commit(tr("Reset a track"));
             }
             Action::PlayStop => self.play_stop(),
             Action::ToggleMode => {
@@ -2944,7 +2946,7 @@ impl App {
                 if let Some((name, make)) = ponzik_project::templates().get(i).copied() {
                     self.replace_project(make(), None);
                     self.set_view(View::Rack);
-                    self.toast(&format!("Nouveau projet · {name}"));
+                    self.toast(&tr_fmt!("New project · {}", tr(name)));
                 }
             }
             Action::Export => self.export(),
@@ -2955,7 +2957,7 @@ impl App {
                 let p = if i == 1 { ponzik_project::demo_breakcore() } else { ponzik_project::demo_project() };
                 let name = p.name.clone();
                 self.replace_project(p, None);
-                self.toast(&format!("Démo chargée : {name}"));
+                self.toast(&tr_fmt!("Demo loaded: {}", name));
             }
             Action::SetTheme(i) => {
                 self.theme = THEMES[i.min(THEMES.len() - 1)];
@@ -2976,33 +2978,33 @@ impl App {
             Action::ImportMidi(path) => match compat::import_midi(&mut self.project, &path) {
                 Ok(p) => {
                     self.select_pattern(p);
-                    self.commit("Importer un fichier MIDI");
+                    self.commit(tr("Import a MIDI file"));
                     self.set_view(View::Rack);
-                    self.toast(&format!("Importé dans le pattern « {} »", self.project.patterns[p].name));
+                    self.toast(&tr_fmt!("Imported into the pattern \"{}\"", self.project.patterns[p].name));
                 }
                 Err(e) => self.toast(&e),
             },
             Action::ExportMidi => match compat::export_midi(&self.project, self.project.current_pattern) {
-                Ok(path) => self.toast(&format!("Exporté : {}", path.display())),
+                Ok(path) => self.toast(&tr_fmt!("Exported: {}", path.display().to_string())),
                 Err(e) => self.toast(&e),
             },
             Action::LoadPreset(device, path) => match compat::load_preset(&path) {
                 Ok(params) => {
                     self.apply_preset(device, &params);
                     let name = path.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
-                    self.toast(&format!("Preset chargé : {name}"));
+                    self.toast(&tr_fmt!("Preset loaded: {}", name));
                 }
                 Err(e) => self.toast(&e),
             },
             Action::AssignSession(col, row, p) => {
                 self.project.session_grid[col][row] = Some(p);
-                self.commit("Remplir une case");
+                self.commit(tr("Fill a slot"));
             }
             Action::Humanize(ticks, vel) => self.humanize(ticks, vel),
             Action::JumpHistory(n) => self.jump_history(n),
             Action::RemoveAutomation(target) => {
                 self.project.automation.retain(|a| a.target != target);
-                self.commit("Retirer une automation");
+                self.commit(tr("Remove an automation"));
             }
             Action::SetParamValue(target, v) => {
                 use ponzik_engine::AutoTarget as T;
@@ -3019,7 +3021,7 @@ impl App {
                     }
                     _ => {}
                 }
-                self.commit("Valeur par défaut");
+                self.commit(tr("Default value"));
             }
         }
     }
@@ -3041,7 +3043,7 @@ impl App {
         }
         self.project.current_pattern = self.project.current_pattern.min(n - 1);
         self.playlist.brush = self.playlist.brush.min(n - 1);
-        self.commit("Supprimer un pattern");
+        self.commit(tr("Delete a pattern"));
     }
 
     fn apply_rename(&mut self, target: Rename, text: &str) {
@@ -3058,7 +3060,7 @@ impl App {
             Rename::SaveAs => {
                 self.project.name = text.into();
                 self.project_path = None;
-                self.commit("Renommer");
+                self.commit(tr("Rename"));
                 self.save();
                 return;
             }
@@ -3072,7 +3074,7 @@ impl App {
             Rename::Pattern(p) => self.project.patterns[p].name = text.into(),
             Rename::Track(t) => self.project.tracks[t].name = text.into(),
         }
-        self.commit("Renommer");
+        self.commit(tr("Rename"));
     }
 
     fn popup_layer(&mut self, c: &mut Canvas, input: &Input, screen: Rect) {
@@ -3144,9 +3146,9 @@ impl App {
                 c.fill_rrect(r, 16.0, t.panel);
                 c.stroke_rrect(r, 16.0, 1.0, t.hairline.alpha(1.6));
                 let title = match target {
-                    Rename::SaveAs => "Enregistrer sous",
-                    Rename::Preset(_) => "Nom du preset",
-                    _ => "Renommer",
+                    Rename::SaveAs => tr("Save as"),
+                    Rename::Preset(_) => tr("Preset name"),
+                    _ => tr("Rename"),
                 };
                 self.text(c, self.f.sans_med, 14.0, r.x + 20.0, r.y + 24.0, title, t.text2);
                 Rect::new(r.x + 16.0, r.y + 40.0, r.w - 32.0, 38.0)
@@ -3154,7 +3156,7 @@ impl App {
             c.fill_rrect(field.translate(0.0, 4.0).inset(-2.0), 12.0, Color::rgba(0, 0, 0, (70.0 * open) as u8));
             c.fill_rrect(field, 10.0, t.well);
             c.stroke_rrect(field, 10.0, 1.5, t.select.alpha(0.9 * open));
-            let ok_x = self.keycap(c, field.right() - 8.0, field.y + field.h * 0.5, "Entrée", 0.8);
+            let ok_x = self.keycap(c, field.right() - 8.0, field.y + field.h * 0.5, tr("Enter"), 0.8);
             let shown = self.fit(self.f.sans_med, 14.0, text, ok_x - field.x - 24.0);
             let tw = self.text(c, self.f.sans_med, 14.0, field.x + 12.0, field.y + field.h * 0.5, &shown, t.text);
             if (self.time * 2.0).fract() < 0.6 {
@@ -3277,10 +3279,10 @@ impl App {
         // Les menus gardent leurs infobulles : la description d'un instrument, un chemin.
         if let Some(tip) = hover_tip {
             let tw = self.fonts.measure(self.f.sans, 12.0, &tip).min(screen.w * 0.4);
-            let tr = Rect::new((r.right() + 8.0).min(screen.right() - tw - 28.0), input.y - 14.0, tw + 20.0, 28.0);
-            c.fill_rrect(tr, 8.0, t.raised_hi);
-            c.stroke_rrect(tr, 8.0, 1.0, t.hairline.alpha(1.6));
-            self.text_fit(c, self.f.sans, 12.0, tr.x + 10.0, tr.y + 14.0, &tip, tw, t.text2);
+            let tip_r = Rect::new((r.right() + 8.0).min(screen.right() - tw - 28.0), input.y - 14.0, tw + 20.0, 28.0);
+            c.fill_rrect(tip_r, 8.0, t.raised_hi);
+            c.stroke_rrect(tip_r, 8.0, 1.0, t.hairline.alpha(1.6));
+            self.text_fit(c, self.f.sans, 12.0, tip_r.x + 10.0, tip_r.y + 14.0, &tip, tw, t.text2);
         }
 
         let clicked_outside = (input.pressed || input.right_pressed) && !r.contains(input.x, input.y);
@@ -3326,10 +3328,10 @@ fn recovery_detail(path: &std::path::Path) -> String {
     let age = std::fs::metadata(path).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).map(|d| d.as_secs());
     let age = match age {
         None => String::new(),
-        Some(s) if s < 60 => "à l'instant".into(),
-        Some(s) if s < 3_600 => format!("il y a {} min", s / 60),
-        Some(s) if s < 86_400 => format!("il y a {} h", s / 3_600),
-        Some(s) => format!("il y a {} j", s / 86_400),
+        Some(s) if s < 60 => tr("just now").into(),
+        Some(s) if s < 3_600 => tr_fmt!("{} min ago", s / 60),
+        Some(s) if s < 86_400 => tr_fmt!("{} h ago", s / 3_600),
+        Some(s) => tr_fmt!("{} d ago", s / 86_400),
     };
     if age.is_empty() { name } else { format!("{name} · {age}") }
 }
@@ -3347,40 +3349,51 @@ fn template_icon(i: usize) -> Icon {
 }
 
 /// Noms des toniques ; « # » et « b » : les polices embarquées n'ont pas ♯ ni ♭.
-const KEY_LABELS: [&str; 12] = ["Do", "Do#", "Ré", "Mib", "Mi", "Fa", "Fa#", "Sol", "Lab", "La", "Sib", "Si"];
-
 pub fn key_name(key: u8) -> &'static str {
-    KEY_LABELS[usize::from(key % 12)]
+    match key % 12 {
+        0 => tr_ctx("key", "C"),
+        1 => tr_ctx("key", "C#"),
+        2 => tr_ctx("key", "D"),
+        3 => tr_ctx("key", "Eb"),
+        4 => tr_ctx("key", "E"),
+        5 => tr_ctx("key", "F"),
+        6 => tr_ctx("key", "F#"),
+        7 => tr_ctx("key", "G"),
+        8 => tr_ctx("key", "Ab"),
+        9 => tr_ctx("key", "A"),
+        10 => tr_ctx("key", "Bb"),
+        _ => tr_ctx("key", "B"),
+    }
 }
 
-/// « La mineur », « Ré dorien » ; « Chromatique » sans gamme.
+/// « A minor », « D dorian » ; « Chromatic » sans gamme.
 fn scale_label(key: u8, scale: ScaleKind) -> String {
     let mode = match scale {
-        ScaleKind::Chromatic => return "Chromatique".into(),
-        ScaleKind::Major => "majeur",
-        ScaleKind::Minor => "mineur",
-        ScaleKind::Dorian => "dorien",
-        ScaleKind::Phrygian => "phrygien",
-        ScaleKind::Lydian => "lydien",
-        ScaleKind::Mixolydian => "mixolydien",
-        ScaleKind::HarmonicMinor => "m. harm.",
-        ScaleKind::MelodicMinor => "m. mél.",
-        ScaleKind::PentatonicMajor => "penta maj.",
-        ScaleKind::PentatonicMinor => "penta min.",
-        ScaleKind::Blues => "blues",
-        ScaleKind::Locrian => "locrien",
-        ScaleKind::HarmonicMajor => "maj. harm.",
-        ScaleKind::BluesMajor => "blues maj.",
-        ScaleKind::PhrygianDominant => "phryg. dom.",
-        ScaleKind::DoubleHarmonic => "arabe",
-        ScaleKind::HungarianMinor => "hongrois",
-        ScaleKind::Hirajoshi => "hirajoshi",
-        ScaleKind::InSen => "in sen",
-        ScaleKind::WholeTone => "par tons",
-        ScaleKind::Diminished => "diminuée",
-        ScaleKind::BebopDominant => "bebop",
+        ScaleKind::Chromatic => return tr("Chromatic").into(),
+        ScaleKind::Major => tr("major"),
+        ScaleKind::Minor => tr("minor"),
+        ScaleKind::Dorian => tr("dorian"),
+        ScaleKind::Phrygian => tr("phrygian"),
+        ScaleKind::Lydian => tr("lydian"),
+        ScaleKind::Mixolydian => tr("mixolydian"),
+        ScaleKind::HarmonicMinor => tr("harm. minor"),
+        ScaleKind::MelodicMinor => tr("mel. minor"),
+        ScaleKind::PentatonicMajor => tr("maj. penta"),
+        ScaleKind::PentatonicMinor => tr("min. penta"),
+        ScaleKind::Blues => tr("blues"),
+        ScaleKind::Locrian => tr("locrian"),
+        ScaleKind::HarmonicMajor => tr("harm. major"),
+        ScaleKind::BluesMajor => tr("major blues"),
+        ScaleKind::PhrygianDominant => tr("phryg. dom."),
+        ScaleKind::DoubleHarmonic => tr("double harm."),
+        ScaleKind::HungarianMinor => tr("hungarian"),
+        ScaleKind::Hirajoshi => tr("hirajoshi"),
+        ScaleKind::InSen => tr("in sen"),
+        ScaleKind::WholeTone => tr("whole tone"),
+        ScaleKind::Diminished => tr("diminished"),
+        ScaleKind::BebopDominant => tr("bebop"),
     };
-    format!("{} {mode}", key_name(key))
+    tr_fmt!("{} {}", key_name(key), mode)
 }
 
 /// Tempo des appuis (instants en secondes) : 60 / intervalle moyen. `None` avant
@@ -3429,8 +3442,15 @@ mod tests {
 
     #[test]
     fn scale_labels_are_short() {
-        assert_eq!(scale_label(9, ScaleKind::Minor), "La mineur");
-        assert_eq!(scale_label(1, ScaleKind::Major), "Do# majeur");
-        assert_eq!(scale_label(4, ScaleKind::Chromatic), "Chromatique");
+        ponzik_i18n::with_lang(ponzik_i18n::Lang::EN, || {
+            assert_eq!(scale_label(9, ScaleKind::Minor), "A minor");
+            assert_eq!(scale_label(1, ScaleKind::Major), "C# major");
+            assert_eq!(scale_label(4, ScaleKind::Chromatic), "Chromatic");
+        });
+        ponzik_i18n::with_lang(ponzik_i18n::Lang::from_code("fr").unwrap(), || {
+            assert_eq!(scale_label(9, ScaleKind::Minor), "La mineur");
+            assert_eq!(scale_label(1, ScaleKind::Major), "Do# majeur");
+            assert_eq!(scale_label(4, ScaleKind::Chromatic), "Chromatique");
+        });
     }
 }

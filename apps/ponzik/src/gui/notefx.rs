@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use ponzik_engine::{
     NOTE_FX_SLOTS, Note, NoteBuffer, NoteEvent, NoteFx, PPQ, ParamInfo, PlayMode, TICKS_PER_BAR, Unit, registry,
 };
+use ponzik_i18n::{tr, tr_ctx, tr_fmt, tr_noop};
 use ponzik_project::{NoteFxDef, Project};
 use ponzik_ui::{Canvas, Rect};
 
@@ -76,7 +77,7 @@ fn columns(params: &[&ParamInfo]) -> (Vec<(f32, f32)>, f32) {
 fn shown(def: &NoteFxDef) -> Vec<&'static ParamInfo> {
     let params = fx_params(&def.kind);
     let free = def.kind == "chord" && params.first().is_some_and(|p| value(def, p) < 0.5);
-    params.iter().filter(|p| p.group != "Libre" || free).collect()
+    params.iter().filter(|p| p.group != "Free" || free).collect()
 }
 
 fn visual_w(kind: &str) -> f32 {
@@ -141,7 +142,20 @@ fn spans(log: &[(u64, NoteEvent)], until: u64) -> Vec<(u64, u64, u8, f32)> {
     out
 }
 
-const NOTE_NAMES: [&str; 12] = ["Do", "Do♯", "Ré", "Mi♭", "Mi", "Fa", "Fa♯", "Sol", "La♭", "La", "Si♭", "Si"];
+const NOTE_NAMES: [&str; 12] = [
+    tr_noop("C"),
+    tr_noop("C♯"),
+    tr_noop("D"),
+    tr_noop("E♭"),
+    tr_noop("E"),
+    tr_noop("F"),
+    tr_noop("F♯"),
+    tr_noop("G"),
+    tr_noop("A♭"),
+    tr_noop("A"),
+    tr_noop("B♭"),
+    tr_noop("B"),
+];
 
 impl App {
     fn note_fx_def(&self, ch: usize, slot: usize) -> Option<&NoteFxDef> {
@@ -166,7 +180,7 @@ impl App {
         }
         slots[slot] = Some(NoteFxDef::new(kind));
         SELECTED.with(|s| s.borrow_mut().insert(ch, slot));
-        self.commit("Ajouter un effet de notes");
+        self.commit(tr("Add a note effect"));
     }
 
     fn remove_note_fx(&mut self, ch: usize, slot: usize) {
@@ -177,7 +191,7 @@ impl App {
         while slots.last().is_some_and(Option::is_none) {
             slots.pop();
         }
-        self.commit("Retirer un effet de notes");
+        self.commit(tr("Remove a note effect"));
     }
 
     /// Largeur cible de la carte d'effets de notes.
@@ -227,7 +241,7 @@ impl App {
             1.5,
             if def.is_some() { t.select } else { t.muted },
         );
-        let title = def.as_ref().and_then(|d| registry::note_fx_kind(&d.kind)).map_or("Notes", |k| k.name);
+        let title = def.as_ref().and_then(|d| registry::note_fx_kind(&d.kind)).map_or(tr("Notes"), |k| tr(k.name));
         self.text_fit(c, self.f.sans_med, 13.0, card.x + 22.0, head_y, title, card.w - 34.0, t.text);
 
         // Emplacements, de haut en bas dans l'ordre de la chaîne.
@@ -256,8 +270,8 @@ impl App {
                     let col = if on { t.select } else { t.text2.mix(t.text, hv) };
                     draw_icon(c, icon(&kind), cx, cy, 17.0, col);
                     if hov {
-                        let name = registry::note_fx_kind(&kind).map_or(kind.as_str(), |k| k.name);
-                        self.set_tip(&format!("{name}\nClic droit : retirer"), "");
+                        let name = registry::note_fx_kind(&kind).map_or(kind.as_str(), |k| tr(k.name));
+                        self.set_tip(&tr_fmt!("{}\nRight-click: remove", name), "");
                         if input.pressed {
                             SELECTED.with(|s| s.borrow_mut().insert(ch, slot));
                         }
@@ -272,7 +286,7 @@ impl App {
                     c.stroke_rrect(r, 9.0, 1.0, t.hairline.alpha(1.0 + hv * 2.0));
                     draw_icon(c, Icon::Plus, cx, cy, 15.0, t.muted.mix(t.accent, hv));
                     if hov {
-                        self.set_tip("Ajouter un effet de notes\nArpège, accord, gamme… avant l'instrument", "");
+                        self.set_tip(tr("Add a note effect\nArpeggio, chord, scale… before the instrument"), "");
                         if input.pressed {
                             self.open_popup(Popup::AddNoteFx { channel: ch, slot }, r);
                         }
@@ -317,7 +331,7 @@ impl App {
                     && let Some(Some(d)) = self.project.channels[ch].note_fx.get_mut(slot)
                 {
                     d.set(p.id, nv);
-                    self.commit(&format!("Réglage : {}", p.name));
+                    self.commit(&tr_fmt!("Setting: {}", tr(p.name)));
                 }
             }
         }
@@ -428,7 +442,7 @@ impl App {
             let yc = y + step * 0.5;
             let col = if semi == 0 { t.text } else { t.accent.alpha(0.4 + 0.6 * vel) };
             c.fill_rrect(Rect::new(bx, yc - h * 0.5, bw, h), 3.0, col);
-            let label = if semi == 0 { NOTE_NAMES[root as usize % 12].to_string() } else { format!("{semi:+}") };
+            let label = if semi == 0 { tr(NOTE_NAMES[root as usize % 12]).to_string() } else { format!("{semi:+}") };
             self.text(c, self.f.mono, 10.0, bx + bw + 6.0, yc, &label, if semi == 0 { t.text2 } else { t.accent });
         }
     }
@@ -500,9 +514,9 @@ impl App {
             BLACK.iter().map(|b| b.0).chain(WHITE_PC).find(|&pc| input.inside && rects[pc].contains(input.x, input.y));
         if let Some(pc) = hovered {
             let tip = match dest[pc] {
-                Some(d) if d == pc as i32 => format!("{} : dans la gamme", NOTE_NAMES[pc]),
-                Some(d) => format!("{} → {}", NOTE_NAMES[pc], NOTE_NAMES[d.rem_euclid(12) as usize]),
-                None => format!("{} : écartée", NOTE_NAMES[pc]),
+                Some(d) if d == pc as i32 => tr_fmt!("{}: in the scale", tr(NOTE_NAMES[pc])),
+                Some(d) => format!("{} → {}", tr(NOTE_NAMES[pc]), tr(NOTE_NAMES[d.rem_euclid(12) as usize])),
+                None => tr_fmt!("{}: dropped", tr(NOTE_NAMES[pc])),
             };
             self.set_tip(&tip, "");
         }
@@ -577,8 +591,19 @@ impl App {
 const PADS: usize = 8;
 /// Note du premier pad (General MIDI).
 const FIRST_PAD_NOTE: u8 = 36;
-const PAD_NAMES: [&str; PADS] =
-    ["Kick", "Cerclage", "Caisse", "Clap", "Charl. ouv.", "Tom grave", "Charl. fer.", "Tom aigu"];
+/// Nom court d'un pad, sur le pad lui-même.
+fn pad_name(pad: usize) -> &'static str {
+    match pad {
+        0 => tr_ctx("drum pad", "Kick"),
+        1 => tr_ctx("drum pad", "Rim"),
+        2 => tr_ctx("drum pad", "Snare"),
+        3 => tr_ctx("drum pad", "Clap"),
+        4 => tr_ctx("drum pad", "Open hat"),
+        5 => tr_ctx("drum pad", "Low tom"),
+        6 => tr_ctx("drum pad", "Closed hat"),
+        _ => tr_ctx("drum pad", "High tom"),
+    }
+}
 const PAD_W: f32 = 66.0;
 const PAD_H: f32 = 62.0;
 const PAD_GAP: f32 = 8.0;
@@ -663,7 +688,7 @@ impl App {
         let grid_y = body.y + 16.0;
         let sel_x = self.anim.to(wid("dm-sel-x", ch, 0), (sel % 4) as f32, T_LAYOUT);
         let sel_y = self.anim.to(wid("dm-sel-y", ch, 0), (sel / 4) as f32, T_LAYOUT);
-        for pad in 0..PADS {
+        for (pad, &hit) in hits.iter().enumerate() {
             let r = Rect::new(
                 body.x + (pad % 4) as f32 * (PAD_W + PAD_GAP),
                 grid_y + (pad / 4) as f32 * (PAD_H + PAD_GAP),
@@ -675,7 +700,7 @@ impl App {
             let hv = self.hover_anim(id, hov);
             let flash_id = wid("dm-flash", ch, pad);
             let cur = self.anim.get(flash_id).unwrap_or(0.0);
-            let glow = if hits[pad] > cur { hits[pad] } else { self.anim.to(flash_id, hits[pad], T_FLASH) };
+            let glow = if hit > cur { hit } else { self.anim.to(flash_id, hit, T_FLASH) };
             self.anim.set(flash_id, glow);
             let press = self.anim.to(id ^ 0x5052, if hov && input.down { 0.94 } else { 1.0 }, T_PRESS);
             let base = t.pad_a.mix(t.raised_hi, hv * 0.6);
@@ -686,11 +711,11 @@ impl App {
                 let lr = Rect::new(r.x + 8.0, r.bottom() - 9.0, (r.w - 16.0) * n, 3.0);
                 c.fill_rrect(lr, 1.5, t.text2.mix(t.on_accent, glow).alpha(0.55));
             }
-            let label = self.short_label(self.f.sans_med, 11.0, PAD_NAMES[pad], r.w - 12.0);
+            let label = self.short_label(self.f.sans_med, 11.0, pad_name(pad), r.w - 12.0);
             let ink = t.text2.mix(t.text, glow).mix(t.on_accent, (glow - 0.5) * 2.0);
             self.text(c, self.f.sans_med, 11.0, r.x + 8.0, r.y + 14.0, &label, ink);
             if hov {
-                self.set_tip(&format!("{}\nClic : choisir et écouter", group(params, pad as u32 * 3)), "");
+                self.set_tip(&tr_fmt!("{}\nClick: select and listen", tr(group(params, pad as u32 * 3))), "");
                 if input.pressed {
                     PAD.with(|p| p.borrow_mut().insert(ch, pad));
                     self.preview_note(ch, FIRST_PAD_NOTE + pad as u8);
@@ -703,7 +728,7 @@ impl App {
         // Réglages : le pad choisi en haut, le général en bas.
         let px = body.x + PADS_W + GAP;
         c.fill_rect(Rect::new(px - GAP * 0.5, body.y + 20.0, 1.0, body.h - 28.0), t.hairline);
-        self.text(c, self.f.sans_med, 11.0, px + 4.0, body.y + 6.0, group(params, sel as u32 * 3), t.muted);
+        self.text(c, self.f.sans_med, 11.0, px + 4.0, body.y + 6.0, tr(group(params, sel as u32 * 3)), t.muted);
         let cells: Vec<(usize, usize, u32)> = (0..3)
             .map(|k| (k, 0, sel as u32 * 3 + k as u32))
             .chain([(0, 1, PADS as u32 * 3), (1, 1, PADS as u32 * 3 + 1)])
@@ -754,7 +779,7 @@ mod tests {
     #[test]
     fn chord_free_intervals_only_shown_in_free_mode() {
         let def = NoteFxDef::new("chord");
-        assert!(shown(&def).iter().all(|p| p.group != "Libre"));
+        assert!(shown(&def).iter().all(|p| p.group != "Free"));
         assert_eq!(shown(&def.with(0, 0.0)).len(), 6);
     }
 

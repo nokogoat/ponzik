@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ponzik_engine::Sample;
+use ponzik_i18n::tr;
 use ponzik_project::{BitDepth, ExportOptions, Project, RenderMode};
 
 const SAMPLE_SCAN_LIMIT: usize = 400;
@@ -40,7 +41,7 @@ pub fn config_dir() -> PathBuf {
 fn file_name(name: &str) -> String {
     let clean: String = name.chars().map(|c| if c.is_alphanumeric() || " -_".contains(c) { c } else { '_' }).collect();
     let clean = clean.trim();
-    if clean.is_empty() { "Sans titre".into() } else { clean.to_string() }
+    if clean.is_empty() { tr("Untitled").into() } else { clean.to_string() }
 }
 
 pub fn default_project_path(name: &str) -> PathBuf {
@@ -65,7 +66,7 @@ pub fn list_projects() -> Vec<PathBuf> {
 
 pub fn save_project(project: &Project, path: &Path) -> Result<(), String> {
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| format!("{} : {e}", dir.display()))?;
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     ponzik_project::save_to_file(project, path)
 }
@@ -83,14 +84,14 @@ pub fn export_song(
     options: ExportOptions,
 ) -> Result<(f32, f32), String> {
     if project.clips.is_empty() {
-        return Err("La playlist est vide : place des patterns avant d'exporter".into());
+        return Err(tr("The playlist is empty: place patterns before exporting").into());
     }
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| format!("{} : {e}", dir.display()))?;
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     let mut audio = ponzik_project::render_song(project, sample_rate, loader, RenderMode::Song);
     let gain = ponzik_project::export_wav(path, &mut audio, sample_rate, options)
-        .map_err(|e| format!("{} : {e}", path.display()))?;
+        .map_err(|e| format!("{}: {e}", path.display()))?;
     Ok((audio.len() as f32 / 2.0 / sample_rate as f32, gain))
 }
 
@@ -151,7 +152,7 @@ fn walk_ext(dir: &Path, depth: usize, exts: &[&str], out: &mut Vec<PathBuf>) {
 }
 
 pub fn import_midi(project: &mut Project, path: &Path) -> Result<usize, String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("{} : {e}", path.display()))?;
+    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let file = ponzik_project::read_smf(&bytes)?;
     let name = path.file_stem().map_or("MIDI".to_string(), |s| s.to_string_lossy().into_owned());
     Ok(ponzik_project::import_midi(project, &file, &name))
@@ -180,9 +181,9 @@ pub fn import_flp(path: &Path) -> Result<(Project, ponzik_project::ImportReport)
 
 pub fn export_midi(project: &Project, pattern: usize) -> Result<PathBuf, String> {
     let dir = projects_dir().join("Exports");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("{} : {e}", dir.display()))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let path = dir.join(format!("{} - {}.mid", file_name(&project.name), file_name(&project.patterns[pattern].name)));
-    std::fs::write(&path, ponzik_project::write_smf(project, pattern)).map_err(|e| format!("{} : {e}", path.display()))?;
+    std::fs::write(&path, ponzik_project::write_smf(project, pattern)).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(path)
 }
 
@@ -214,15 +215,15 @@ pub fn export_stems(
     loader: &dyn Fn(&str) -> Option<Arc<Sample>>,
 ) -> Result<(PathBuf, usize), String> {
     if project.clips.is_empty() && project.audio_clips.is_empty() {
-        return Err("La playlist est vide : place des patterns avant d'exporter".into());
+        return Err(tr("The playlist is empty: place patterns before exporting").into());
     }
     let dir = projects_dir().join("Exports").join(file_name(&project.name));
-    std::fs::create_dir_all(&dir).map_err(|e| format!("{} : {e}", dir.display()))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let stems = ponzik_project::render_stems(project, sample_rate, loader, RenderMode::Song);
     for (track, audio) in &stems {
         let name = format!("{:02} {}.wav", track, file_name(&project.tracks[*track].name));
         let path = dir.join(name);
-        ponzik_project::write_wav(&path, audio, sample_rate, BitDepth::Pcm24).map_err(|e| format!("{} : {e}", path.display()))?;
+        ponzik_project::write_wav(&path, audio, sample_rate, BitDepth::Pcm24).map_err(|e| format!("{}: {e}", path.display()))?;
     }
     Ok((dir, stems.len()))
 }
@@ -244,7 +245,7 @@ pub fn list_presets(kind: &str) -> Vec<PathBuf> {
 pub fn save_preset(kind: &str, name: &str, params: &[(u32, f32)]) -> Result<PathBuf, String> {
     use ponzik_project::json::Json;
     let dir = presets_dir(kind);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("{} : {e}", dir.display()))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let path = dir.join(format!("{}.json", file_name(name)));
     let doc = Json::Obj(vec![
         ("kind".into(), Json::Str(kind.into())),
@@ -254,12 +255,12 @@ pub fn save_preset(kind: &str, name: &str, params: &[(u32, f32)]) -> Result<Path
             Json::Arr(params.iter().map(|&(id, v)| Json::Arr(vec![Json::Num(id as f64), Json::Num(v as f64)])).collect()),
         ),
     ]);
-    std::fs::write(&path, doc.pretty()).map_err(|e| format!("{} : {e}", path.display()))?;
+    std::fs::write(&path, doc.pretty()).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(path)
 }
 
 pub fn load_preset(path: &Path) -> Result<Vec<(u32, f32)>, String> {
-    let text = std::fs::read_to_string(path).map_err(|e| format!("{} : {e}", path.display()))?;
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let doc = ponzik_project::json::parse(&text)?;
     Ok(doc
         .get("params")

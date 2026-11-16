@@ -42,7 +42,7 @@ pub const PONZIK: Theme = {
     let text = Color::hex(0xe6efec);
     Theme {
         name: "Ponzik",
-        label: "Ponzik",
+        label: ponzik_i18n::tr_noop("Ponzik"),
         bg_deep: Color::hex(0x090c0c),
         bg: Color::hex(0x0e1212),
         panel: Color::hex(0x131817),
@@ -71,7 +71,7 @@ pub const GLACE: Theme = {
     let text = Color::hex(0xe8eef2);
     Theme {
         name: "Glace",
-        label: "Ice",
+        label: ponzik_i18n::tr_noop("Ice"),
         bg_deep: Color::hex(0x0a0c10),
         bg: Color::hex(0x0e1116),
         panel: Color::hex(0x13171d),
@@ -100,7 +100,7 @@ pub const AMBRE: Theme = {
     let text = Color::hex(0xededed);
     Theme {
         name: "Ambre",
-        label: "Amber",
+        label: ponzik_i18n::tr_noop("Amber"),
         bg_deep: Color::hex(0x0f0f10),
         bg: Color::hex(0x141415),
         panel: Color::hex(0x19191b),

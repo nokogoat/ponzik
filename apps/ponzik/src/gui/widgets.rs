@@ -749,7 +749,7 @@ impl App {
         if fits(s) {
             return s.to_string();
         }
-        let words: Vec<&str> = s.split_whitespace().filter(|w| !matches!(*w, "de" | "du" | "des" | "la" | "le" | "les" | "à" | "d'")).collect();
+        let words: Vec<&str> = s.split_whitespace().filter(|w| !matches!(*w, "de" | "du" | "des" | "la" | "le" | "les" | "à" | "d'" | "of" | "the")).collect();
         if words.len() > 1 {
             let last = words[words.len() - 1];
             let initials: String = words[..words.len() - 1].iter().filter_map(|w| w.chars().next()).map(|ch| format!("{ch}. ")).collect();
@@ -807,10 +807,10 @@ impl App {
         }
         let hv = self.hover_anim(id, active);
 
-        let name = self.short_label(self.f.sans, 12.0, info.name, cell.w - 4.0);
+        let name = self.short_label(self.f.sans, 12.0, ponzik_i18n::tr(info.name), cell.w - 4.0);
         self.text_center(c, self.f.sans, 12.0, cx, cell.y + 6.0, &name, t.text2.mix(t.text, hv));
         if hov {
-            self.set_tip(&format!("{}\nDouble-clic : défaut · clic droit : automatiser", info.name), "");
+            self.set_tip(&ponzik_i18n::tr_fmt!("{}\nDouble-click: default · right-click: automate", ponzik_i18n::tr(info.name)), "");
         }
 
         let (a0, sweep) = (0.75 * PI, 1.5 * PI);
@@ -836,7 +836,8 @@ impl App {
     /// Paramètre à choix : nom, puis une pastille avec flèches de part et d'autre.
     pub(super) fn choice(&mut self, c: &mut Canvas, input: &Input, id: u64, cell: Rect, info: &ParamInfo, value: f32) -> Option<f32> {
         let t = self.theme;
-        let name = self.short_label(self.f.sans, 12.0, info.name, cell.w - 4.0);
+        let label = ponzik_i18n::tr(info.name);
+        let name = self.short_label(self.f.sans, 12.0, label, cell.w - 4.0);
         self.text_center(c, self.f.sans, 12.0, cell.x + cell.w * 0.5, cell.y + 6.0, &name, t.text2);
         let field = Rect::new(cell.x + 2.0, cell.y + 20.0, cell.w - 4.0, 30.0);
         let hov = self.hovered(input, id, field);
@@ -846,8 +847,8 @@ impl App {
         let count = (info.max - info.min).round() as i32 + 1;
         let cur = value.round() as i32;
         let mut changed = None;
-        if hov && name != info.name {
-            self.set_tip(info.name, "");
+        if hov && name != label {
+            self.set_tip(label, "");
         }
         if hov {
             self.set_cursor(Cursor::Hand);

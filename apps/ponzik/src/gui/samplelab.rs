@@ -16,6 +16,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use ponzik_i18n::{tr, tr_fmt, tr_fmt_n};
 use ponzik_dsp::onset::{self, OnsetAnalysis};
 use ponzik_dsp::stretch;
 use ponzik_dsp::tempo;
@@ -371,7 +372,7 @@ fn samples_dir() -> PathBuf {
 fn clean_name(name: &str) -> String {
     let s: String = name.chars().map(|c| if c.is_alphanumeric() || " -_".contains(c) { c } else { '_' }).collect();
     let s = s.trim().to_string();
-    if s.is_empty() { "Sample".into() } else { s }
+    if s.is_empty() { tr("Sample").into() } else { s }
 }
 
 /// `dir/stem.wav`, ou `dir/stem 2.wav`… s'il existe déjà.
@@ -397,7 +398,7 @@ fn base_name(name: &str) -> String {
 
 /// Nombre à la française.
 fn fr(x: f32, decimals: usize) -> String {
-    format!("{x:.decimals$}")
+    ponzik_i18n::num(x as f64, decimals)
 }
 
 fn fmt_secs(s: f32) -> String {
@@ -614,8 +615,8 @@ impl App {
         if std::env::var_os("PONZIK_LAB_DONE").is_some() {
             let n = lab.doc.as_ref().map_or(1, Doc::slices);
             lab.done = Some(Done {
-                text: format!("Done! \"{}\" is in your channel rack with a pattern", base_name(&lab.name)),
-                detail: format!("{n} pieces on the keys {} to {}. Open the pattern and move the notes around.", note_name(60), note_name(59 + n as u8)),
+                text: tr_fmt!("Done! \"{}\" is in your channel rack with a pattern", base_name(&lab.name)),
+                detail: tr_fmt_n!("{} piece on the keys {} to {}. Open the pattern and move the notes around.", "{} pieces on the keys {} to {}. Open the pattern and move the notes around.", n, n, note_name(60), note_name(59 + n as u8)),
                 go: Go::Pattern(0, self.project.current_pattern),
             });
         }
@@ -647,7 +648,7 @@ impl App {
         self.lab.last_edit = None;
         self.lab_refresh_cache();
         self.lab_clamp();
-        self.toast(&format!("{} in the Sample Lab: {label}", if redo { "Redone" } else { "Undone" }));
+        self.toast(&if redo { tr_fmt!("Redone in the Sample Lab: {}", label) } else { tr_fmt!("Undone in the Sample Lab: {}", label) });
         true
     }
 
@@ -805,7 +806,7 @@ impl App {
         }
         let k = self.lab.selected.max(1);
         let at = b[k];
-        self.lab_checkpoint("Remove a cut");
+        self.lab_checkpoint(tr("Remove a cut"));
         self.lab_go_manual();
         if let Some(doc) = self.lab.doc.as_mut() {
             doc.markers.retain(|&m| m != at);
@@ -852,7 +853,7 @@ impl App {
     }
 
     fn lab_reverse_all(&mut self) {
-        self.lab_replace_sample("Play backwards", |doc| {
+        self.lab_replace_sample(tr("Play backwards"), |doc| {
             let s = &doc.sample;
             let len = s.len();
             let rev = |v: &[f32]| v.iter().rev().copied().collect::<Vec<f32>>();
@@ -862,13 +863,13 @@ impl App {
             std::mem::swap(&mut doc.curve_in, &mut doc.curve_out);
             Sample { left: rev(&s.left), right: rev(&s.right), ..(**s).clone() }
         });
-        self.toast("The sound now plays backwards");
+        self.toast(tr("The sound now plays backwards"));
     }
 
     fn lab_reverse_slice(&mut self, k: usize) {
         let Some(b) = self.lab.doc.as_ref().map(Doc::bounds) else { return };
         let (s, e) = (b[k], b[k + 1]);
-        self.lab_replace_sample("Play a piece backwards", |doc| {
+        self.lab_replace_sample(tr("Play a piece backwards"), |doc| {
             let mut out = (*doc.sample).clone();
             out.left[s..e].reverse();
             out.right[s..e].reverse();
@@ -882,7 +883,7 @@ impl App {
         let Some(b) = self.lab.doc.as_ref().map(Doc::bounds) else { return };
         let (s, e) = (b[k], b[k + 1]);
         let factor = (-semitones as f64 / 12.0).exp2();
-        self.lab_replace_sample("Pitch a piece", |doc| {
+        self.lab_replace_sample(tr("Pitch a piece"), |doc| {
             let src = &doc.sample;
             let l = stretch::resample(&src.left[s..e], factor);
             let r = stretch::resample(&src.right[s..e], factor);
@@ -900,16 +901,16 @@ impl App {
     /// (WSOLA), sinon on change la vitesse (rééchantillonnage).
     fn lab_fit_tempo(&mut self, keep_pitch: bool) {
         let Some(from) = self.lab.doc.as_ref().and_then(|d| d.bpm) else {
-            self.toast("The loop tempo is unknown: set it in Edit sound first");
+            self.toast(tr("The loop tempo is unknown: set it in Edit sound first"));
             return;
         };
         let to = self.project.bpm;
         if (from - to).abs() < 0.01 {
-            self.toast("Already at the project tempo");
+            self.toast(tr("Already at the project tempo"));
             return;
         }
         let factor = from as f64 / to as f64;
-        let label = "Match project tempo";
+        let label = tr("Match project tempo");
         self.lab_replace_sample(label, |doc| {
             let s = &doc.sample;
             let (l, r) = if keep_pitch {
@@ -925,17 +926,17 @@ impl App {
             doc.bpm = Some(to);
             Sample { left: l, right: r, ..(**s).clone() }
         });
-        self.toast(&format!("{} → {} BPM", fr(from, 1), fr(to, 1)));
+        self.toast(&tr_fmt!("{} → {} BPM", fr(from, 1), fr(to, 1)));
     }
 
     /// Transpose tout l'échantillon sans changer sa durée (WSOLA).
     fn lab_transpose(&mut self, semitones: f32) {
-        self.lab_replace_sample("Pitch", |doc| {
+        self.lab_replace_sample(tr("Pitch"), |doc| {
             let s = &doc.sample;
             let (l, r) = stretch::pitch_shift(&s.left, &s.right, semitones, s.sample_rate);
             Sample { left: l, right: r, ..(**s).clone() }
         });
-        self.toast(if semitones > 0.0 { "Pitched up one semitone" } else { "Pitched down one semitone" });
+        self.toast(if semitones > 0.0 { tr("Pitched up one semitone") } else { tr("Pitched down one semitone") });
     }
 
     fn lab_normalize(&mut self) {
@@ -943,14 +944,14 @@ impl App {
         let (a, b) = doc.trim;
         let peak = doc.sample.left[a..b].iter().chain(&doc.sample.right[a..b]).fold(0.0f32, |m, v| m.max(v.abs()));
         if peak < 1e-6 {
-            self.toast("Nothing to make louder: the sound is silent");
+            self.toast(tr("Nothing to make louder: the sound is silent"));
             return;
         }
-        self.lab_checkpoint("Volume");
+        self.lab_checkpoint(tr("Volume"));
         if let Some(doc) = self.lab.doc.as_mut() {
             doc.gain_db = (-20.0 * peak.log10()).clamp(-24.0, 24.0);
         }
-        self.toast("As loud as possible without distorting");
+        self.toast(tr("As loud as possible without distorting"));
     }
 
     fn lab_detect_bpm(&mut self) {
@@ -961,16 +962,16 @@ impl App {
         let bpm = tempo::estimate_bpm(&cache.onsets, doc.sample.duration()).map(|b| tempo::snap_to_loop(b, dur));
         match bpm {
             Some(b) => {
-                self.lab_checkpoint("Loop tempo");
+                self.lab_checkpoint(tr("Loop tempo"));
                 if let Some(doc) = self.lab.doc.as_mut() {
                     doc.bpm = Some(b);
                 }
-                self.toast(&format!("Detected tempo: {} BPM", fr(b, 1)));
+                self.toast(&tr_fmt!("Detected tempo: {} BPM", fr(b, 1)));
                 if self.lab.doc.as_ref().is_some_and(|d| d.chop == Chop::Grid) {
                     self.lab_rechop();
                 }
             }
-            None => self.toast("No clear beat found: type the tempo in instead"),
+            None => self.toast(tr("No clear beat found: type the tempo in instead")),
         }
     }
 
@@ -1012,7 +1013,7 @@ impl App {
     fn lab_save_action(&mut self) {
         if let Some(path) = self.lab_save() {
             let short = Path::new(&path).file_name().map_or(String::new(), |s| s.to_string_lossy().into_owned());
-            self.lab_done(format!("Saved as one file: {short}"), "It is in the Échantillons folder, with the cuts inside. Find it in the browser's sample list.".into(), Go::Nothing);
+            self.lab_done(tr_fmt!("Saved as one file: {}", short), tr("It is in the Échantillons folder, with the cuts inside. Find it in the browser's sample list.").into(), Go::Nothing);
         }
     }
 
@@ -1022,8 +1023,8 @@ impl App {
         let saved = (0..n).filter(|&k| self.lab_slice_file(k).is_some()).count();
         if saved > 0 {
             let name = base_name(&self.lab.name);
-            let detail = format!("They are in the Échantillons folder as \"{name} slice 1\" and so on. Find them in the browser's sample list.");
-            self.lab_done(format!("Saved {saved} pieces as separate files"), detail, Go::Nothing);
+            let detail = tr_fmt!("They are in the Échantillons folder as \"{} slice 1\" and so on. Find them in the browser's sample list.", name);
+            self.lab_done(tr_fmt!("Saved {} pieces as separate files", saved), detail, Go::Nothing);
         }
     }
 
@@ -1063,9 +1064,9 @@ impl App {
                     inst.set(SLICER_MODE, SLICER_MARKERS);
                 }
                 self.focus = Focus::Channel(ch);
-                self.commit("Sample Lab: replace sample");
+                self.commit(tr("Sample Lab: replace sample"));
                 let name = self.project.channels[ch].name.clone();
-                self.lab_done(format!("\"{name}\" now plays your edited version"), "Ctrl+Z brings the old sound back.".into(), Go::Channel(ch));
+                self.lab_done(tr_fmt!("\"{}\" now plays your edited version", name), tr("Ctrl+Z brings the old sound back.").into(), Go::Channel(ch));
             }
             Source::Clip(i) if i < self.project.audio_clips.len() => {
                 let secs = self.samples.get(&path).map_or(0.0, |s| s.duration() as f64);
@@ -1074,8 +1075,8 @@ impl App {
                 clip.path = path;
                 clip.offset = 0.0;
                 clip.len = ticks;
-                self.commit("Sample Lab: replace clip");
-                self.lab_done("The playlist clip now plays your edited version".into(), "Ctrl+Z brings the old sound back.".into(), Go::Playlist);
+                self.commit(tr("Sample Lab: replace clip"));
+                self.lab_done(tr("The playlist clip now plays your edited version").into(), tr("Ctrl+Z brings the old sound back.").into(), Go::Playlist);
             }
             _ => self.lab_save_action(),
         }
@@ -1089,11 +1090,11 @@ impl App {
         let name = base_name(&self.lab.name);
         let mut def = InstrumentDef::new("slicer").with(SLICER_MODE, SLICER_MARKERS);
         def.sample = Some(path);
-        let ch = self.project.add_channel(format!("{name} slices"), def, 60);
+        let ch = self.project.add_channel(tr_fmt!("{} slices", name), def, 60);
         self.focus = Focus::Channel(ch);
         let b = doc.bounds();
         let n = b.len() - 1;
-        let keys = format!("{n} piece{} on the keys {} to {}", if n > 1 { "s" } else { "" }, note_name(60), note_name(59 + n as u8));
+        let keys = tr_fmt_n!("{} piece on the keys {} to {}", "{} pieces on the keys {} to {}", n, n, note_name(60), note_name(59 + n as u8));
         if flip {
             let sr = doc.sample.sample_rate.max(1.0) as f64;
             // Au tempo d'origine s'il est connu : le pattern garde le groove.
@@ -1105,20 +1106,20 @@ impl App {
             let end = tick(b[n]);
             let p = self.project.add_pattern();
             let pat = &mut self.project.patterns[p];
-            pat.name = format!("Flip {name}");
+            pat.name = tr_fmt!("Flip {}", name);
             pat.len = end.div_ceil(TICKS_PER_BAR).max(1) * TICKS_PER_BAR;
             if pat.notes.len() <= ch {
                 pat.notes.resize(ch + 1, Vec::new());
             }
             pat.notes[ch] = notes;
             self.select_pattern(p);
-            self.commit("Flip to the rack");
-            let detail = format!("{keys}. Open the pattern and move the notes around to make your own beat.");
-            self.lab_done(format!("Done! Pattern \"Flip {name}\" rebuilds the loop"), detail, Go::Pattern(ch, p));
+            self.commit(tr("Flip to the rack"));
+            let detail = tr_fmt!("{}. Open the pattern and move the notes around to make your own beat.", keys);
+            self.lab_done(tr_fmt!("Done! Pattern \"Flip {}\" rebuilds the loop", name), detail, Go::Pattern(ch, p));
         } else {
-            self.commit("Slices to the rack");
-            let detail = format!("{keys}. Play them with your computer keyboard or draw notes in the piano roll.");
-            self.lab_done(format!("Done! \"{name} slices\" is in your channel rack"), detail, Go::Channel(ch));
+            self.commit(tr("Slices to the rack"));
+            let detail = tr_fmt!("{}. Play them with your computer keyboard or draw notes in the piano roll.", keys);
+            self.lab_done(tr_fmt!("Done! \"{} slices\" is in your channel rack", name), detail, Go::Channel(ch));
         }
     }
 
@@ -1139,7 +1140,7 @@ impl App {
             right[n - 1 - i] *= g;
         }
         let slice = Sample { name: String::new(), sample_rate: full.sample_rate, left, right, markers: Vec::new() };
-        let stem = format!("{} slice {}", base_name(&self.lab.name), k + 1);
+        let stem = tr_fmt!("{} slice {}", base_name(&self.lab.name), k + 1);
         self.lab_write(slice, &stem).map(PathBuf::from)
     }
 
@@ -1196,9 +1197,9 @@ impl App {
         let cur = if has { self.lab.step } else { Step::Sample };
         let name = self.lab.name.clone();
         let steps = [
-            (Step::Sample, "Sample", "Step 1: choose a sound\nDrop a file, pick a recent one or try the example loop"),
-            (Step::Cut, "Cut", "Step 2: cut the sound into pieces\nClick a piece to hear it"),
-            (Step::Use, "Use", "Step 3: use the pieces\nPlay them on pads or rebuild the loop as a pattern"),
+            (Step::Sample, tr("Sample"), tr("Step 1: choose a sound\nDrop a file, pick a recent one or try the example loop")),
+            (Step::Cut, tr("Cut"), tr("Step 2: cut the sound into pieces\nClick a piece to hear it")),
+            (Step::Use, tr("Use"), tr("Step 3: use the pieces\nPlay them on pads or rebuild the loop as a pattern")),
         ];
         let ci = steps.iter().position(|s| s.0 == cur).unwrap_or(0);
         let cy = r.y + r.h * 0.5;
@@ -1251,11 +1252,11 @@ impl App {
         }
         // À droite : le tiroir des retouches.
         if has && cur != Step::Sample {
-            let label = "Edit sound";
+            let label = tr("Edit sound");
             let w = self.button_width(true, label);
             let b = Rect::new(r.right() - w, r.y, w, r.h);
             let open = self.lab.edit_open;
-            let tip = "Edit sound\nVolume, fades, tempo, pitch and playing backwards";
+            let tip = tr("Edit sound\nVolume, fades, tempo, pitch and playing backwards");
             if self.lab_button(c, input, wid("lab-edit", 0, 0), b, Some(Icon::Mixer), label, if open { 2 } else { 0 }, tip) {
                 self.lab.edit_open = !open;
             }
@@ -1271,8 +1272,8 @@ impl App {
         let demo = demo_break(self.sample_rate as f32);
         let mut picks = vec![Pick {
             path: None,
-            name: "Example drum loop".into(),
-            detail: format!("Drum break · {}", fmt_secs(demo.duration())),
+            name: tr("Example drum loop").into(),
+            detail: tr_fmt!("Drum break · {}", fmt_secs(demo.duration())),
             bars: bars_of(&demo, 40),
         }];
         let mut files: Vec<(std::time::SystemTime, PathBuf)> = self
@@ -1305,7 +1306,7 @@ impl App {
                 continue;
             }
             let name = p.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
-            picks.push(Pick { path: Some(key), name, detail: format!("Recent · {}", fmt_secs(sample.duration())), bars: bars_of(&sample, 40) });
+            picks.push(Pick { path: Some(key), name, detail: tr_fmt!("Recent · {}", fmt_secs(sample.duration())), bars: bars_of(&sample, 40) });
         }
         self.lab.picks = Some((n, picks));
     }
@@ -1343,23 +1344,23 @@ impl App {
             c.fill_rect(Rect::new(x, y, 1.5, 64.0), t.text.alpha(0.45));
         }
         y += 64.0 + 24.0;
-        let title = if dragging { "Drop it here" } else { "Drop a sample here" };
+        let title = if dragging { tr("Drop it here") } else { tr("Drop a sample here") };
         self.text_center(c, self.f.sans_med, 22.0, cx, y + 12.0, title, t.text);
         y += 30.0;
-        let line = "The Sample Lab cuts a loop into pieces so you can play them on pads.";
+        let line = tr("The Sample Lab cuts a loop into pieces so you can play them on pads.");
         self.text_center(c, self.f.sans, 14.0, cx, y + 10.0, line, t.text2);
         y += 28.0;
         if let Some(name) = current {
-            let label = format!("Keep working on {}", self.fit(self.f.sans_med, 13.0, &name, 220.0));
+            let label = tr_fmt!("Keep working on {}", self.fit(self.f.sans_med, 13.0, &name, 220.0));
             let bw = self.button_width(true, &label) + 6.0;
             let b = Rect::new(cx - bw * 0.5, y + 10.0, bw, 38.0);
-            if self.lab_button(c, input, wid("lab-resume", 0, 0), b, Some(Icon::ChevronRight), &label, 3, "Back to cutting the sound that is already open") {
+            if self.lab_button(c, input, wid("lab-resume", 0, 0), b, Some(Icon::ChevronRight), &label, 3, tr("Back to cutting the sound that is already open")) {
                 self.lab.step = Step::Cut;
             }
             y += 56.0;
         }
         y += 18.0;
-        self.text_center(c, self.f.sans_med, 13.0, cx, y, "or pick one", t.muted);
+        self.text_center(c, self.f.sans_med, 13.0, cx, y, tr("or pick one"), t.muted);
         y += 26.0;
 
         // Cartes.
@@ -1385,7 +1386,7 @@ impl App {
                 c.fill_rrect(Rect::new(g.x + j as f32 * bw + 0.5, g.y + (g.h - h) * 0.5, (bw - 1.5).max(1.0), h), 1.0, col);
             }
             if path.is_none() {
-                let tag = "Try it";
+                let tag = tr("Try it");
                 let tw = self.fonts.measure(self.f.sans_med, 11.0, tag) + 14.0;
                 let tr = Rect::new(cr.right() - 14.0 - tw, cr.y + 100.0, tw, 20.0);
                 c.fill_rrect(tr, 10.0, t.accent.alpha(0.18 + 0.2 * hv));
@@ -1395,8 +1396,8 @@ impl App {
             self.text_fit(c, self.f.sans, 12.0, cr.x + 14.0, cr.y + 110.0, &detail, cr.w - 28.0, t.muted);
             if hov {
                 let tip = match path {
-                    Some(_) => format!("Open \"{name}\"\nYou will cut it into pieces in the next step"),
-                    None => "Open an example drum loop\nA good way to see how the Sample Lab works".to_string(),
+                    Some(_) => tr_fmt!("Open \"{}\"\nYou will cut it into pieces in the next step", name),
+                    None => tr("Open an example drum loop\nA good way to see how the Sample Lab works").to_string(),
                 };
                 self.set_tip(&tip, "");
                 self.set_cursor(ponzik_window::Cursor::Hand);
@@ -1413,7 +1414,7 @@ impl App {
             }
         }
         y += card_h + 26.0;
-        let foot = "You can also drag a sample here from the browser, or double-click an audio clip in the playlist.";
+        let foot = tr("You can also drag a sample here from the browser, or double-click an audio clip in the playlist.");
         self.text_center(c, self.f.sans, 12.0, cx, y, foot, t.muted);
     }
 
@@ -1515,7 +1516,7 @@ impl App {
         c.fill_circle(kx, track.y + 2.0, 6.0 + hv, t.text);
         c.fill_circle(kx, track.y + 2.0, 2.5, t.accent_deep);
         if hov {
-            self.set_tip(&format!("{tip}\nDrag or scroll to change · double-click to reset"), "");
+            self.set_tip(&tr_fmt!("{}\nDrag or scroll to change · double-click to reset", tip), "");
         }
         out
     }
@@ -1524,7 +1525,7 @@ impl App {
     fn lab_amount(&mut self, c: &mut Canvas, input: &Input, r: Rect, norm: f32) -> Option<f32> {
         let t = self.theme;
         let id = wid("lab-sens", 0, 0);
-        let (left, right) = ("Fewer pieces", "More pieces");
+        let (left, right) = (tr("Fewer pieces"), tr("More pieces"));
         let lw = self.fonts.measure(self.f.sans, 13.0, left);
         let rw = self.fonts.measure(self.f.sans, 13.0, right);
         let cy = r.y + r.h * 0.5;
@@ -1557,7 +1558,7 @@ impl App {
         c.fill_circle(kx, cy, 3.5, t.accent_deep);
         if hov {
             self.set_cursor(ponzik_window::Cursor::Hand);
-            self.set_tip("How finely to cut\nLeft: only the big hits · right: every little sound\nDrag or scroll · double-click to reset", "");
+            self.set_tip(tr("How finely to cut\nLeft: only the big hits · right: every little sound\nDrag or scroll · double-click to reset"), "");
         }
         out
     }
@@ -1610,11 +1611,11 @@ impl App {
         // Petits outils de vue, au bout de la règle.
         let b = Rect::new(main.right() - 34.0, ruler.y + 1.0, 30.0, 24.0);
         let on = self.lab.spectral;
-        let tip = if on { "Color by tone is on\nDeep sounds in teal, bright sounds in pale green · click to turn off" } else { "Color by tone\nShows deep sounds in teal and bright sounds in pale green" };
+        let tip = if on { tr("Color by tone is on\nDeep sounds in teal, bright sounds in pale green · click to turn off") } else { tr("Color by tone\nShows deep sounds in teal and bright sounds in pale green") };
         if self.icon_button(c, input, wid("lab-spec", 0, 0), b, Icon::Spectral, on, (tip, "")) {
             self.lab.spectral = !on;
         }
-        if zoomed && self.icon_button(c, input, wid("lab-all", 0, 0), b.translate(-34.0, 0.0), Icon::Columns, false, ("Zoom out to see the whole sound", "Home")) {
+        if zoomed && self.icon_button(c, input, wid("lab-all", 0, 0), b.translate(-34.0, 0.0), Icon::Columns, false, (tr("Zoom out to see the whole sound"), tr("Home"))) {
             self.lab_zoom_all();
         }
         self.lab_wave(c, input, wave);
@@ -1643,10 +1644,10 @@ impl App {
         c.fill_circle(px, cy, pr * press, t.accent.mix(t.accent_hot, hv * 0.25));
         let icon = if playing { Icon::Stop } else { Icon::Play };
         draw_icon(c, icon, px + if playing { 0.0 } else { 1.5 }, cy, 20.0 * press, t.on_accent);
-        self.text(c, self.f.sans_med, 14.0, px + pr + 12.0, cy - 9.0, if playing { "Stop" } else { "Listen" }, t.text);
-        self.text(c, self.f.sans, 12.0, px + pr + 12.0, cy + 10.0, "or press Space", t.muted);
+        self.text(c, self.f.sans_med, 14.0, px + pr + 12.0, cy - 9.0, if playing { tr("Stop") } else { tr("Listen") }, t.text);
+        self.text(c, self.f.sans, 12.0, px + pr + 12.0, cy + 10.0, tr("or press Space"), t.muted);
         if hov {
-            self.set_tip("Listen from the selected piece to the end\nClick a piece on the wave to hear only that piece", "Space");
+            self.set_tip(tr("Listen from the selected piece to the end\nClick a piece on the wave to hear only that piece"), tr("Space"));
             self.set_cursor(ponzik_window::Cursor::Hand);
             if input.pressed {
                 self.lab_toggle_play();
@@ -1656,17 +1657,17 @@ impl App {
         c.fill_rect(Rect::new(div_x, r.y + 14.0, 1.0, r.h - 28.0), t.hairline);
 
         // À droite : la suite, et les autres façons de découper.
-        let next = "Next: use the pieces";
+        let next = tr("Next: use the pieces");
         let w = self.button_width(true, next) + 6.0;
         let nb = Rect::new(r.right() - 16.0 - w, cy - 20.0, w, 40.0);
-        if self.lab_button(c, input, wid("lab-next", 0, 0), nb, Some(Icon::ChevronRight), next, 3, "Go to step 3\nPlay the pieces on pads or turn them into a beat") {
+        if self.lab_button(c, input, wid("lab-next", 0, 0), nb, Some(Icon::ChevronRight), next, 3, tr("Go to step 3\nPlay the pieces on pads or turn them into a beat")) {
             self.lab.step = Step::Use;
         }
         let open = self.lab.more_cut;
-        let more = if open { "Fewer options" } else { "More ways to cut" };
+        let more = if open { tr("Fewer options") } else { tr("More ways to cut") };
         let mw = self.fonts.measure(self.f.sans_med, 13.0, more) + 42.0;
         let mb = Rect::new(nb.x - 12.0 - mw, cy - 18.0, mw, 36.0);
-        let tip = if open { "Hide the other ways to cut" } else { "Other ways to cut\nOn the beat, or by hand" };
+        let tip = if open { tr("Hide the other ways to cut") } else { tr("Other ways to cut\nOn the beat, or by hand") };
         if self.lab_disclosure(c, input, mb, more, open, tip) {
             self.lab.more_cut = !open;
         }
@@ -1675,19 +1676,19 @@ impl App {
         let x0 = div_x + 22.0;
         let x1 = mb.x - 24.0;
         let title = match chop {
-            Chop::Transients => "Cut automatically",
-            Chop::Grid => "Cut on the beat",
-            Chop::Manual => "Cut by hand",
+            Chop::Transients => tr("Cut automatically"),
+            Chop::Grid => tr("Cut on the beat"),
+            Chop::Manual => tr("Cut by hand"),
         };
         self.text(c, self.f.sans_med, 14.0, x0, cy - 15.0, title, t.text);
-        let count = format!("{n} piece{}", if n == 1 { "" } else { "s" });
+        let count = tr_fmt_n!("{} piece", "{} pieces", n, n);
         let cx = self.text_right(c, self.f.sans_med, 14.0, x1, cy - 15.0, &count, t.accent);
-        self.tip_zone(input, Rect::new(cx, cy - 26.0, x1 - cx, 22.0), "How many pieces the sound is cut into\nEach piece will play on its own key or pad", "");
+        self.tip_zone(input, Rect::new(cx, cy - 26.0, x1 - cx, 22.0), tr("How many pieces the sound is cut into\nEach piece will play on its own key or pad"), "");
         let row = Rect::new(x0, cy + 1.0, x1 - x0, 26.0);
         match chop {
             Chop::Transients => {
                 if let Some(v) = self.lab_amount(c, input, row, sens) {
-                    self.lab_checkpoint("Number of pieces");
+                    self.lab_checkpoint(tr("Number of pieces"));
                     if let Some(doc) = self.lab.doc.as_mut() {
                         doc.sensitivity = v;
                     }
@@ -1699,19 +1700,19 @@ impl App {
                 let mut x = row.x;
                 let rcy = row.y + row.h * 0.5;
                 if roomy {
-                    self.text(c, self.f.sans, 13.0, x, rcy, "Piece length", t.text2);
-                    x += self.fonts.measure(self.f.sans, 13.0, "Piece length") + 10.0;
+                    self.text(c, self.f.sans, 13.0, x, rcy, tr("Piece length"), t.text2);
+                    x += self.fonts.measure(self.f.sans, 13.0, tr("Piece length")) + 10.0;
                 }
                 let seg = Rect::new(x, row.y - 2.0, 196.0, 30.0);
                 let labels: Vec<&str> = DIVISIONS.iter().map(|d| d.1).collect();
                 let tips = [
-                    ("Quarter notes\n4 pieces per bar, one per beat", ""),
-                    ("Eighth notes\n8 pieces per bar", ""),
-                    ("Sixteenth notes\n16 pieces per bar", ""),
-                    ("Thirty-second notes\n32 pieces per bar", ""),
+                    (tr("Quarter notes\n4 pieces per bar, one per beat"), ""),
+                    (tr("Eighth notes\n8 pieces per bar"), ""),
+                    (tr("Sixteenth notes\n16 pieces per bar"), ""),
+                    (tr("Thirty-second notes\n32 pieces per bar"), ""),
                 ];
                 if let Some(i) = self.segmented_tips(c, input, wid("lab-div", 0, 0), seg, &labels, &tips, division) {
-                    self.lab_checkpoint("Piece length");
+                    self.lab_checkpoint(tr("Piece length"));
                     if let Some(doc) = self.lab.doc.as_mut() {
                         doc.division = i;
                     }
@@ -1719,25 +1720,25 @@ impl App {
                 }
                 let mut x = seg.right() + 16.0;
                 if roomy {
-                    self.text(c, self.f.sans, 13.0, x, rcy, "Loop tempo", t.text2);
-                    x += self.fonts.measure(self.f.sans, 13.0, "Loop tempo") + 10.0;
+                    self.text(c, self.f.sans, 13.0, x, rcy, tr("Loop tempo"), t.text2);
+                    x += self.fonts.measure(self.f.sans, 13.0, tr("Loop tempo")) + 10.0;
                 }
                 let field = Rect::new(x, row.y - 2.0, 112.0, 30.0);
                 let v = bpm.unwrap_or(self.project.bpm);
                 if let Some(nv) = self.drag_field(c, input, wid("lab-grid-bpm", 0, 0), field, v, 0.1, 1.0, &fr(v, 1), "BPM") {
                     let nv = (nv * 10.0).round() / 10.0;
-                    self.lab_checkpoint("Loop tempo");
+                    self.lab_checkpoint(tr("Loop tempo"));
                     if let Some(doc) = self.lab.doc.as_mut() {
                         doc.bpm = Some(nv.clamp(30.0, 300.0));
                     }
                     self.lab_rechop();
                 }
-                self.tip_zone(input, field, "Tempo of the loop, in beats per minute\nThe cuts follow it · drag up or down, or scroll", "");
+                self.tip_zone(input, field, tr("Tempo of the loop, in beats per minute\nThe cuts follow it · drag up or down, or scroll"), "");
             }
             Chop::Manual => {
                 let rcy = row.y + row.h * 0.5;
                 draw_icon(c, Icon::Info, row.x + 7.0, rcy, 14.0, t.muted);
-                let line = "Click the wave to add a cut · drag a cut to move it · hold right-click to remove it";
+                let line = tr("Click the wave to add a cut · drag a cut to move it · hold right-click to remove it");
                 self.text_fit(c, self.f.sans, 13.0, row.x + 22.0, rcy, line, row.w - 22.0, t.text2);
             }
         }
@@ -1748,9 +1749,9 @@ impl App {
         let t = self.theme;
         let Some(chop) = self.lab.doc.as_ref().map(|d| d.chop) else { return };
         let items = [
-            (Chop::Transients, Icon::Slice, "Automatically", "Finds each hit in the sound", "Cut automatically\nA new piece starts at each drum hit or note"),
-            (Chop::Grid, Icon::Metronome, "On the beat", "Equal pieces that follow the tempo", "Cut on the beat\nEqual pieces, like the steps of a step sequencer"),
-            (Chop::Manual, Icon::Pencil, "By hand", "You click where to cut", "Cut by hand\nClick the wave to add cuts, drag them, hold right-click to remove them"),
+            (Chop::Transients, Icon::Slice, tr("Automatically"), tr("Finds each hit in the sound"), tr("Cut automatically\nA new piece starts at each drum hit or note")),
+            (Chop::Grid, Icon::Metronome, tr("On the beat"), tr("Equal pieces that follow the tempo"), tr("Cut on the beat\nEqual pieces, like the steps of a step sequencer")),
+            (Chop::Manual, Icon::Pencil, tr("By hand"), tr("You click where to cut"), tr("Cut by hand\nClick the wave to add cuts, drag them, hold right-click to remove them")),
         ];
         let gap = 10.0;
         let w = (r.w - 2.0 * gap) / 3.0;
@@ -1779,7 +1780,7 @@ impl App {
                 }
             }
             if hov && input.pressed && !on {
-                self.lab_checkpoint("How to cut");
+                self.lab_checkpoint(tr("How to cut"));
                 if let Some(doc) = self.lab.doc.as_mut() {
                     doc.chop = mode;
                 }
@@ -1802,7 +1803,7 @@ impl App {
         if a < 0.01 {
             return;
         }
-        let label = "Click a piece to hear it";
+        let label = tr("Click a piece to hear it");
         let w = self.fonts.measure(self.f.sans_med, 13.0, label) + 46.0;
         let (cx, _) = wave.center();
         let b = Rect::new((cx - w * 0.5).round(), (wave.y + 30.0 - (1.0 - a) * 6.0).round(), w, 34.0);
@@ -1862,7 +1863,7 @@ impl App {
             self.lab.shown.0 = self.lab.view.0;
         }
         if hov {
-            self.set_tip("The whole sound\nClick or drag to move the zoomed view", "");
+            self.set_tip(tr("The whole sound\nClick or drag to move the zoomed view"), "");
         }
     }
 
@@ -1945,9 +1946,9 @@ impl App {
         let on_band = input.y < band.bottom() + 3.0;
         if hov {
             if on_band {
-                self.set_tip("Loop a part: drag along this edge (it snaps to the pieces)\nSpace plays the loop · right-click removes it", "");
+                self.set_tip(tr("Loop a part: drag along this edge (it snaps to the pieces)\nSpace plays the loop · right-click removes it"), "");
             } else {
-                self.set_tip("Click to play from here · drag to scrub through the sound", "Space");
+                self.set_tip(tr("Click to play from here · drag to scrub through the sound"), tr("Space"));
             }
         }
         if hov && input.right_pressed && on_band {
@@ -2219,14 +2220,14 @@ impl App {
         }
         if hov_wave {
             let tip = match over_handle {
-                Some(Grab::FadeIn) => "Fade in: drag to make the start come in softly",
-                Some(Grab::FadeOut) => "Fade out: drag to make the end die away",
-                Some(Grab::CurveIn | Grab::CurveOut) => "Fade shape: drag up or down",
-                Some(Grab::TrimStart) => "Start of the sound: drag to cut off the beginning",
-                Some(Grab::TrimEnd) => "End of the sound: drag to cut off the end",
-                _ if hover_marker.is_some() => "A cut: drag to move it · hold right-click to remove it",
-                _ if doc.chop == Chop::Manual => "Click to add a cut here · hold right-click on a cut to remove it\nScroll to zoom in · Shift+scroll to move along",
-                _ => "Click a piece to hear it · double-click to add a cut\nScroll to zoom in · Shift+scroll to move along",
+                Some(Grab::FadeIn) => tr("Fade in: drag to make the start come in softly"),
+                Some(Grab::FadeOut) => tr("Fade out: drag to make the end die away"),
+                Some(Grab::CurveIn | Grab::CurveOut) => tr("Fade shape: drag up or down"),
+                Some(Grab::TrimStart) => tr("Start of the sound: drag to cut off the beginning"),
+                Some(Grab::TrimEnd) => tr("End of the sound: drag to cut off the end"),
+                _ if hover_marker.is_some() => tr("A cut: drag to move it · hold right-click to remove it"),
+                _ if doc.chop == Chop::Manual => tr("Click to add a cut here · hold right-click on a cut to remove it\nScroll to zoom in · Shift+scroll to move along"),
+                _ => tr("Click a piece to hear it · double-click to add a cut\nScroll to zoom in · Shift+scroll to move along"),
             };
             self.set_tip(tip, "");
         }
@@ -2246,7 +2247,7 @@ impl App {
         if hov_wave && input.right_down
             && let Some(i) = marker_near(input.x)
         {
-            self.lab_checkpoint("Remove cuts");
+            self.lab_checkpoint(tr("Remove cuts"));
             self.lab_go_manual();
             if let Some(d) = self.lab.doc.as_mut() {
                 d.markers.remove(i);
@@ -2257,8 +2258,8 @@ impl App {
             self.begin_drag(wave_id, input, 0.0);
             if let Some(g) = over_handle {
                 let label = match g {
-                    Grab::TrimStart | Grab::TrimEnd => "Trim",
-                    _ => "Fade",
+                    Grab::TrimStart | Grab::TrimEnd => tr("Trim"),
+                    _ => tr("Fade"),
                 };
                 self.lab_checkpoint(label);
                 self.lab.grab = Some(g);
@@ -2268,7 +2269,7 @@ impl App {
                     _ => 0.0,
                 };
             } else if let Some(i) = hover_marker {
-                self.lab_checkpoint("Move a cut");
+                self.lab_checkpoint(tr("Move a cut"));
                 self.lab_go_manual();
                 self.lab.grab = Some(Grab::Marker(i));
             } else {
@@ -2277,7 +2278,7 @@ impl App {
                 let add = (doc.chop == Chop::Manual || input.double) && f > ta + MIN_GAP && f + MIN_GAP < tb && doc.markers.len() < MAX_SLICES - 1;
                 if add {
                     let at = self.lab_zero_crossing(f);
-                    self.lab_checkpoint("Add a cut");
+                    self.lab_checkpoint(tr("Add a cut"));
                     self.lab_go_manual();
                     if let Some(d) = self.lab.doc.as_mut()
                         && !d.markers.iter().any(|&m| m.abs_diff(at) < MIN_GAP)
@@ -2422,7 +2423,7 @@ impl App {
             let hov = self.hovered(input, id, pad) && pad.right() > r.x && pad.x < r.right();
             if hov {
                 let secs = (bounds[k + 1] - bounds[k]) as f32 / doc.sample.sample_rate.max(1.0);
-                self.set_tip(&format!("Piece {} · {} · plays on the key {}\nClick to hear it · drag it into the playlist or the channel rack to use only this piece", k + 1, fmt_secs(secs), note_name(60 + k as u8)), "← →");
+                self.set_tip(&tr_fmt!("Piece {} · {} · plays on the key {}\nClick to hear it · drag it into the playlist or the channel rack to use only this piece", k + 1, fmt_secs(secs), note_name(60 + k as u8)), "← →");
                 self.set_cursor(ponzik_window::Cursor::Hand);
             }
             if hov && input.pressed {
@@ -2452,9 +2453,9 @@ impl App {
         let Some(n) = self.lab.doc.as_ref().map(Doc::slices) else { return };
         let source = self.lab.source;
         let mut y = main.y;
-        let title = format!("Your sound is cut into {n} piece{}. What now?", if n == 1 { "" } else { "s" });
+        let title = tr_fmt_n!("Your sound is cut into {} piece. What now?", "Your sound is cut into {} pieces. What now?", n, n);
         self.text(c, self.f.sans_med, 18.0, main.x + 4.0, y + 12.0, &title, t.text);
-        let sub = "Pick one of the two below. You can go back to Cut and change the pieces at any time.";
+        let sub = tr("Pick one of the two below. You can go back to Cut and change the pieces at any time.");
         self.text_fit(c, self.f.sans, 13.0, main.x + 4.0, y + 36.0, sub, main.w - 8.0, t.text2);
         y += 56.0;
         if self.lab.done.is_some() {
@@ -2470,20 +2471,20 @@ impl App {
         let a = Rect::new(main.x, y, w, card_h);
         let pads = (
             Icon::Rack,
-            "Play the pieces on pads",
-            "Adds a Slicer to your channel rack. Each piece gets its own key, from C4 up: play them with your computer keyboard or in the piano roll.",
-            "Create pads",
-            "Creates a new Slicer channel\nPiece 1 plays on C4, piece 2 on C#4, and so on",
+            tr("Play the pieces on pads"),
+            tr("Adds a Slicer to your channel rack. Each piece gets its own key, from C4 up: play them with your computer keyboard or in the piano roll."),
+            tr("Create pads"),
+            tr("Creates a new Slicer channel\nPiece 1 plays on C4, piece 2 on C#4, and so on"),
         );
         if self.lab_card(c, input, 0, a, pads) {
             self.lab_to_slicer(false);
         }
         let flip = (
             Icon::Piano,
-            "Rebuild the loop as a pattern",
-            "Same pads, plus a pattern that plays the pieces in their original order. Then rearrange the steps to make your own beat.",
-            "Create the pattern",
-            "Creates a Slicer channel and a new pattern\nThe pattern plays the pieces in order: you hear the original loop",
+            tr("Rebuild the loop as a pattern"),
+            tr("Same pads, plus a pattern that plays the pieces in their original order. Then rearrange the steps to make your own beat."),
+            tr("Create the pattern"),
+            tr("Creates a Slicer channel and a new pattern\nThe pattern plays the pieces in order: you hear the original loop"),
         );
         if self.lab_card(c, input, 1, Rect::new(a.right() + gap, y, w, card_h), flip) {
             self.lab_to_slicer(true);
@@ -2491,18 +2492,18 @@ impl App {
         y += card_h + 18.0;
 
         // Quelle touche joue quelle tranche.
-        self.text(c, self.f.sans_med, 13.0, main.x + 4.0, y + 8.0, "Which key plays which piece", t.text2);
+        self.text(c, self.f.sans_med, 13.0, main.x + 4.0, y + 8.0, tr("Which key plays which piece"), t.text2);
         self.lab_keys(c, input, Rect::new(main.x, y + 22.0, main.w, 62.0));
         y += 98.0;
 
         // Actions secondaires.
         let y = y.min(main.bottom() - 36.0);
         let mut items = vec![
-            (Icon::Save, "Save the pieces as files", "Saves every piece as its own WAV file\nin the Échantillons folder, ready for any sampler"),
-            (Icon::Export, "Save as one file", "Saves the whole edited sound as one WAV file\nThe cuts are kept inside the file"),
+            (Icon::Save, tr("Save the pieces as files"), tr("Saves every piece as its own WAV file\nin the Échantillons folder, ready for any sampler")),
+            (Icon::Export, tr("Save as one file"), tr("Saves the whole edited sound as one WAV file\nThe cuts are kept inside the file")),
         ];
         if source != Source::Browser {
-            items.push((Icon::Check, "Replace the original sample", "Puts your edited version back where the sound came from\nCtrl+Z brings the old sound back"));
+            items.push((Icon::Check, tr("Replace the original sample"), tr("Puts your edited version back where the sound came from\nCtrl+Z brings the old sound back")));
         }
         let mut x = main.x;
         for (i, (icon, label, tip)) in items.into_iter().enumerate() {
@@ -2561,18 +2562,18 @@ impl App {
         c.fill_circle(r.x + 30.0, cy, 14.0, t.accent);
         draw_icon(c, Icon::Check, r.x + 30.0, cy, 15.0, t.on_accent);
         let close = Rect::new(r.right() - 44.0, cy - 16.0, 32.0, 32.0);
-        if self.icon_button(c, input, wid("lab-done-x", 0, 0), close, Icon::Close, false, ("Hide this message", "")) {
+        if self.icon_button(c, input, wid("lab-done-x", 0, 0), close, Icon::Close, false, (tr("Hide this message"), "")) {
             self.lab.done = None;
         }
         let mut right = close.x - 8.0;
         if go != Go::Nothing {
-            let label = "Go to it";
+            let label = tr("Go to it");
             let w = self.button_width(true, label) + 4.0;
             let b = Rect::new(right - w, cy - 19.0, w, 38.0);
             let tip = match go {
-                Go::Pattern(..) => "Open the new pattern in the piano roll",
-                Go::Playlist => "Open the playlist",
-                _ => "Open the channel rack on the new channel",
+                Go::Pattern(..) => tr("Open the new pattern in the piano roll"),
+                Go::Playlist => tr("Open the playlist"),
+                _ => tr("Open the channel rack on the new channel"),
             };
             if self.lab_button(c, input, wid("lab-go", 0, 0), b, Some(Icon::ChevronRight), label, 3, tip) {
                 self.lab_go(go);
@@ -2638,7 +2639,7 @@ impl App {
         }
         if let Some(k) = hk {
             let secs = (bounds[k + 1] - bounds[k]) as f32 / doc.sample.sample_rate.max(1.0);
-            self.set_tip(&format!("Piece {} · {}\nClick to hear it", k + 1, fmt_secs(secs)), "← →");
+            self.set_tip(&tr_fmt!("Piece {} · {}\nClick to hear it", k + 1, fmt_secs(secs)), "← →");
             self.set_cursor(ponzik_window::Cursor::Hand);
             if input.pressed {
                 self.lab_play_slice(k);
@@ -2706,7 +2707,7 @@ impl App {
         if hov && let Some(note) = hit {
             let k = note - first;
             if k < n {
-                self.set_tip(&format!("Piece {} plays on the key {}\nClick to hear it", k + 1, note_name(note as u8)), "");
+                self.set_tip(&tr_fmt!("Piece {} plays on the key {}\nClick to hear it", k + 1, note_name(note as u8)), "");
                 self.set_cursor(ponzik_window::Cursor::Hand);
                 if input.pressed {
                     self.lab_play_slice(k);
@@ -2725,12 +2726,12 @@ impl App {
         let x = r.x + 16.0;
         let w = r.w - 32.0;
         let mut y = r.y + 14.0;
-        self.text(c, self.f.sans_med, 15.0, x, y + 12.0, "Edit sound", t.text);
+        self.text(c, self.f.sans_med, 15.0, x, y + 12.0, tr("Edit sound"), t.text);
         let close = Rect::new(r.right() - 44.0, y - 2.0, 30.0, 28.0);
-        if self.icon_button(c, input, wid("lab-drawer-x", 0, 0), close, Icon::Close, false, ("Close Edit sound", "")) {
+        if self.icon_button(c, input, wid("lab-drawer-x", 0, 0), close, Icon::Close, false, (tr("Close Edit sound"), "")) {
             self.lab.edit_open = false;
         }
-        self.tip_zone(input, Rect::new(x, y, 120.0, 26.0), "Edit sound\nEvery change can be undone with Ctrl+Z", "");
+        self.tip_zone(input, Rect::new(x, y, 120.0, 26.0), tr("Edit sound\nEvery change can be undone with Ctrl+Z"), "");
         y += 36.0;
         let section = |app: &mut App, c: &mut Canvas, y: &mut f32, title: &str| {
             c.fill_rect(Rect::new(x, *y, w, 1.0), t.hairline);
@@ -2742,35 +2743,35 @@ impl App {
         let k = self.lab.selected.min(bounds.len() - 2);
 
         // Volume.
-        section(self, c, &mut y, "Volume");
+        section(self, c, &mut y, tr("Volume"));
         let gain = doc.gain_db;
         let text = format!("{}{} dB", if gain > 0.05 { "+" } else { "" }, fr(gain, 1));
         let norm = (gain + 24.0) / 36.0;
-        if let Some(v) = self.lab_slider(c, input, wid("lab-gain", 0, 0), Rect::new(x, y, w - 42.0, 34.0), "Louder or quieter", norm, &text, 24.0 / 36.0, "Makes the whole sound louder or quieter") {
-            self.lab_checkpoint("Volume");
+        if let Some(v) = self.lab_slider(c, input, wid("lab-gain", 0, 0), Rect::new(x, y, w - 42.0, 34.0), tr("Louder or quieter"), norm, &text, 24.0 / 36.0, tr("Makes the whole sound louder or quieter")) {
+            self.lab_checkpoint(tr("Volume"));
             if let Some(d) = self.lab.doc.as_mut() {
                 d.gain_db = (v * 36.0 - 24.0).clamp(-24.0, 12.0);
             }
         }
         let nb = Rect::new(x + w - 34.0, y + 2.0, 34.0, 32.0);
-        if self.icon_button(c, input, wid("lab-norm", 0, 0), nb, Icon::Normalize, false, ("As loud as possible\nRaises the volume until the loudest point just fits, without distorting", "")) {
+        if self.icon_button(c, input, wid("lab-norm", 0, 0), nb, Icon::Normalize, false, (tr("As loud as possible\nRaises the volume until the loudest point just fits, without distorting"), "")) {
             self.lab_normalize();
         }
         y += 46.0;
 
         // Fondus.
-        section(self, c, &mut y, "Fades");
+        section(self, c, &mut y, tr("Fades"));
         let half = ((doc.trim.1 - doc.trim.0) / 2).max(1);
         let max_fade = half.min((sr * 2.0) as usize) as f32;
         let fades = [
-            ("Fade in", doc.fade_in, "Makes the start come in softly\nYou can also drag the small square at the top left of the wave"),
-            ("Fade out", doc.fade_out, "Makes the end die away softly\nYou can also drag the small square at the top right of the wave"),
+            (tr("Fade in"), doc.fade_in, tr("Makes the start come in softly\nYou can also drag the small square at the top left of the wave")),
+            (tr("Fade out"), doc.fade_out, tr("Makes the end die away softly\nYou can also drag the small square at the top right of the wave")),
         ];
         for (i, (label, frames, tip)) in fades.into_iter().enumerate() {
             let norm = (frames as f32 / max_fade).sqrt();
             let text = fmt_secs(frames as f32 / sr);
             if let Some(v) = self.lab_slider(c, input, wid("lab-fade", i, 0), Rect::new(x, y, w, 34.0), label, norm, &text, 0.0, tip) {
-                self.lab_checkpoint("Fade");
+                self.lab_checkpoint(tr("Fade"));
                 let f = (v * v * max_fade) as usize;
                 if let Some(d) = self.lab.doc.as_mut() {
                     if i == 0 { d.fade_in = f } else { d.fade_out = f }
@@ -2781,12 +2782,12 @@ impl App {
         y += 4.0;
 
         // Tempo.
-        section(self, c, &mut y, "Tempo");
+        section(self, c, &mut y, tr("Tempo"));
         let field = Rect::new(x, y, w - 42.0, 34.0);
         let bpm = doc.bpm;
         let text = bpm.map_or("?".to_string(), |b| fr(b, 1));
-        if let Some(v) = self.drag_field(c, input, wid("lab-bpm", 0, 0), field, bpm.unwrap_or(self.project.bpm), 0.1, 1.0, &text, "BPM of the loop") {
-            self.lab_checkpoint("Loop tempo");
+        if let Some(v) = self.drag_field(c, input, wid("lab-bpm", 0, 0), field, bpm.unwrap_or(self.project.bpm), 0.1, 1.0, &text, tr("BPM of the loop")) {
+            self.lab_checkpoint(tr("Loop tempo"));
             if let Some(d) = self.lab.doc.as_mut() {
                 d.bpm = Some(((v * 10.0).round() / 10.0).clamp(30.0, 300.0));
             }
@@ -2794,48 +2795,48 @@ impl App {
                 self.lab_rechop();
             }
         }
-        self.tip_zone(input, field, "Tempo of the loop, in beats per minute\nDrag up or down, or scroll (Shift: fine)", "");
+        self.tip_zone(input, field, tr("Tempo of the loop, in beats per minute\nDrag up or down, or scroll (Shift: fine)"), "");
         let det = Rect::new(x + w - 34.0, y + 1.0, 34.0, 32.0);
-        if self.icon_button(c, input, wid("lab-detect", 0, 0), det, Icon::Metronome, false, ("Find the tempo automatically", "")) {
+        if self.icon_button(c, input, wid("lab-detect", 0, 0), det, Icon::Metronome, false, (tr("Find the tempo automatically"), "")) {
             self.lab_detect_bpm();
         }
         y += 44.0;
         let pbpm = self.project.bpm;
         draw_icon(c, Icon::Stretch, x + 7.0, y + 6.0, 14.0, t.muted);
-        self.text(c, self.f.sans, 12.0, x + 20.0, y + 6.0, &format!("Match project tempo ({} BPM)", fr(pbpm, 1)), t.text2);
+        self.text(c, self.f.sans, 12.0, x + 20.0, y + 6.0, &tr_fmt!("Match project tempo ({} BPM)", fr(pbpm, 1)), t.text2);
         y += 18.0;
         let half_w = (w - 8.0) / 2.0;
-        let keep = "Match project tempo, keep the pitch\nThe loop gets faster or slower but keeps its notes";
-        if self.lab_button(c, input, wid("lab-stretch", 0, 0), Rect::new(x, y, half_w, 34.0), None, "Keep pitch", 0, keep) {
+        let keep = tr("Match project tempo, keep the pitch\nThe loop gets faster or slower but keeps its notes");
+        if self.lab_button(c, input, wid("lab-stretch", 0, 0), Rect::new(x, y, half_w, 34.0), None, tr("Keep pitch"), 0, keep) {
             self.lab_fit_tempo(true);
         }
-        let record = "Match project tempo like a turntable\nFaster also sounds higher, slower sounds lower";
-        if self.lab_button(c, input, wid("lab-speed", 0, 0), Rect::new(x + half_w + 8.0, y, half_w, 34.0), None, "Like a record", 0, record) {
+        let record = tr("Match project tempo like a turntable\nFaster also sounds higher, slower sounds lower");
+        if self.lab_button(c, input, wid("lab-speed", 0, 0), Rect::new(x + half_w + 8.0, y, half_w, 34.0), None, tr("Like a record"), 0, record) {
             self.lab_fit_tempo(false);
         }
         y += 48.0;
 
         // Hauteur et sens : tout le son, ou la tranche choisie.
-        section(self, c, &mut y, "Pitch and direction");
-        let piece = format!("Piece {}", k + 1);
-        let tips = [("Apply to the whole sound", ""), ("Apply only to the selected piece\nClick a piece on the wave to select it", "")];
+        section(self, c, &mut y, tr("Pitch and direction"));
+        let piece = tr_fmt!("Piece {}", k + 1);
+        let tips = [(tr("Apply to the whole sound"), ""), (tr("Apply only to the selected piece\nClick a piece on the wave to select it"), "")];
         let sel = self.lab.edit_piece as usize;
-        if let Some(i) = self.segmented_tips(c, input, wid("lab-scope", 0, 0), Rect::new(x, y, w, 30.0), &["Whole sound", &piece], &tips, sel) {
+        if let Some(i) = self.segmented_tips(c, input, wid("lab-scope", 0, 0), Rect::new(x, y, w, 30.0), &[tr("Whole sound"), &piece], &tips, sel) {
             self.lab.edit_piece = i == 1;
         }
         y += 38.0;
         let on_piece = self.lab.edit_piece;
         let items = if on_piece {
             [
-                ("Pitch down", "This piece one semitone lower\nIt also gets a little longer"),
-                ("Pitch up", "This piece one semitone higher\nIt also gets a little shorter"),
-                ("Play backwards", "Plays this piece backwards"),
+                (tr("Pitch down"), tr("This piece one semitone lower\nIt also gets a little longer")),
+                (tr("Pitch up"), tr("This piece one semitone higher\nIt also gets a little shorter")),
+                (tr("Play backwards"), tr("Plays this piece backwards")),
             ]
         } else {
             [
-                ("Pitch down", "The whole sound one semitone lower\nThe length stays the same"),
-                ("Pitch up", "The whole sound one semitone higher\nThe length stays the same"),
-                ("Play backwards", "Plays the whole sound backwards"),
+                (tr("Pitch down"), tr("The whole sound one semitone lower\nThe length stays the same")),
+                (tr("Pitch up"), tr("The whole sound one semitone higher\nThe length stays the same")),
+                (tr("Play backwards"), tr("Plays the whole sound backwards")),
             ]
         };
         for (i, (label, tip)) in items.into_iter().enumerate() {
@@ -2856,7 +2857,7 @@ impl App {
             }
         }
         y += 86.0;
-        let hint = "To cut off the start or the end, drag the brackets at both ends of the wave.";
+        let hint = tr("To cut off the start or the end, drag the brackets at both ends of the wave.");
         let lines = self.wrap(self.f.sans, 12.0, hint, w);
         if y + lines.len() as f32 * 17.0 <= r.bottom() - 4.0 {
             for line in lines {

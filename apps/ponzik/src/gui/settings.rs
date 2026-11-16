@@ -70,33 +70,33 @@ impl Bar {
 
     fn label(self) -> &'static str {
         match self {
-            Bar::Mode => "Mode",
-            Bar::Pattern => "Pattern",
-            Bar::Tap => "Tap",
-            Bar::Position => "Position",
-            Bar::Scale => "Gamme",
-            Bar::Metronome => "Métronome",
-            Bar::Record => "Rec",
-            Bar::Keyboard => "Clavier",
-            Bar::Undo => "Annuler",
-            Bar::History => "Historique",
-            Bar::Load => "DSP",
+            Bar::Mode => tr("Mode"),
+            Bar::Pattern => tr("Pattern"),
+            Bar::Tap => tr("Tap"),
+            Bar::Position => tr("Position"),
+            Bar::Scale => tr("Scale"),
+            Bar::Metronome => tr("Metronome"),
+            Bar::Record => tr("Rec"),
+            Bar::Keyboard => tr("Keyboard"),
+            Bar::Undo => tr("Undo"),
+            Bar::History => tr("History"),
+            Bar::Load => tr("DSP"),
         }
     }
 
     fn hint(self) -> &'static str {
         match self {
-            Bar::Mode => "Jouer le pattern, le morceau ou la session",
-            Bar::Pattern => "Choix du pattern en cours",
-            Bar::Tap => "Tap tempo : taper le temps",
-            Bar::Position => "Mesure, temps et pas de la lecture",
-            Bar::Scale => "Gamme du projet",
-            Bar::Metronome => "Métronome",
-            Bar::Record => "Enregistrer les notes et l'audio",
-            Bar::Keyboard => "Clavier d'ordinateur joué comme un piano",
-            Bar::Undo => "Boutons annuler et rétablir",
-            Bar::History => "Historique des modifications",
-            Bar::Load => "Charge du processeur audio",
+            Bar::Mode => tr("Play the pattern, the song or the session"),
+            Bar::Pattern => tr("Current pattern picker"),
+            Bar::Tap => tr("Tap tempo: tap the beat"),
+            Bar::Position => tr("Bar, beat and step of playback"),
+            Bar::Scale => tr("Project scale"),
+            Bar::Metronome => tr("Metronome"),
+            Bar::Record => tr("Record notes and audio"),
+            Bar::Keyboard => tr("Computer keyboard played like a piano"),
+            Bar::Undo => tr("Undo and redo buttons"),
+            Bar::History => tr("Edit history"),
+            Bar::Load => tr("Audio processor load"),
         }
     }
 
@@ -172,12 +172,12 @@ fn view_id(v: View) -> &'static str {
 
 fn view_hint(v: View) -> &'static str {
     match v {
-        View::Rack => "Pas et canaux : le cœur du beat",
-        View::Piano => "Mélodies et accords, note par note",
-        View::Playlist => "L'arrangement du morceau",
-        View::Session => "Clips lancés en direct",
-        View::Mixer => "Pistes, effets et envois",
-        View::Lab => "Chop, edit and flip samples",
+        View::Rack => tr("Steps and channels: the heart of the beat"),
+        View::Piano => tr("Melodies and chords, note by note"),
+        View::Playlist => tr("The arrangement of the song"),
+        View::Session => tr("Clips launched live"),
+        View::Mixer => tr("Tracks, effects and sends"),
+        View::Lab => tr("Chop, edit and flip samples"),
     }
 }
 
@@ -211,13 +211,13 @@ impl Workspace {
 pub fn presets() -> [(&'static str, &'static str, Workspace); 5] {
     use View::*;
     [
-        ("Complet", "Tout Ponzik", Workspace::default()),
-        ("Beatmaker", "Rack, playlist et mixer", Workspace::with(&[Rack, Playlist, Mixer], true, true, &[Bar::Keyboard])),
-        ("Sampling", "Tout sauf le piano roll", Workspace::with(&[Rack, Playlist, Session, Mixer, Lab], true, true, &[Bar::Scale, Bar::Keyboard])),
-        ("Live", "Session et mixer, pour jouer en direct", Workspace::with(&[Session, Mixer], true, true, &[Bar::Pattern, Bar::Position])),
+        (tr("Full"), tr("All of Ponzik"), Workspace::default()),
+        (tr("Beatmaker"), tr("Rack, playlist and mixer"), Workspace::with(&[Rack, Playlist, Mixer], true, true, &[Bar::Keyboard])),
+        (tr("Sampling"), tr("Everything but the piano roll"), Workspace::with(&[Rack, Playlist, Session, Mixer, Lab], true, true, &[Bar::Scale, Bar::Keyboard])),
+        (tr("Live"), tr("Session and mixer, to play live"), Workspace::with(&[Session, Mixer], true, true, &[Bar::Pattern, Bar::Position])),
         (
-            "Minimal",
-            "Rack et playlist, rien d'autre",
+            tr("Minimal"),
+            tr("Rack and playlist, nothing else"),
             Workspace::with(&[Rack, Playlist], true, false, &[Bar::Tap, Bar::Scale, Bar::Keyboard, Bar::History, Bar::Load]),
         ),
     ]
@@ -380,7 +380,7 @@ impl App {
         let j = match json::parse(&text) {
             Ok(j) => j,
             Err(e) => {
-                eprintln!("réglages ignorés ({}) : {e}", path.display());
+                eprintln!("settings ignored ({}): {e}", path.display());
                 return;
             }
         };
@@ -409,7 +409,7 @@ impl App {
             .and_then(|_| std::fs::write(&tmp, text))
             .and_then(|_| std::fs::rename(&tmp, &path));
         if let Err(e) = res {
-            eprintln!("réglages non enregistrés ({}) : {e}", path.display());
+            eprintln!("settings not saved ({}): {e}", path.display());
         }
     }
 
@@ -437,7 +437,7 @@ impl App {
     pub fn apply_profile(&mut self, i: usize) {
         if let Some((name, _, ws)) = presets().into_iter().nth(i) {
             self.apply_workspace(ws, true);
-            self.toast(&format!("Profil : {name}"));
+            self.toast(&tr_fmt!("Profile: {}", name));
         }
     }
 
@@ -455,7 +455,7 @@ impl App {
             self.save_settings();
         }
         if announce {
-            self.toast(&format!("Taille de l'interface : {} %", s.percent()));
+            self.toast(&tr_fmt!("Interface size: {}%", s.percent()));
         }
     }
 
@@ -494,7 +494,7 @@ impl App {
         let i = v.index();
         ws.views[i] = !ws.views[i];
         if !ws.views.iter().any(|&on| on) {
-            self.toast("Il faut garder au moins une vue");
+            self.toast(tr("Keep at least one view"));
             return;
         }
         self.apply_workspace(ws, true);
@@ -528,7 +528,7 @@ impl App {
             Shortcut::ToggleMode => Action::ToggleMode,
             Shortcut::Record => {
                 self.record = !self.record;
-                self.toast(if self.record { "Enregistrement armé" } else { "Enregistrement désarmé" });
+                self.toast(if self.record { tr("Recording armed") } else { tr("Recording disarmed") });
                 return;
             }
             Shortcut::TapTempo => Action::TapTempo,
@@ -553,7 +553,7 @@ impl App {
             Shortcut::NewPattern => {
                 let p = self.project.add_pattern();
                 self.select_pattern(p);
-                self.toast("Nouveau pattern");
+                self.toast(tr("New pattern"));
                 return;
             }
             Shortcut::NextPattern => {
@@ -649,7 +649,7 @@ impl App {
         let seg_w = (tabs.w - 6.0) * 0.5;
         let knob = Rect::new(tabs.x + 3.0 + pos * seg_w, tabs.y + 3.0, seg_w, tabs.h - 6.0);
         c.fill_rrect(knob, 8.0, t.raised_hi);
-        let names = [(Icon::Layout, "Espace de travail", "Vues, panneaux et barre du haut"), (Icon::Keyboard, "Raccourcis", "Changer les touches")];
+        let names = [(Icon::Layout, tr("Workspace"), tr("Views, panels and top bar")), (Icon::Keyboard, tr("Shortcuts"), tr("Change the keys"))];
         let mut hint: Option<String> = None;
         for (i, (icon, name, tip)) in names.into_iter().enumerate() {
             let seg = Rect::new(tabs.x + 3.0 + i as f32 * seg_w, tabs.y, seg_w, tabs.h);
@@ -670,7 +670,7 @@ impl App {
             }
         }
         let close_r = Rect::new(r.right() - 16.0 - 34.0, r.y + 16.0, 34.0, 34.0);
-        if self.icon_button(c, input, wid("set-close", 0, 0), close_r, Icon::Close, false, ("Fermer", "Échap")) {
+        if self.icon_button(c, input, wid("set-close", 0, 0), close_r, Icon::Close, false, (tr("Close"), tr("Esc"))) {
             close = true;
         }
         if self.prefs.capture.is_none() && input.pressed && !r.contains(input.x, input.y) {
@@ -703,7 +703,7 @@ impl App {
         let showing_banner = tab == 1 && self.prefs.conflict.is_some();
         if !showing_banner {
             let line = hint.unwrap_or_else(|| {
-                if tab == 0 { "Clic sur une tuile pour l'afficher ou la masquer".into() } else { "Clic sur une touche, puis la nouvelle combinaison · Échap annule".into() }
+                if tab == 0 { tr("Click a tile to show or hide it").into() } else { tr("Click a key, then the new combination · Esc cancels").into() }
             });
             let right = if tab == 1 { foot.x + 190.0 } else { foot.x };
             self.text_fit(c, self.f.sans, 12.0, right, foot.y + foot.h * 0.5, &line, foot.right() - right, t.text2);
@@ -787,7 +787,7 @@ impl App {
         let mut y = left.y;
 
         // Profils.
-        self.section(c, left.x, y, "Profils");
+        self.section(c, left.x, y, tr("Profiles"));
         y += 20.0;
         let current = {
             let mut ws = self.prefs.ws.clone();
@@ -824,7 +824,7 @@ impl App {
         y += 70.0 + 18.0;
 
         // Vues.
-        self.section(c, left.x, y, "Vues");
+        self.section(c, left.x, y, tr("Views"));
         y += 20.0;
         let tile_w = card_w;
         for (i, v) in View::ALL.into_iter().enumerate() {
@@ -842,18 +842,18 @@ impl App {
         y += 92.0 + 18.0;
 
         // Panneaux, puis la barre du haut.
-        self.section(c, left.x, y, "Panneaux et barre du haut");
+        self.section(c, left.x, y, tr("Panels and top bar"));
         y += 20.0;
         let cols = 7;
         let small_w = ((left.w - (cols - 1) as f32 * gap) / cols as f32).floor();
         let mut cells: Vec<(Glyph, &str, &str, bool)> = vec![
-            (Glyph::Icon(Icon::Sidebar), "Navigateur", "Sons, instruments et effets", self.sidebar),
-            (Glyph::Icon(Icon::Panel), "Appareils", "Le détail du canal ou de la piste choisie", self.panel),
+            (Glyph::Icon(Icon::Sidebar), tr("Browser"), tr("Sounds, instruments and effects"), self.sidebar),
+            (Glyph::Icon(Icon::Panel), tr("Devices"), tr("Details of the selected channel or track"), self.panel),
         ];
         for b in Bar::ALL {
             cells.push((b.glyph(), b.label(), b.hint(), self.bar_shown(b)));
             if b == Bar::Record {
-                cells.push((Glyph::CountIn, "Pré-compte", "Une mesure de métronome avant d'enregistrer", self.count_in));
+                cells.push((Glyph::CountIn, tr("Count-in"), tr("One bar of metronome before recording"), self.count_in));
             }
         }
         let mut toggled = None;
@@ -869,7 +869,7 @@ impl App {
         }
         let rows = cells.len().div_ceil(cols);
         y += rows as f32 * (64.0 + gap) - gap + 18.0;
-        self.section(c, left.x, y, "Taille de l'interface");
+        self.section(c, left.x, y, tr("Interface size"));
         self.ui_scale_slider(c, input, Rect::new(left.x, y + 20.0, left.w, 34.0), hint);
 
         if let Some(k) = toggled {
@@ -892,14 +892,14 @@ impl App {
         }
 
         // Aperçu en direct.
-        self.section(c, right.x, right.y, "Aperçu");
+        self.section(c, right.x, right.y, tr("Preview"));
         let fw = right.w;
         let fh = (fw * 0.66).round();
         self.workspace_preview(c, Rect::new(right.x, right.y + 20.0, fw, fh));
 
         // Sous l'aperçu : le profil reconnu, ou « Sur mesure ».
         let found = presets().into_iter().find(|(_, _, ws)| *ws == current);
-        let (name, desc) = found.map_or(("Sur mesure", "Ton propre espace de travail"), |(n, d, _)| (n, d));
+        let (name, desc) = found.map_or((tr("Custom"), tr("Your own workspace")), |(n, d, _)| (n, d));
         let y = right.y + 20.0 + fh + 28.0;
         self.text(c, self.f.sans_med, 16.0, right.x + 2.0, y, name, t.text);
         self.text_fit(c, self.f.sans, 12.0, right.x + 2.0, y + 22.0, desc, right.w - 4.0, t.text2);
@@ -976,18 +976,18 @@ impl App {
         let kx = track.x + pos * track.w;
         c.fill_circle(kx, cy, 8.0 + hv, t.text);
         c.fill_circle(kx, cy, 3.0, t.accent);
-        let label = format!("{} %", value.percent());
+        let label = tr_fmt!("{}%", value.percent());
         self.text_right(c, self.f.mono_med, 14.0, r.right() - 34.0, cy, &label, t.text);
         // Retour à 100 %.
         let reset = Rect::new(r.right() - 28.0, cy - 14.0, 28.0, 28.0);
         let changed = value != UiScale::default();
         let key = self.key_label(Shortcut::ZoomReset);
-        if changed && self.icon_button(c, input, wid("set-ui-scale-reset", 0, 0), reset, Icon::Reset, false, ("Revenir à 100 %", &key)) {
+        if changed && self.icon_button(c, input, wid("set-ui-scale-reset", 0, 0), reset, Icon::Reset, false, (tr("Back to 100%"), &key)) {
             self.set_ui_scale(UiScale::default(), false);
         }
         if hov || self.is_dragging(id) {
             let (up, down) = (self.key_label(Shortcut::ZoomIn), self.key_label(Shortcut::ZoomOut));
-            *hint = Some(format!("Taille du texte et des contrôles, en plus de l'échelle de l'écran · {up} / {down}"));
+            *hint = Some(tr_fmt!("Size of text and controls, on top of the screen scale · {} / {}", up, down));
         }
     }
 
@@ -1112,7 +1112,7 @@ impl App {
             for row in col {
                 match *row {
                     KeyRow::Head(name) => {
-                        self.section(c, x, y + 6.0, name);
+                        self.section(c, x, y + 6.0, tr(name));
                         y += HEAD;
                     }
                     KeyRow::Item(s) => {
@@ -1145,14 +1145,14 @@ impl App {
             let x = foot.x + 24.0;
             let kx = x + self.fonts.measure(self.f.mono, 11.0, &combo.label()) + 12.0;
             self.keycap(c, kx, cy, &combo.label(), a);
-            let x = self.text(c, self.f.sans, 12.0, kx + 8.0, cy, "est déjà pris par", t.text2.alpha(a)) + kx + 14.0;
+            let x = self.text(c, self.f.sans, 12.0, kx + 8.0, cy, tr("is already used by"), t.text2.alpha(a)) + kx + 14.0;
             draw_icon(c, other.icon(), x + 8.0, cy, 14.0, t.text.alpha(a));
             self.text(c, self.f.sans_med, 12.0, x + 22.0, cy, other.label(), t.text.alpha(a));
             let mut bx = foot.right();
             let buttons = [
-                (Icon::Close, "Annuler", "Garder les touches actuelles", 0),
-                (Icon::Check, "Remplacer", "Retirer la touche à l'autre action", 1),
-                (Icon::Swap, "Échanger", "L'autre action prend l'ancienne touche · Entrée", 2),
+                (Icon::Close, tr("Cancel"), tr("Keep the current keys"), 0),
+                (Icon::Check, tr("Replace"), tr("Take the key away from the other action"), 1),
+                (Icon::Swap, tr("Swap"), tr("The other action takes the old key · Enter"), 2),
             ];
             for (icon, label, tip, k) in buttons {
                 let w = self.fonts.measure(self.f.sans_med, 12.0, label) + 40.0;
@@ -1178,13 +1178,13 @@ impl App {
             let a = self.anim.to(id ^ 0x5649, custom as u8 as f32, T_HOVER);
             if a > 0.01 {
                 let input = if custom { input } else { &super::float::masked(input) };
-                if self.pill_button(c, input, id, br, Icon::Reset, "Touches de FL Studio", false) && custom {
+                if self.pill_button(c, input, id, br, Icon::Reset, tr("FL Studio keys"), false) && custom {
                     self.prefs.keymap = Keymap::default();
                     self.save_settings();
-                    self.toast("Raccourcis par défaut");
+                    self.toast(tr("Default shortcuts"));
                 }
                 if self.hovered(input, id, br) {
-                    *hint = Some("Revenir à toutes les touches par défaut".into());
+                    *hint = Some(tr("Go back to all the default keys").into());
                 }
             }
         }
@@ -1228,7 +1228,7 @@ impl App {
         let shown = if label.is_empty() { "—" } else { label.as_str() };
         self.text_center(c, self.f.mono, 11.0, cap.x + cap.w * 0.5, cy, shown, if capturing { t.accent } else { ink.alpha(alpha) });
         if chov {
-            *hint = Some(if capturing { "Appuie sur la nouvelle combinaison · Échap annule".into() } else { format!("{} · clic : changer la touche", s.label()) });
+            *hint = Some(if capturing { tr("Press the new combination · Esc cancels").into() } else { tr_fmt!("{} · click: change the key", s.label()) });
             if input.pressed {
                 self.prefs.capture = if capturing { None } else { Some(s) };
                 self.prefs.conflict = None;
@@ -1237,7 +1237,7 @@ impl App {
 
         // Au survol : retirer la touche, revenir à celle par défaut.
         let mut bx = cap.x - 4.0;
-        let tools = [(Icon::Reset, !self.prefs.keymap.is_default(s), "Touche par défaut"), (Icon::Close, hov && self.prefs.keymap.get(s).is_some(), "Retirer la touche")];
+        let tools = [(Icon::Reset, !self.prefs.keymap.is_default(s), tr("Default key")), (Icon::Close, hov && self.prefs.keymap.get(s).is_some(), tr("Remove the key"))];
         for (k, (icon, show, tip)) in tools.into_iter().enumerate() {
             let v = self.anim.to(wid("set-tool", i, k), show as u8 as f32, T_HOVER);
             if v < 0.01 {
@@ -1271,7 +1271,7 @@ impl App {
             }
         }
         if hov && !chov && hint.is_none() && dim {
-            *hint = Some("Vue masquée : la touche reste en réserve".into());
+            *hint = Some(tr("Hidden view: the key stays in reserve").into());
         }
     }
 

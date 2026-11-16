@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use ponzik_dsp::biquad::{BUTTERWORTH4_Q, BiquadCoefs};
 use ponzik_engine::ParamInfo;
+use ponzik_i18n::{num, tr, tr_fmt, tr_noop};
 use ponzik_ui::{Canvas, Path, Rect};
 
 use super::Input;
@@ -82,13 +83,13 @@ struct Handle {
 }
 
 const EQ_HANDLES: [Handle; 7] = [
-    Handle { freq: 1, gain: None, q: None, on: Some(0), label: "CB" },
-    Handle { freq: 3, gain: Some(4), q: None, on: None, label: "G" },
+    Handle { freq: 1, gain: None, q: None, on: Some(0), label: tr_noop("LC") },
+    Handle { freq: 3, gain: Some(4), q: None, on: None, label: tr_noop("L") },
     Handle { freq: 5, gain: Some(6), q: Some(7), on: None, label: "1" },
     Handle { freq: 8, gain: Some(9), q: Some(10), on: None, label: "2" },
     Handle { freq: 11, gain: Some(12), q: Some(13), on: None, label: "3" },
-    Handle { freq: 14, gain: Some(15), q: None, on: None, label: "A" },
-    Handle { freq: 17, gain: None, q: None, on: Some(16), label: "CH" },
+    Handle { freq: 14, gain: Some(15), q: None, on: None, label: tr_noop("H") },
+    Handle { freq: 17, gain: None, q: None, on: Some(16), label: tr_noop("HC") },
 ];
 const EQ_RANGE: f32 = 20.0;
 
@@ -235,7 +236,7 @@ impl App {
             };
             c.fill_circle(hx, hy, 9.0 + hv * 2.0, t.bg_deep.alpha(0.85));
             c.stroke_circle(hx, hy, 9.0 + hv * 2.0, 1.6, col);
-            self.text_center(c, self.f.mono_med, 9.0, hx, hy, h.label, col);
+            self.text_center(c, self.f.mono_med, 9.0, hx, hy, tr(h.label), col);
         }
         self.anim.set(key, selected as f32);
         c.set_clip(Some(prev));
@@ -243,7 +244,7 @@ impl App {
         // Réglages fins de la bande choisie, et sortie.
         let h = &EQ_HANDLES[selected.min(EQ_HANDLES.len() - 1)];
         let group = params.iter().find(|p| p.id == h.freq).map_or("", |p| p.group);
-        self.text(c, self.f.sans_med, 11.0, side.x + 4.0, side.y + 6.0, group, t.muted);
+        self.text(c, self.f.sans_med, 11.0, side.x + 4.0, side.y + 6.0, tr(group), t.muted);
         let mut ids: Vec<u32> = vec![h.freq];
         ids.extend(h.gain);
         ids.extend(h.q);
@@ -371,10 +372,10 @@ impl App {
         c.stroke_polyline(&pts, 2.2, t.accent);
         c.set_clip(Some(prev));
         let label = match kind {
-            "saturator" => "Transfert\nGlisser : drive",
-            "compressor" => "Transfert\nGlisser : seuil · molette : ratio",
-            "limiter" => "Transfert\nGlisser : gain d'entrée",
-            _ => "Transfert\nGlisser : seuil",
+            "saturator" => tr("Transfer\nDrag: drive"),
+            "compressor" => tr("Transfer\nDrag: threshold · wheel: ratio"),
+            "limiter" => tr("Transfer\nDrag: input gain"),
+            _ => tr("Transfer\nDrag: threshold"),
         };
         if hov {
             self.set_tip(label, "");
@@ -496,7 +497,7 @@ impl App {
         let Device::Instrument(ch) = device else { return };
         let Some(path) = self.project.channels.get(ch).and_then(|c| c.instrument.sample.clone()) else {
             c.stroke_rrect(r.inset(6.0), 8.0, 1.0, t.hairline.alpha(1.5));
-            self.empty_state(c, r, super::widgets::Icon::Sample, "Glisse un WAV ici");
+            self.empty_state(c, r, super::widgets::Icon::Sample, tr("Drop a WAV here"));
             return;
         };
         let g = r.inset_xy(8.0, 10.0);
@@ -513,14 +514,14 @@ impl App {
         let name = std::path::Path::new(&path).file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
         self.text(c, self.f.sans_med, 11.0, r.x + 10.0, r.y + 12.0, &name, t.text2);
         let open = Rect::new(r.right() - 34.0, r.bottom() - 32.0, 26.0, 26.0);
-        if self.icon_button(c, input, wid("smp-lab", device_key(device), 0), open, super::widgets::Icon::Lab, false, ("Open in the Sample Lab: chop, trim, stretch", "F8")) {
+        if self.icon_button(c, input, wid("smp-lab", device_key(device), 0), open, super::widgets::Icon::Lab, false, (tr("Open in the Sample Lab: chop, trim, stretch"), "F8")) {
             self.open_channel_in_lab(ch);
             return;
         }
 
         // Marqueurs : début et fin (et début de boucle si présent), en pourcentage.
         let find = |n: &str| params.iter().find(|p| p.name == n);
-        let markers = [(find("Début"), t.text), (find("Fin"), t.text), (find("Début de boucle"), t.select)];
+        let markers = [(find("Start"), t.text), (find("End"), t.text), (find("Loop Start"), t.select)];
         for (k, (info, col)) in markers.into_iter().enumerate() {
             let Some(info) = info else { continue };
             let v = self.param_value(device, info);
@@ -586,7 +587,7 @@ thread_local! {
 
 /// « −1,0 » : une décimale, virgule et vrai signe moins.
 pub(super) fn fmt_db1(d: f32) -> String {
-    let s = format!("{:.1}", d.abs()).replace('.', ",");
+    let s = num(d.abs() as f64, 1);
     if d < -0.05 { format!("−{s}") } else { s }
 }
 
@@ -654,7 +655,7 @@ impl App {
             for (p, v) in params.iter().zip(values.iter_mut()) {
                 match p.name {
                     "Mix" => *v = 1.0,
-                    "Ducking" | "Figer" => *v = 0.0,
+                    "Ducking" | "Freeze" => *v = 0.0,
                     _ => {}
                 }
             }
@@ -869,9 +870,9 @@ impl App {
             c.fill_rrect(Rect::new(meter.x, meter.y, meter.w, y_gr(now) - meter.y), 4.0, t.accent);
         }
         if hot {
-            self.set_tip("Transfert\nGlisser : seuil · molette : ratio", "");
+            self.set_tip(tr("Transfer\nDrag: threshold · wheel: ratio"), "");
         } else if input.inside && Rect::new(lane.x, r.y, r.right() - lane.x, r.h).contains(input.x, input.y) {
-            let tip = format!("Réduction de gain : {} dB\nEstimée d'après le niveau de la piste", fmt_db1(-now));
+            let tip = tr_fmt!("Gain reduction: {} dB\nEstimated from the track level", fmt_db1(-now));
             self.set_tip(&tip, "");
         }
     }
@@ -937,7 +938,7 @@ impl App {
         }
         c.fill_rect(Rect::new(bar.x - 2.0, cy, bar.w + 4.0, 1.5), t.select);
         if hot {
-            self.set_tip("Transfert\nGlisser : gain d'entrée · molette : plafond", "");
+            self.set_tip(tr("Transfer\nDrag: input gain · wheel: ceiling"), "");
         }
     }
 
@@ -1007,9 +1008,9 @@ impl App {
             .collect();
         c.stroke_polyline(&pts, 1.2, t.text2.alpha(0.6));
         if hot {
-            self.set_tip("Transfert du caractère\nGlisser : drive", "");
+            self.set_tip(tr("Character transfer\nDrag: drive"), "");
         } else if input.inside && bands.contains(input.x, input.y) {
-            let tip = if multiband { "Drive par bande\nTrait : ton" } else { "Multibande coupée\nTrait : ton" };
+            let tip = if multiband { tr("Drive per band\nLine: tone") } else { tr("Multiband off\nLine: tone") };
             self.set_tip(tip, "");
         }
     }
@@ -1089,7 +1090,7 @@ impl App {
             c.fill_rect(Rect::new(x.round(), mid - h, 1.0, 2.0 * h), t.text.alpha(0.8));
         }
         if input.inside && r.contains(input.x, input.y) {
-            self.set_tip("Disque : craquements et âge\nOnde : pleurage, souffle, perte de bits", "");
+            self.set_tip(tr("Vinyl: crackle and age\nWave: wow, hiss, bit loss"), "");
         }
     }
 
@@ -1119,10 +1120,10 @@ impl App {
                 c.fill_rect(Rect::new(x, mid + 1.0, 1.6, hr), t.accent.alpha(0.35 + 0.6 * hr / half));
             }
         }
-        self.text(c, self.f.mono, 9.0, g.right() - 8.0, g.y + 6.0, "G", t.muted);
-        self.text(c, self.f.mono, 9.0, g.right() - 8.0, g.bottom() - 6.0, "D", t.muted);
+        self.text(c, self.f.mono, 9.0, g.right() - 8.0, g.y + 6.0, tr("L"), t.muted);
+        self.text(c, self.f.mono, 9.0, g.right() - 8.0, g.bottom() - 6.0, tr("R"), t.muted);
         if input.inside && r.contains(input.x, input.y) {
-            self.set_tip("Échos sur deux mesures\nHaut : gauche · bas : droite", "");
+            self.set_tip(tr("Echoes over two bars\nTop: left · bottom: right"), "");
         }
     }
 
@@ -1135,7 +1136,7 @@ impl App {
         let secs = response_kind(kind).map_or(5.0, |k| k.1);
         let find = |n: &str| params.iter().find(|p| p.name == n);
         let get = |app: &App, n: &str| find(n).map_or(0.0, |p| app.param_value(device, p));
-        let (predelay, decay, frozen) = (get(self, "Pré-délai"), get(self, "Déclin"), get(self, "Figer") > 0.5);
+        let (predelay, decay, frozen) = (get(self, "Pre-delay"), get(self, "Decay"), get(self, "Freeze") > 0.5);
         let x_of = |s: f32| g.x + (s / secs).clamp(0.0, 1.0) * g.w;
         for s in 1..secs as u32 {
             c.fill_rect(Rect::new(x_of(s as f32).round(), g.y, 1.0, g.h), t.hairline.alpha(0.7));
@@ -1168,9 +1169,9 @@ impl App {
         self.text_right(c, self.f.mono, 10.0, g.right(), g.y + 4.0, &label, if frozen { t.select } else { t.muted });
         if input.inside && r.contains(input.x, input.y) {
             let tip = if frozen {
-                "Queue figée\nElle tient tant que « Figer » est actif"
+                tr("Frozen tail\nIt holds as long as Freeze is on")
             } else {
-                "Queue sur 5 s\nTrait : pré-délai · repère : déclin"
+                tr("Tail over 5 s\nLine: pre-delay · mark: decay")
             };
             self.set_tip(tip, "");
         }

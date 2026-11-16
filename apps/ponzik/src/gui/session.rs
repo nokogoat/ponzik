@@ -2,6 +2,7 @@
 //! quantifiés à la mesure, et des scènes qui lancent une rangée entière.
 
 use ponzik_engine::{PlayMode, SessionSlot, TICKS_PER_BAR};
+use ponzik_i18n::{tr, tr_fmt, tr_noop};
 use ponzik_project::{SESSION_COLUMNS, SESSION_SCENES};
 use ponzik_ui::{Canvas, Path, Rect};
 
@@ -11,10 +12,10 @@ use super::theme::*;
 use super::widgets::{Icon, draw_icon, wid};
 
 const SCENE_W: f32 = 72.0;
-const SESSION_HELP: &str = "Session
-Clic : lancer le clip à la prochaine mesure
-Case vide : choisir un pattern
-Clic droit maintenu : vider les cases balayées";
+const SESSION_HELP: &str = tr_noop("Session
+Click: launch the clip at the next bar
+Empty slot: pick a pattern
+Hold right-click: clear the swept slots");
 const HEAD_H: f32 = 30.0;
 const STOP_H: f32 = 34.0;
 
@@ -117,14 +118,14 @@ impl App {
         self.advance_session();
 
         let stop_all = Rect::new(header.right() - 36.0, header.y, 36.0, header.h);
-        if self.icon_button(c, input, wid("ses-stop-all", 0, 0), stop_all, Icon::Stop, false, ("Tout arrêter", "")) {
+        if self.icon_button(c, input, wid("ses-stop-all", 0, 0), stop_all, Icon::Stop, false, (tr("Stop all"), "")) {
             for col in 0..SESSION_COLUMNS {
                 self.session_cols[col] = ColumnState::default();
             }
             self.push_session();
         }
         let help = Rect::new(stop_all.x - 44.0, header.y, 36.0, header.h);
-        self.icon_button(c, input, wid("ses-help", 0, 0), help, Icon::Info, false, (SESSION_HELP, ""));
+        self.icon_button(c, input, wid("ses-help", 0, 0), help, Icon::Info, false, (tr(SESSION_HELP), ""));
 
         c.fill_rrect(body, 16.0, t.panel);
         c.stroke_rrect(body, 16.0, 1.0, t.hairline);
@@ -154,7 +155,7 @@ impl App {
             draw_icon(c, Icon::Play, cell.x + 20.0, cell.y + cell.h * 0.5, 12.0, t.text2.mix(t.accent, hv));
             self.text_right(c, self.f.mono_med, 12.0, cell.right() - 14.0, cell.y + cell.h * 0.5, &(r + 1).to_string(), t.muted.mix(t.text2, hv));
             if hov {
-                self.set_tip(&format!("Lancer la scène {}", r + 1), "");
+                self.set_tip(&tr_fmt!("Launch scene {}", r + 1), "");
             }
             if hov && input.pressed {
                 self.launch_scene(r);
@@ -179,7 +180,7 @@ impl App {
                             draw_icon(c, Icon::Plus, cell.x + cell.w * 0.5, cell.y + cell.h * 0.5, 14.0, t.muted.alpha(hv));
                         }
                         if hov {
-                            self.set_tip("Choisir un pattern", "");
+                            self.set_tip(tr("Pick a pattern"), "");
                         }
                         if hov && input.pressed {
                             self.open_popup(Popup::SessionAssign { col: k, row: r }, cell);
@@ -213,7 +214,7 @@ impl App {
                             if playing || queued {
                                 self.stop_column(k);
                             }
-                            self.commit("Vider une case");
+                            self.commit(tr("Clear slot"));
                         }
                     }
                 }
@@ -227,7 +228,7 @@ impl App {
             c.fill_rrect(stop, 8.0, t.raised.alpha(0.5 + hv * 0.5));
             draw_icon(c, Icon::Stop, stop.x + stop.w * 0.5, stop.y + stop.h * 0.5, 11.0, if active { t.text } else { t.muted });
             if hov {
-                self.set_tip("Arrêter la colonne", "");
+                self.set_tip(tr("Stop column"), "");
             }
             if hov && input.pressed {
                 self.stop_column(k);

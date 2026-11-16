@@ -2,6 +2,7 @@
 //! valeurs de FL Studio par défaut, la détection des conflits et l'écriture en
 //! texte (« ctrl+shift+s ») pour le fichier de réglages.
 
+use ponzik_i18n::{tr, tr_noop};
 use ponzik_window::{Key, Modifiers};
 
 use super::app::View;
@@ -59,7 +60,7 @@ impl Combo {
             parts.push("Alt".into());
         }
         if self.shift {
-            parts.push("Maj".into());
+            parts.push(tr("Shift").into());
         }
         parts.push(key_label(self.key));
         parts.join(" ")
@@ -100,21 +101,21 @@ impl Combo {
 
 fn key_label(key: Key) -> String {
     match key {
-        Key::Space => "Espace".into(),
-        Key::Enter => "Entrée".into(),
-        Key::Escape => "Échap".into(),
-        Key::Backspace => "Retour".into(),
+        Key::Space => tr("Space").into(),
+        Key::Enter => tr("Enter").into(),
+        Key::Escape => tr("Esc").into(),
+        Key::Backspace => tr("Backspace").into(),
         Key::Tab => "Tab".into(),
-        Key::Delete => "Suppr".into(),
+        Key::Delete => tr("Del").into(),
         Key::Left => "←".into(),
         Key::Right => "→".into(),
         Key::Up => "↑".into(),
         Key::Down => "↓".into(),
         Key::F(n) => format!("F{n}"),
-        Key::PageUp => "Pg ↑".into(),
-        Key::PageDown => "Pg ↓".into(),
-        Key::Home => "Début".into(),
-        Key::End => "Fin".into(),
+        Key::PageUp => tr("Pg ↑").into(),
+        Key::PageDown => tr("Pg ↓").into(),
+        Key::Home => tr("Home").into(),
+        Key::End => tr("End").into(),
         Key::Char('-') => "−".into(),
         Key::Char(c) => c.to_uppercase().collect(),
     }
@@ -217,7 +218,7 @@ pub enum Shortcut {
 }
 
 /// Familles de raccourcis, dans l'ordre de l'écran de réglages.
-pub const GROUPS: [&str; 5] = ["Transport", "Vues", "Pattern", "Édition", "Fichier"];
+pub const GROUPS: [&str; 5] = [tr_noop("Transport"), tr_noop("Views"), tr_noop("Pattern"), tr_noop("Edit"), tr_noop("File")];
 
 impl Shortcut {
     pub const ALL: [Shortcut; 32] = [
@@ -299,38 +300,38 @@ impl Shortcut {
 
     pub fn label(self) -> &'static str {
         match self {
-            Shortcut::PlayStop => "Lecture / arrêt",
-            Shortcut::ToggleMode => "Pattern / morceau",
-            Shortcut::Record => "Armer l'enregistrement",
-            Shortcut::TapTempo => "Tap tempo",
-            Shortcut::Metronome => "Métronome",
-            Shortcut::TypingKeyboard => "Clavier musical",
-            Shortcut::ViewPlaylist => "Playlist",
-            Shortcut::ViewRack => "Channel Rack",
-            Shortcut::ViewPiano => "Piano roll",
-            Shortcut::ViewSession => "Session",
-            Shortcut::ViewMixer => "Mixer",
-            Shortcut::ViewLab => "Sample Lab",
-            Shortcut::NextView => "Vue suivante",
-            Shortcut::ToggleBrowser => "Navigateur",
-            Shortcut::TogglePanel => "Panneau d'appareils",
-            Shortcut::ZoomIn => "Agrandir l'interface",
-            Shortcut::ZoomOut => "Réduire l'interface",
-            Shortcut::ZoomReset => "Interface à 100 %",
-            Shortcut::NewPattern => "Nouveau pattern",
-            Shortcut::NextPattern => "Pattern suivant",
-            Shortcut::PrevPattern => "Pattern précédent",
-            Shortcut::Undo => "Annuler",
-            Shortcut::Redo => "Rétablir",
-            Shortcut::History => "Historique",
-            Shortcut::Save => "Enregistrer",
-            Shortcut::SaveAs => "Enregistrer sous",
-            Shortcut::Open => "Ouvrir",
-            Shortcut::NewProject => "Nouveau projet",
-            Shortcut::Export => "Exporter en WAV",
-            Shortcut::Palette => "Tout trouver",
-            Shortcut::Search => "Chercher un son",
-            Shortcut::Settings => "Réglages",
+            Shortcut::PlayStop => tr("Play / stop"),
+            Shortcut::ToggleMode => tr("Pattern / song"),
+            Shortcut::Record => tr("Arm recording"),
+            Shortcut::TapTempo => tr("Tap tempo"),
+            Shortcut::Metronome => tr("Metronome"),
+            Shortcut::TypingKeyboard => tr("Typing keyboard"),
+            Shortcut::ViewPlaylist => tr("Playlist"),
+            Shortcut::ViewRack => tr("Channel Rack"),
+            Shortcut::ViewPiano => tr("Piano roll"),
+            Shortcut::ViewSession => tr("Session"),
+            Shortcut::ViewMixer => tr("Mixer"),
+            Shortcut::ViewLab => tr("Sample Lab"),
+            Shortcut::NextView => tr("Next view"),
+            Shortcut::ToggleBrowser => tr("Browser"),
+            Shortcut::TogglePanel => tr("Device panel"),
+            Shortcut::ZoomIn => tr("Enlarge the interface"),
+            Shortcut::ZoomOut => tr("Shrink the interface"),
+            Shortcut::ZoomReset => tr("Interface at 100%"),
+            Shortcut::NewPattern => tr("New pattern"),
+            Shortcut::NextPattern => tr("Next pattern"),
+            Shortcut::PrevPattern => tr("Previous pattern"),
+            Shortcut::Undo => tr("Undo"),
+            Shortcut::Redo => tr("Redo"),
+            Shortcut::History => tr("History"),
+            Shortcut::Save => tr("Save"),
+            Shortcut::SaveAs => tr("Save as"),
+            Shortcut::Open => tr("Open"),
+            Shortcut::NewProject => tr("New project"),
+            Shortcut::Export => tr("Export to WAV"),
+            Shortcut::Palette => tr("Find anything"),
+            Shortcut::Search => tr("Search sounds"),
+            Shortcut::Settings => tr("Settings"),
         }
     }
 
@@ -389,15 +390,15 @@ impl Shortcut {
             | Shortcut::TogglePanel
             | Shortcut::ZoomIn
             | Shortcut::ZoomOut
-            | Shortcut::ZoomReset => "Vues",
+            | Shortcut::ZoomReset => "Views",
             Shortcut::NewPattern | Shortcut::NextPattern | Shortcut::PrevPattern => "Pattern",
             Shortcut::Undo
             | Shortcut::Redo
             | Shortcut::History
             | Shortcut::Palette
             | Shortcut::Search
-            | Shortcut::Settings => "Édition",
-            Shortcut::Save | Shortcut::SaveAs | Shortcut::Open | Shortcut::NewProject | Shortcut::Export => "Fichier",
+            | Shortcut::Settings => "Edit",
+            Shortcut::Save | Shortcut::SaveAs | Shortcut::Open | Shortcut::NewProject | Shortcut::Export => "File",
         }
     }
 
@@ -590,7 +591,7 @@ mod tests {
         for bad in ["", "ctrl+", "hyper+a", "f13", "f0", "abc", "ctrl+ab"] {
             assert_eq!(Combo::parse(bad), None, "{bad}");
         }
-        assert_eq!(Combo::ctrl_shift(Key::Char('s')).label(), "Ctrl Maj S");
+        assert_eq!(ponzik_i18n::with_lang(ponzik_i18n::Lang::EN, || Combo::ctrl_shift(Key::Char('s')).label()), "Ctrl Shift S");
         assert_eq!(Combo::alt(Key::F(8)).label(), "Alt F8");
         assert_eq!(Combo::key(Key::Char('-')).label(), "−");
     }

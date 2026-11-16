@@ -1,6 +1,7 @@
 //! Playlist : les patterns posés dans le temps pour construire le morceau.
 
 use ponzik_engine::{PlayMode, TICKS_PER_BAR};
+use ponzik_i18n::{tr, tr_fmt, tr_fmt_n, tr_noop};
 use ponzik_project::ClipDef;
 use ponzik_ui::{Canvas, Color, Rect};
 use ponzik_window::{Cursor, Key};
@@ -15,12 +16,12 @@ const PALETTE_W: f32 = 196.0;
 const RULER: f32 = 30.0;
 const LANE_H: f32 = 52.0;
 const EDGE: f32 = 8.0;
-const PLAYLIST_HELP: &str = "Playlist
-Clic : poser le pattern choisi · bord : durée
-Clic droit : effacer · sur le titre : menu du clip
-Double-clic : éditer · Ctrl+B : dupliquer
-Règle : départ, boucle et sélection de temps
-Molette : défiler · Ctrl : zoom · milieu : glisser";
+const PLAYLIST_HELP: &str = tr_noop("Playlist
+Click: place the chosen pattern · edge: length
+Right-click: erase · on the title: clip menu
+Double-click: edit · Ctrl+B: duplicate
+Ruler: start, loop and time selection
+Wheel: scroll · Ctrl: zoom · middle: pan");
 /// Hauteur de la barre de titre d'un clip (clic droit : menu).
 const CLIP_TITLE: f32 = 19.0;
 
@@ -42,18 +43,18 @@ pub fn pattern_color(i: usize) -> Color {
 /// Couleurs proposées pour un pattern : la famille de Ponzik, puis des teintes
 /// chaudes pour distinguer les sections. Pas de rouge : il dit l'enregistrement.
 pub const PATTERN_COLORS: [(&str, u32); 12] = [
-    ("Vert", 0x3fd45a),
-    ("Sarcelle", 0x3ccfc4),
-    ("Lime", 0x9be15d),
-    ("Ciel", 0x2fb6e0),
-    ("Menthe", 0x67e8a4),
-    ("Citron", 0xc7e85a),
-    ("Ambre", 0xf0b44a),
-    ("Corail", 0xf08a5d),
-    ("Rose", 0xe878b4),
-    ("Lilas", 0xa98cf0),
-    ("Indigo", 0x6b7cf0),
-    ("Ardoise", 0x8a9aa6),
+    (tr_noop("Green"), 0x3fd45a),
+    (tr_noop("Teal"), 0x3ccfc4),
+    (tr_noop("Lime"), 0x9be15d),
+    (tr_noop("Sky"), 0x2fb6e0),
+    (tr_noop("Mint"), 0x67e8a4),
+    (tr_noop("Lemon"), 0xc7e85a),
+    (tr_noop("Amber"), 0xf0b44a),
+    (tr_noop("Coral"), 0xf08a5d),
+    (tr_noop("Pink"), 0xe878b4),
+    (tr_noop("Lilac"), 0xa98cf0),
+    (tr_noop("Indigo"), 0x6b7cf0),
+    (tr_noop("Slate"), 0x8a9aa6),
 ];
 
 impl App {
@@ -71,8 +72,8 @@ impl App {
             self.playlist.brush = p;
             self.playlist.selected = Some(clip);
             let name = self.project.patterns[p].name.clone();
-            self.commit("Rendre unique");
-            self.toast(&format!("Clip rendu unique : {name}"));
+            self.commit(tr("Make unique"));
+            self.toast(&tr_fmt!("Clip made unique: {}", name));
         }
     }
 
@@ -80,7 +81,7 @@ impl App {
     /// après, et la sélection (et la boucle) avance d'autant pour enchaîner.
     pub fn duplicate_time(&mut self) {
         let Some((View::Playlist, a, b)) = self.time_selection else {
-            self.toast("Tire d'abord une sélection de temps dans la règle");
+            self.toast(tr("Drag a time selection in the ruler first"));
             return;
         };
         let n = self.project.duplicate_time(a, b);
@@ -90,11 +91,10 @@ impl App {
         self.time_selection = Some((View::Playlist, b, b + span));
         self.set_loop(View::Playlist, Some((b, b + span)));
         self.start_marker = b as f64;
-        self.commit("Dupliquer la sélection de temps");
+        self.commit(tr("Duplicate time selection"));
         let bars = span as f32 / TICKS_PER_BAR as f32;
-        let bars = if bars.fract() == 0.0 { format!("{bars:.0}") } else { format!("{bars:.2}").replace('.', ",") };
-        let s = if n > 1 { "s" } else { "" };
-        self.toast(&format!("{n} clip{s} dupliqué{s} · {bars} mes."));
+        let bars = if bars.fract() == 0.0 { format!("{bars:.0}") } else { ponzik_i18n::num(bars as f64, 2) };
+        self.toast(&tr_fmt_n!("{} clip duplicated · {} bars", "{} clips duplicated · {} bars", n, n, bars));
     }
 
     pub(super) fn playlist_view(&mut self, c: &mut Canvas, input: &Input, header: Rect, body: Rect) {
@@ -102,20 +102,20 @@ impl App {
         let snap_box = Rect::new(header.right() - 120.0, header.y, 120.0, header.h);
         let snap_key = wid("pl-snap-v", 0, 0);
         let snap_sel = self.anim.get(snap_key).unwrap_or(0.0) as usize;
-        let tips = [("Aimanter à la mesure", ""), ("Aimanter au temps", "")];
+        let tips = [(tr("Snap to bar"), ""), (tr("Snap to beat"), "")];
         if let Some(i) = self.segmented_tips(c, input, wid("pl-snap", 0, 0), snap_box, &["1", "1/4"], &tips, snap_sel) {
             self.anim.set(snap_key, i as f32);
         }
         draw_icon(c, Icon::Magnet, snap_box.x - 18.0, header.y + header.h * 0.5, 15.0, t.muted);
         let snap = if self.anim.get(snap_key).unwrap_or(0.0) as usize == 0 { TICKS_PER_BAR } else { 96 } as f32;
         let help = Rect::new(snap_box.x - 74.0, header.y, 36.0, header.h);
-        self.icon_button(c, input, wid("pl-help", 0, 0), help, Icon::Info, false, (PLAYLIST_HELP, ""));
+        self.icon_button(c, input, wid("pl-help", 0, 0), help, Icon::Info, false, (tr(PLAYLIST_HELP), ""));
         // Hors mode morceau, la playlist ne joue pas : un bouton pour y passer.
         if self.project.mode != PlayMode::Song {
             let song = Rect::new(help.x - 44.0, header.y, 36.0, header.h);
             let glow = 0.5 + 0.5 * (self.time * 3.0).sin();
             c.fill_rrect(song.inset(-2.0), 10.0, t.accent.alpha(0.08 + 0.06 * glow));
-            if self.icon_button(c, input, wid("pl-song", 0, 0), song, Icon::Playlist, false, ("Jouer le morceau", "L")) {
+            if self.icon_button(c, input, wid("pl-song", 0, 0), song, Icon::Playlist, false, (tr("Play song"), "L")) {
                 self.set_mode(PlayMode::Song);
             }
         }
@@ -146,7 +146,7 @@ impl App {
             if hov && edit.contains(input.x, input.y) {
                 // Bouton d'édition, au-dessus de la ligne.
             } else if hov {
-                self.set_tip("Clic : pinceau · double-clic : renommer\nClic droit : couleur, dupliquer, supprimer", "");
+                self.set_tip(tr("Click: brush · double-click: rename\nRight-click: color, duplicate, delete"), "");
                 self.set_cursor(Cursor::Hand);
                 if input.right_pressed {
                     self.select_pattern(p);
@@ -159,7 +159,7 @@ impl App {
                     }
                 }
             }
-            if hv > 0.01 && self.icon_button(c, input, wid("pl-pat-edit", p, 0), edit, Icon::Rack, false, ("Éditer", &self.key_label(super::keymap::Shortcut::ViewRack))) {
+            if hv > 0.01 && self.icon_button(c, input, wid("pl-pat-edit", p, 0), edit, Icon::Rack, false, (tr("Edit"), &self.key_label(super::keymap::Shortcut::ViewRack))) {
                 self.select_pattern(p);
                 self.set_view(View::Rack);
             }
@@ -175,7 +175,7 @@ impl App {
         draw_icon(c, Icon::Plus, ax, ay, 16.0, t.muted.mix(t.accent, hv));
         if hov {
             let key = self.key_label(super::keymap::Shortcut::NewPattern);
-            self.set_tip("Nouveau pattern", &key);
+            self.set_tip(tr("New pattern"), &key);
             self.set_cursor(Cursor::Hand);
             if input.pressed {
                 let p = self.project.add_pattern();
@@ -262,7 +262,7 @@ impl App {
             if xb - xa > 64.0 && shown > 0.01 {
                 self.keycap(c, xb - 6.0, ruler.y + ruler.h * 0.5, "Ctrl B", 0.8 * shown);
             }
-            self.tip_zone(input, Rect::new(xa, ruler.y, xb - xa, ruler.h), "Sélection de temps\nCtrl+B : la recopier juste après", "Ctrl B");
+            self.tip_zone(input, Rect::new(xa, ruler.y, xb - xa, ruler.h), tr("Time selection\nCtrl+B: copy it right after"), "Ctrl B");
         }
 
         // Clips.
@@ -321,7 +321,7 @@ impl App {
             }
             if input.right_down && self.drag.is_none() {
                 self.project.audio_clips.remove(i);
-                self.commit("Effacer un clip audio");
+                self.commit(tr("Delete audio clip"));
             }
         }
         if self.is_dragging(audio_id) {
@@ -334,7 +334,7 @@ impl App {
                     if (cl.start, cl.lane) != (new_start, new_lane) {
                         cl.start = new_start;
                         cl.lane = new_lane;
-                        self.commit("Déplacer un clip audio");
+                        self.commit(tr("Move audio clip"));
                     }
                 }
                 Some(ClipDrag::AudioResize { clip, len, tick0 }) if clip < self.project.audio_clips.len() => {
@@ -342,7 +342,7 @@ impl App {
                     let new_len = (len as f32 + dt).max(24.0) as u32;
                     if self.project.audio_clips[clip].len != new_len {
                         self.project.audio_clips[clip].len = new_len;
-                        self.commit("Longueur du clip audio");
+                        self.commit(tr("Audio clip length"));
                     }
                 }
                 _ => {}
@@ -379,7 +379,7 @@ impl App {
                     let i = self.project.clips.len() - 1;
                     self.playlist.selected = Some(i);
                     self.clip_drag = Some(ClipDrag::Move { clip: i, orig: clip, tick0: tick, lane0: lane });
-                    self.commit("Poser un clip");
+                    self.commit(tr("Place clip"));
                 }
             }
         }
@@ -394,13 +394,13 @@ impl App {
         } else if over && input.right_down && self.popup.is_none() && let Some((i, _)) = hover_clip {
             self.project.clips.remove(i);
             self.playlist.selected = None;
-            self.commit("Effacer des clips");
+            self.commit(tr("Delete clips"));
         }
         if let Some((i, _)) = hover_clip
             && self.drag.is_none()
             && self.project.clips.get(i).is_some_and(on_title)
         {
-            self.set_tip("Clic droit : rendre unique, renommer, couleur", "");
+            self.set_tip(tr("Right-click: make unique, rename, color"), "");
         }
         if self.is_dragging(grid_id) {
             match self.clip_drag {
@@ -412,7 +412,7 @@ impl App {
                     if (cl.start, cl.lane) != (start, lane) {
                         cl.start = start;
                         cl.lane = lane;
-                        self.commit("Déplacer un clip");
+                        self.commit(tr("Move clip"));
                     }
                 }
                 Some(ClipDrag::Resize { clip, orig, tick0 }) if clip < self.project.clips.len() => {
@@ -420,7 +420,7 @@ impl App {
                     let len = (orig.len as f32 + dt).max(snap) as u32;
                     if self.project.clips[clip].len != len {
                         self.project.clips[clip].len = len;
-                        self.commit("Longueur du clip");
+                        self.commit(tr("Clip length"));
                     }
                 }
                 _ => {}
@@ -444,12 +444,12 @@ impl App {
                     Key::Delete | Key::Backspace if sel.is_some() => {
                         self.project.clips.remove(sel.unwrap_or(0));
                         self.playlist.selected = None;
-                        self.commit("Effacer un clip");
+                        self.commit(tr("Delete clip"));
                     }
                     Key::Char('c') if mods.ctrl => {
                         if let Some(i) = sel {
                             self.clipboard_clip = Some(self.project.clips[i]);
-                            self.toast("Clip copié");
+                            self.toast(tr("Clip copied"));
                         }
                     }
                     Key::Char('v') if mods.ctrl => {
@@ -457,7 +457,7 @@ impl App {
                             clip.start = ((self.start_marker as f32 / snap).round() * snap) as u32;
                             self.project.clips.push(clip);
                             self.playlist.selected = Some(self.project.clips.len() - 1);
-                            self.commit("Coller un clip");
+                            self.commit(tr("Paste clip"));
                         }
                     }
                     Key::Char('b') if mods.ctrl && matches!(self.time_selection, Some((View::Playlist, _, _))) => {
@@ -469,7 +469,7 @@ impl App {
                             clip.start += clip.len;
                             self.project.clips.push(clip);
                             self.playlist.selected = Some(self.project.clips.len() - 1);
-                            self.commit("Dupliquer un clip");
+                            self.commit(tr("Duplicate clip"));
                         }
                     }
                     Key::Char('d') if mods.ctrl => self.playlist.selected = None,
@@ -560,7 +560,7 @@ impl App {
             let name = if cl.muted { format!("{name} · muted") } else { name };
             self.text_fit(c, self.f.sans_med, 11.0, r.x + 8.0, r.y + 10.0, &name, r.w - 12.0, t.text.alpha(dim));
             if hov && cl.take > 0 {
-                self.set_tip("Alt+click: play this take", "");
+                self.set_tip(tr("Alt+click: play this take"), "");
             }
             let sr = self.samples.get(&cl.path).map_or(48_000.0, |s| s.sample_rate as f64);
             if let Some(peaks) = self.waveform(&cl.path) {

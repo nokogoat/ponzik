@@ -8,6 +8,7 @@ use std::f32::consts::PI;
 
 use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, TRACKS};
 use ponzik_engine::registry;
+use ponzik_i18n::{num, tr_ctx, tr_fmt, tr_fmt_n};
 use ponzik_project::TrackKind;
 use ponzik_ui::{Canvas, Color, Rect};
 
@@ -35,28 +36,28 @@ pub fn fmt_db(gain: f32) -> String {
     if d < -90.0 {
         return "−∞ dB".into();
     }
-    let s = format!("{:.1}", d.abs()).replace('.', ",");
+    let s = num(d.abs() as f64, 1);
     if d < -0.05 {
         format!("−{s} dB")
     } else if d > 0.05 {
         format!("+{s} dB")
     } else {
-        "0,0 dB".into()
+        format!("{} dB", num(0.0, 1))
     }
 }
 
 /// Pan lisible : « C », « G 30 », « D 45 ».
 pub fn fmt_pan(pan: f32) -> String {
     match (pan * 100.0).round() as i32 {
-        0 => "C".to_string(),
-        p if p < 0 => format!("G {}", -p),
-        p => format!("D {p}"),
+        0 => tr_ctx("pan", "C").to_string(),
+        p if p < 0 => tr_fmt!("L {}", -p),
+        p => tr_fmt!("R {}", p),
     }
 }
 
 /// « −9,8 » : une décimale, virgule et vrai signe moins.
 fn fmt_lufs(v: f32) -> String {
-    let s = format!("{:.1}", v.abs()).replace('.', ",");
+    let s = num(v.abs() as f64, 1);
     if v < -0.05 { format!("−{s}") } else { s }
 }
 
@@ -130,16 +131,16 @@ impl App {
         let audible = |m: &usize| *m != MASTER && self.project.tracks[*m].kind != TrackKind::Vca;
         let members: Vec<usize> = members.iter().copied().filter(audible).collect();
         let Some(bus) = self.project.add_bus(&members) else {
-            self.toast("Plus de piste libre dans le mixer");
+            self.toast(ponzik_i18n::tr("No free track left in the mixer"));
             return;
         };
         let refused = members.iter().filter(|&&m| self.project.tracks[m].output != bus).count();
         self.reveal_track(bus);
-        self.commit(if members.is_empty() { "Nouveau bus" } else { "Grouper dans un bus" });
+        self.commit(if members.is_empty() { ponzik_i18n::tr("New bus") } else { ponzik_i18n::tr("Group into a bus") });
         let name = self.project.tracks[bus].name.clone();
-        let mut msg = format!("{name} créé · double-clic sur son nom pour le renommer");
+        let mut msg = tr_fmt!("{} created · double-click its name to rename it", name);
         if refused > 0 {
-            msg = format!("{name} créé · {refused} piste(s) laissée(s) de côté : boucle de routage");
+            msg = tr_fmt_n!("{} created · {} track left out: routing loop", "{} created · {} tracks left out: routing loop", refused, name, refused);
         }
         self.toast(&msg);
     }
@@ -147,33 +148,33 @@ impl App {
     /// Bus de retour avec un effet réglé, et un envoi depuis `from`.
     pub fn new_return(&mut self, kind: &str, from: Option<usize>) {
         let Some(bus) = self.project.add_return(kind, from) else {
-            self.toast("Plus de piste libre dans le mixer");
+            self.toast(ponzik_i18n::tr("No free track left in the mixer"));
             return;
         };
         self.reveal_track(bus);
         self.panel = true;
-        self.commit("Nouveau bus d'envoi");
+        self.commit(ponzik_i18n::tr("New return bus"));
         let name = self.project.tracks[bus].name.clone();
         let msg = match from.filter(|&t| self.project.tracks[t].sends.iter().any(|s| s.0 == bus && s.1 > 0.0)) {
-            Some(t) => format!("{name} créé · envoi depuis {}", self.project.tracks[t].name),
-            None => format!("{name} créé · Envoi dans le menu d'une piste pour l'alimenter"),
+            Some(t) => tr_fmt!("{} created · sent from {}", name, self.project.tracks[t].name),
+            None => tr_fmt!("{} created · use Send in a track's menu to feed it", name),
         };
         self.toast(&msg);
     }
 
     pub fn new_vca(&mut self, members: &[usize]) {
         let Some(vca) = self.project.add_vca(members) else {
-            self.toast("Plus de piste libre dans le mixer");
+            self.toast(ponzik_i18n::tr("No free track left in the mixer"));
             return;
         };
         self.reveal_track(vca);
-        self.commit("Nouveau VCA");
+        self.commit(ponzik_i18n::tr("New VCA"));
         let name = self.project.tracks[vca].name.clone();
         let n = self.project.vca_members(vca).len();
         let msg = if n == 0 {
-            format!("{name} créé · clic droit sur une piste › VCA pour la lui confier")
+            tr_fmt!("{} created · right-click a track › VCA to assign it", name)
         } else {
-            format!("{name} pilote {n} piste(s) · aucun son ne le traverse")
+            tr_fmt_n!("{} controls {} track · no sound passes through it", "{} controls {} tracks · no sound passes through it", n, name, n)
         };
         self.toast(&msg);
     }
@@ -185,7 +186,7 @@ impl App {
             let hidden = self.project.bus_members(bus);
             self.mixer_sel.retain(|t| !hidden.contains(t));
         }
-        self.commit(if folded { "Replier un bus" } else { "Déplier un bus" });
+        self.commit(if folded { ponzik_i18n::tr("Fold a bus") } else { ponzik_i18n::tr("Unfold a bus") });
     }
 
     /// Défait un bus ou supprime un VCA (Ctrl+Z le rend).
@@ -204,8 +205,8 @@ impl App {
         if self.focus == Focus::Track(t) {
             self.focus = Focus::Track(self.project.tracks[t].output);
         }
-        self.commit(if kind == TrackKind::Bus { "Défaire un bus" } else { "Supprimer un VCA" });
-        self.toast(&format!("{name} retiré · Ctrl+Z pour annuler"));
+        self.commit(if kind == TrackKind::Bus { ponzik_i18n::tr("Ungroup a bus") } else { ponzik_i18n::tr("Delete a VCA") });
+        self.toast(&tr_fmt!("{} removed · Ctrl+Z to undo", name));
     }
 
     /// Inserts qui écoutent la piste `key` : (piste, nom de l'effet).
@@ -213,7 +214,7 @@ impl App {
         let mut out = Vec::new();
         for (t, tr) in self.project.tracks.iter().enumerate() {
             for fx in tr.inserts.iter().flatten().filter(|fx| fx.sidechain == Some(key)) {
-                out.push((t, registry::effect_kind(&fx.kind).map_or("Effet", |k| k.name)));
+                out.push((t, registry::effect_kind(&fx.kind).map_or(ponzik_i18n::tr("Effect"), |k| ponzik_i18n::tr(k.name))));
             }
         }
         out
@@ -295,7 +296,7 @@ impl App {
         let all_key = wid("mx-all", 0, 0);
         let all = self.anim.get(all_key).unwrap_or(0.0) > 0.5;
         let toggle = Rect::new(header.right() - 36.0, header.y, 36.0, header.h);
-        let tip = if all { ("Pistes utilisées seulement", "") } else { ("Toutes les pistes", "") };
+        let tip = if all { (ponzik_i18n::tr("Used tracks only"), "") } else { (ponzik_i18n::tr("All tracks"), "") };
         if self.icon_button(c, input, wid("mx-all-btn", 0, 0), toggle, Icon::Columns, all, tip) {
             self.anim.set(all_key, if all { 0.0 } else { 1.0 });
         }
@@ -308,10 +309,10 @@ impl App {
         let n = self.mixer_sel.len();
         let selv = self.anim.to(wid("mx-sel-hint", 0, 0), (n > 0) as u8 as f32, T_HOVER);
         if selv > 0.01 {
-            let label = if n == 1 { "1 piste".to_string() } else { format!("{n} pistes") };
+            let label = tr_fmt_n!("{} track", "{} tracks", n, n);
             let right = add.x - 12.0;
             let x = self.keycap(c, right, header.y + header.h * 0.5, "Ctrl+G", selv);
-            self.text_right(c, self.f.sans, 12.0, x - 8.0, header.y + header.h * 0.5, &format!("{label} · grouper"), t.text2.alpha(selv));
+            self.text_right(c, self.f.sans, 12.0, x - 8.0, header.y + header.h * 0.5, &tr_fmt!("{} · group", label), t.text2.alpha(selv));
         }
 
         c.fill_rrect(body, 16.0, t.panel);
@@ -391,9 +392,9 @@ impl App {
         let ink = t.text2.mix(t.text, hv);
         let (cx, cy) = r.center();
         draw_icon(c, Icon::Bus, cx - 16.0, cy, 15.0, ink.mix(t.accent, hv));
-        self.text(c, self.f.sans_med, 13.0, cx - 4.0, cy, "Bus", ink);
+        self.text(c, self.f.sans_med, 13.0, cx - 4.0, cy, ponzik_i18n::tr("Bus"), ink);
         if hov {
-            self.set_tip("Nouveau bus, retour d'effet ou VCA\nCtrl+clic sur des tranches pour les grouper", "Ctrl+G");
+            self.set_tip(ponzik_i18n::tr("New bus, effect return or VCA\nCtrl+click strips to group them"), "Ctrl+G");
         }
         hov && input.pressed
     }
@@ -447,7 +448,7 @@ impl App {
             let (dx, dy) = (inner.x + 3.5, inner.y + 10.0);
             c.fill_circle(dx, dy, 3.5, self.track_tint(bus));
             if self.hovered(input, wid("mx-dot", tr, 0), Rect::new(dx - 6.0, dy - 7.0, 12.0, 14.0)) {
-                let tip = format!("Sort dans {}", self.project.tracks[bus].name);
+                let tip = tr_fmt!("Outputs to {}", self.project.tracks[bus].name);
                 self.set_tip(&tip, "");
             }
             left = 10.0;
@@ -466,7 +467,11 @@ impl App {
             let pt = |x: f32, y: f32| (cx + x * a.cos() - y * a.sin(), cy + x * a.sin() + y * a.cos());
             c.stroke_polyline(&[pt(-2.0, -4.0), pt(2.0, 0.0), pt(-2.0, 4.0)], 1.6, tint.mix(t.text, hv * 0.4));
             if chov {
-                let tip = if fold > 0.5 { format!("Déplier · {members} piste(s)") } else { format!("Replier · {members} piste(s)") };
+                let tip = if fold > 0.5 {
+                    tr_fmt_n!("Unfold · {} track", "Unfold · {} tracks", members, members)
+                } else {
+                    tr_fmt_n!("Fold · {} track", "Fold · {} tracks", members, members)
+                };
                 self.set_tip(&tip, "");
                 if input.pressed {
                     self.toggle_fold(tr);
@@ -496,7 +501,7 @@ impl App {
             self.open_popup(Popup::TrackMenu(tr), Rect::new(input.x, input.y, 0.0, 0.0));
         }
         if nhov {
-            self.set_tip("Double-clic : renommer · Ctrl+clic : sélection multiple · clic droit : menu", "");
+            self.set_tip(ponzik_i18n::tr("Double-click: rename · Ctrl+click: multi-select · right-click: menu"), "");
         }
         let name = self.project.tracks[tr].name.clone();
         // Centré, ou entre la pastille et l'armement quand la gauche est occupée.
@@ -517,7 +522,7 @@ impl App {
                 draw_icon(c, Icon::Record, arm.x + 9.0, arm.y + 9.0, 13.0, col);
             }
             if ahov {
-                self.set_tip(if armed { "Disarm · right click: recording panel" } else { "Arm for audio recording · right click: recording panel" }, "");
+                self.set_tip(if armed { ponzik_i18n::tr("Disarm · right click: recording panel") } else { ponzik_i18n::tr("Arm for audio recording · right click: recording panel") }, "");
             }
             if ahov && input.pressed {
                 self.toggle_arm(tr);
@@ -526,12 +531,12 @@ impl App {
                 self.open_record_panel(Some((arm.x + 9.0, arm.bottom() + 6.0)));
             }
         }
-        let num = if tr == MASTER { "M".to_string() } else { tr.to_string() };
+        let num = if tr == MASTER { tr_ctx("master track", "M").to_string() } else { tr.to_string() };
         let (cx, ny) = (inner.x + inner.w * 0.5, inner.y + 25.0);
         // Bus et VCA : leur pictogramme avant le numéro.
         let kind_icon = match kind {
-            TrackKind::Bus => Some((Icon::Bus, "Bus : d'autres pistes y sortent, ses effets traitent leur somme")),
-            TrackKind::Vca => Some((Icon::Vca, "VCA : son fader pilote le volume de ses pistes, aucun son ne le traverse")),
+            TrackKind::Bus => Some((Icon::Bus, ponzik_i18n::tr("Bus: other tracks output into it, its effects process their sum"))),
+            TrackKind::Vca => Some((Icon::Vca, ponzik_i18n::tr("VCA: its fader controls the volume of its tracks, no sound passes through it"))),
             TrackKind::Normal => None,
         };
         if let Some((icon, tip)) = kind_icon {
@@ -548,7 +553,7 @@ impl App {
             let vx = cx - 16.0;
             draw_icon(c, Icon::Vca, vx, ny, 11.0, self.track_tint(v));
             if self.hovered(input, wid("mx-vca-tag", tr, 0), Rect::new(vx - 7.0, ny - 7.0, 14.0, 14.0)) {
-                let tip = format!("Piloté par {}", self.project.tracks[v].name);
+                let tip = tr_fmt!("Controlled by {}", self.project.tracks[v].name);
                 self.set_tip(&tip, "");
             }
         }
@@ -561,7 +566,7 @@ impl App {
             if self.hovered(input, wid("mx-keysrc", tr, 0), zone) {
                 let list: Vec<String> =
                     listeners.iter().map(|(t, n)| format!("{} · {n}", self.project.tracks[*t].name)).collect();
-                self.set_tip(&format!("Sert de clé à\n{}", list.join("\n")), "");
+                self.set_tip(&tr_fmt!("Sidechain key for\n{}", list.join("\n")), "");
             }
         }
 
@@ -586,7 +591,7 @@ impl App {
             self.drop_zone(input, row, DropTarget::Slot(tr, slot));
             match &fx {
                 Some(def) => {
-                    let name = registry::effect_kind(&def.kind).map_or(def.kind.as_str(), |k| k.name);
+                    let name = registry::effect_kind(&def.kind).map_or(def.kind.as_str(), |k| ponzik_i18n::tr(k.name));
                     c.fill_rrect(row, 6.0, t.raised.mix(t.raised_hi, hv));
                     let dot = if def.bypass { t.muted } else { t.accent };
                     c.fill_circle(row.x + 9.0, row.y + 10.0, 3.0, dot);
@@ -612,11 +617,11 @@ impl App {
                 }
             }
             if hov {
-                self.set_tip(if fx.is_some() { "Clic droit : retirer" } else { "Ajouter un effet" }, "");
+                self.set_tip(if fx.is_some() { ponzik_i18n::tr("Right-click: remove") } else { ponzik_i18n::tr("Add an effect") }, "");
             }
             if hov && input.right_pressed && fx.is_some() {
                 self.project.tracks[tr].inserts[slot] = None;
-                self.commit("Retirer un effet");
+                self.commit(ponzik_i18n::tr("Remove an effect"));
             }
             y += 22.0;
         }
@@ -638,7 +643,7 @@ impl App {
             if let Some(v) = self.mini_knob(c, input, wid("mx-send", tr, slot), (row.right() - 11.0, row.y + 12.0), amount, false) {
                 // Un envoi ramené à zéro se libère.
                 self.project.tracks[tr].sends[slot].1 = if v < 0.01 { 0.0 } else { v };
-                self.commit("Niveau d'envoi");
+                self.commit(ponzik_i18n::tr("Send level"));
             }
             y += 26.0;
         }
@@ -652,11 +657,11 @@ impl App {
         let pan = self.project.tracks[tr].pan;
         if let Some(v) = self.mini_knob(c, input, wid("mx-pan", tr, 0), (inner.x + 18.0, pan_y), (pan + 1.0) * 0.5, true) {
             self.project.tracks[tr].pan = ((v * 2.0 - 1.0) * 100.0).round() / 100.0;
-            self.commit("Pan de piste");
+            self.commit(ponzik_i18n::tr("Track pan"));
         }
         let pan_text = fmt_pan(pan);
         self.text_right(c, self.f.mono, 11.0, inner.right(), pan_y, &pan_text, t.text2);
-        self.tip_zone(input, Rect::new(inner.x, pan_y - 14.0, inner.w, 28.0), "Pan", "");
+        self.tip_zone(input, Rect::new(inner.x, pan_y - 14.0, inner.w, 28.0), ponzik_i18n::tr("Pan"), "");
 
         // Bas : sortie, mute ; valeur au-dessus ; fader au milieu.
         let mute = Rect::new(inner.x, inner.bottom() - 26.0, inner.w, 26.0);
@@ -671,7 +676,7 @@ impl App {
         // CPU load of the track (inserts and fader), share of one core.
         let cpu = self.engine.track_cpu(tr);
         if cpu >= 0.0005 {
-            self.text_right(c, self.f.mono, 9.0, inner.right(), pan_y + 16.0, &format!("{:.1}%", cpu * 100.0), t.muted);
+            self.text_right(c, self.f.mono, 9.0, inner.right(), pan_y + 16.0, &ponzik_i18n::tr_fmt!("{:.1}%", cpu * 100.0), t.muted);
         }
 
         let oid = wid("mx-out", tr, 0);
@@ -691,7 +696,7 @@ impl App {
             self.text(c, self.f.sans, 11.0, x0 + 16.0, out_r.y + 12.0, &lw, ink);
         }
         if ohov {
-            self.set_tip("Sortie", "");
+            self.set_tip(ponzik_i18n::tr("Output"), "");
         }
         if ohov && input.pressed {
             self.open_popup(Popup::Output(tr), out_r);
@@ -704,7 +709,7 @@ impl App {
         let hov = self.hovered(input, mid, mute_r);
         if hov && input.pressed {
             self.project.tracks[tr].muted = !muted;
-            self.commit("Muet de piste");
+            self.commit(ponzik_i18n::tr("Track mute"));
         }
         let hv = self.hover_anim(mid, hov);
         let (fill, ink) = if muted { (t.text.mix(WHITE, hv * 0.2), t.bg_deep) } else { (t.raised.mix(t.raised_hi, hv), t.text2) };
@@ -712,7 +717,7 @@ impl App {
         let (mx, my) = mute_r.center();
         draw_icon(c, Icon::Mute, mx, my, 14.0, ink);
         if hov {
-            self.set_tip(if muted { "Réactiver" } else { "Couper" }, "");
+            self.set_tip(if muted { ponzik_i18n::tr("Unmute") } else { ponzik_i18n::tr("Mute") }, "");
         }
         if tr != MASTER {
             let solo_r = Rect::new(mute.x + half + 4.0, mute.y, half, mute.h);
@@ -728,7 +733,7 @@ impl App {
             let (sx, sy) = solo_r.center();
             draw_icon(c, Icon::Solo, sx, sy, 14.0, ink);
             if shov {
-                self.set_tip("Solo", "");
+                self.set_tip(ponzik_i18n::tr("Solo"), "");
             }
         }
     }
@@ -738,10 +743,10 @@ impl App {
         let t = self.theme;
         let members = self.project.vca_members(tr);
         let mut y = inner.y + 40.0;
-        self.text(c, self.f.sans, 10.0, inner.x + 2.0, y + 6.0, "Pilote", t.muted);
+        self.text(c, self.f.sans, 10.0, inner.x + 2.0, y + 6.0, ponzik_i18n::tr("Controls"), t.muted);
         y += 16.0;
         if members.is_empty() {
-            let lines = ["Aucune piste.", "Clic droit sur une", "piste › VCA."];
+            let lines = [ponzik_i18n::tr("No tracks."), ponzik_i18n::tr("Right-click a"), ponzik_i18n::tr("track › VCA.")];
             for (k, line) in lines.iter().enumerate() {
                 self.text(c, self.f.sans, 11.0, inner.x + 2.0, y + 8.0 + k as f32 * 15.0, line, t.text2.alpha(0.8));
             }
@@ -754,16 +759,16 @@ impl App {
             c.fill_rrect(row, 6.0, t.raised.alpha(0.4 + 0.6 * hv));
             c.fill_circle(row.x + 9.0, row.y + 10.0, 3.0, self.track_tint(m));
             let name = self.project.tracks[m].name.clone();
-            let label = if k == 8 && members.len() > 9 { format!("+ {} autres", members.len() - 8) } else { name };
+            let label = if k == 8 && members.len() > 9 { tr_fmt!("+ {} more", members.len() - 8) } else { name };
             self.text_fit(c, self.f.sans, 11.0, row.x + 18.0, row.y + 10.0, &label, row.w - 22.0, t.text2);
             if hov {
-                self.set_tip("Clic : afficher · clic droit : retirer du VCA", "");
+                self.set_tip(ponzik_i18n::tr("Click: show · right-click: remove from VCA"), "");
                 if input.pressed {
                     self.focus = Focus::Track(m);
                 }
                 if input.right_pressed {
                     self.project.tracks[m].vca = None;
-                    self.commit("Retirer du VCA");
+                    self.commit(ponzik_i18n::tr("Remove from VCA"));
                 }
             }
             y += 22.0;
@@ -780,7 +785,7 @@ impl App {
         let gain = self.project.tracks[tr].gain;
         self.text_center(c, self.f.mono, 12.0, inner.x + inner.w * 0.5, readout_y, &fmt_db(gain), t.text2);
         let n = members.len();
-        let info = if n == 1 { "1 piste".to_string() } else { format!("{n} pistes") };
+        let info = tr_fmt_n!("{} track", "{} tracks", n, n);
         let (cx, cy) = info_r.center();
         self.text_center(c, self.f.sans, 11.0, cx + 7.0, cy, &info, t.muted);
         let w = self.fonts.measure(self.f.sans, 11.0, &info);
@@ -791,7 +796,7 @@ impl App {
         let hov = self.hovered(input, mid, mute);
         if hov && input.pressed {
             self.project.tracks[tr].muted = !muted;
-            self.commit("Muet de piste");
+            self.commit(ponzik_i18n::tr("Track mute"));
         }
         let hv = self.hover_anim(mid, hov);
         let (fill, ink) = if muted { (t.text.mix(WHITE, hv * 0.2), t.bg_deep) } else { (t.raised.mix(t.raised_hi, hv), t.text2) };
@@ -799,7 +804,7 @@ impl App {
         let (mx, my) = mute.center();
         draw_icon(c, Icon::Mute, mx, my, 14.0, ink);
         if hov {
-            self.set_tip(if muted { "Réactiver les pistes du VCA" } else { "Couper toutes les pistes du VCA" }, "");
+            self.set_tip(if muted { ponzik_i18n::tr("Unmute the VCA's tracks") } else { ponzik_i18n::tr("Mute all the VCA's tracks") }, "");
         }
     }
 
@@ -835,8 +840,8 @@ impl App {
         }
         if hov {
             let tip = match key {
-                Some(k) => format!("Clé : {}\nClic : changer · clic droit : débrancher", self.project.tracks[k].name),
-                None => "Entrée latérale\nClic : choisir la piste clé".to_string(),
+                Some(k) => tr_fmt!("Key: {}\nClick: change · right-click: unplug", self.project.tracks[k].name),
+                None => ponzik_i18n::tr("Sidechain input\nClick: choose the key track").to_string(),
             };
             self.set_tip(&tip, "");
             if input.pressed {
@@ -846,7 +851,7 @@ impl App {
                 if let Some(fx) = self.project.tracks[tr].inserts[slot].as_mut() {
                     fx.sidechain = None;
                 }
-                self.commit("Débrancher la clé");
+                self.commit(ponzik_i18n::tr("Unplug the key"));
             }
         }
     }
@@ -878,7 +883,7 @@ impl App {
         }
         c.fill_rect(Rect::new((bar.x + bar.w * pos(-14.0)).round(), bar.y - 2.0, 1.0, bar.h + 4.0), t.text2.alpha(0.7));
         if hov {
-            let tip = format!("Sonie du master\nIntégrée {} · 3 s {}\nClic : remettre à zéro", fmt(integrated), fmt(short));
+            let tip = tr_fmt!("Master loudness\nIntegrated {} · 3 s {}\nClick: reset", fmt(integrated), fmt(short));
             self.set_tip(&tip, "");
         }
         if hov && input.pressed {
@@ -902,7 +907,7 @@ impl App {
         if hov && input.pressed {
             if input.double || input.mods.ctrl {
                 self.project.tracks[tr].gain = 1.0;
-                self.commit("Volume de piste");
+                self.commit(ponzik_i18n::tr("Track volume"));
             } else {
                 let grab = if cap.contains(input.x, input.y) { input.y - y_of(pos) } else { 0.0 };
                 self.begin_drag(id, input, grab);
@@ -911,11 +916,11 @@ impl App {
         if let Some(d) = self.drag.filter(|d| d.id == id) {
             let p = ((area.bottom() - CAP_H * 0.5 - (input.y - d.v0)) / travel).clamp(0.0, 1.0);
             self.project.tracks[tr].gain = pos_to_gain(p);
-            self.commit("Volume de piste");
+            self.commit(ponzik_i18n::tr("Track volume"));
         }
         if hov && input.wheel != 0.0 {
             self.project.tracks[tr].gain = pos_to_gain((pos + input.wheel * 0.02).clamp(0.0, 1.0));
-            self.commit("Volume de piste");
+            self.commit(ponzik_i18n::tr("Track volume"));
         }
 
         for d in DB_TICKS {
@@ -1052,7 +1057,7 @@ mod tests {
     fn vca_refuses_effects_and_dissolving_undoes() {
         let mut app = app();
         let vca = app.project.add_vca(&[1]).unwrap();
-        app.commit("Nouveau VCA");
+        app.commit(ponzik_i18n::tr("New VCA"));
         app.add_effect(vca, "reverb");
         assert!(app.project.tracks[vca].inserts.iter().all(Option::is_none));
         app.dissolve_track(vca);

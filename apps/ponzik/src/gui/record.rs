@@ -12,6 +12,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use ponzik_i18n::{tr, tr_fmt, tr_fmt_n};
 
 use ponzik_audio::{DeviceInfo, Latency, OutputStream};
 use ponzik_engine::input::{CALIBRATION_SECONDS, clip_placement, measure_round_trip, take_slices};
@@ -290,13 +291,13 @@ impl App {
             opened = Ok(ok);
             self.rec.settings.device = None;
             self.save_record_settings();
-            self.toast(&format!("Microphone \"{id}\" unavailable: using the system default input"));
+            self.toast(&tr_fmt!("Microphone \"{}\" unavailable: using the system default input", id));
         }
         match opened {
             Ok((name, config)) => {
                 self.rec.input_error = None;
                 if config.sample_rate != self.sample_rate {
-                    self.toast("Warning: the input and output run at different sample rates");
+                    self.toast(tr("Warning: the input and output run at different sample rates"));
                 }
                 self.rec.input = Some((name, config.channels));
                 let s = self.rec.settings.clone();
@@ -306,7 +307,7 @@ impl App {
                 true
             }
             Err(e) => {
-                self.rec.input_error = Some(format!("Can't open the microphone: {e}"));
+                self.rec.input_error = Some(tr_fmt!("Can't open the microphone: {}", e.to_string()));
                 false
             }
         }
@@ -353,7 +354,7 @@ impl App {
         if first && !self.rec.panel {
             self.open_record_panel(None);
         }
-        self.toast(&format!("{name} armed: press play to record"));
+        self.toast(&tr_fmt!("{} armed: press play to record", name));
     }
 
     /// Ouvre le panneau d'enregistrement, sous `anchor` (sinon à sa dernière place).
@@ -467,7 +468,7 @@ impl App {
             }
             if take.len > 0 {
                 if take.is_full() {
-                    self.toast("Take reached its maximum length (10 min)");
+                    self.toast(tr("Take reached its maximum length (10 min)"));
                 }
                 self.place_take(&take);
             }
@@ -494,7 +495,7 @@ impl App {
         let punch = if self.rec.settings.punch { self.project.loop_range.map(|(a, b)| (a as f64, b as f64)) } else { None };
         let slices = take_slices(rec.len, rec.start_tick, &rec.jumps, shift, spt, punch, (0.05 * sr) as usize);
         if slices.is_empty() {
-            self.toast("Nothing was recorded inside the punch range");
+            self.toast(tr("Nothing was recorded inside the punch range"));
             return;
         }
         let track = rec.track.min(TRACKS - 1);
@@ -550,13 +551,13 @@ impl App {
                 muted: k != active,
             });
         }
-        self.commit("Record audio");
+        self.commit(tr("Record audio"));
         let secs = len as f64 / sr;
         let ms = Latency::ms(shift as u32, sr as u32);
         if slices.len() > 1 {
-            self.toast(&format!("{} takes recorded ({name}), last full pass active · Alt+click a take to switch", slices.len()));
+            self.toast(&tr_fmt!("{} takes recorded ({}), last full pass active · Alt+click a take to switch", slices.len(), name));
         } else {
-            self.toast(&format!("Take recorded: {name} ({secs:.1} s, aligned by {ms:.1} ms)"));
+            self.toast(&tr_fmt!("Take recorded: {} ({:.1} s, aligned by {:.1} ms)", name, secs, ms));
         }
     }
 
@@ -574,7 +575,7 @@ impl App {
                 }
             }
         }
-        self.commit("Choose take");
+        self.commit(tr("Choose take"));
     }
 
     /// Lance le calibrage : des clics sur la sortie, enregistrés par l'entrée.
@@ -588,7 +589,7 @@ impl App {
         let buffer = RecordBuffer::with_duration(CALIBRATION_SECONDS, self.sample_rate as f32);
         self.send(Command::Calibrate(Some(Box::new(buffer))));
         self.rec.calibrating = Some(self.time);
-        self.toast("Calibrating: loop the output back to the input (cable, or mic close to the speaker)");
+        self.toast(tr("Calibrating: loop the output back to the input (cable, or mic close to the speaker)"));
     }
 
     fn collect_calibration(&mut self) {
@@ -597,7 +598,7 @@ impl App {
                 // Rien n'est revenu (pas d'entrée qui tourne) : on abandonne.
                 self.rec.calibrating = None;
                 self.send(Command::Calibrate(None));
-                self.toast("Calibration failed: no input signal");
+                self.toast(tr("Calibration failed: no input signal"));
             }
             return;
         };
@@ -617,13 +618,13 @@ impl App {
                 let mut s = self.rec.settings.clone();
                 s.offset_ms = (offset * 10.0).round() / 10.0;
                 self.set_record_settings(s);
-                self.toast(&format!(
+                self.toast(&tr_fmt!(
                     "Measured round trip: {:.1} ms · offset set to {:+.1} ms",
                     measured as f32 * 1000.0 / sr,
                     offset
                 ));
             }
-            None => self.toast("No click came back: check the loopback and the input level"),
+            None => self.toast(tr("No click came back: check the loopback and the input level")),
         }
     }
 
@@ -684,22 +685,22 @@ impl App {
             c.fill_circle(inner.x + 8.0, hy, 11.0, t.negative.alpha(0.15 * pulse));
         }
         c.fill_circle(inner.x + 8.0, hy, 6.0, armed_col.alpha(pulse));
-        self.text(c, self.f.sans_med, 16.0, inner.x + 24.0, hy, "Recording", t.text);
+        self.text(c, self.f.sans_med, 16.0, inner.x + 24.0, hy, tr("Recording"), t.text);
         let status = match (recording, self.rec.armed.len()) {
-            (true, _) => "Recording".to_string(),
-            (false, 0) => "No track armed".to_string(),
-            (false, 1) => format!("{} armed", self.project.tracks[self.rec.armed[0].0].name),
-            (false, n) => format!("{n} tracks armed"),
+            (true, _) => tr("Recording").to_string(),
+            (false, 0) => tr("No track armed").to_string(),
+            (false, 1) => tr_fmt!("{} armed", self.project.tracks[self.rec.armed[0].0].name),
+            (false, n) => tr_fmt!("{} tracks armed", n),
         };
         let close = Rect::new(inner.right() - 28.0, hy - 14.0, 28.0, 28.0);
         self.text_right(c, self.f.sans, 12.0, close.x - 8.0, hy, &status, if recording { t.negative } else { t.text2 });
-        if self.icon_button(c, input, wid("rec-close", 0, 0), close, Icon::Close, false, ("Close", "")) {
+        if self.icon_button(c, input, wid("rec-close", 0, 0), close, Icon::Close, false, (tr("Close"), "")) {
             self.rec.panel = false;
         }
 
         // Entrée : périphérique et source.
         let mut y = inner.y + 40.0;
-        self.text(c, self.f.sans, 11.0, inner.x, y + 6.0, "INPUT", t.muted);
+        self.text(c, self.f.sans, 11.0, inner.x, y + 6.0, tr("INPUT"), t.muted);
         y += 16.0;
         let dev_r = Rect::new(inner.x, y, inner.w, 34.0);
         let did = wid("rec-device", 0, 0);
@@ -709,13 +710,13 @@ impl App {
         c.stroke_rrect(dev_r, 10.0, 1.0, t.hairline);
         let current = match &self.rec.settings.device {
             Some(id) => self.rec.devices.iter().find(|d| &d.id == id).map_or(id.clone(), |d| d.name.clone()),
-            None => "System default input".to_string(),
+            None => tr("System default input").to_string(),
         };
         let (_, dcy) = dev_r.center();
         self.text_fit(c, self.f.sans_med, 13.0, dev_r.x + 12.0, dcy, &current, dev_r.w - 44.0, t.text);
         draw_icon(c, if self.rec.device_list { Icon::ChevronDown } else { Icon::ChevronRight }, dev_r.right() - 18.0, dcy, 14.0, t.text2);
         if dhov {
-            let detail = self.rec.input.as_ref().map_or("Input closed".to_string(), |(n, ch)| format!("{n}\n{ch} channel(s)"));
+            let detail = self.rec.input.as_ref().map_or(tr("Input closed").to_string(), |(n, ch)| tr_fmt_n!("{}\n{} channel", "{}\n{} channels", *ch, n.as_str(), *ch));
             self.set_tip(&detail, "");
         }
         if dhov && input.pressed {
@@ -727,7 +728,7 @@ impl App {
         y += 42.0;
         if let Some(err) = self.rec.input_error.clone() {
             self.text_fit(c, self.f.sans_med, 12.0, inner.x, y + 8.0, &err, inner.w, t.negative);
-            self.text_fit(c, self.f.sans, 11.0, inner.x, y + 24.0, "Pick another microphone below", inner.w, t.text2);
+            self.text_fit(c, self.f.sans, 11.0, inner.x, y + 24.0, tr("Pick another microphone below"), inner.w, t.text2);
             y += 36.0;
         }
         if self.rec.device_list {
@@ -735,11 +736,11 @@ impl App {
             return;
         }
 
-        let sources = ["Stereo", "In 1 (mono)", "In 2 (mono)"];
+        let sources = [tr("Stereo"), tr("In 1 (mono)"), tr("In 2 (mono)")];
         let tips: [(&str, &str); 3] = [
-            ("Both input channels, stereo take", ""),
-            ("Input 1 only, mono take (vocal mic)", ""),
-            ("Input 2 only, mono take", ""),
+            (tr("Both input channels, stereo take"), ""),
+            (tr("Input 1 only, mono take (vocal mic)"), ""),
+            (tr("Input 2 only, mono take"), ""),
         ];
         let sel = match self.rec.settings.source {
             InputSource::Stereo => 0,
@@ -771,18 +772,18 @@ impl App {
             s.strip.gain_db = 0.0;
             self.set_record_settings(s);
         }
-        self.tip_zone(input, gain_r, "Input gain\nDrag or scroll · double-click: 0 dB\nAim for peaks around -12 dBFS", "");
+        self.tip_zone(input, gain_r, tr("Input gain\nDrag or scroll · double-click: 0 dB\nAim for peaks around -12 dBFS"), "");
         let cw = (inner.w - 140.0 - 8.0) * 0.5;
         let s = self.rec.settings.clone();
         let low_cut = Rect::new(inner.x + 140.0, y, cw, 40.0);
-        if self.chip(c, input, wid("rec-hpf", 0, 0), low_cut, "Low cut", s.strip.high_pass, "80 Hz high-pass\nRemoves rumble and mic stand thumps") {
+        if self.chip(c, input, wid("rec-hpf", 0, 0), low_cut, tr("Low cut"), s.strip.high_pass, tr("80 Hz high-pass\nRemoves rumble and mic stand thumps")) {
             let mut n = s.clone();
             n.strip.high_pass = !n.strip.high_pass;
             self.set_record_settings(n);
         }
         let gate_r = Rect::new(low_cut.right() + 8.0, y, cw, 40.0);
         let gate_on = s.strip.gate;
-        if self.chip(c, input, wid("rec-gate", 0, 0), gate_r, "Gate", gate_on, "Gentle noise gate\nLowers the noise by 18 dB between phrases (never cuts dead)") {
+        if self.chip(c, input, wid("rec-gate", 0, 0), gate_r, tr("Gate"), gate_on, tr("Gentle noise gate\nLowers the noise by 18 dB between phrases (never cuts dead)")) {
             let mut n = s.clone();
             n.strip.gate = !n.strip.gate;
             self.set_record_settings(n);
@@ -795,11 +796,11 @@ impl App {
         y += 52.0;
 
         // Écoute.
-        self.text(c, self.f.sans, 11.0, inner.x, y + 6.0, "MONITORING", t.muted);
+        self.text(c, self.f.sans, 11.0, inner.x, y + 6.0, tr("MONITORING"), t.muted);
         y += 16.0;
         let half = (inner.w - 8.0) * 0.5;
         let s = self.rec.settings.clone();
-        if self.chip(c, input, wid("rec-mon", 0, 0), Rect::new(inner.x, y, half, 34.0), "Hear input", s.monitor, "Hear the armed tracks' input through their effects\nUse headphones to avoid feedback") {
+        if self.chip(c, input, wid("rec-mon", 0, 0), Rect::new(inner.x, y, half, 34.0), tr("Hear input"), s.monitor, tr("Hear the armed tracks' input through their effects\nUse headphones to avoid feedback")) {
             let mut n = s.clone();
             n.monitor = !n.monitor;
             self.set_record_settings(n);
@@ -809,9 +810,9 @@ impl App {
             input,
             wid("rec-lowlat", 0, 0),
             Rect::new(inner.x + half + 8.0, y, half, 34.0),
-            "Low latency",
+            tr("Low latency"),
             s.low_latency,
-            "Low-latency monitoring\nLookahead effects on the monitored path are bypassed\nand delay compensation is skipped. Takes stay dry and aligned.",
+            tr("Low-latency monitoring\nLookahead effects on the monitored path are bypassed\nand delay compensation is skipped. Takes stay dry and aligned."),
         ) {
             let mut n = s.clone();
             n.low_latency = !n.low_latency;
@@ -824,8 +825,8 @@ impl App {
 
         // Format et punch.
         let s = self.rec.settings.clone();
-        let fmt = ["24-bit", "32-bit float"];
-        let ftips: [(&str, &str); 2] = [("24-bit PCM WAV at the device rate", ""), ("32-bit float WAV at the device rate", "")];
+        let fmt = [tr("24-bit"), tr("32-bit float")];
+        let ftips: [(&str, &str); 2] = [(tr("24-bit PCM WAV at the device rate"), ""), (tr("32-bit float WAV at the device rate"), "")];
         let fr = Rect::new(inner.x, y, 168.0, 32.0);
         if let Some(i) = self.segmented_tips(c, input, wid("rec-format", 0, 0), fr, &fmt, &ftips, s.float as usize) {
             let mut n = s.clone();
@@ -835,24 +836,24 @@ impl App {
         let pw = (inner.w - 176.0 - 6.0) * 0.5;
         let punch_r = Rect::new(fr.right() + 8.0, y, pw, 32.0);
         let punch_tip = if self.project.loop_range.is_some() {
-            "Punch in/out\nKeep only what falls inside the time selection"
+            tr("Punch in/out\nKeep only what falls inside the time selection")
         } else {
-            "Punch in/out\nDraw a time selection in the playlist ruler first"
+            tr("Punch in/out\nDraw a time selection in the playlist ruler first")
         };
-        if self.chip(c, input, wid("rec-punch", 0, 0), punch_r, "Punch", s.punch, punch_tip) {
+        if self.chip(c, input, wid("rec-punch", 0, 0), punch_r, tr("Punch"), s.punch, punch_tip) {
             let mut n = s.clone();
             n.punch = !n.punch;
             self.set_record_settings(n);
         }
         let ci_r = Rect::new(punch_r.right() + 6.0, y, pw, 32.0);
-        if self.chip(c, input, wid("rec-countin", 0, 0), ci_r, "Count-in", self.count_in, "One bar of metronome before recording") {
+        if self.chip(c, input, wid("rec-countin", 0, 0), ci_r, tr("Count-in"), self.count_in, tr("One bar of metronome before recording")) {
             self.toggle_count_in();
         }
         y += 40.0;
         let hint = if self.project.loop_range.is_some() {
-            "Loop recording: every pass of the selection becomes a take"
+            tr("Loop recording: every pass of the selection becomes a take")
         } else {
-            "Tip: select a range in the ruler to loop and stack takes"
+            tr("Tip: select a range in the ruler to loop and stack takes")
         };
         self.text_fit(c, self.f.sans, 11.0, inner.x, y + 6.0, hint, inner.w, t.muted);
     }
@@ -895,12 +896,12 @@ impl App {
         // Zone idéale pour une voix : crêtes entre −18 et −6 dBFS.
         let (za, zb) = (bars.x + pos(-18.0) * bars.w, bars.x + pos(-6.0) * bars.w);
         c.fill_rrect(Rect::new(za, bars.bottom() + 24.0, zb - za, 3.0), 1.5, t.accent.alpha(0.35));
-        self.text_center(c, self.f.sans, 9.0, (za + zb) * 0.5, bars.bottom() + 34.0, "sweet spot", t.muted);
+        self.text_center(c, self.f.sans, 9.0, (za + zb) * 0.5, bars.bottom() + 34.0, tr("sweet spot"), t.muted);
         // Crête en dBFS.
         let peak_db = to_db(self.rec.hold[0]);
         let readout = if peak_db <= METER_FLOOR { "-inf".to_string() } else { format!("{peak_db:.1}") };
         self.text(c, self.f.mono_med, 13.0, r.x + 12.0, r.bottom() - 14.0, &readout, t.text);
-        self.text(c, self.f.sans, 10.0, r.x + 12.0 + self.fonts.measure(self.f.mono_med, 13.0, &readout) + 4.0, r.bottom() - 14.0, "dBFS peak", t.muted);
+        self.text(c, self.f.sans, 10.0, r.x + 12.0 + self.fonts.measure(self.f.mono_med, 13.0, &readout) + 4.0, r.bottom() - 14.0, tr("dBFS peak"), t.muted);
         // Témoin de saturation, verrouillé jusqu'au clic.
         let cid = wid("rec-clip", 0, 0);
         let chov = self.hovered(input, cid, clip_r);
@@ -912,7 +913,7 @@ impl App {
         let (cx, cy) = clip_r.center();
         self.text_center(c, self.f.sans_med, 11.0, cx, cy, "CLIP", t.muted.mix(WHITE, lit));
         if chov {
-            self.set_tip(if self.rec.clipped { "The input clipped: lower the gain or the preamp\nClick to reset" } else { "Lights up when the input clips" }, "");
+            self.set_tip(if self.rec.clipped { tr("The input clipped: lower the gain or the preamp\nClick to reset") } else { tr("Lights up when the input clips") }, "");
             if input.pressed {
                 self.rec.clipped = false;
             }
@@ -942,16 +943,16 @@ impl App {
         } else {
             t.negative
         };
-        self.text(c, self.f.sans, 11.0, r.x + 12.0, r.y + 16.0, "You hear yourself after", t.muted);
+        self.text(c, self.f.sans, 11.0, r.x + 12.0, r.y + 16.0, tr("You hear yourself after"), t.muted);
         self.text(c, self.f.mono_med, 24.0, r.x + 12.0, r.y + 40.0, &big, col);
         let verdict = if !open {
-            "input closed"
+            tr("input closed")
         } else if hear_ms <= 12.0 {
-            "imperceptible"
+            tr("imperceptible")
         } else if hear_ms <= 25.0 {
-            "slight"
+            tr("slight")
         } else {
-            "noticeable: lower the buffer"
+            tr("noticeable: lower the buffer")
         };
         self.text(c, self.f.sans, 11.0, r.x + 12.0, r.y + 62.0, verdict, col.alpha(0.85));
         let detail = format!(
@@ -964,13 +965,13 @@ impl App {
         self.tip_zone(
             input,
             Rect::new(r.x, r.y, r.w * 0.5, r.h),
-            "Monitoring latency: output + input buffers, measured live\n(+ delay compensation when low latency is off)\nPONZIK_LATENCY_MS sets the buffer (default 10 ms)",
+            tr("Monitoring latency: output + input buffers, measured live\n(+ delay compensation when low latency is off)\nPONZIK_LATENCY_MS sets the buffer (default 10 ms)"),
             "",
         );
 
         // Recalage des prises : décalage manuel et calibrage.
         let x = r.x + r.w * 0.52;
-        self.text(c, self.f.sans, 11.0, x, r.y + 16.0, "Take offset", t.muted);
+        self.text(c, self.f.sans, 11.0, x, r.y + 16.0, tr("Take offset"), t.muted);
         let off_r = Rect::new(x, r.y + 26.0, r.right() - x - 12.0, 32.0);
         let off = self.rec.settings.offset_ms;
         let text = format!("{off:+.1}");
@@ -979,7 +980,7 @@ impl App {
             s.offset_ms = ((v * 10.0).round() / 10.0).clamp(-200.0, 200.0);
             self.set_record_settings(s);
         }
-        self.tip_zone(input, off_r, "Extra delay compensation for takes, on top of the measured latency\nDrag or scroll · Calibrate to measure it", "");
+        self.tip_zone(input, off_r, tr("Extra delay compensation for takes, on top of the measured latency\nDrag or scroll · Calibrate to measure it"), "");
         let cal_r = Rect::new(x, r.y + 64.0, off_r.w, 26.0);
         let kid = wid("rec-cal", 0, 0);
         let khov = self.hovered(input, kid, cal_r);
@@ -987,16 +988,16 @@ impl App {
         let busy = self.rec.calibrating.is_some();
         c.fill_rrect(cal_r, 8.0, t.raised.mix(t.raised_hi, khv).mix(t.accent_deep, busy as u8 as f32 * 0.5));
         let (cx, cy) = cal_r.center();
-        let label = if busy { "Listening..." } else { "Calibrate" };
+        let label = if busy { tr("Listening...") } else { tr("Calibrate") };
         self.text_center(c, self.f.sans_med, 12.0, cx, cy, label, t.text);
         if khov {
             let tip = match self.rec.calibration {
-                Some(cal) => format!(
+                Some(cal) => tr_fmt!(
                     "Plays clicks and records them back to measure the true round trip\nLast: measured {:.1} ms, reported {:.1} ms",
                     Latency::ms(cal.measured, sr),
                     Latency::ms(cal.reported, sr)
                 ),
-                None => "Plays clicks and records them back to measure the true round trip\nLoop the output into the input (cable or mic near the speaker)".to_string(),
+                None => tr("Plays clicks and records them back to measure the true round trip\nLoop the output into the input (cable or mic near the speaker)").to_string(),
             };
             self.set_tip(&tip, "");
         }
@@ -1009,7 +1010,7 @@ impl App {
     /// Liste des entrées, à la place du reste du panneau.
     fn device_list(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
         let t = self.theme;
-        let mut items: Vec<(Option<String>, String)> = vec![(None, "System default input".to_string())];
+        let mut items: Vec<(Option<String>, String)> = vec![(None, tr("System default input").to_string())];
         items.extend(self.rec.devices.iter().filter(|d| d.id != "default").map(|d| (Some(d.id.clone()), d.name.clone())));
         let mut y = r.y;
         for (i, (id, name)) in items.iter().enumerate() {
@@ -1041,7 +1042,7 @@ impl App {
             y += 38.0;
         }
         if items.len() == 1 {
-            self.text(c, self.f.sans, 11.0, r.x + 8.0, y + 10.0, "No other input found", t.muted);
+            self.text(c, self.f.sans, 11.0, r.x + 8.0, y + 10.0, tr("No other input found"), t.muted);
         }
     }
 

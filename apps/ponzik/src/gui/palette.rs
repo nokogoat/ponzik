@@ -3,6 +3,7 @@
 
 use ponzik_engine::mixer::MASTER;
 use ponzik_engine::registry;
+use ponzik_i18n::{tr, tr_fmt};
 use ponzik_ui::{Canvas, Color, Rect};
 use ponzik_window::Key;
 
@@ -74,139 +75,139 @@ impl App {
             v.push(Item { title, category, shortcut, action });
         };
         let none = String::new;
-        add("Lecture / arrêt".into(), "Transport", k(S::PlayStop), Action::PlayStop);
-        add("Basculer pattern / morceau".into(), "Transport", k(S::ToggleMode), Action::ToggleMode);
-        add("Métronome".into(), "Transport", k(S::Metronome), Action::ToggleMetronome);
-        add("Armer l'enregistrement".into(), "Transport", k(S::Record), Action::ToggleRecord);
-        add("Tap tempo".into(), "Transport", k(S::TapTempo), Action::TapTempo);
-        let count_in = if self.count_in { "Couper le pré-compte" } else { "Pré-compte d'une mesure avant l'enregistrement" };
-        add(count_in.into(), "Transport", none(), Action::ToggleCountIn);
-        add("Clavier d'ordinateur musical".into(), "Transport", k(S::TypingKeyboard), Action::ToggleTyping);
+        add(tr("Play / stop").into(), tr("Transport"), k(S::PlayStop), Action::PlayStop);
+        add(tr("Switch pattern / song").into(), tr("Transport"), k(S::ToggleMode), Action::ToggleMode);
+        add(tr("Metronome").into(), tr("Transport"), k(S::Metronome), Action::ToggleMetronome);
+        add(tr("Arm recording").into(), tr("Transport"), k(S::Record), Action::ToggleRecord);
+        add(tr("Tap tempo").into(), tr("Transport"), k(S::TapTempo), Action::TapTempo);
+        let count_in = if self.count_in { tr("Turn off the count-in") } else { tr("One-bar count-in before recording") };
+        add(count_in.into(), tr("Transport"), none(), Action::ToggleCountIn);
+        add(tr("Computer typing keyboard").into(), tr("Transport"), k(S::TypingKeyboard), Action::ToggleTyping);
         for (title, port) in self.midi_out_palette() {
             add(title, "MIDI", none(), Action::ToggleMidiClock(port));
         }
         for view in self.shown_views() {
-            add(format!("Aller à : {}", view.label()), "Vue", k(S::for_view(view)), Action::SetView(view));
+            add(tr_fmt!("Go to: {}", view.label()), tr("View"), k(S::for_view(view)), Action::SetView(view));
         }
-        add("Afficher ou masquer le navigateur".into(), "Vue", k(S::ToggleBrowser), Action::ToggleSidebar);
-        add("Afficher ou masquer les appareils".into(), "Vue", k(S::TogglePanel), Action::TogglePanel);
+        add(tr("Show or hide the browser").into(), tr("View"), k(S::ToggleBrowser), Action::ToggleSidebar);
+        add(tr("Show or hide the devices").into(), tr("View"), k(S::TogglePanel), Action::TogglePanel);
         // Réglages : une vue masquée se retrouve toujours ici.
-        add("Réglages : espace de travail".into(), "Réglages", k(S::Settings), Action::Popup(Popup::Settings { tab: 0 }));
-        add("Réglages : raccourcis clavier".into(), "Réglages", none(), Action::Popup(Popup::Settings { tab: 1 }));
+        add(tr("Settings: workspace").into(), tr("Settings"), k(S::Settings), Action::Popup(Popup::Settings { tab: 0 }));
+        add(tr("Settings: keyboard shortcuts").into(), tr("Settings"), none(), Action::Popup(Popup::Settings { tab: 1 }));
         for (i, (name, desc, _)) in super::settings::presets().into_iter().enumerate() {
-            add(format!("Profil : {name} · {}", desc.to_lowercase()), "Réglages", none(), Action::ApplyPreset(i));
+            add(tr_fmt!("Profile: {} · {}", name, desc.to_lowercase()), tr("Settings"), none(), Action::ApplyPreset(i));
         }
-        add(ponzik_i18n::tr_fmt!("Language: System ({})", ponzik_i18n::Lang::detect().name()), "Réglages", none(), Action::SetLanguage(None));
+        add(ponzik_i18n::tr_fmt!("Language: System ({})", ponzik_i18n::Lang::detect().name()), tr("Settings"), none(), Action::SetLanguage(None));
         for lang in ponzik_i18n::Lang::all() {
-            add(ponzik_i18n::tr_fmt!("Language: {}", lang.name()), "Réglages", none(), Action::SetLanguage(Some(lang)));
+            add(ponzik_i18n::tr_fmt!("Language: {}", lang.name()), tr("Settings"), none(), Action::SetLanguage(Some(lang)));
         }
         for view in View::ALL {
-            let verb = if self.view_shown(view) { "Masquer" } else { "Afficher" };
-            add(format!("{verb} la vue {}", view.label()), "Réglages", none(), Action::ToggleViewShown(view));
+            let title = if self.view_shown(view) { tr_fmt!("Hide the {} view", view.label()) } else { tr_fmt!("Show the {} view", view.label()) };
+            add(title, tr("Settings"), none(), Action::ToggleViewShown(view));
         }
-        add("Nouveau pattern".into(), "Pattern", k(S::NewPattern), Action::NewPattern);
-        add("Dupliquer le pattern".into(), "Pattern", none(), Action::DuplicatePattern);
+        add(tr("New pattern").into(), tr("Pattern"), k(S::NewPattern), Action::NewPattern);
+        add(tr("Duplicate pattern").into(), tr("Pattern"), none(), Action::DuplicatePattern);
         let cur = self.project.current_pattern;
         add(
-            "Renommer le pattern".into(),
-            "Pattern",
+            tr("Rename pattern").into(),
+            tr("Pattern"),
             none(),
             Action::Popup(Popup::Rename { target: Rename::Pattern(cur), text: self.project.patterns[cur].name.clone() }),
         );
-        add("Dupliquer la sélection de temps".into(), "Playlist", "Ctrl B".into(), Action::DuplicateTime);
+        add(tr("Duplicate time selection").into(), tr("Playlist"), "Ctrl B".into(), Action::DuplicateTime);
         if let Some(clip) = self.playlist.selected.filter(|&i| i < self.project.clips.len()) {
-            add("Rendre unique le clip sélectionné".into(), "Playlist", none(), Action::MakeUnique(clip));
+            add(tr("Make the selected clip unique").into(), tr("Playlist"), none(), Action::MakeUnique(clip));
         }
-        add("Couleur du pattern".into(), "Pattern", none(), Action::Popup(Popup::PatternColor(cur)));
+        add(tr("Pattern color").into(), tr("Pattern"), none(), Action::Popup(Popup::PatternColor(cur)));
         for (i, p) in self.project.patterns.iter().enumerate() {
-            add(format!("Pattern : {}", p.name), "Pattern", none(), Action::SelectPattern(i));
+            add(tr_fmt!("Pattern: {}", p.name.as_str()), tr("Pattern"), none(), Action::SelectPattern(i));
         }
         for (i, c) in self.project.channels.iter().enumerate() {
-            add(format!("Canal : {}", c.name), "Canal", none(), Action::FocusChannel(i));
+            add(tr_fmt!("Channel: {}", c.name.as_str()), tr("Channel"), none(), Action::FocusChannel(i));
         }
         for k in registry::instruments() {
-            add(format!("Ajouter {}", k.name), "Instrument", none(), Action::AddInstrument(k.id, None));
+            add(tr_fmt!("Add {}", tr(k.name)), tr("Instrument"), none(), Action::AddInstrument(k.id, None));
         }
         let track = self.focused_track();
         let group = self.group_for(track);
         let title = match group.len() {
-            0 => "Nouveau bus".to_string(),
-            1 => format!("Envoyer {} vers un nouveau bus", self.project.tracks[track].name),
-            n => format!("Grouper {n} pistes dans un bus"),
+            0 => tr("New bus").to_string(),
+            1 => tr_fmt!("Send {} to a new bus", self.project.tracks[track].name.as_str()),
+            n => tr_fmt!("Group {} tracks into a bus", n),
         };
-        add(title, "Mixer", "Ctrl G".into(), Action::NewBus(group.clone()));
+        add(title, tr("Mixer"), "Ctrl G".into(), Action::NewBus(group.clone()));
         for (kind, name, _) in ponzik_project::RETURN_EFFECTS {
             let from = (track != MASTER).then_some(track);
-            add(format!("Nouveau bus d'envoi : {name}"), "Mixer", String::new(), Action::NewReturn(kind, from));
+            add(tr_fmt!("New send bus: {}", tr(name)), tr("Mixer"), String::new(), Action::NewReturn(kind, from));
         }
-        add("Nouveau VCA".into(), "Mixer", String::new(), Action::NewVca(group));
+        add(tr("New VCA").into(), tr("Mixer"), String::new(), Action::NewVca(group));
         if self.project.tracks[track].kind == ponzik_project::TrackKind::Bus {
-            add(format!("Replier ou déplier {}", self.project.tracks[track].name), "Mixer", String::new(), Action::ToggleFold(track));
+            add(tr_fmt!("Fold or unfold {}", self.project.tracks[track].name.as_str()), tr("Mixer"), String::new(), Action::ToggleFold(track));
         }
         for k in registry::effects() {
-            add(format!("{} sur {}", k.name, self.project.tracks[track].name), "Effet", none(), Action::AddEffect(track, k.id));
+            add(tr_fmt!("{} on {}", tr(k.name), self.project.tracks[track].name.as_str()), tr("Effect"), none(), Action::AddEffect(track, k.id));
         }
         if let Some(ch) = self.selected_channel()
             && let Some(slot) = (0..ponzik_engine::NOTE_FX_SLOTS).find(|&s| self.project.channels[ch].note_fx.get(s).is_none_or(Option::is_none))
         {
             for k in registry::note_fx() {
-                let title = format!("{} sur {}", k.name, self.project.channels[ch].name);
-                add(title, "Effet de notes", none(), Action::AddNoteFx(ch, slot, k.id));
+                let title = tr_fmt!("{} on {}", tr(k.name), self.project.channels[ch].name.as_str());
+                add(title, tr("Note effect"), none(), Action::AddNoteFx(ch, slot, k.id));
             }
         }
-        add("Enregistrer".into(), "Fichier", k(S::Save), Action::Save);
-        add("Ouvrir un projet".into(), "Fichier", k(S::Open), Action::OpenMenu);
+        add(tr("Save").into(), tr("File"), k(S::Save), Action::Save);
+        add(tr("Open a project").into(), tr("File"), k(S::Open), Action::OpenMenu);
         for path in super::compat::list_projects().into_iter().take(6) {
             let name = path.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
-            add(format!("Ouvrir : {name}"), "Récent", none(), Action::Open(path));
+            add(tr_fmt!("Open: {}", name), tr("Recent"), none(), Action::Open(path));
         }
-        add("Nouveau projet".into(), "Fichier", k(S::NewProject), Action::NewProject);
+        add(tr("New project").into(), tr("File"), k(S::NewProject), Action::NewProject);
         for (i, (name, _)) in ponzik_project::templates().into_iter().enumerate() {
-            add(format!("Nouveau projet : {name}"), "Modèle", none(), Action::NewFromTemplate(i));
+            add(tr_fmt!("New project: {}", tr(name)), tr("Template"), none(), Action::NewFromTemplate(i));
         }
-        add("Exporter en WAV 24 bits".into(), "Fichier", k(S::Export), Action::Export);
+        add(tr("Export to 24-bit WAV").into(), tr("File"), k(S::Export), Action::Export);
         {
             use ponzik_project::{BitDepth, ExportOptions, Normalize};
             let wav = ExportOptions::default();
             let exports = [
-                ("Exporter en WAV 16 bits (dither TPDF)", ExportOptions { depth: BitDepth::Pcm16, ..wav }),
-                ("Exporter en WAV 32 bits flottant", ExportOptions { depth: BitDepth::Float32, ..wav }),
-                ("Exporter normalisé (crête à −0,3 dBFS)", ExportOptions { normalize: Normalize::Peak(-0.3), ..wav }),
+                (tr("Export to 16-bit WAV (TPDF dither)"), ExportOptions { depth: BitDepth::Pcm16, ..wav }),
+                (tr("Export to 32-bit float WAV"), ExportOptions { depth: BitDepth::Float32, ..wav }),
+                (tr("Export normalized (peak at −0.3 dBFS)"), ExportOptions { normalize: Normalize::Peak(-0.3), ..wav }),
                 (
-                    "Exporter pour le streaming (−14 LUFS, −1 dBTP)",
+                    tr("Export for streaming (−14 LUFS, −1 dBTP)"),
                     ExportOptions { normalize: Normalize::Loudness { lufs: -14.0, ceiling: -1.0 }, ..wav },
                 ),
                 (
-                    "Exporter fort pour le club (−9 LUFS, −1 dBTP)",
+                    tr("Export loud for the club (−9 LUFS, −1 dBTP)"),
                     ExportOptions { normalize: Normalize::Loudness { lufs: -9.0, ceiling: -1.0 }, ..wav },
                 ),
             ];
             for (title, options) in exports {
-                add(title.into(), "Fichier", none(), Action::ExportWith(options));
+                add(title.into(), tr("File"), none(), Action::ExportWith(options));
             }
         }
-        add("Exporter les pistes séparées (stems)".into(), "Fichier", none(), Action::ExportStems);
-        add("Importer un fichier MIDI".into(), "Fichier", none(), Action::ImportMidiMenu);
-        add("Import an FL Studio project (.flp)".into(), "Fichier", none(), Action::ImportFlpMenu);
-        add("Show the FL Studio import report".into(), "Fichier", none(), Action::Popup(Popup::ImportReport));
-        add("Exporter le pattern en MIDI".into(), "Fichier", none(), Action::ExportMidi);
-        add("Enregistrer sous".into(), "Fichier", k(S::SaveAs), Action::SaveAs);
+        add(tr("Export separate tracks (stems)").into(), tr("File"), none(), Action::ExportStems);
+        add(tr("Import a MIDI file").into(), tr("File"), none(), Action::ImportMidiMenu);
+        add(tr("Import an FL Studio project (.flp)").into(), tr("File"), none(), Action::ImportFlpMenu);
+        add(tr("Show the FL Studio import report").into(), tr("File"), none(), Action::Popup(Popup::ImportReport));
+        add(tr("Export the pattern to MIDI").into(), tr("File"), none(), Action::ExportMidi);
+        add(tr("Save as").into(), tr("File"), k(S::SaveAs), Action::SaveAs);
         add(
-            "Renommer le projet".into(),
-            "Fichier",
+            tr("Rename project").into(),
+            tr("File"),
             none(),
             Action::Popup(Popup::Rename { target: Rename::Project, text: self.project.name.clone() }),
         );
         for (name, ticks, vel) in super::piano::HUMANIZE {
-            add(format!("Humaniser les notes : {}", name.to_lowercase()), "Piano roll", none(), Action::Humanize(ticks, vel));
+            add(tr_fmt!("Humanize notes: {}", tr(name).to_lowercase()), tr("Piano roll"), none(), Action::Humanize(ticks, vel));
         }
-        add("Annuler".into(), "Édition", k(S::Undo), Action::Undo);
-        add("Rétablir".into(), "Édition", k(S::Redo), Action::Redo);
-        add("Historique".into(), "Édition", k(S::History), Action::Popup(Popup::History));
-        add("Démo : groove house".into(), "Démo", none(), Action::LoadDemo(0));
-        add("Démo : Amen rave (breakcore)".into(), "Démo", none(), Action::LoadDemo(1));
+        add(tr("Undo").into(), tr("Edit"), k(S::Undo), Action::Undo);
+        add(tr("Redo").into(), tr("Edit"), k(S::Redo), Action::Redo);
+        add(tr("History").into(), tr("Edit"), k(S::History), Action::Popup(Popup::History));
+        add(tr("Demo: house groove").into(), tr("Demo"), none(), Action::LoadDemo(0));
+        add(tr("Demo: Amen rave (breakcore)").into(), tr("Demo"), none(), Action::LoadDemo(1));
         for (i, th) in THEMES.iter().enumerate() {
-            add(format!("Thème : {}", th.name), "Thème", none(), Action::SetTheme(i));
+            add(tr_fmt!("Theme: {}", tr(th.label)), tr("Theme"), none(), Action::SetTheme(i));
         }
         v
     }
@@ -269,7 +270,7 @@ impl App {
         // Loupe.
         c.stroke_circle(field.x + 22.0, field.y + 20.0, 6.5, 1.6, t.muted);
         c.stroke_polyline(&[(field.x + 27.0, field.y + 25.0), (field.x + 31.0, field.y + 29.0)], 1.6, t.muted);
-        let shown = if query.is_empty() { "Rechercher une action, un instrument, un effet…".to_string() } else { query.clone() };
+        let shown = if query.is_empty() { tr("Search for an action, an instrument, an effect…").to_string() } else { query.clone() };
         let ink = if query.is_empty() { t.muted } else { t.text };
         let tw = self.text(c, self.f.sans, 15.0, field.x + 42.0, field.y + 22.0, &shown, ink);
         if (self.time * 2.0).fract() < 0.6 {
@@ -283,7 +284,7 @@ impl App {
         let first = selected.saturating_sub(VISIBLE - 1).min(count.saturating_sub(VISIBLE));
         let list = Rect::new(r.x + 6.0, field.bottom() + 8.0, r.w - 12.0, rows as f32 * ROW_H);
         if count == 0 {
-            self.text(c, self.f.sans, 13.0, list.x + 16.0, list.y + ROW_H * 0.5, "Rien de trouvé", t.muted);
+            self.text(c, self.f.sans, 13.0, list.x + 16.0, list.y + ROW_H * 0.5, tr("Nothing found"), t.muted);
         }
         for (k, &(_, i)) in found.iter().enumerate().skip(first).take(VISIBLE) {
             let row = Rect::new(list.x, list.y + (k - first) as f32 * ROW_H, list.w, ROW_H - 4.0);

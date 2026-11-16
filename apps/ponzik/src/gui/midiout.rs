@@ -68,7 +68,7 @@ impl App {
         self.send(Command::SetMidiClock { ports });
         let on = ports & (1 << index) != 0;
         let name = self.midi_out.port_names().get(index).cloned().unwrap_or_default();
-        self.toast(&format!("MIDI clock {} · {name}", if on { "on" } else { "off" }));
+        self.toast(&ponzik_i18n::tr_fmt!("MIDI clock {} · {}", if on { ponzik_i18n::tr("on") } else { ponzik_i18n::tr("off") }, name));
         if let Some(s) = self.midi_out.scheduler.as_ref() {
             let text: String = s
                 .ports()
@@ -93,8 +93,8 @@ impl App {
             .take(MAX_PORTS)
             .enumerate()
             .map(|(i, name)| {
-                let state = if self.midi_out.clock_ports & (1 << i) != 0 { "on" } else { "off" };
-                (format!("MIDI clock out: Port {} · {name} ({state})", i + 1), i)
+                let state = if self.midi_out.clock_ports & (1 << i) != 0 { ponzik_i18n::tr("on") } else { ponzik_i18n::tr("off") };
+                (ponzik_i18n::tr_fmt!("MIDI clock out: Port {} · {} ({})", i + 1, name.as_str(), state), i)
             })
             .collect()
     }

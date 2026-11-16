@@ -7,6 +7,7 @@
 //! redimensionnent en tirant leur bord.
 
 use ponzik_ui::{Canvas, Color, Rect};
+use ponzik_i18n::{tr, tr_fmt};
 use ponzik_window::Cursor;
 
 use super::Input;
@@ -203,9 +204,9 @@ impl App {
         }
         self.set_cursor(Cursor::Grab);
         if floating {
-            self.set_tip("Glisser : déplacer\nDouble-clic ou glisser sur le panneau : réancrer", "");
+            self.set_tip(tr("Drag: move\nDouble-click or drag onto the panel: dock"), "");
         } else {
-            self.set_tip("Glisser vers le haut : détacher", "");
+            self.set_tip(tr("Drag upward: detach"), "");
         }
         if !input.pressed {
             return;
@@ -241,13 +242,13 @@ impl App {
         draw_icon(c, Icon::Detach, cx, cy - 12.0, 18.0, t.muted.mix(t.accent, hv));
         let (kind, _) = self.device_kind(device);
         let name = ponzik_engine::registry::effect_kind(&kind)
-            .map(|k| k.name)
-            .or_else(|| ponzik_engine::registry::instrument_kind(&kind).map(|k| k.name))
+            .map(|k| tr(k.name))
+            .or_else(|| ponzik_engine::registry::instrument_kind(&kind).map(|k| tr(k.name)))
             .map_or_else(|| super::app::display_kind(&kind), str::to_string);
         let name = self.fit(self.f.sans, 12.0, &name, card.w - 16.0);
         self.text_center(c, self.f.sans, 12.0, cx, cy + 14.0, &name, t.muted.mix(t.text2, hv));
         if hov {
-            self.set_tip("Dans une fenêtre\nClic : premier plan · double-clic : réancrer", "");
+            self.set_tip(tr("In a window\nClick: bring to front · double-click: dock"), "");
             self.set_cursor(Cursor::Hand);
             if input.pressed {
                 if input.double {
@@ -313,7 +314,7 @@ impl App {
         l.hit = l.wins.iter().rev().find(|w| inside && w.rect.contains(input.x, input.y)).map(|w| w.id);
         if input.pressed && let Some(id) = l.hit {
             l.owner = Some(id);
-            let i = l.index(id).expect("fenêtre touchée");
+            let i = l.index(id).expect("window under the mouse");
             l.raise(i);
         }
 
@@ -442,7 +443,7 @@ impl App {
             let rid = wid("float-resize", id, 0);
             let rhov = self.hovered(&inp, rid, corner);
             if rhov {
-                self.set_tip("Glisser : redimensionner", "");
+                self.set_tip(tr("Drag: resize"), "");
                 if inp.pressed {
                     self.layout.gesture = Some(Gesture::Resize { id, x0: inp.x, y0: inp.y, w0: rect.w, h0: rect.h });
                     self.begin_drag(rid, &inp, 0.0);
@@ -488,8 +489,8 @@ impl App {
                 self.set_cursor(if k == 0 { Cursor::ResizeH } else { Cursor::ResizeV });
             }
             if hov {
-                let tip = if k == 0 { "Glisser : largeur du navigateur" } else { "Glisser : hauteur du panneau" };
-                self.set_tip(&format!("{tip}\nDouble-clic : taille par défaut"), "");
+                let tip = if k == 0 { tr("Drag: browser width") } else { tr("Drag: panel height") };
+                self.set_tip(&tr_fmt!("{}\nDouble-click: default size", tip), "");
             }
             if hv < 0.01 {
                 continue;
@@ -560,7 +561,7 @@ mod tests {
         let mut c = Canvas::new(1600, 960);
         let mut i = Input::default();
         step(&mut app, &mut c, &mut i, 10.0, 10.0, false);
-        let (sx, sy) = app.layout.sidebar_edge.expect("navigateur ouvert").center();
+        let (sx, sy) = app.layout.sidebar_edge.expect("browser open").center();
         step(&mut app, &mut c, &mut i, sx, sy, false);
         assert_eq!(app.cursor, Cursor::ResizeH);
         // Pendant le glisser, la forme tient même si la souris quitte le bord.
@@ -568,7 +569,7 @@ mod tests {
         step(&mut app, &mut c, &mut i, sx + 40.0, sy, true);
         assert_eq!(app.cursor, Cursor::ResizeH);
         step(&mut app, &mut c, &mut i, sx + 40.0, sy, false);
-        let (px, py) = app.layout.panel_edge.expect("panneau ouvert").center();
+        let (px, py) = app.layout.panel_edge.expect("panel open").center();
         step(&mut app, &mut c, &mut i, px, py, false);
         assert_eq!(app.cursor, Cursor::ResizeV);
         // En-tête de l'instrument dans le panneau : une prise à saisir.

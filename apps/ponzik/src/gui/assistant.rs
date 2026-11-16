@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::f32::consts::{PI, TAU};
 use std::sync::Arc;
 
+use ponzik_i18n::{tr, tr_fmt, tr_fmt_n, tr_noop};
 use ponzik_engine::effects::mix_assistant::{self as ma, Analysis, MixShared, N_BANDS, Profile, Suggestion};
 use ponzik_engine::{Command, Engine, ParamInfo, Unit};
 use ponzik_ui::{Canvas, Rect};
@@ -37,18 +38,18 @@ const GR_DB: f32 = 12.0;
 
 /// Modules dans l'ordre des cartes : nom, interrupteur, aide.
 const MODULES: [(&str, Option<u32>, &str); 8] = [
-    ("High-pass", Some(ma::P_HP_ON), "High-pass\nRemoves rumble below the useful range"),
-    ("EQ", Some(ma::P_EQ_ON), "EQ\nLow shelf, three bells, high shelf"),
-    ("De-esser", Some(ma::P_DS_ON), "De-esser\nTames harsh \"s\" sounds above its frequency"),
-    ("Compressor", Some(ma::P_COMP_ON), "Compressor\nEvens out the level"),
-    ("Saturation", Some(ma::P_SAT_ON), "Saturation\nAdds warmth and density"),
-    ("Width", Some(ma::P_WIDTH_ON), "Stereo width\nNarrows or widens the side signal"),
-    ("Output", None, "Output\nLevel after the chain"),
-    ("Analysis", None, "Analysis\nWhat the last listen measured"),
+    (tr_noop("High-pass"), Some(ma::P_HP_ON), tr_noop("High-pass\nRemoves rumble below the useful range")),
+    (tr_noop("EQ"), Some(ma::P_EQ_ON), tr_noop("EQ\nLow shelf, three bells, high shelf")),
+    (tr_noop("De-esser"), Some(ma::P_DS_ON), tr_noop("De-esser\nTames harsh \"s\" sounds above its frequency")),
+    (tr_noop("Compressor"), Some(ma::P_COMP_ON), tr_noop("Compressor\nEvens out the level")),
+    (tr_noop("Saturation"), Some(ma::P_SAT_ON), tr_noop("Saturation\nAdds warmth and density")),
+    (tr_noop("Width"), Some(ma::P_WIDTH_ON), tr_noop("Stereo width\nNarrows or widens the side signal")),
+    (tr_noop("Output"), None, tr_noop("Output\nLevel after the chain")),
+    (tr_noop("Analysis"), None, tr_noop("Analysis\nWhat the last listen measured")),
 ];
 const EQ_MODULE: usize = 1;
 const ANALYSIS_MODULE: usize = 7;
-const BAND_NAMES: [&str; 5] = ["Low", "1", "2", "3", "High"];
+const BAND_NAMES: [&str; 5] = [tr_noop("Low"), "1", "2", "3", tr_noop("High")];
 const BAND_LABELS: [&str; 5] = ["L", "1", "2", "3", "H"];
 
 /// Ce que l'interface retient d'un assistant.
@@ -92,9 +93,9 @@ pub fn capture(cmd: &Command) {
     });
 }
 
-/// Nombre à virgule, vrai signe moins.
+/// Nombre au séparateur décimal de la langue, vrai signe moins.
 fn num(v: f32, decimals: usize) -> String {
-    let s = format!("{:.*}", decimals, v.abs()).replace('.', ",");
+    let s = ponzik_i18n::num(v.abs() as f64, decimals);
     if v < 0.0 && s.chars().any(|c| c.is_ascii_digit() && c != '0') { format!("−{s}") } else { s }
 }
 
@@ -103,21 +104,21 @@ fn describe(s: &Suggestion, module: usize) -> String {
     let p = ma::params();
     let f = |id: u32| p[id as usize].format(s.get(id));
     match module {
-        0 if s.get(ma::P_HP_ON) > 0.5 => format!("High-pass at {}", f(ma::P_HP_FREQ)),
-        0 => "No high-pass".into(),
+        0 if s.get(ma::P_HP_ON) > 0.5 => tr_fmt!("High-pass at {}", f(ma::P_HP_FREQ)),
+        0 => tr("No high-pass").into(),
         1 => {
             let bands: Vec<String> = (0..ma::EQ_BANDS as u32)
                 .map(|b| ma::P_BAND + 3 * b)
                 .filter(|&id| s.get(id + 1) != 0.0)
-                .map(|id| format!("{} at {}", f(id + 1), f(id)))
+                .map(|id| tr_fmt!("{} at {}", f(id + 1), f(id)))
                 .collect();
-            if bands.is_empty() { "Flat EQ".into() } else { bands.join(", ") }
+            if bands.is_empty() { tr("Flat EQ").into() } else { bands.join(", ") }
         }
         2 if s.get(ma::P_DS_RANGE) > 0.0 => {
-            format!("Up to {} above {}, threshold {}", f(ma::P_DS_RANGE), f(ma::P_DS_FREQ), f(ma::P_DS_THRESHOLD))
+            tr_fmt!("Up to {} above {}, threshold {}", f(ma::P_DS_RANGE), f(ma::P_DS_FREQ), f(ma::P_DS_THRESHOLD))
         }
-        2 => "No de-essing".into(),
-        3 => format!(
+        2 => tr("No de-essing").into(),
+        3 => tr_fmt!(
             "{} from {}, attack {}, release {}, makeup {}",
             f(ma::P_COMP_RATIO),
             f(ma::P_COMP_THRESHOLD),
@@ -125,9 +126,9 @@ fn describe(s: &Suggestion, module: usize) -> String {
             f(ma::P_COMP_RELEASE),
             f(ma::P_COMP_MAKEUP)
         ),
-        4 => format!("Drive {}", f(ma::P_SAT_DRIVE)),
-        5 => format!("Width {}", f(ma::P_WIDTH)),
-        6 => format!("Output {}", f(ma::P_OUTPUT)),
+        4 => tr_fmt!("Drive {}", f(ma::P_SAT_DRIVE)),
+        5 => tr_fmt!("Width {}", f(ma::P_WIDTH)),
+        6 => tr_fmt!("Output {}", f(ma::P_OUTPUT)),
         _ => String::new(),
     }
 }
@@ -152,12 +153,12 @@ fn module_knobs(module: usize, band: usize) -> Vec<u32> {
 /// Nom court sous un potard : le module ou la bande est déjà nommé à côté.
 fn knob_name(id: u32) -> &'static str {
     match id {
-        ma::P_HP_FREQ => "Cutoff",
-        id if (ma::P_BAND..ma::P_BAND + 3 * ma::EQ_BANDS as u32).contains(&id) => ["Freq", "Gain", "Q"][((id - ma::P_BAND) % 3) as usize],
-        ma::P_DS_FREQ => "Freq",
-        ma::P_DS_THRESHOLD => "Threshold",
-        ma::P_DS_RANGE => "Range",
-        id => ma::params()[id as usize].name,
+        ma::P_HP_FREQ => tr("Cutoff"),
+        id if (ma::P_BAND..ma::P_BAND + 3 * ma::EQ_BANDS as u32).contains(&id) => [tr("Freq"), tr("Gain"), "Q"][((id - ma::P_BAND) % 3) as usize],
+        ma::P_DS_FREQ => tr("Freq"),
+        ma::P_DS_THRESHOLD => tr("Threshold"),
+        ma::P_DS_RANGE => tr("Range"),
+        id => tr(ma::params()[id as usize].name),
     }
 }
 
@@ -201,8 +202,8 @@ impl App {
                 fx.set(id, v);
             }
         }
-        self.commit("Apply mix suggestion");
-        self.toast(&format!("Applied the {} suggestion · Ctrl+Z to undo", s.profile.name()));
+        self.commit(tr("Apply mix suggestion"));
+        self.toast(&tr_fmt!("Applied the {} suggestion · Ctrl+Z to undo", tr(s.profile.name())));
     }
 
     pub(super) fn mix_assistant_device(&mut self, c: &mut Canvas, input: &Input, body: Rect, device: Device) {
@@ -351,7 +352,7 @@ impl App {
                 self.ma_set(device, id + 2, get(id + 2) * 1.15f32.powf(input.wheel));
             }
             if hov {
-                self.set_tip(&format!("{} band\nDrag: frequency and gain · wheel: Q · double-click: flat", BAND_NAMES[b]), "");
+                self.set_tip(&tr_fmt!("{} band\nDrag: frequency and gain · wheel: Q · double-click: flat", tr(BAND_NAMES[b])), "");
             }
             let active = hov || self.is_dragging(hid) || selected_band == Some(b);
             let hv = self.hover_anim(hid, active);
@@ -368,15 +369,15 @@ impl App {
         // Légende.
         let mut lx = g.x + 10.0;
         let ly = g.y + 10.0;
-        let mut legend: Vec<(ponzik_ui::Color, String)> = vec![(t.text2.alpha(0.6), "Input".into())];
+        let mut legend: Vec<(ponzik_ui::Color, String)> = vec![(t.text2.alpha(0.6), tr("Input").into())];
         if let Some(s) = suggestion {
-            let auto = if self.ma_value(device, ma::P_PROFILE) < 0.5 { " (auto)" } else { "" };
-            legend.push((t.select, format!("Target · {}{auto}", s.profile.name())));
-            legend.push((t.text.alpha(0.8), "Listened".into()));
+            let auto = if self.ma_value(device, ma::P_PROFILE) < 0.5 { tr(" (auto)") } else { "" };
+            legend.push((t.select, tr_fmt!("Target · {}{}", tr(s.profile.name()), auto)));
+            legend.push((t.text.alpha(0.8), tr("Listened").into()));
         }
         legend.push((t.accent, "EQ".into()));
         if shown.is_some() {
-            legend.push((t.accent_hot, "Suggested".into()));
+            legend.push((t.accent_hot, tr("Suggested").into()));
         }
         for (col, label) in legend {
             c.fill_rect(Rect::new(lx, ly - 1.0, 10.0, 2.0), col);
@@ -399,17 +400,17 @@ impl App {
             let secs = format!("{} s", (p * ma::LISTEN_SECONDS).floor() as u32);
             self.text_center(c, self.f.mono_med, 18.0, cx, cy, &secs, t.text.alpha(fade));
             let (title, hint) = if self.playing {
-                ("Listening", format!("{} s of audio, any part of the track", ma::LISTEN_SECONDS as u32))
+                (tr("Listening"), tr_fmt!("{} s of audio, any part of the track", ma::LISTEN_SECONDS as u32))
             } else {
-                ("Waiting for audio", "Start playback to listen".to_string())
+                (tr("Waiting for audio"), tr("Start playback to listen").to_string())
             };
             self.text_center(c, self.f.sans_med, 13.0, cx, cy + radius + 16.0, title, t.text.alpha(fade));
             self.text_center(c, self.f.sans, 11.0, cx, cy + radius + 32.0, &hint, t.muted.alpha(fade));
         } else if analysis.is_none() {
             let (cx, cy) = (g.x + g.w * 0.5, g.y + g.h * 0.5);
             c.fill_rrect(Rect::new(cx - 150.0, cy - 24.0, 300.0, 46.0), 10.0, t.bg_deep.alpha(0.92));
-            self.text_center(c, self.f.sans_med, 13.0, cx, cy - 8.0, "Press Listen while the track plays", t.text);
-            self.text_center(c, self.f.sans, 11.0, cx, cy + 10.0, "Nothing changes until you apply", t.muted);
+            self.text_center(c, self.f.sans_med, 13.0, cx, cy - 8.0, tr("Press Listen while the track plays"), t.text);
+            self.text_center(c, self.f.sans, 11.0, cx, cy + 10.0, tr("Nothing changes until you apply"), t.muted);
         }
         c.set_clip(Some(prev));
     }
@@ -449,15 +450,15 @@ impl App {
             c.fill_circle(bx, by, 2.5, ink);
         }
         let label = if listening {
-            format!("Listening {} %", (shared.map_or(0.0, MixShared::progress) * 100.0).round() as u32)
+            tr_fmt!("Listening {}%", (shared.map_or(0.0, MixShared::progress) * 100.0).round() as u32)
         } else if analysis.is_some() {
-            "Listen again".to_string()
+            tr("Listen again").to_string()
         } else {
-            "Listen".to_string()
+            tr("Listen").to_string()
         };
         self.text(c, self.f.sans_med, 13.0, bx + 14.0, by, &label, ink);
         if hov {
-            let tip = if listening { "Stop listening" } else { "Listen\nAnalyses 10 s of the playing track, then suggests settings" };
+            let tip = if listening { tr("Stop listening") } else { tr("Listen\nAnalyses 10 s of the playing track, then suggests settings") };
             self.set_tip(tip, "");
             self.set_cursor(Cursor::Hand);
             if input.pressed {
@@ -472,7 +473,7 @@ impl App {
         if let Some(v) = self.choice(c, input, wid("ma-prof", dk, 0), cell, info, value) {
             self.set_param_value(device, info, v);
         }
-        self.tip_zone(input, Rect::new(cell.x, cell.y, cell.w, 18.0), "Profile\nWhat the track is: sets the target curve and the starting points", "");
+        self.tip_zone(input, Rect::new(cell.x, cell.y, cell.w, 18.0), tr("Profile\nWhat the track is: sets the target curve and the starting points"), "");
 
         // Dosage : de neutre à la suggestion appliquée.
         let info = &ma::params()[ma::P_AMOUNT as usize];
@@ -500,10 +501,10 @@ impl App {
         }
         let hv = self.hover_anim(id, hov || self.is_dragging(id));
         if hov {
-            self.set_tip("Amount\nFrom neutral (0 %, untouched sound) to the full settings · double-click: 100 %", "");
+            self.set_tip(tr("Amount\nFrom neutral (0 %, untouched sound) to the full settings · double-click: 100 %"), "");
             self.set_cursor(Cursor::ResizeH);
         }
-        self.text(c, self.f.sans, 12.0, slider.x, slider.y + 6.0, "Amount", t.text2.mix(t.text, hv));
+        self.text(c, self.f.sans, 12.0, slider.x, slider.y + 6.0, tr("Amount"), t.text2.mix(t.text, hv));
         self.text_right(c, self.f.mono, 11.0, slider.right(), slider.y + 6.0, &info.format(amount), t.text);
         let bar = Rect::new(slider.x, slider.y + 17.0, slider.w, 6.0);
         c.fill_rrect(bar, 3.0, t.raised_hi);
@@ -519,9 +520,9 @@ impl App {
             let hv = self.hover_anim(id, hov);
             c.fill_rrect(apply, 14.0, t.accent.mix(t.accent_hot, hv * 0.3));
             let (cx, cy) = apply.center();
-            self.text_center(c, self.f.sans_med, 12.0, cx, cy, "Apply suggestion", t.on_accent);
+            self.text_center(c, self.f.sans_med, 12.0, cx, cy, tr("Apply suggestion"), t.on_accent);
             if hov {
-                self.set_tip(&format!("Apply the {} suggestion\nEvery value stays editable · Ctrl+Z undoes it", s.profile.name()), "");
+                self.set_tip(&tr_fmt!("Apply the {} suggestion\nEvery value stays editable · Ctrl+Z undoes it", s.profile.name()), "");
                 self.set_cursor(Cursor::Hand);
                 if input.pressed {
                     self.apply_suggestion(track, slot, &s);
@@ -529,7 +530,7 @@ impl App {
                 }
             }
             let close = Rect::new(row.right() - 28.0, row.y, 28.0, 28.0);
-            if self.icon_button(c, input, wid("ma-dismiss", dk, 0), close, super::widgets::Icon::Close, false, ("Dismiss the suggestion", "")) {
+            if self.icon_button(c, input, wid("ma-dismiss", dk, 0), close, super::widgets::Icon::Close, false, (tr("Dismiss the suggestion"), "")) {
                 with((track, slot), |a| a.pending = false);
             }
         } else if let Some(a) = analysis {
@@ -538,9 +539,9 @@ impl App {
             let hv = self.hover_anim(id, hov);
             c.stroke_rrect(row, 14.0, 1.0, t.hairline.alpha(1.0 + hv * 2.0));
             let (cx, cy) = row.center();
-            self.text_center(c, self.f.sans, 12.0, cx, cy, "Show suggestion", t.text2.mix(t.text, hv));
+            self.text_center(c, self.f.sans, 12.0, cx, cy, tr("Show suggestion"), t.text2.mix(t.text, hv));
             if hov {
-                self.set_tip(&format!("Suggestion from the last listen ({} s)", num(a.seconds, 0)), "");
+                self.set_tip(&tr_fmt!("Suggestion from the last listen ({} s)", num(a.seconds, 0)), "");
                 self.set_cursor(Cursor::Hand);
                 if input.pressed {
                     with((track, slot), |a| a.pending = true);
@@ -580,6 +581,7 @@ impl App {
         let ds_gr = meter(self, "ma-ds-gr", shared.map_or(0.0, MixShared::deesser_gr));
 
         for (i, &(name, switch, help)) in MODULES.iter().enumerate() {
+            let (name, help) = (tr(name), tr(help));
             let card = Rect::new(
                 r.x + (i % 4) as f32 * (card_w + MODULE_GAP),
                 r.y + (i / 4) as f32 * (MODULE_H + MODULE_GAP),
@@ -605,7 +607,7 @@ impl App {
                 c.fill_circle(cx, cy, 4.0, if on { t.accent } else { t.raised_hi });
                 c.stroke_circle(cx, cy, 4.0, 1.0, if dhov { t.text } else { t.hairline.alpha(3.0) });
                 if dhov {
-                    self.set_tip(&format!("{}\nClick: {}", name, if on { "bypass" } else { "enable" }), "");
+                    self.set_tip(&tr_fmt!("{}\nClick: {}", name, if on { tr("bypass") } else { tr("enable") }), "");
                     if input.pressed {
                         self.ma_set(device, sw, if on { 0.0 } else { 1.0 });
                         toggled = true;
@@ -619,22 +621,21 @@ impl App {
                 1 => {
                     let n = (0..ma::EQ_BANDS as u32).filter(|b| self.ma_value(device, ma::P_BAND + 3 * b + 1) != 0.0).count();
                     match n {
-                        0 => "Flat".into(),
-                        1 => "1 band".into(),
-                        n => format!("{n} bands"),
+                        0 => tr("Flat").into(),
+                        n => tr_fmt_n!("{} active band", "{} active bands", n, n),
                     }
                 }
                 2 if self.ma_value(device, ma::P_DS_RANGE) > 0.0 => p[ma::P_DS_FREQ as usize].format(self.ma_value(device, ma::P_DS_FREQ)),
-                2 => "Idle".into(),
+                2 => tr("Idle").into(),
                 3 if self.ma_value(device, ma::P_COMP_RATIO) > 1.0 => {
                     p[ma::P_COMP_RATIO as usize].format(self.ma_value(device, ma::P_COMP_RATIO))
                 }
-                3 => "Idle".into(),
+                3 => tr("Idle").into(),
                 4 => p[ma::P_SAT_DRIVE as usize].format(self.ma_value(device, ma::P_SAT_DRIVE)),
                 5 => p[ma::P_WIDTH as usize].format(self.ma_value(device, ma::P_WIDTH)),
                 6 => p[ma::P_OUTPUT as usize].format(self.ma_value(device, ma::P_OUTPUT)),
-                7 => analysis.map_or("Not yet".into(), |a| format!("{} dBFS", num(a.rms_db, 1))),
-                _ => "Off".into(),
+                7 => analysis.map_or(tr("Not yet").into(), |a| format!("{} dBFS", num(a.rms_db, 1))),
+                _ => tr("Off").into(),
             };
             self.text(c, self.f.mono, 10.0, card.x + 10.0, card.y + 28.0, &value, if on { t.text2 } else { t.muted });
             // Indicateur de réduction (compresseur, de-esser).
@@ -656,11 +657,11 @@ impl App {
             if let Some(s) = changes {
                 c.fill_circle(card.right() - 9.0, card.y + 10.0, 3.0, t.select);
                 if hov {
-                    self.set_tip(&format!("{name}\nSuggested: {}", describe(&s, i)), "");
+                    self.set_tip(&tr_fmt!("{}\nSuggested: {}", name, describe(&s, i)), "");
                 }
             } else if hov {
                 let tip = match (i, gr) {
-                    (_, Some(gr)) => format!("{help}\nReduction now: {} dB", fmt_db1(-gr)),
+                    (_, Some(gr)) => tr_fmt!("{}\nReduction now: {} dB", help, fmt_db1(-gr)),
                     _ => help.to_string(),
                 };
                 self.set_tip(&tip, "");
@@ -677,11 +678,11 @@ impl App {
         c.fill_rect(Rect::new(r.x, y - 4.0, r.w, 1.0), t.hairline);
         if module == EQ_MODULE {
             let seg = Rect::new(x, y + 22.0, 150.0, 30.0);
-            let tips: Vec<(&str, &str)> = BAND_NAMES.iter().map(|_| ("Band to edit", "")).collect();
+            let tips: Vec<(&str, &str)> = BAND_NAMES.iter().map(|_| (tr("Band to edit"), "")).collect();
             if let Some(b) = self.segmented_tips(c, input, wid("ma-band", dk, 0), seg, &BAND_LABELS, &tips, band) {
                 with(key, |a| a.band = b);
             }
-            self.text(c, self.f.sans, 12.0, x + 2.0, y + 8.0, &format!("{} band", BAND_NAMES[band]), t.text2);
+            self.text(c, self.f.sans, 12.0, x + 2.0, y + 8.0, &tr_fmt!("{} band", tr(BAND_NAMES[band])), t.text2);
             x += 160.0;
         }
         if module == ANALYSIS_MODULE {
@@ -725,19 +726,19 @@ impl App {
     fn ma_readings(&mut self, c: &mut Canvas, r: Rect, analysis: Option<Analysis>) {
         let t = self.theme;
         let Some(a) = analysis else {
-            self.text(c, self.f.sans, 12.0, r.x + 2.0, r.y + 16.0, "Listen first: level, dynamics, sibilance and stereo image show up here", t.muted);
+            self.text(c, self.f.sans, 12.0, r.x + 2.0, r.y + 16.0, tr("Listen first: level, dynamics, sibilance and stereo image show up here"), t.muted);
             return;
         };
-        let stereo = if a.side_db < -30.0 { "Mono".to_string() } else { format!("{} dB side", num(a.side_db, 0)) };
+        let stereo = if a.side_db < -30.0 { tr("Mono").to_string() } else { tr_fmt!("{} dB side", num(a.side_db, 0)) };
         let rows = [
-            ("Level", format!("{} dBFS", num(a.rms_db, 1))),
-            ("Peak", format!("{} dBFS", num(a.peak_db, 1))),
-            ("Crest", format!("{} dB", num(a.crest_db, 1))),
-            ("Dynamics", format!("{} dB", num(a.range_db, 1))),
-            ("Sibilance", format!("{} dB", num(a.sibilance_db, 1))),
-            ("Image", stereo),
-            ("Correlation", num(a.correlation, 2)),
-            ("Listened", format!("{} s", num(a.seconds, 1))),
+            (tr("Level"), format!("{} dBFS", num(a.rms_db, 1))),
+            (tr("Peak"), format!("{} dBFS", num(a.peak_db, 1))),
+            (tr("Crest"), format!("{} dB", num(a.crest_db, 1))),
+            (tr("Dynamics"), format!("{} dB", num(a.range_db, 1))),
+            (tr("Sibilance"), format!("{} dB", num(a.sibilance_db, 1))),
+            (tr("Image"), stereo),
+            (tr("Correlation"), num(a.correlation, 2)),
+            (tr("Listened"), format!("{} s", num(a.seconds, 1))),
         ];
         let col_w = (r.w / 2.0).min(200.0);
         for (k, (label, value)) in rows.iter().enumerate() {
@@ -759,7 +760,7 @@ impl App {
                 }
             }
         }
-        self.commit("Listen");
+        self.commit(tr("Listen"));
         let mut audio = vec![0.0f32; 800 * 2];
         for _ in 0..(secs * self.sample_rate as f32 / 800.0) as usize {
             engine.process(&mut audio, 2);

@@ -32,6 +32,7 @@ mod widgets;
 use std::time::{Duration, Instant};
 
 use ponzik_engine::Command;
+use ponzik_i18n::{tr, tr_fmt};
 use ponzik_project::demo_project;
 use ponzik_ui::{Canvas, encode_png};
 use ponzik_window::{Event, Key, Modifiers, MouseButton, Window};
@@ -210,12 +211,12 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     app.set_output(stream);
     app.start_midi_out();
     for m in &app.midi_inputs {
-        eprintln!("MIDI : {}", m.name());
+        eprintln!("MIDI: {}", m.name());
     }
     app.load_settings();
     app.start_autosave();
     let (play, find) = (app.key_label(keymap::Shortcut::PlayStop), app.key_label(keymap::Shortcut::Palette));
-    app.toast(&format!("{play} pour jouer · {find} pour tout trouver"));
+    app.toast(&tr_fmt!("{} to play · {} to find anything", play, find));
     eprintln!("Ponzik · {} · {} Hz · {}", window.backend_name(), config.sample_rate, output_name);
     let result = event_loop(&mut window, &mut app);
     // Sortie normale (fermeture ou erreur rapportée) : le verrou de session est retiré,
@@ -289,7 +290,7 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
         dirty |= app.poll_midi();
         app.autosave_tick(started.elapsed().as_secs_f64());
         if app.rec.output.as_ref().is_some_and(|s| !s.is_running()) {
-            return Err("le pilote audio s'est arrêté".into());
+            return Err(tr("the audio driver stopped").into());
         }
 
         let (w, h) = window.size();
@@ -369,7 +370,7 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     if let app::Focus::Channel(ch) = app.focus {
         if let Ok(kind) = std::env::var("PONZIK_INSTRUMENT") {
             app.project.channels[ch].instrument = ponzik_project::InstrumentDef::new(&kind);
-            app.commit("Instrument");
+            app.commit(tr("Instrument"));
         }
         if let Ok(list) = std::env::var("PONZIK_NOTE_FX") {
             for (slot, kind) in list.split(',').enumerate() {
@@ -386,7 +387,7 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
 
     // PONZIK_RECOVER : montre la carte de reprise après un crash.
     if std::env::var_os("PONZIK_RECOVER").is_some() {
-        app.recovery = Some((std::path::PathBuf::new(), "Démo · il y a 3 min".into()));
+        app.recovery = Some((std::path::PathBuf::new(), tr("Demo · 3 min ago").into()));
     }
     // PONZIK_SCALE=9,minor : gamme du projet (tonique, mode).
     if let Some((key, scale)) = std::env::var("PONZIK_SCALE").ok().and_then(|v| {
@@ -411,7 +412,7 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
                 }
             }
         }
-        app.commit("Effets de capture");
+        app.commit(tr("Capture effects"));
     }
     // PONZIK_LISTEN=s[,apply] : les assistants de mixage écoutent s secondes de
     // lecture, puis appliquent leur suggestion.
@@ -473,7 +474,7 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
         eprintln!("{view:?} · {pw}×{ph} (×{scale}) · {:.2} ms/image", drawing.as_secs_f64() * 1000.0 / 96.0);
     }
     let png = encode_png(canvas.pixels(), pw, ph);
-    std::fs::write(path, png).map_err(|e| format!("{path} : {e}"))
+    std::fs::write(path, png).map_err(|e| format!("{path}: {e}"))
 }
 
 #[cfg(test)]

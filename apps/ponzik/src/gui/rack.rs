@@ -1,6 +1,7 @@
 //! Vue Channel Rack : un canal par ligne, le step sequencer du pattern courant.
 
 use ponzik_engine::{TICKS_PER_BAR, TICKS_PER_STEP};
+use ponzik_i18n::{tr, tr_fmt};
 use ponzik_ui::{Canvas, Color, Rect};
 use ponzik_window::Cursor;
 
@@ -50,7 +51,7 @@ impl App {
         };
         if changed {
             self.anim.set(wid("pad-pop", ch, step), 0.0);
-            self.commit("Pas");
+            self.commit(tr("Step"));
         }
     }
 
@@ -65,21 +66,21 @@ impl App {
             2 => 1,
             _ => 2,
         };
-        let tips = [("1 mesure", ""), ("2 mesures", ""), ("4 mesures", "")];
+        let tips = [(tr("1 bar"), ""), (tr("2 bars"), ""), (tr("4 bars"), "")];
         if let Some(i) = self.segmented_tips(c, input, wid("rack-len", 0, 0), len_box, &["1", "2", "4"], &tips, sel) {
             self.project.patterns[pat].len = [1, 2, 4][i] * TICKS_PER_BAR;
-            self.commit("Longueur du pattern");
+            self.commit(tr("Pattern length"));
         }
         let swing_box = Rect::new(len_box.x - 12.0 - 132.0, header.y, 132.0, header.h);
-        let swing_text = format!("{:.0} %", self.project.swing * 100.0);
-        if let Some(v) = self.drag_field(c, input, wid("rack-swing", 0, 0), swing_box, self.project.swing, 0.004, 0.05, &swing_text, "Swing") {
+        let swing_text = tr_fmt!("{:.0}%", self.project.swing * 100.0);
+        if let Some(v) = self.drag_field(c, input, wid("rack-swing", 0, 0), swing_box, self.project.swing, 0.004, 0.05, &swing_text, tr("Swing")) {
             let v = (v.clamp(0.0, 1.0) * 100.0).round() / 100.0;
             if v != self.project.swing {
                 self.project.swing = v;
-                self.commit("Swing");
+                self.commit(tr("Swing"));
             }
         }
-        self.tip_zone(input, swing_box, "Swing\nGlisser ou molette", "");
+        self.tip_zone(input, swing_box, tr("Swing\nDrag or scroll"), "");
 
         c.fill_rrect(body, 16.0, t.panel);
         c.stroke_rrect(body, 16.0, 1.0, t.hairline);
@@ -160,14 +161,14 @@ impl App {
         let (ax, ay) = add.center();
         draw_icon(c, Icon::Plus, ax, ay, 18.0, t.muted.mix(t.accent, hv));
         if hov {
-            self.set_tip("Ajouter un instrument\nou glisser depuis le navigateur", "");
+            self.set_tip(tr("Add an instrument\nor drag one from the browser"), "");
             self.set_cursor(Cursor::Hand);
             if input.pressed {
                 self.open_popup(Popup::AddInstrument { replace: None }, add);
             }
         }
         if self.project.channels.is_empty() {
-            self.empty_state(c, Rect::new(pads.x, rows.y, pads.w, 160.0), Icon::Instrument, "Glisse un instrument ici");
+            self.empty_state(c, Rect::new(pads.x, rows.y, pads.w, 160.0), Icon::Instrument, tr("Drop an instrument here"));
         }
         c.set_clip(Some(prev));
     }
@@ -201,10 +202,10 @@ impl App {
         let hv = self.hover_anim(id, hov);
         if hov && input.pressed {
             self.project.channels[ch].muted = !self.project.channels[ch].muted;
-            self.commit("Muet");
+            self.commit(tr("Mute"));
         }
         if hov {
-            self.set_tip(if self.project.channels[ch].muted { "Réactiver" } else { "Couper" }, "");
+            self.set_tip(if self.project.channels[ch].muted { tr("Unmute") } else { tr("Mute") }, "");
             self.set_cursor(Cursor::Hand);
         }
         c.fill_rrect(led, 8.0, t.raised_hi.alpha(0.4 + hv * 0.6));
@@ -241,14 +242,14 @@ impl App {
         let (name, kind) = {
             let c = &self.project.channels[ch];
             let kind = ponzik_engine::registry::instrument_kind(&c.instrument.kind)
-                .map_or_else(|| super::app::display_kind(&c.instrument.kind), |k| k.name.to_string());
+                .map_or_else(|| super::app::display_kind(&c.instrument.kind), |k| tr(k.name).to_string());
             (c.name.clone(), kind)
         };
         let track = self.project.channels[ch].track;
         let name_col = if muted { t.text2 } else { t.text.mix(WHITE, nh * 0.3) };
         self.text_fit(c, self.f.sans_med, 15.0, name_r.x, cy, &name, name_r.w, name_col);
         if nhov {
-            self.set_tip(&format!("{kind} · piste {track}\nDouble-clic : renommer · clic droit : menu"), "");
+            self.set_tip(&tr_fmt!("{} · track {}\nDouble-click: rename · right-click: menu", kind, track), "");
             self.set_cursor(Cursor::Hand);
         }
 
@@ -258,7 +259,7 @@ impl App {
         if pv > 0.01 {
             let pr = Rect::new(name_r.right() + 2.0, cy - 14.0, 28.0, 28.0);
             let key = self.key_label(super::keymap::Shortcut::ViewPiano);
-            if self.view_shown(View::Piano) && self.icon_button(c, input, wid("ch-pr", ch, 0), pr, Icon::Piano, false, ("Piano roll", &key)) {
+            if self.view_shown(View::Piano) && self.icon_button(c, input, wid("ch-pr", ch, 0), pr, Icon::Piano, false, (tr("Piano roll"), &key)) {
                 self.focus = Focus::Channel(ch);
                 self.set_view(View::Piano);
             }
@@ -273,16 +274,16 @@ impl App {
         let gain = self.project.channels[ch].gain;
         if let Some(v) = self.mini_knob(c, input, wid("ch-vol", ch, 0), vol_c, (gain / 1.25).clamp(0.0, 1.0), false) {
             self.project.channels[ch].gain = v * 1.25;
-            self.commit("Volume du canal");
+            self.commit(tr("Channel volume"));
         }
-        let vol_tip = format!("Volume {}", super::mixer::fmt_db(self.project.channels[ch].gain));
+        let vol_tip = tr_fmt!("Volume {}", super::mixer::fmt_db(self.project.channels[ch].gain));
         self.tip_zone(input, Rect::new(vol_c.0 - 14.0, vol_c.1 - 14.0, 28.0, 28.0), &vol_tip, "");
         let pan = self.project.channels[ch].pan;
         if let Some(v) = self.mini_knob(c, input, wid("ch-pan", ch, 0), pan_c, (pan + 1.0) * 0.5, true) {
             self.project.channels[ch].pan = ((v * 2.0 - 1.0) * 100.0).round() / 100.0;
-            self.commit("Pan du canal");
+            self.commit(tr("Channel pan"));
         }
-        let pan_tip = format!("Pan {}", super::mixer::fmt_pan(self.project.channels[ch].pan));
+        let pan_tip = tr_fmt!("Pan {}", super::mixer::fmt_pan(self.project.channels[ch].pan));
         self.tip_zone(input, Rect::new(pan_c.0 - 14.0, pan_c.1 - 14.0, 28.0, 28.0), &pan_tip, "");
 
         let kind = self.project.channels[ch].instrument.kind.clone();
@@ -326,8 +327,8 @@ impl App {
             if let Some(n) = self.project.patterns[pat].notes.get_mut(ch).and_then(|v| v.iter_mut().find(|n| n.start >= lo && n.start < hi)) {
                 n.vel = (n.vel + input.wheel * step).clamp(0.05, 1.0);
                 let vel = n.vel;
-                self.commit("Vélocité du pas");
-                self.toast(&format!("Vélocité {:.0} %", vel * 100.0));
+                self.commit(tr("Step velocity"));
+                self.toast(&tr_fmt!("Velocity {:.0}%", vel * 100.0));
             }
         }
         let note = self.note_in_step(ch, i);

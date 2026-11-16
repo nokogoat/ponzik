@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 
 use ponzik_engine::mixer::INSERT_SLOTS;
+use ponzik_i18n::{tr, tr_fmt};
 use ponzik_project::{EffectDef, InstrumentDef};
 use ponzik_ui::{Canvas, Color, Rect};
 use ponzik_window::Cursor;
@@ -159,8 +160,8 @@ impl App {
                 c.instrument = InstrumentDef::new(&kind);
                 c.name = name.clone();
                 self.focus = Focus::Channel(ch);
-                self.commit("Remplacer l'instrument");
-                self.toast(&format!("{name} chargé"));
+                self.commit(tr("Replace instrument"));
+                self.toast(&tr_fmt!("{} loaded", name.as_str()));
             }
             (Payload::Effect { kind, .. }, DropTarget::Channel(ch)) => {
                 let track = self.project.channels[ch].track;
@@ -176,7 +177,7 @@ impl App {
                     if self.ensure_sample(&path) {
                         self.project.channels[ch].instrument.sample = Some(path);
                         self.focus = Focus::Channel(ch);
-                        self.commit("Charger un échantillon");
+                        self.commit(tr("Load a sample"));
                     }
                 } else {
                     self.add_sample_channel(&path);
@@ -196,19 +197,19 @@ impl App {
     pub fn add_channel_kind(&mut self, kind: &str, name: &str) {
         let idx = self.project.add_channel(name.to_string(), InstrumentDef::new(kind), 60);
         self.focus = Focus::Channel(idx);
-        self.commit("Ajouter un canal");
-        self.toast(&format!("{name} ajouté au rack"));
+        self.commit(tr("Add a channel"));
+        self.toast(&tr_fmt!("{} added to the rack", name));
     }
 
     /// Pose un effet sur une piste : dans `slot` (remplacé), sinon au premier libre.
     pub fn insert_effect(&mut self, track: usize, slot: Option<usize>, kind: &str) {
         if self.project.tracks[track].kind == ponzik_project::TrackKind::Vca {
-            self.toast("Un VCA ne fait passer aucun son : mettez l'effet sur un bus");
+            self.toast(tr("A VCA carries no sound: put the effect on a bus"));
             return;
         }
         let inserts = &self.project.tracks[track].inserts;
         let Some(slot) = slot.filter(|&s| s < INSERT_SLOTS).or_else(|| inserts.iter().position(Option::is_none)) else {
-            self.toast("Plus d'emplacement libre sur cette piste");
+            self.toast(tr("No free slot left on this track"));
             return;
         };
         self.project.tracks[track].inserts[slot] = Some(EffectDef::new(kind));
@@ -216,6 +217,6 @@ impl App {
             self.focus = Focus::Track(track);
         }
         self.panel = true;
-        self.commit("Ajouter un effet");
+        self.commit(tr("Add an effect"));
     }
 }

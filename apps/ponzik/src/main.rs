@@ -1,4 +1,6 @@
 mod gui;
+#[cfg(test)]
+mod i18n_coverage;
 
 use std::io::{self, BufRead};
 use std::process::ExitCode;
@@ -8,23 +10,27 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use ponzik_engine::{Command, PlayMode};
+use ponzik_i18n::{tr, tr_fmt};
 use ponzik_project::{BitDepth, RenderMode, demo_project};
 
-const HELP: &str = "\
-Ponzik — le DAW libre. No more gatekeeping.
+fn help() -> &'static str {
+    tr("\
+Ponzik — the free DAW. No more gatekeeping.
 
-Usage :
-  ponzik                                   ouvre l'interface (démo house)
-  ponzik breakcore                         ouvre l'interface sur la démo breakcore
-  ponzik play [secondes]                   joue la démo dans le terminal (Entrée pour arrêter)
-  ponzik render <sortie.wav> [morceau|pattern]
-                                           exporte la démo en WAV 24 bits
-  ponzik screenshot <sortie.png> [vue] [largeur hauteur]
-                                           capture l'interface hors écran
-                                           (vues : rack, piano, playlist, mixer, lab ;
-                                           PONZIK_SAMPLELAB=demo|<wav> ouvre l'Atelier ;
-                                           PONZIK_SCALE_UI=2 rend en 2× pour l'HiDPI)
-  ponzik help                              affiche cette aide";
+Usage:
+  ponzik                                   opens the interface (house demo)
+  ponzik breakcore                         opens the interface on the breakcore demo
+  ponzik play [seconds]                    plays the demo in the terminal (Enter to stop)
+  ponzik render <output.wav> [song|pattern]
+                                           exports the demo as a 24-bit WAV
+  ponzik screenshot <output.png> [view] [width height]
+                                           captures the interface off-screen
+                                           (views: rack, piano, playlist, mixer, lab;
+                                           PONZIK_SAMPLELAB=demo|<wav> opens the Sample Lab;
+                                           PONZIK_SCALE_UI=2 renders at 2× for HiDPI;
+                                           PONZIK_LANG=fr picks the language)
+  ponzik help                              shows this help")
+}
 
 fn main() -> ExitCode {
     gui::init_language();
@@ -36,22 +42,22 @@ fn main() -> ExitCode {
         Some("render") => render(&args[1..]),
         Some("screenshot") => screenshot(&args[1..]),
         Some("help" | "-h" | "--help") => {
-            println!("{HELP}");
+            println!("{}", help());
             Ok(())
         }
-        Some(other) => Err(format!("commande inconnue : {other}\n\n{HELP}")),
+        Some(other) => Err(tr_fmt!("unknown command: {}\n\n{}", other, help())),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("erreur : {e}");
+            eprintln!("{}", tr_fmt!("error: {}", e.as_str()));
             ExitCode::FAILURE
         }
     }
 }
 
 fn play(seconds: Option<&str>) -> Result<(), String> {
-    let seconds = seconds.map(|s| s.parse::<f64>().map_err(|_| format!("durée invalide : {s}"))).transpose()?;
+    let seconds = seconds.map(|s| s.parse::<f64>().map_err(|_| tr_fmt!("invalid duration: {}", s))).transpose()?;
     let output = ponzik_audio::open_default().map_err(|e| e.to_string())?;
     let config = output.config();
     let mut project = demo_project();
@@ -63,8 +69,8 @@ fn play(seconds: Option<&str>) -> Result<(), String> {
     let stream = output.start(move |out, ch| engine.process(out, ch)).map_err(|e| e.to_string())?;
     println!("Ponzik · {} · {} BPM · {} Hz · {}", project.name, project.bpm, config.sample_rate, stream.device_name());
     match seconds {
-        Some(s) => println!("Lecture pendant {s} s…"),
-        None => println!("Entrée pour arrêter."),
+        Some(s) => println!("{}", tr_fmt!("Playing for {} s…", s)),
+        None => println!("{}", tr("Press Enter to stop.")),
     }
 
     let stop = Arc::new(AtomicBool::new(false));
@@ -89,34 +95,38 @@ fn play(seconds: Option<&str>) -> Result<(), String> {
 }
 
 fn render(args: &[String]) -> Result<(), String> {
-    let path = args.first().ok_or_else(|| format!("il manque le fichier de sortie\n\n{HELP}"))?;
+    let path = args.first().ok_or_else(|| tr_fmt!("missing output file\n\n{}", help()))?;
     let project = if args.get(2).is_some_and(|a| a == "breakcore") { ponzik_project::demo_breakcore() } else { demo_project() };
     let mode = match args.get(1).map(String::as_str) {
-        None | Some("morceau") => RenderMode::Song,
+        None | Some("song" | "morceau") => RenderMode::Song,
         Some("pattern") => RenderMode::Pattern(0, 4),
-        Some(other) => return Err(format!("mode inconnu : {other}")),
+        Some(other) => return Err(tr_fmt!("unknown mode: {}", other)),
     };
     const SR: u32 = 48_000;
     let none = |_: &str| None;
     let audio = ponzik_project::render_song(&project, SR, &none, mode);
-    ponzik_project::write_wav(path, &audio, SR, BitDepth::Pcm24).map_err(|e| format!("{path} : {e}"))?;
+    ponzik_project::write_wav(path, &audio, SR, BitDepth::Pcm24).map_err(|e| format!("{path}: {e}"))?;
     let peak = audio.iter().fold(0.0f32, |m, s| m.max(s.abs()));
     println!(
-        "{path} : {:.1} s, crête {:.1} dBFS",
-        audio.len() as f64 / (2.0 * SR as f64),
-        20.0 * peak.max(1e-9).log10()
+        "{}",
+        tr_fmt!(
+            "{}: {:.1} s, peak {:.1} dBFS",
+            path.as_str(),
+            audio.len() as f64 / (2.0 * SR as f64),
+            20.0 * peak.max(1e-9).log10()
+        )
     );
     Ok(())
 }
 
 fn screenshot(args: &[String]) -> Result<(), String> {
-    let path = args.first().ok_or_else(|| format!("il manque le fichier de sortie\n\n{HELP}"))?;
+    let path = args.first().ok_or_else(|| tr_fmt!("missing output file\n\n{}", help()))?;
     let view = args.get(1).map_or("rack", String::as_str);
     let dim = |i: usize, default: usize| -> Result<usize, String> {
-        args.get(i).map_or(Ok(default), |v| v.parse().map_err(|_| format!("dimension invalide : {v}")))
+        args.get(i).map_or(Ok(default), |v| v.parse().map_err(|_| tr_fmt!("invalid dimension: {}", v.as_str())))
     };
     let (w, h) = (dim(2, 1600)?, dim(3, 960)?);
     gui::screenshot(path, w, h, view)?;
-    println!("{path} : {w}×{h}, vue {view}");
+    println!("{}", tr_fmt!("{}: {}×{}, view {}", path.as_str(), w, h, view));
     Ok(())
 }

@@ -1,6 +1,7 @@
 //! Piano roll : notes du canal sélectionné dans le pattern courant.
 
 use ponzik_engine::{Note, PlayMode, TICKS_PER_BAR, TICKS_PER_STEP};
+use ponzik_i18n::{tr, tr_fmt, tr_fmt_n, tr_noop};
 use ponzik_project::{ChordKind, ScaleKind, Voicing, revoice};
 use ponzik_ui::{Canvas, Color, Rect};
 use ponzik_window::{Cursor, Key};
@@ -17,12 +18,12 @@ const RULER: f32 = 28.0;
 const VELOCITY: f32 = 76.0;
 const EDGE: f32 = 7.0;
 const SNAPS: [u32; 4] = [96, 48, 24, 12];
-const PIANO_HELP: &str = "Piano roll
-Clic : poser · bord : durée · clic droit : effacer
-Ctrl + glisser : sélectionner · règle : boucle
-Ctrl+B : dupliquer · Ctrl+Q : quantifier
-Molette : défiler · Maj : horizontal · Ctrl : zoom
-Bouton du milieu : glisser la vue";
+const PIANO_HELP: &str = tr_noop("Piano roll
+Click: place · edge: length · right-click: erase
+Ctrl + drag: select · ruler: loop
+Ctrl+B: duplicate · Ctrl+Q: quantize
+Wheel: scroll · Shift: horizontal · Ctrl: zoom
+Middle button: pan the view");
 
 #[derive(Clone, Debug)]
 pub enum PianoDrag {
@@ -38,54 +39,54 @@ fn is_black(key: u8) -> bool {
 }
 
 /// Forces d'humanisation : nom, écart de début (ticks, ±), écart de vélocité (±, relatif).
-pub const HUMANIZE: [(&str, u32, f32); 3] = [("Léger", 3, 0.05), ("Moyen", 6, 0.1), ("Fort", 12, 0.2)];
+pub const HUMANIZE: [(&str, u32, f32); 3] = [(tr_noop("Light"), 3, 0.05), (tr_noop("Medium"), 6, 0.1), (tr_noop("Strong"), 12, 0.2)];
 
 pub fn chord_name(kind: ChordKind) -> &'static str {
     match kind {
-        ChordKind::Major => "Majeur",
-        ChordKind::Minor => "Mineur",
-        ChordKind::Diminished => "Diminué",
-        ChordKind::Augmented => "Augmenté",
-        ChordKind::Sus2 => "Sus 2",
-        ChordKind::Sus4 => "Sus 4",
-        ChordKind::Power => "Quinte",
-        ChordKind::Major7 => "Majeur 7",
-        ChordKind::Minor7 => "Mineur 7",
-        ChordKind::Dominant7 => "Septième",
-        ChordKind::HalfDiminished7 => "Demi-diminué",
-        ChordKind::Diminished7 => "Diminué 7",
-        ChordKind::MinorMajor7 => "Mineur maj. 7",
-        ChordKind::Add9 => "Add 9",
-        ChordKind::MinorAdd9 => "Mineur add 9",
-        ChordKind::Six => "Sixte",
-        ChordKind::Minor6 => "Mineur 6",
-        ChordKind::SixNine => "Six-neuf",
-        ChordKind::SevenSus4 => "7 sus 4",
-        ChordKind::Major9 => "Majeur 9",
-        ChordKind::Minor9 => "Mineur 9",
-        ChordKind::Dominant9 => "Neuvième",
-        ChordKind::Add11 => "Add 11",
-        ChordKind::Minor11 => "Mineur 11",
-        ChordKind::Dominant11 => "Onzième",
-        ChordKind::Major13 => "Majeur 13",
-        ChordKind::Dominant13 => "Treizième",
+        ChordKind::Major => tr_noop("Major"),
+        ChordKind::Minor => tr_noop("Minor"),
+        ChordKind::Diminished => tr_noop("Diminished"),
+        ChordKind::Augmented => tr_noop("Augmented"),
+        ChordKind::Sus2 => tr_noop("Sus 2"),
+        ChordKind::Sus4 => tr_noop("Sus 4"),
+        ChordKind::Power => tr_noop("Power"),
+        ChordKind::Major7 => tr_noop("Major 7"),
+        ChordKind::Minor7 => tr_noop("Minor 7"),
+        ChordKind::Dominant7 => tr_noop("Dominant 7"),
+        ChordKind::HalfDiminished7 => tr_noop("Half-diminished"),
+        ChordKind::Diminished7 => tr_noop("Diminished 7"),
+        ChordKind::MinorMajor7 => tr_noop("Minor maj. 7"),
+        ChordKind::Add9 => tr_noop("Add 9"),
+        ChordKind::MinorAdd9 => tr_noop("Minor add 9"),
+        ChordKind::Six => tr_noop("Sixth"),
+        ChordKind::Minor6 => tr_noop("Minor 6"),
+        ChordKind::SixNine => tr_noop("Six-nine"),
+        ChordKind::SevenSus4 => tr_noop("7 sus 4"),
+        ChordKind::Major9 => tr_noop("Major 9"),
+        ChordKind::Minor9 => tr_noop("Minor 9"),
+        ChordKind::Dominant9 => tr_noop("Dominant 9"),
+        ChordKind::Add11 => tr_noop("Add 11"),
+        ChordKind::Minor11 => tr_noop("Minor 11"),
+        ChordKind::Dominant11 => tr_noop("Dominant 11"),
+        ChordKind::Major13 => tr_noop("Major 13"),
+        ChordKind::Dominant13 => tr_noop("Dominant 13"),
     }
 }
 
 /// Forme d'accord quand une gamme est fixée : la qualité vient de la gamme,
 /// seuls le nombre de notes et leur empilement comptent.
 pub const SCALE_SHAPES: [(Option<ChordKind>, &str, &str); 11] = [
-    (None, "Triade", "3"),
-    (Some(ChordKind::Six), "Sixte", "6"),
-    (Some(ChordKind::Major7), "Septième", "7"),
-    (Some(ChordKind::Major9), "Neuvième", "9"),
-    (Some(ChordKind::Minor11), "Onzième", "11"),
-    (Some(ChordKind::Major13), "Treizième", "13"),
-    (Some(ChordKind::Add9), "Add 9", "add9"),
-    (Some(ChordKind::Sus2), "Sus 2", "sus2"),
-    (Some(ChordKind::Sus4), "Sus 4", "sus4"),
-    (Some(ChordKind::SevenSus4), "7 sus 4", "7sus4"),
-    (Some(ChordKind::Power), "Quinte", "5"),
+    (None, tr_noop("Triad"), "3"),
+    (Some(ChordKind::Six), tr_noop("Sixth"), "6"),
+    (Some(ChordKind::Major7), tr_noop("Seventh"), "7"),
+    (Some(ChordKind::Major9), tr_noop("Ninth"), "9"),
+    (Some(ChordKind::Minor11), tr_noop("Eleventh"), "11"),
+    (Some(ChordKind::Major13), tr_noop("Thirteenth"), "13"),
+    (Some(ChordKind::Add9), tr_noop("Add 9"), "add9"),
+    (Some(ChordKind::Sus2), tr_noop("Sus 2"), "sus2"),
+    (Some(ChordKind::Sus4), tr_noop("Sus 4"), "sus4"),
+    (Some(ChordKind::SevenSus4), tr_noop("7 sus 4"), "7sus4"),
+    (Some(ChordKind::Power), tr_noop("Power"), "5"),
 ];
 
 /// Forme (nom, symbole) d'un type d'accord une fois ramené dans la gamme.
@@ -112,7 +113,7 @@ fn pop_id(key: u8, start: u32) -> u64 {
 }
 
 /// Libellés des renversements.
-const INVERSIONS: [&str; 4] = ["Fond.", "1er", "2e", "3e"];
+const INVERSIONS: [&str; 4] = [tr_noop("Root"), tr_noop("1st"), tr_noop("2nd"), tr_noop("3rd")];
 
 /// Symbole court ; « M » pour l'accord majeur, « b5 » à la place de « ♭5 »
 /// (les polices embarquées n'ont pas ♭).
@@ -168,16 +169,23 @@ impl App {
         // Sections : (titre, [(choix, libellé, nom complet)]).
         let mut forms: Vec<(String, Vec<ChordChoice>)> = Vec::new();
         if in_scale {
-            let title = format!("Forme · {} {}", super::app::key_name(self.project.key), self.project.scale.name().to_lowercase());
+            let title = tr_fmt!("Shape · {} {}", super::app::key_name(self.project.key), tr(self.project.scale.name()).to_lowercase());
             forms.push((title, SCALE_SHAPES.iter().map(|&(k, name, _)| (k, name, name)).collect()));
         } else {
-            for group in ["Triades", "Septièmes et sixtes", "Enrichis"] {
+            // Familles dans l'ordre de ChordKind::ALL (sans dépendre de leurs libellés).
+            let mut groups: Vec<&'static str> = Vec::new();
+            for k in ChordKind::ALL {
+                if !groups.contains(&k.group()) {
+                    groups.push(k.group());
+                }
+            }
+            for group in groups {
                 let items = ChordKind::ALL
                     .into_iter()
                     .filter(|k| k.group() == group)
                     .map(|k| (Some(k), chord_symbol(k), chord_name(k)))
                     .collect();
-                forms.push((group.to_string(), items));
+                forms.push((tr(group).to_string(), items));
             }
         }
         let rows = |n: usize| n.div_ceil(COLS) as f32 * (cell_h + GAP);
@@ -193,7 +201,7 @@ impl App {
         c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, Color::rgba(0, 0, 0, (90.0 * open) as u8));
         c.fill_rrect(r, 14.0, t.panel);
         c.stroke_rrect(r, 14.0, 1.0, t.hairline.alpha(1.6));
-        self.text(c, self.f.sans_med, 12.0, r.x + 16.0, r.y + 20.0, "Accord", t.muted);
+        self.text(c, self.f.sans_med, 12.0, r.x + 16.0, r.y + 20.0, tr("Chord"), t.muted);
 
         let over = |b: Rect| input.inside && b.contains(input.x, input.y);
         let mut hovered_name: Option<&str> = None;
@@ -210,7 +218,7 @@ impl App {
                 if hov {
                     hovered_name = Some(name);
                 }
-                self.choice_cell(c, cell, wid("chord-kind", n, 0), hov, cur, label);
+                self.choice_cell(c, cell, wid("chord-kind", n, 0), hov, cur, tr(label));
                 n += 1;
                 if hov && input.pressed {
                     self.piano.chord = kind;
@@ -221,25 +229,25 @@ impl App {
         }
 
         // Renversement et disposition.
-        self.text(c, self.f.sans_med, 11.0, r.x + 16.0, y + HEAD * 0.5, "Renversement", t.muted);
+        self.text(c, self.f.sans_med, 11.0, r.x + 16.0, y + HEAD * 0.5, tr("Inversion"), t.muted);
         y += HEAD;
         for (i, label) in INVERSIONS.iter().enumerate() {
             let cell = Rect::new(r.x + 12.0 + i as f32 * (cell_w + GAP), y, cell_w, cell_h);
             let hov = over(cell);
-            self.choice_cell(c, cell, wid("chord-inv", i, 0), hov, usize::from(self.piano.chord_inv) == i, label);
+            self.choice_cell(c, cell, wid("chord-inv", i, 0), hov, usize::from(self.piano.chord_inv) == i, tr(label));
             if hov && input.pressed {
                 self.piano.chord_inv = i as u8;
                 self.piano.chord_stamp = true;
             }
         }
         y += cell_h + GAP;
-        self.text(c, self.f.sans_med, 11.0, r.x + 16.0, y + HEAD * 0.5, "Disposition", t.muted);
+        self.text(c, self.f.sans_med, 11.0, r.x + 16.0, y + HEAD * 0.5, tr("Voicing"), t.muted);
         y += HEAD;
         let vw = (w - 24.0 - 2.0 * GAP) / 3.0;
         for (i, v) in Voicing::ALL.into_iter().enumerate() {
             let cell = Rect::new(r.x + 12.0 + i as f32 * (vw + GAP), y, vw, cell_h);
             let hov = over(cell);
-            self.choice_cell(c, cell, wid("chord-voicing", i, 0), hov, self.piano.voicing == v, v.name());
+            self.choice_cell(c, cell, wid("chord-voicing", i, 0), hov, self.piano.voicing == v, tr(v.name()));
             if hov && input.pressed {
                 self.piano.voicing = v;
                 self.piano.chord_stamp = true;
@@ -270,10 +278,10 @@ impl App {
         }
         // Nom de l'accord obtenu (ou du choix survolé), en haut à droite.
         let shown = match hovered_name {
-            Some(name) => name.to_string(),
+            Some(name) => tr(name).to_string(),
             None => {
                 ChordKind::identify(&notes).map_or_else(
-                    || format!("{} notes", notes.len()),
+                    || tr_fmt_n!("{} note", "{} notes", notes.len(), notes.len()),
                     |k| format!("{}{}", super::app::key_name(notes[0]), chord_symbol(k)),
                 )
             }
@@ -321,7 +329,7 @@ impl App {
         let t = self.theme;
         let Some(ch) = self.piano_channel() else {
             c.fill_rrect(body, 16.0, t.panel);
-            self.empty_state(c, body, Icon::Piano, "Ajoute un instrument pour écrire des notes");
+            self.empty_state(c, body, Icon::Piano, tr("Add an instrument to write notes"));
             return;
         };
         let pat = self.project.current_pattern;
@@ -331,11 +339,11 @@ impl App {
         c.fill_rrect(chan_box, 10.0, t.raised);
         c.stroke_rrect(chan_box, 10.0, 1.0, t.hairline);
         let n = self.project.channels.len();
-        if self.icon_button(c, input, wid("pr-prev", 0, 0), Rect::new(chan_box.x + 2.0, chan_box.y + 2.0, 28.0, chan_box.h - 4.0), Icon::ChevronLeft, false, ("Canal précédent", "")) {
+        if self.icon_button(c, input, wid("pr-prev", 0, 0), Rect::new(chan_box.x + 2.0, chan_box.y + 2.0, 28.0, chan_box.h - 4.0), Icon::ChevronLeft, false, (tr("Previous channel"), "")) {
             self.focus = Focus::Channel((ch + n - 1) % n);
             self.piano.selected.clear();
         }
-        if self.icon_button(c, input, wid("pr-next", 0, 0), Rect::new(chan_box.right() - 30.0, chan_box.y + 2.0, 28.0, chan_box.h - 4.0), Icon::ChevronRight, false, ("Canal suivant", "")) {
+        if self.icon_button(c, input, wid("pr-next", 0, 0), Rect::new(chan_box.right() - 30.0, chan_box.y + 2.0, 28.0, chan_box.h - 4.0), Icon::ChevronRight, false, (tr("Next channel"), "")) {
             self.focus = Focus::Channel((ch + 1) % n);
             self.piano.selected.clear();
         }
@@ -345,7 +353,7 @@ impl App {
         self.text_center(c, self.f.sans_med, 13.0, bx, by, &label, t.text);
         let name_r = Rect::new(chan_box.x + 32.0, chan_box.y, chan_box.w - 64.0, chan_box.h);
         if input.inside && name_r.contains(input.x, input.y) && self.drag.is_none() {
-            self.set_tip("Canal\nDouble-clic : renommer", "");
+            self.set_tip(tr("Channel\nDouble-click: rename"), "");
             if input.double {
                 self.open_popup(Popup::Rename { target: Rename::Channel(ch), text: name.clone() }, chan_box);
             }
@@ -354,13 +362,13 @@ impl App {
         // Gamme et accords : coller à la gamme, tampon d'accord et son type.
         let scaled = self.project.scale != ScaleKind::Chromatic;
         let mut hx = chan_box.right() + 12.0;
-        let tip = if scaled { ("Coller à la gamme", "") } else { ("Coller à la gamme\nChoisis d'abord une gamme, en haut", "") };
+        let tip = if scaled { (tr("Snap to scale"), "") } else { (tr("Snap to scale\nPick a scale first, at the top"), "") };
         if self.icon_button(c, input, wid("pr-scale", 0, 0), Rect::new(hx, header.y, 36.0, header.h), Icon::Scale, self.piano.scale_snap, tip) {
             self.piano.scale_snap = !self.piano.scale_snap;
         }
         hx += 40.0;
         let stamp = self.piano.chord_stamp;
-        if self.icon_button(c, input, wid("pr-chord", 0, 0), Rect::new(hx, header.y, 36.0, header.h), Icon::Chord, stamp, ("Poser des accords\nUn clic : un accord entier", "")) {
+        if self.icon_button(c, input, wid("pr-chord", 0, 0), Rect::new(hx, header.y, 36.0, header.h), Icon::Chord, stamp, (tr("Stamp chords\nOne click: a whole chord"), "")) {
             self.piano.chord_stamp = !stamp;
         }
         hx += 38.0;
@@ -376,11 +384,11 @@ impl App {
         self.text_center(c, self.f.sans_med, 12.0, kx - 5.0, ky, label, t.muted.mix(t.text, on.max(chv * 0.6)));
         draw_icon(c, Icon::ChevronDown, chip.right() - 10.0, ky, 9.0, t.muted);
         if chov {
-            let inv = INVERSIONS[usize::from(self.piano.chord_inv.min(3))];
+            let inv = tr(INVERSIONS[usize::from(self.piano.chord_inv.min(3))]);
             let tip = if in_scale {
-                format!("Accord · {} · {inv}\nSuit la gamme · molette : renversement", scale_shape(self.piano.chord).0)
+                tr_fmt!("Chord · {} · {}\nFollows the scale · wheel: inversion", tr(scale_shape(self.piano.chord).0), inv)
             } else {
-                format!("Accord · {} · {inv}\nMolette : renversement", self.piano.chord.map_or("Majeur", chord_name))
+                tr_fmt!("Chord · {} · {}\nWheel: inversion", tr(chord_name(self.piano.chord.unwrap_or(ChordKind::Major))), inv)
             };
             self.set_tip(&tip, "");
         }
@@ -398,19 +406,19 @@ impl App {
 
         hx += chip.w + 12.0;
         let hum = Rect::new(hx, header.y, 36.0, header.h);
-        if self.icon_button(c, input, wid("pr-humanize", 0, 0), hum, Icon::Dice, false, ("Humaniser\nLa sélection, sinon tout le canal", "")) {
+        if self.icon_button(c, input, wid("pr-humanize", 0, 0), hum, Icon::Dice, false, (tr("Humanize\nThe selection, or else the whole channel"), "")) {
             self.open_popup(Popup::Humanize, hum);
         }
 
         let snap_box = Rect::new(header.right() - 236.0, header.y, 236.0, header.h);
         let snap_sel = SNAPS.iter().position(|&s| s == self.piano.snap).unwrap_or(2);
-        let tips = [("Aimanter à la noire", ""), ("Aimanter à la croche", ""), ("Aimanter à la double", ""), ("Aimanter à la triple", "")];
+        let tips = [(tr("Snap to 1/4"), ""), (tr("Snap to 1/8"), ""), (tr("Snap to 1/16"), ""), (tr("Snap to 1/32"), "")];
         if let Some(i) = self.segmented_tips(c, input, wid("pr-snap", 0, 0), snap_box, &["1/4", "1/8", "1/16", "1/32"], &tips, snap_sel) {
             self.piano.snap = SNAPS[i];
         }
         draw_icon(c, Icon::Magnet, snap_box.x - 18.0, header.y + header.h * 0.5, 15.0, t.muted);
         let help = Rect::new(snap_box.x - 74.0, header.y, 36.0, header.h);
-        self.icon_button(c, input, wid("pr-help", 0, 0), help, Icon::Info, false, (PIANO_HELP, ""));
+        self.icon_button(c, input, wid("pr-help", 0, 0), help, Icon::Info, false, (tr(PIANO_HELP), ""));
 
         c.fill_rrect(body, 16.0, t.panel);
         c.stroke_rrect(body, 16.0, 1.0, t.hairline);
@@ -576,7 +584,7 @@ impl App {
                     self.piano.selected = (base..base + keys.len()).collect();
                     self.preview_note(ch, keys[0]);
                     self.piano_drag = Some(PianoDrag::Move { orig, tick0: tick, key0: key });
-                    self.commit(if keys.len() > 1 { "Poser un accord" } else { "Poser une note" });
+                    self.commit(if keys.len() > 1 { tr("Place chord") } else { tr("Place note") });
                 }
             }
         }
@@ -585,7 +593,7 @@ impl App {
             let gone = self.notes_mut(ch).remove(i);
             self.piano.erased.push((gone, self.time));
             self.piano.selected.clear();
-            self.commit("Effacer des notes");
+            self.commit(tr("Delete notes"));
         }
 
         // Geste en cours.
@@ -614,7 +622,7 @@ impl App {
                     {
                         self.preview_note(ch, k);
                     }
-                    self.commit("Déplacer des notes");
+                    self.commit(tr("Move notes"));
                 }
                 Some(PianoDrag::Resize { orig, tick0 }) => {
                     let dt = ((tick_at(input.x) - tick0) / snap).round() * snap;
@@ -625,7 +633,7 @@ impl App {
                         }
                         self.piano.last_len = len;
                     }
-                    self.commit("Durée des notes");
+                    self.commit(tr("Note length"));
                 }
                 Some(PianoDrag::Select { x0, y0 }) => {
                     let sel = Rect::new(x0.min(input.x), y0.min(input.y), (x0 - input.x).abs(), (y0 - input.y).abs());
@@ -647,7 +655,7 @@ impl App {
             }
             if input.released {
                 if matches!(self.piano_drag, Some(PianoDrag::Move { .. } | PianoDrag::Resize { .. })) {
-                    self.finish_note_edit(ch, "Modifier des notes");
+                    self.finish_note_edit(ch, tr("Edit notes"));
                 }
                 self.piano_drag = None;
             }
@@ -716,7 +724,7 @@ impl App {
             && self.drag.is_none()
             && let Some(&n) = self.notes(ch).get(i)
         {
-            let what = if edge { "Durée · glisser" } else { "Glisser : déplacer · clic droit : effacer" };
+            let what = if edge { tr("Length · drag") } else { tr("Drag: move · right-click: erase") };
             self.set_tip(&format!("{} · {}", note_name(n.key), what), "");
         }
 
@@ -846,7 +854,7 @@ impl App {
                 }
             }
             if changed {
-                self.commit("Vélocité");
+                self.commit(tr("Velocity"));
             }
         }
         for (i, n) in self.notes(ch).to_vec().into_iter().enumerate() {
@@ -861,7 +869,7 @@ impl App {
         }
         c.set_clip(Some(prev));
         draw_icon(c, Icon::Mixer, inner.x + KEYBOARD * 0.5, vel_lane.y + vel_lane.h * 0.5, 15.0, t.muted.alpha(0.7));
-        self.tip_zone(input, Rect::new(inner.x, vel_lane.y, KEYBOARD, vel_lane.h), "Vélocité\nGlisser dans le couloir pour la dessiner", "");
+        self.tip_zone(input, Rect::new(inner.x, vel_lane.y, KEYBOARD, vel_lane.h), tr("Velocity\nDrag in the lane to draw it"), "");
     }
 
     /// Décale au hasard le début (±`ticks`) et la vélocité (±`vel`, relatif) des
@@ -870,7 +878,7 @@ impl App {
         let Some(ch) = self.piano_channel() else { return };
         let targets: Vec<usize> = if self.piano.selected.is_empty() { (0..self.notes(ch).len()).collect() } else { self.piano.selected.clone() };
         if targets.is_empty() {
-            self.toast("Aucune note à humaniser");
+            self.toast(tr("No notes to humanize"));
             return;
         }
         let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos() as u64);
@@ -882,8 +890,8 @@ impl App {
                 n.vel = (n.vel * (1.0 + dv)).clamp(0.05, 1.0);
             }
         }
-        self.finish_note_edit(ch, "Humaniser");
-        self.toast(&format!("{} note(s) humanisée(s)", targets.len()));
+        self.finish_note_edit(ch, tr("Humanize"));
+        self.toast(&tr_fmt_n!("{} note humanized", "{} notes humanized", targets.len(), targets.len()));
     }
 
     /// Raccourcis d'édition du piano roll, ceux de FL Studio.
@@ -903,7 +911,7 @@ impl App {
                             notes.remove(i);
                         }
                     }
-                    self.commit("Effacer des notes");
+                    self.commit(tr("Delete notes"));
                 }
                 Key::Char('a') if mods.ctrl => self.piano.selected = (0..self.notes(ch).len()).collect(),
                 Key::Char('d') if mods.ctrl => self.piano.selected.clear(),
@@ -912,7 +920,7 @@ impl App {
                     let first = notes.iter().map(|n| n.start).min().unwrap_or(0);
                     self.clipboard_notes = notes.into_iter().map(|n| Note { start: n.start - first, ..n }).collect();
                     let n = self.clipboard_notes.len();
-                    self.toast(&format!("{n} note(s) copiée(s)"));
+                    self.toast(&tr_fmt_n!("{} note copied", "{} notes copied", n, n));
                 }
                 Key::Char('v') if mods.ctrl && !self.clipboard_notes.is_empty() => {
                     let at = ((self.start_marker as u32) / snap) * snap;
@@ -923,7 +931,7 @@ impl App {
                         notes.push(Note { start: n.start + at, ..*n });
                     }
                     self.piano.selected = (base..base + clip.len()).collect();
-                    self.finish_note_edit(ch, "Coller des notes");
+                    self.finish_note_edit(ch, tr("Paste notes"));
                 }
                 Key::Char('b') if mods.ctrl && !targets.is_empty() => {
                     let sel: Vec<Note> = targets.iter().filter_map(|&i| self.notes(ch).get(i).copied()).collect();
@@ -945,7 +953,7 @@ impl App {
                     if let Some((View::Piano, a, b)) = self.time_selection {
                         self.time_selection = Some((View::Piano, a + span, b + span));
                     }
-                    self.finish_note_edit(ch, "Dupliquer des notes");
+                    self.finish_note_edit(ch, tr("Duplicate notes"));
                 }
                 Key::Char('q') if mods.ctrl && !targets.is_empty() => {
                     for &i in &targets {
@@ -953,8 +961,8 @@ impl App {
                             n.start = ((n.start + snap / 2) / snap) * snap;
                         }
                     }
-                    self.finish_note_edit(ch, "Quantifier");
-                    self.toast("Notes quantifiées");
+                    self.finish_note_edit(ch, tr("Quantize"));
+                    self.toast(tr("Notes quantized"));
                 }
                 Key::Up | Key::Down if !self.piano.selected.is_empty() => {
                     let d: i32 = if mods.ctrl { 12 } else { 1 } * if key == Key::Up { 1 } else { -1 };
@@ -964,7 +972,7 @@ impl App {
                             n.key = (n.key as i32 + d).clamp(0, 127) as u8;
                         }
                     }
-                    self.finish_note_edit(ch, "Transposer");
+                    self.finish_note_edit(ch, tr("Transpose"));
                 }
                 Key::Left | Key::Right if !self.piano.selected.is_empty() => {
                     let d = if key == Key::Right { snap as i64 } else { -(snap as i64) };
@@ -974,7 +982,7 @@ impl App {
                             n.start = (n.start as i64 + d).max(0) as u32;
                         }
                     }
-                    self.finish_note_edit(ch, "Décaler des notes");
+                    self.finish_note_edit(ch, tr("Nudge notes"));
                 }
                 _ => {}
             }

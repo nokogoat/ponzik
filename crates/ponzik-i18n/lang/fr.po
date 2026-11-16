@@ -2155,7 +2155,6 @@ msgstr "Queue sur 5 s\nTrait : pré-délai · repère : déclin"
 
 # --- Command line ---
 
-
 msgid "unknown command: {}\n\n{}"
 msgstr "commande inconnue : {}\n\n{}"
 
@@ -4169,68 +4168,20 @@ msgstr "Voix"
 
 # --- Sample Lab ---
 
-msgid "Remove marker"
-msgstr "Retirer un marqueur"
-
-msgid "Sample reversed"
-msgstr "Échantillon inversé"
-
-msgid "Reverse slice"
-msgstr "Inverser la tranche"
-
-msgid "Pitch slice"
-msgstr "Transposer la tranche"
-
-msgid "Original tempo unknown: type it in or detect it"
-msgstr "Tempo d'origine inconnu : saisis-le ou détecte-le"
-
 msgid "Already at the project tempo"
 msgstr "Déjà au tempo du projet"
-
-msgid "Stretch to tempo"
-msgstr "Étirer au tempo"
-
-msgid "Resample to tempo"
-msgstr "Rééchantillonner au tempo"
 
 msgid "{} → {} BPM"
 msgstr "{} → {} BPM"
 
-msgid "Nothing to normalize: silence"
-msgstr "Rien à normaliser : silence"
-
-msgid "Normalize"
-msgstr "Normaliser"
-
-msgid "Peak at 0 dB"
-msgstr "Crête à 0 dB"
-
-msgid "Original tempo"
-msgstr "Tempo d'origine"
-
 msgid "Detected tempo: {} BPM"
 msgstr "Tempo détecté : {} BPM"
-
-msgid "No clear rhythm to find a tempo"
-msgstr "Pas de rythme assez net pour trouver un tempo"
-
-msgid "Saved to Échantillons: {}"
-msgstr "Enregistré dans Échantillons : {}"
 
 msgid "Sample Lab: replace sample"
 msgstr "Sample Lab : remplacer l'échantillon"
 
-msgid "\"{}\" now plays the Sample Lab version"
-msgstr "« {} » joue maintenant la version du Sample Lab"
-
 msgid "Sample Lab: replace clip"
 msgstr "Sample Lab : remplacer le clip"
-
-msgid "Clip replaced with the Sample Lab version"
-msgstr "Clip remplacé par la version du Sample Lab"
-
-msgid "Saved to Échantillons"
-msgstr "Enregistré dans Échantillons"
 
 msgid "{} slices"
 msgstr "{} tranches"
@@ -4241,14 +4192,8 @@ msgstr "Flip {}"
 msgid "Flip to the rack"
 msgstr "Flip vers le rack"
 
-msgid "{} slices on {}…{} · pattern \"Flip {}\""
-msgstr "{} tranches sur {}…{} · pattern « Flip {} »"
-
 msgid "Slices to the rack"
 msgstr "Tranches vers le rack"
-
-msgid "Slicer: {} slices on {}…{}"
-msgstr "Découpeur : {} tranches sur {}…{}"
 
 msgid "{} slice {}"
 msgstr "{} tranche {}"
@@ -4256,176 +4201,11 @@ msgstr "{} tranche {}"
 msgid "Drop a sample here"
 msgstr "Dépose un échantillon ici"
 
-msgid "or click a WAV in the browser · double-click an audio clip"
-msgstr "ou clique un WAV dans le navigateur · double-clic sur un clip audio"
-
-msgid "Try a drum loop"
-msgstr "Essayer une boucle de batterie"
-
-msgid "Opens a demo drum loop"
-msgstr "Ouvre une boucle de batterie de démo"
-
-msgid "{}\nDrag · wheel (Shift: fine) · double-click: default"
-msgstr "{}\nGlisser · molette (Maj : fin) · double-clic : défaut"
-
-msgid "mono"
-msgstr "mono"
-
-msgid "stereo"
-msgstr "stéréo"
-
-msgid "{} · {} kHz · {}"
-msgstr "{} · {} kHz · {}"
-
-msgid " · {} BPM"
-msgstr " · {} BPM"
-
-msgid "To Slicer"
-msgstr "Vers le Découpeur"
-
-msgid "New Slicer channel: slice k plays on note {} + k"
-msgstr "Nouveau canal Découpeur : la tranche k joue sur la note {} + k"
-
-msgid "Flip"
-msgstr "Flip"
-
-msgid "Slicer plus a pattern replaying the slices in their original order\nRearrange the notes in the piano roll to flip the sample"
-msgstr "Découpeur et pattern qui rejoue les tranches dans l'ordre d'origine\nRéarrange les notes dans le piano roll pour flipper l'échantillon"
-
-msgid "the clip"
-msgstr "le clip"
-
-msgid "Apply"
-msgstr "Appliquer"
-
-msgid "Saves and replaces the sample of \"{}\"\nCtrl+Z brings the old one back"
-msgstr "Enregistre et remplace l'échantillon de « {} »\nCtrl+Z ramène l'ancien"
-
-msgid "Save to Échantillons (24-bit WAV, slice markers included)"
-msgstr "Enregistrer dans Échantillons (WAV 24 bits, marqueurs de tranches inclus)"
-
-msgid "Chop at transients\nOne slice per hit; sensitivity sets how many"
-msgstr "Découper aux transitoires\nUne tranche par frappe ; la sensibilité règle combien"
-
-msgid "Chop to the grid\nEven slices at the original tempo"
-msgstr "Découper sur la grille\nTranches égales au tempo d'origine"
-
-msgid "Chop by hand\nClick: add · drag: move · hold right-click: erase"
-msgstr "Découper à la main\nClic : ajouter · glisser : déplacer · clic droit maintenu : effacer"
-
-msgid "Grid"
-msgstr "Grille"
-
-msgid "Manual"
-msgstr "Manuel"
-
-msgid "Chop mode"
-msgstr "Mode de découpe"
-
-msgid "Hit sensitivity: higher means more slices"
-msgstr "Sensibilité aux frappes : plus haut, plus de tranches"
-
-msgid "Quarter notes"
-msgstr "Noires"
-
-msgid "Eighth notes"
-msgstr "Croches"
-
-msgid "Sixteenth notes"
-msgstr "Doubles croches"
-
-msgid "Thirty-second notes"
-msgstr "Triples croches"
-
-msgid "Original tempo of the sample\nDrag vertically · wheel"
-msgstr "Tempo d'origine de l'échantillon\nGlisser verticalement · molette"
-
-msgid "Click: add a marker · drag: move · hold right-click: erase"
-msgstr "Clic : ajouter un marqueur · glisser : déplacer · clic droit maintenu : effacer"
-
-msgid "Show all"
-msgstr "Tout afficher"
-
-msgid "Spectral colors: lows in teal, highs in pale green\nClick: slice colors"
-msgstr "Couleurs spectrales : graves en sarcelle, aigus en vert pâle\nClic : couleurs des tranches"
-
-msgid "Slice colors\nClick: spectral colors (brightness of the sound)"
-msgstr "Couleurs des tranches\nClic : couleurs spectrales (brillance du son)"
-
-msgid "Overview\nClick or drag: jump there"
-msgstr "Vue d'ensemble\nClic ou glisser : y aller"
-
-msgid "Loop: drag to draw it (snaps to slices)\nSpace plays it · right-click: remove"
-msgstr "Boucle : glisser pour la tracer (aimantée aux tranches)\nEspace la joue · clic droit : retirer"
-
-msgid "Click: play from here · drag: scrub"
-msgstr "Clic : lire d'ici · glisser : parcourir"
-
-msgid "Fade in: drag to set its length"
-msgstr "Fondu d'entrée : glisser pour régler sa durée"
-
-msgid "Fade out: drag to set its length"
-msgstr "Fondu de sortie : glisser pour régler sa durée"
-
-msgid "Fade curve: drag vertically"
-msgstr "Courbe du fondu : glisser verticalement"
-
-msgid "Start: drag to trim"
-msgstr "Début : glisser pour rogner"
-
-msgid "End: drag to trim"
-msgstr "Fin : glisser pour rogner"
-
-msgid "Marker: drag to move · right-click: erase"
-msgstr "Marqueur : glisser pour déplacer · clic droit : effacer"
-
-msgid "Click: add a marker and hear it · hold right-click: erase\nWheel: zoom · Shift+wheel: scroll"
-msgstr "Clic : ajouter un marqueur et l'écouter · clic droit maintenu : effacer\nMolette : zoom · Maj+molette : défiler"
-
-msgid "Click: hear the slice · double-click: add a marker\nWheel: zoom · Shift+wheel: scroll"
-msgstr "Clic : écouter la tranche · double-clic : ajouter un marqueur\nMolette : zoom · Maj+molette : défiler"
-
-msgid "Erase markers"
-msgstr "Effacer des marqueurs"
-
 msgid "Trim"
 msgstr "Rogner"
 
 msgid "Fade"
 msgstr "Fondu"
-
-msgid "Move marker"
-msgstr "Déplacer un marqueur"
-
-msgid "Add marker"
-msgstr "Ajouter un marqueur"
-
-msgid "Slice {} · {} · note {}\nClick: play · drag: drop into the playlist or the rack"
-msgstr "Tranche {} · {} · note {}\nClic : lire · glisser : déposer dans la playlist ou le rack"
-
-msgid "Slice {}"
-msgstr "Tranche {}"
-
-msgid "note {} · {} of {}"
-msgstr "note {} · {} sur {}"
-
-msgid "Play the slice"
-msgstr "Lire la tranche"
-
-msgid "Slice one semitone down (slower)"
-msgstr "Tranche un demi-ton plus bas (plus lente)"
-
-msgid "Slice one semitone up (faster)"
-msgstr "Tranche un demi-ton plus haut (plus rapide)"
-
-msgid "Volume and fades"
-msgstr "Volume et fondus"
-
-msgid "Sample gain"
-msgstr "Gain de l'échantillon"
-
-msgid "Normalize: peak at 0 dB"
-msgstr "Normaliser : crête à 0 dB"
 
 msgid "Fade in"
 msgstr "Fondu d'entrée"
@@ -4433,65 +4213,11 @@ msgstr "Fondu d'entrée"
 msgid "Fade out"
 msgstr "Fondu de sortie"
 
-msgid "Tempo and pitch"
-msgstr "Tempo et hauteur"
-
-msgid "orig. BPM"
-msgstr "BPM d'orig."
-
-msgid "Original tempo of the sample\nDrag vertically · wheel (Shift: fine)"
-msgstr "Tempo d'origine de l'échantillon\nGlisser verticalement · molette (Maj : fin)"
-
-msgid "Detect the tempo"
-msgstr "Détecter le tempo"
-
-msgid "Fit to the project · {} BPM"
-msgstr "Caler sur le projet · {} BPM"
-
-msgid "Speed"
-msgstr "Vitesse"
-
-msgid "Resample: tempo and pitch change together, like a record"
-msgstr "Rééchantillonner : tempo et hauteur changent ensemble, comme un disque"
-
-msgid "Stretch"
-msgstr "Étirer"
-
-msgid "Stretch (WSOLA): the tempo changes, the pitch stays"
-msgstr "Étirer (WSOLA) : le tempo change, la hauteur reste"
-
-msgid "−1 semitone (length kept)"
-msgstr "−1 demi-ton (durée gardée)"
-
-msgid "+1 semitone (length kept)"
-msgstr "+1 demi-ton (durée gardée)"
-
-msgid "Reverse the whole sample"
-msgstr "Inverser tout l'échantillon"
-
-msgid "−1 st"
-msgstr "−1 dt"
-
-msgid "+1 st"
-msgstr "+1 dt"
-
 msgid "Redone in the Sample Lab: {}"
 msgstr "Rétabli dans le Sample Lab : {}"
 
 msgid "Undone in the Sample Lab: {}"
 msgstr "Annulé dans le Sample Lab : {}"
-
-msgid "Transposed by {:+} semitone"
-msgstr "Transposé de {:+} demi-ton"
-
-msgid "Transposed by {:+} semitones"
-msgstr "Transposé de {:+} demi-tons"
-
-msgid "{} · {} slice"
-msgstr "{} · {} tranche"
-
-msgid "{} · {} slices"
-msgstr "{} · {} tranches"
 
 # --- Recording panel headings ---
 
@@ -4506,3 +4232,493 @@ msgstr "24 bits"
 
 msgid "dBFS peak"
 msgstr "dBFS crête"
+
+# --- Sample Lab ---
+
+msgid "Remove a cut"
+msgstr "Retirer une coupe"
+
+msgid "Play backwards"
+msgstr "Jouer à l'envers"
+
+msgid "The sound now plays backwards"
+msgstr "Le son joue maintenant à l'envers"
+
+msgid "Play a piece backwards"
+msgstr "Jouer un morceau à l'envers"
+
+msgid "Pitch a piece"
+msgstr "Transposer un morceau"
+
+msgid "The loop tempo is unknown: set it in Edit sound first"
+msgstr "Le tempo de la boucle est inconnu : règle-le d'abord dans Modifier le son"
+
+msgid "Match project tempo"
+msgstr "Caler sur le tempo du projet"
+
+msgid "Pitched up one semitone"
+msgstr "Monté d'un demi-ton"
+
+msgid "Pitched down one semitone"
+msgstr "Descendu d'un demi-ton"
+
+msgid "Nothing to make louder: the sound is silent"
+msgstr "Rien à monter : le son est silencieux"
+
+msgid "As loud as possible without distorting"
+msgstr "Aussi fort que possible sans saturer"
+
+msgid "Loop tempo"
+msgstr "Tempo de la boucle"
+
+msgid "No clear beat found: type the tempo in instead"
+msgstr "Pas de temps net trouvé : saisis plutôt le tempo"
+
+msgid "Saved as one file: {}"
+msgstr "Enregistré en un seul fichier : {}"
+
+msgid "It is in the Échantillons folder, with the cuts inside. Find it in the browser's sample list."
+msgstr "Il est dans le dossier Échantillons, avec les coupes à l'intérieur. Retrouve-le dans la liste des échantillons du navigateur."
+
+msgid "Saved {} pieces as separate files"
+msgstr "{} morceaux enregistrés en fichiers séparés"
+
+msgid "\"{}\" now plays your edited version"
+msgstr "« {} » joue maintenant ta version modifiée"
+
+msgid "Ctrl+Z brings the old sound back."
+msgstr "Ctrl+Z ramène l'ancien son."
+
+msgid "The playlist clip now plays your edited version"
+msgstr "Le clip de la playlist joue maintenant ta version modifiée"
+
+msgid "{}. Open the pattern and move the notes around to make your own beat."
+msgstr "{}. Ouvre le pattern et déplace les notes pour faire ton propre beat."
+
+msgid "Done! Pattern \"Flip {}\" rebuilds the loop"
+msgstr "C'est fait ! Le pattern « Flip {} » reconstruit la boucle"
+
+msgid "{}. Play them with your computer keyboard or draw notes in the piano roll."
+msgstr "{}. Joue-les au clavier de l'ordinateur ou dessine des notes dans le piano roll."
+
+msgid "Done! \"{} slices\" is in your channel rack"
+msgstr "C'est fait ! « {} morceaux » est dans ton Channel Rack"
+
+msgid "Step 1: choose a sound\nDrop a file, pick a recent one or try the example loop"
+msgstr "Étape 1 : choisis un son\nDépose un fichier, prends-en un récent ou essaie la boucle d'exemple"
+
+msgid "Cut"
+msgstr "Découper"
+
+msgid "Step 2: cut the sound into pieces\nClick a piece to hear it"
+msgstr "Étape 2 : découpe le son en morceaux\nClique un morceau pour l'écouter"
+
+msgid "Use"
+msgstr "Utiliser"
+
+msgid "Step 3: use the pieces\nPlay them on pads or rebuild the loop as a pattern"
+msgstr "Étape 3 : utilise les morceaux\nJoue-les sur des pads ou reconstruis la boucle en pattern"
+
+msgid "Edit sound"
+msgstr "Modifier le son"
+
+msgid "Edit sound\nVolume, fades, tempo, pitch and playing backwards"
+msgstr "Modifier le son\nVolume, fondus, tempo, hauteur et lecture à l'envers"
+
+msgid "Example drum loop"
+msgstr "Boucle de batterie d'exemple"
+
+msgid "Drum break · {}"
+msgstr "Break de batterie · {}"
+
+msgid "Recent · {}"
+msgstr "Récent · {}"
+
+msgid "Drop it here"
+msgstr "Dépose-le ici"
+
+msgid "The Sample Lab cuts a loop into pieces so you can play them on pads."
+msgstr "Le Sample Lab découpe une boucle en morceaux pour les jouer sur des pads."
+
+msgid "Keep working on {}"
+msgstr "Continuer sur {}"
+
+msgid "Back to cutting the sound that is already open"
+msgstr "Revenir à la découpe du son déjà ouvert"
+
+msgid "or pick one"
+msgstr "ou choisis-en un"
+
+msgid "Try it"
+msgstr "Essayer"
+
+msgid "Open \"{}\"\nYou will cut it into pieces in the next step"
+msgstr "Ouvrir « {} »\nTu le découperas en morceaux à l'étape suivante"
+
+msgid "Open an example drum loop\nA good way to see how the Sample Lab works"
+msgstr "Ouvrir une boucle de batterie d'exemple\nUn bon moyen de voir comment marche le Sample Lab"
+
+msgid "You can also drag a sample here from the browser, or double-click an audio clip in the playlist."
+msgstr "Tu peux aussi glisser un échantillon ici depuis le navigateur, ou double-cliquer un clip audio dans la playlist."
+
+msgid "{}\nDrag or scroll to change · double-click to reset"
+msgstr "{}\nGlisser ou molette pour changer · double-clic pour réinitialiser"
+
+msgid "Fewer pieces"
+msgstr "Moins de morceaux"
+
+msgid "More pieces"
+msgstr "Plus de morceaux"
+
+msgid "How finely to cut\nLeft: only the big hits · right: every little sound\nDrag or scroll · double-click to reset"
+msgstr "Finesse de la découpe\nÀ gauche : seulement les gros coups · à droite : chaque petit son\nGlisser ou molette · double-clic pour réinitialiser"
+
+msgid "Color by tone is on\nDeep sounds in teal, bright sounds in pale green · click to turn off"
+msgstr "Couleur par timbre activée\nSons graves en sarcelle, sons brillants en vert pâle · clic pour couper"
+
+msgid "Color by tone\nShows deep sounds in teal and bright sounds in pale green"
+msgstr "Couleur par timbre\nMontre les sons graves en sarcelle et les sons brillants en vert pâle"
+
+msgid "Zoom out to see the whole sound"
+msgstr "Dézoomer pour voir tout le son"
+
+msgid "or press Space"
+msgstr "ou appuie sur Espace"
+
+msgid "Listen from the selected piece to the end\nClick a piece on the wave to hear only that piece"
+msgstr "Écouter du morceau choisi jusqu'à la fin\nClique un morceau sur l'onde pour n'entendre que lui"
+
+msgid "Next: use the pieces"
+msgstr "Suite : utiliser les morceaux"
+
+msgid "Go to step 3\nPlay the pieces on pads or turn them into a beat"
+msgstr "Aller à l'étape 3\nJoue les morceaux sur des pads ou fais-en un beat"
+
+msgid "Fewer options"
+msgstr "Moins d'options"
+
+msgid "More ways to cut"
+msgstr "Autres découpes"
+
+msgid "Hide the other ways to cut"
+msgstr "Masquer les autres découpes"
+
+msgid "Other ways to cut\nOn the beat, or by hand"
+msgstr "Autres façons de découper\nSur le temps, ou à la main"
+
+msgid "Cut automatically"
+msgstr "Découper automatiquement"
+
+msgid "Cut on the beat"
+msgstr "Découper sur le temps"
+
+msgid "Cut by hand"
+msgstr "Découper à la main"
+
+msgid "How many pieces the sound is cut into\nEach piece will play on its own key or pad"
+msgstr "En combien de morceaux le son est découpé\nChaque morceau jouera sur sa propre touche ou son pad"
+
+msgid "Number of pieces"
+msgstr "Nombre de morceaux"
+
+msgid "Piece length"
+msgstr "Longueur des morceaux"
+
+msgid "Quarter notes\n4 pieces per bar, one per beat"
+msgstr "Noires\n4 morceaux par mesure, un par temps"
+
+msgid "Eighth notes\n8 pieces per bar"
+msgstr "Croches\n8 morceaux par mesure"
+
+msgid "Sixteenth notes\n16 pieces per bar"
+msgstr "Doubles croches\n16 morceaux par mesure"
+
+msgid "Thirty-second notes\n32 pieces per bar"
+msgstr "Triples croches\n32 morceaux par mesure"
+
+msgid "Tempo of the loop, in beats per minute\nThe cuts follow it · drag up or down, or scroll"
+msgstr "Tempo de la boucle, en battements par minute\nLes coupes le suivent · glisser vers le haut ou le bas, ou molette"
+
+msgid "Click the wave to add a cut · drag a cut to move it · hold right-click to remove it"
+msgstr "Clique l'onde pour ajouter une coupe · glisse une coupe pour la déplacer · clic droit maintenu pour la retirer"
+
+msgid "Automatically"
+msgstr "Automatiquement"
+
+msgid "Finds each hit in the sound"
+msgstr "Trouve chaque coup dans le son"
+
+msgid "Cut automatically\nA new piece starts at each drum hit or note"
+msgstr "Découper automatiquement\nUn nouveau morceau commence à chaque coup ou note"
+
+msgid "On the beat"
+msgstr "Sur le temps"
+
+msgid "Equal pieces that follow the tempo"
+msgstr "Morceaux égaux qui suivent le tempo"
+
+msgid "Cut on the beat\nEqual pieces, like the steps of a step sequencer"
+msgstr "Découper sur le temps\nMorceaux égaux, comme les pas d'un séquenceur"
+
+msgid "By hand"
+msgstr "À la main"
+
+msgid "You click where to cut"
+msgstr "Tu cliques où couper"
+
+msgid "Cut by hand\nClick the wave to add cuts, drag them, hold right-click to remove them"
+msgstr "Découper à la main\nClique l'onde pour ajouter des coupes, glisse-les, clic droit maintenu pour les retirer"
+
+msgid "How to cut"
+msgstr "Comment découper"
+
+msgid "Click a piece to hear it"
+msgstr "Clique un morceau pour l'écouter"
+
+msgid "The whole sound\nClick or drag to move the zoomed view"
+msgstr "Le son entier\nCliquer ou glisser pour déplacer la vue zoomée"
+
+msgid "Loop a part: drag along this edge (it snaps to the pieces)\nSpace plays the loop · right-click removes it"
+msgstr "Boucler une partie : glisse le long de ce bord (aimanté aux morceaux)\nEspace joue la boucle · clic droit la retire"
+
+msgid "Click to play from here · drag to scrub through the sound"
+msgstr "Clic pour lire d'ici · glisser pour parcourir le son"
+
+msgid "Fade in: drag to make the start come in softly"
+msgstr "Fondu d'entrée : glisser pour adoucir le début"
+
+msgid "Fade out: drag to make the end die away"
+msgstr "Fondu de sortie : glisser pour faire mourir la fin"
+
+msgid "Fade shape: drag up or down"
+msgstr "Forme du fondu : glisser vers le haut ou le bas"
+
+msgid "Start of the sound: drag to cut off the beginning"
+msgstr "Début du son : glisser pour couper le début"
+
+msgid "End of the sound: drag to cut off the end"
+msgstr "Fin du son : glisser pour couper la fin"
+
+msgid "A cut: drag to move it · hold right-click to remove it"
+msgstr "Une coupe : glisser pour la déplacer · clic droit maintenu pour la retirer"
+
+msgid "Click to add a cut here · hold right-click on a cut to remove it\nScroll to zoom in · Shift+scroll to move along"
+msgstr "Clic pour ajouter une coupe ici · clic droit maintenu sur une coupe pour la retirer\nMolette pour zoomer · Maj+molette pour se déplacer"
+
+msgid "Click a piece to hear it · double-click to add a cut\nScroll to zoom in · Shift+scroll to move along"
+msgstr "Clique un morceau pour l'écouter · double-clic pour ajouter une coupe\nMolette pour zoomer · Maj+molette pour se déplacer"
+
+msgid "Remove cuts"
+msgstr "Retirer des coupes"
+
+msgid "Move a cut"
+msgstr "Déplacer une coupe"
+
+msgid "Add a cut"
+msgstr "Ajouter une coupe"
+
+msgid "Piece {} · {} · plays on the key {}\nClick to hear it · drag it into the playlist or the channel rack to use only this piece"
+msgstr "Morceau {} · {} · joue sur la touche {}\nClic pour l'écouter · glisse-le dans la playlist ou le Channel Rack pour n'utiliser que lui"
+
+msgid "Pick one of the two below. You can go back to Cut and change the pieces at any time."
+msgstr "Choisis l'une des deux options ci-dessous. Tu peux revenir à Découper et changer les morceaux à tout moment."
+
+msgid "Play the pieces on pads"
+msgstr "Jouer les morceaux sur des pads"
+
+msgid "Adds a Slicer to your channel rack. Each piece gets its own key, from C4 up: play them with your computer keyboard or in the piano roll."
+msgstr "Ajoute un Découpeur à ton Channel Rack. Chaque morceau a sa touche, à partir de C4 : joue-les au clavier de l'ordinateur ou dans le piano roll."
+
+msgid "Create pads"
+msgstr "Créer les pads"
+
+msgid "Creates a new Slicer channel\nPiece 1 plays on C4, piece 2 on C#4, and so on"
+msgstr "Crée un nouveau canal Découpeur\nLe morceau 1 joue sur C4, le 2 sur C#4, et ainsi de suite"
+
+msgid "Rebuild the loop as a pattern"
+msgstr "Reconstruire la boucle en pattern"
+
+msgid "Same pads, plus a pattern that plays the pieces in their original order. Then rearrange the steps to make your own beat."
+msgstr "Mêmes pads, plus un pattern qui joue les morceaux dans l'ordre d'origine. Réarrange ensuite les pas pour faire ton propre beat."
+
+msgid "Create the pattern"
+msgstr "Créer le pattern"
+
+msgid "Creates a Slicer channel and a new pattern\nThe pattern plays the pieces in order: you hear the original loop"
+msgstr "Crée un canal Découpeur et un nouveau pattern\nLe pattern joue les morceaux dans l'ordre : tu entends la boucle d'origine"
+
+msgid "Which key plays which piece"
+msgstr "Quelle touche joue quel morceau"
+
+msgid "Save the pieces as files"
+msgstr "Enregistrer les morceaux en fichiers"
+
+msgid "Saves every piece as its own WAV file\nin the Échantillons folder, ready for any sampler"
+msgstr "Enregistre chaque morceau dans son propre fichier WAV\ndans le dossier Échantillons, prêt pour n'importe quel sampler"
+
+msgid "Save as one file"
+msgstr "Enregistrer en un seul fichier"
+
+msgid "Saves the whole edited sound as one WAV file\nThe cuts are kept inside the file"
+msgstr "Enregistre tout le son modifié en un seul fichier WAV\nLes coupes sont gardées dans le fichier"
+
+msgid "Replace the original sample"
+msgstr "Remplacer l'échantillon d'origine"
+
+msgid "Puts your edited version back where the sound came from\nCtrl+Z brings the old sound back"
+msgstr "Remet ta version modifiée là d'où vient le son\nCtrl+Z ramène l'ancien son"
+
+msgid "Hide this message"
+msgstr "Masquer ce message"
+
+msgid "Go to it"
+msgstr "Y aller"
+
+msgid "Open the new pattern in the piano roll"
+msgstr "Ouvrir le nouveau pattern dans le piano roll"
+
+msgid "Open the playlist"
+msgstr "Ouvrir la playlist"
+
+msgid "Open the channel rack on the new channel"
+msgstr "Ouvrir le Channel Rack sur le nouveau canal"
+
+msgid "Piece {} · {}\nClick to hear it"
+msgstr "Morceau {} · {}\nClic pour l'écouter"
+
+msgid "Piece {} plays on the key {}\nClick to hear it"
+msgstr "Le morceau {} joue sur la touche {}\nClic pour l'écouter"
+
+msgid "Close Edit sound"
+msgstr "Fermer Modifier le son"
+
+msgid "Edit sound\nEvery change can be undone with Ctrl+Z"
+msgstr "Modifier le son\nChaque changement s'annule avec Ctrl+Z"
+
+msgid "Louder or quieter"
+msgstr "Plus fort ou plus doux"
+
+msgid "Makes the whole sound louder or quieter"
+msgstr "Rend tout le son plus fort ou plus doux"
+
+msgid "As loud as possible\nRaises the volume until the loudest point just fits, without distorting"
+msgstr "Aussi fort que possible\nMonte le volume jusqu'à ce que le point le plus fort tienne juste, sans saturer"
+
+msgid "Fades"
+msgstr "Fondus"
+
+msgid "Makes the start come in softly\nYou can also drag the small square at the top left of the wave"
+msgstr "Adoucit l'arrivée du début\nTu peux aussi glisser le petit carré en haut à gauche de l'onde"
+
+msgid "Makes the end die away softly\nYou can also drag the small square at the top right of the wave"
+msgstr "Fait mourir la fin en douceur\nTu peux aussi glisser le petit carré en haut à droite de l'onde"
+
+msgid "BPM of the loop"
+msgstr "BPM de la boucle"
+
+msgid "Tempo of the loop, in beats per minute\nDrag up or down, or scroll (Shift: fine)"
+msgstr "Tempo de la boucle, en battements par minute\nGlisser vers le haut ou le bas, ou molette (Maj : fin)"
+
+msgid "Find the tempo automatically"
+msgstr "Trouver le tempo automatiquement"
+
+msgid "Match project tempo ({} BPM)"
+msgstr "Caler sur le tempo du projet ({} BPM)"
+
+msgid "Match project tempo, keep the pitch\nThe loop gets faster or slower but keeps its notes"
+msgstr "Caler sur le tempo du projet, garder la hauteur\nLa boucle accélère ou ralentit mais garde ses notes"
+
+msgid "Keep pitch"
+msgstr "Garder la hauteur"
+
+msgid "Match project tempo like a turntable\nFaster also sounds higher, slower sounds lower"
+msgstr "Caler sur le tempo du projet comme une platine\nPlus vite sonne aussi plus aigu, plus lent plus grave"
+
+msgid "Like a record"
+msgstr "Comme un disque"
+
+msgid "Pitch and direction"
+msgstr "Hauteur et sens"
+
+msgid "Piece {}"
+msgstr "Morceau {}"
+
+msgid "Apply to the whole sound"
+msgstr "Appliquer à tout le son"
+
+msgid "Apply only to the selected piece\nClick a piece on the wave to select it"
+msgstr "Appliquer seulement au morceau choisi\nClique un morceau sur l'onde pour le choisir"
+
+msgid "Whole sound"
+msgstr "Tout le son"
+
+msgid "Pitch down"
+msgstr "Plus grave"
+
+msgid "This piece one semitone lower\nIt also gets a little longer"
+msgstr "Ce morceau un demi-ton plus bas\nIl devient aussi un peu plus long"
+
+msgid "Pitch up"
+msgstr "Plus aigu"
+
+msgid "This piece one semitone higher\nIt also gets a little shorter"
+msgstr "Ce morceau un demi-ton plus haut\nIl devient aussi un peu plus court"
+
+msgid "Plays this piece backwards"
+msgstr "Joue ce morceau à l'envers"
+
+msgid "The whole sound one semitone lower\nThe length stays the same"
+msgstr "Tout le son un demi-ton plus bas\nLa durée reste la même"
+
+msgid "The whole sound one semitone higher\nThe length stays the same"
+msgstr "Tout le son un demi-ton plus haut\nLa durée reste la même"
+
+msgid "Plays the whole sound backwards"
+msgstr "Joue tout le son à l'envers"
+
+msgid "To cut off the start or the end, drag the brackets at both ends of the wave."
+msgstr "Pour couper le début ou la fin, glisse les crochets aux deux bouts de l'onde."
+
+msgid "They are in the Échantillons folder as \"{} slice 1\" and so on. Find them in the browser's sample list."
+msgstr "Ils sont dans le dossier Échantillons sous les noms « {} slice 1 » et suivants. Retrouve-les dans la liste des échantillons du navigateur."
+
+msgid "Done! \"{}\" is in your channel rack with a pattern"
+msgstr "C'est fait ! « {} » est dans ton Channel Rack avec un pattern"
+
+msgid "{} piece on the keys {} to {}. Open the pattern and move the notes around."
+msgstr "{} morceau sur les touches {} à {}. Ouvre le pattern et déplace les notes."
+
+msgid "{} pieces on the keys {} to {}. Open the pattern and move the notes around."
+msgstr "{} morceaux sur les touches {} à {}. Ouvre le pattern et déplace les notes."
+
+msgid "{} piece on the keys {} to {}"
+msgstr "{} morceau sur les touches {} à {}"
+
+msgid "{} pieces on the keys {} to {}"
+msgstr "{} morceaux sur les touches {} à {}"
+
+msgid "{} piece"
+msgstr "{} morceau"
+
+msgid "{} pieces"
+msgstr "{} morceaux"
+
+msgid "Your sound is cut into {} piece. What now?"
+msgstr "Ton son est découpé en {} morceau. Et maintenant ?"
+
+msgid "Your sound is cut into {} pieces. What now?"
+msgstr "Ton son est découpé en {} morceaux. Et maintenant ?"
+
+# --- CPU meters ---
+
+msgid "{:.1}%"
+msgstr "{:.1} %"
+
+msgid "Import an FL Studio project"
+msgstr "Importer un projet FL Studio"
+
+msgid "Import an FL Studio project (.flp)"
+msgstr "Importer un projet FL Studio (.flp)"
+
+msgid "Show the FL Studio import report"
+msgstr "Afficher le rapport d'import FL Studio"

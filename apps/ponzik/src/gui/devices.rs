@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use ponzik_engine::mixer::{INSERT_SLOTS, MASTER};
 use ponzik_engine::{ParamInfo, Unit, registry};
+use ponzik_i18n::{tr, tr_fmt};
 use ponzik_ui::{Canvas, Rect};
 
 use super::Input;
@@ -93,13 +94,13 @@ fn groups(params: &'static [ParamInfo]) -> Vec<Group> {
     }
     for g in &mut out {
         let l = &g.params;
-        g.visual = match (find(l, "Attaque"), find(l, "Déclin"), find(l, "Maintien"), find(l, "Relâche")) {
+        g.visual = match (find(l, "Attack"), find(l, "Decay"), find(l, "Sustain"), find(l, "Release")) {
             (Some(a), Some(d), Some(s), Some(r)) => GroupVisual::Envelope([a, d, s, r]),
-            _ => match find(l, "Coupure") {
+            _ => match find(l, "Cutoff") {
                 Some(cutoff) => GroupVisual::Filter {
                     cutoff,
-                    reso: find(l, "Résonance"),
-                    highpass: find(l, "Type").is_some_and(|t| t.choices.iter().any(|c| c.contains("haut"))),
+                    reso: find(l, "Resonance"),
+                    highpass: find(l, "Type").is_some_and(|t| t.choices.iter().any(|c| c.contains("High"))),
                 },
                 None => GroupVisual::None,
             },
@@ -196,7 +197,7 @@ impl App {
             c.fill_rrect(title_r, 8.0, t.raised.alpha(thv));
         }
         if thov {
-            self.set_tip("Double-clic : renommer", "");
+            self.set_tip(tr("Double-click: rename"), "");
             if input.double {
                 self.open_popup(Popup::Rename { target: rename, text: title.clone() }, title_r);
             }
@@ -265,7 +266,7 @@ impl App {
         let (ax, ay) = add.center();
         draw_icon(c, Icon::Plus, ax, ay, 20.0, t.muted.mix(t.accent, hv));
         if hov {
-            self.set_tip("Ajouter un effet\nou glisser un effet du navigateur", "");
+            self.set_tip(tr("Add an effect\nor drag one from the browser"), "");
         }
         if hov && input.pressed {
             self.open_popup(Popup::AddEffect { track }, add);
@@ -304,12 +305,12 @@ impl App {
 
         let (name, bypass, color) = match device {
             Device::Instrument(_) => {
-                let name = registry::instrument_kind(&kind).map_or_else(|| super::app::display_kind(&kind), |k| k.name.to_string());
+                let name = registry::instrument_kind(&kind).map_or_else(|| super::app::display_kind(&kind), |k| tr(k.name).to_string());
                 (name, false, t.accent)
             }
             Device::Effect { track, slot } => {
-                let def = self.project.tracks[track].inserts[slot].as_ref().expect("effet présent");
-                let name = registry::effect_kind(&def.kind).map_or_else(|| super::app::display_kind(&def.kind), |k| k.name.to_string());
+                let def = self.project.tracks[track].inserts[slot].as_ref().expect("effect in its slot");
+                let name = registry::effect_kind(&def.kind).map_or_else(|| super::app::display_kind(&def.kind), |k| tr(k.name).to_string());
                 (name, def.bypass, pattern_color(1))
             }
         };
@@ -319,7 +320,7 @@ impl App {
             Device::Instrument(ch) => self.engine.channel_cpu(ch),
             Device::Effect { track, slot } => self.engine.insert_cpu(track, slot),
         };
-        let cpu = (cpu >= 0.0005).then(|| format!("{:.1}%", cpu * 100.0));
+        let cpu = (cpu >= 0.0005).then(|| ponzik_i18n::tr_fmt!("{:.1}%", cpu * 100.0));
         let title_w = if matches!(device, Device::Effect { .. }) { head.w - 158.0 } else { head.w - 98.0 };
         let title_w = title_w - if cpu.is_some() { 36.0 } else { 0.0 };
         self.text_fit(c, self.f.sans_med, 13.0, head.x + 22.0, head.y + 18.0, &name, title_w, if bypass { t.muted } else { t.text });
@@ -327,7 +328,7 @@ impl App {
         // Presets de l'appareil.
         let preset_x = if matches!(device, Device::Effect { .. }) { head.right() - 92.0 } else { head.right() - 32.0 };
         let preset = Rect::new(preset_x, head.y + 5.0, 26.0, 26.0);
-        if self.icon_button(c, input, wid("fx-preset", device_key(device), 0), preset, Icon::Preset, false, ("Presets", "")) {
+        if self.icon_button(c, input, wid("fx-preset", device_key(device), 0), preset, Icon::Preset, false, (tr("Presets"), "")) {
             self.open_popup(Popup::Presets { device, kind: kind.clone() }, preset);
         }
         // Fenêtre : détacher ou réancrer ; l'en-tête se tire comme une barre de titre.
@@ -335,7 +336,7 @@ impl App {
         if let Some(cpu) = cpu {
             self.text_right(c, self.f.mono, 9.0, float.x - 4.0, head.y + 18.0, &cpu, t.muted);
         }
-        let (icon, tip) = if floating { (Icon::Dock, "Réancrer") } else { (Icon::Detach, "Détacher dans une fenêtre") };
+        let (icon, tip) = if floating { (Icon::Dock, tr("Dock")) } else { (Icon::Detach, tr("Detach into a window")) };
         if self.icon_button(c, input, wid("fx-float", device_key(device), 0), float, icon, false, (tip, "")) {
             if floating { self.dock(device) } else { self.detach(device, Some(card)) }
         }
@@ -343,17 +344,17 @@ impl App {
 
         if let Device::Effect { track, slot } = device {
             let power = Rect::new(head.right() - 60.0, head.y + 5.0, 26.0, 26.0);
-            let tip = if bypass { ("Activer", "") } else { ("Contourner", "") };
+            let tip = if bypass { (tr("Enable"), "") } else { (tr("Bypass"), "") };
             if self.icon_button(c, input, wid("fx-power", track, slot), power, Icon::Power, !bypass, tip) {
                 if let Some(fx) = self.project.tracks[track].inserts[slot].as_mut() {
                     fx.bypass = !fx.bypass;
                 }
-                self.commit("Contourner un effet");
+                self.commit(tr("Bypass an effect"));
             }
             let close = Rect::new(head.right() - 32.0, head.y + 5.0, 26.0, 26.0);
-            if self.icon_button(c, input, wid("fx-close", track, slot), close, Icon::Close, false, ("Retirer", "")) {
+            if self.icon_button(c, input, wid("fx-close", track, slot), close, Icon::Close, false, (tr("Remove"), "")) {
                 self.project.tracks[track].inserts[slot] = None;
-                self.commit("Retirer un effet");
+                self.commit(tr("Remove an effect"));
                 return;
             }
         }
@@ -371,7 +372,7 @@ impl App {
             return self.mix_assistant_device(c, input, body, device);
         }
         if params.is_empty() {
-            self.text(c, self.f.sans, 12.0, body.x, body.y + 20.0, "Aucun réglage", t.muted);
+            self.text(c, self.f.sans, 12.0, body.x, body.y + 20.0, tr("No settings"), t.muted);
             return;
         }
         let mut x = body.x;
@@ -392,7 +393,7 @@ impl App {
                 c.fill_rect(Rect::new(x - GROUP_GAP * 0.5, body.y + 20.0, 1.0, body.h - 28.0), t.hairline);
             }
             if !g.name.is_empty() {
-                self.text(c, self.f.sans_med, 11.0, x + 4.0, body.y + 6.0, g.name, t.muted);
+                self.text(c, self.f.sans_med, 11.0, x + 4.0, body.y + 6.0, tr(g.name), t.muted);
             }
             let visual = Rect::new(x + 2.0, body.y + 18.0, g.width - 4.0, CELL_H - 8.0);
             let single_row = !matches!(g.visual, GroupVisual::None);
@@ -445,7 +446,7 @@ impl App {
         let (kind, _) = self.device_kind(device);
         let params = self.device_params(device);
         match super::compat::save_preset(&kind, name, &params) {
-            Ok(_) => self.toast(&format!("Preset enregistré : {name}")),
+            Ok(_) => self.toast(&tr_fmt!("Preset saved: {}", name)),
             Err(e) => self.toast(&e),
         }
     }
@@ -464,7 +465,7 @@ impl App {
                 }
             }
         }
-        self.commit("Charger un preset");
+        self.commit(tr("Load a preset"));
     }
 
     pub(super) fn param_value(&self, device: Device, p: &ParamInfo) -> f32 {
@@ -488,6 +489,6 @@ impl App {
                 }
             }
         }
-        self.commit(&format!("Réglage : {}", p.name));
+        self.commit(&tr_fmt!("Setting: {}", tr(p.name)));
     }
 }
