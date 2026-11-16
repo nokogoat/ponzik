@@ -345,7 +345,7 @@ impl App {
                 bottom = bottom.mix(t.accent_hot, (flash * 0.55 + hv * 0.1).min(1.0));
                 c.fill_rrect_vgrad(pad, radius, top, bottom);
                 c.fill_rect(Rect::new(pad.x + radius, pad.y + 1.0, pad.w - 2.0 * radius, 1.0), WHITE.alpha(0.3));
-                if melodic && pad.w >= 26.0 {
+                if melodic && pad.w >= 26.0 && n.key != self.project.channels[ch].root_note {
                     let (cx, cy) = pad.center();
                     let ink = if muted { t.text2 } else { t.on_accent };
                     self.text_center(c, self.f.mono_med, 11.0, cx, cy, &note_name(n.key), ink);
