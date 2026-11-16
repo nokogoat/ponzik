@@ -7,7 +7,7 @@ use std::ffi::c_void;
 use std::ptr::{null, null_mut};
 use std::time::Duration;
 
-use crate::{Event, Key, Modifiers, MouseButton, WindowError};
+use crate::{Cursor, Event, Key, Modifiers, MouseButton, WindowError};
 
 type HANDLE = *mut c_void;
 type HWND = HANDLE;
@@ -122,6 +122,7 @@ unsafe extern "system" {
     fn DispatchMessageW(msg: *const MSG) -> LRESULT;
     fn MsgWaitForMultipleObjects(count: u32, handles: *const HANDLE, wait_all: i32, ms: u32, mask: u32) -> u32;
     fn LoadCursorW(instance: HINSTANCE, name: *const u16) -> HANDLE;
+    fn SetCursor(cursor: HANDLE) -> HANDLE;
     fn AdjustWindowRectEx(rect: *mut RECT, style: u32, menu: i32, ex_style: u32) -> i32;
     fn GetClientRect(hwnd: HWND, rect: *mut RECT) -> i32;
     fn ValidateRect(hwnd: HWND, rect: *const RECT) -> i32;
@@ -169,6 +170,15 @@ const CW_USEDEFAULT: i32 = 0x8000_0000_u32 as i32;
 const CS_HREDRAW: u32 = 0x2;
 const CS_VREDRAW: u32 = 0x1;
 const IDC_ARROW: usize = 32512;
+const IDC_IBEAM: usize = 32513;
+const IDC_CROSS: usize = 32515;
+const IDC_SIZENWSE: usize = 32642;
+const IDC_SIZEWE: usize = 32644;
+const IDC_SIZENS: usize = 32645;
+const IDC_SIZEALL: usize = 32646;
+const IDC_NO: usize = 32648;
+const IDC_HAND: usize = 32649;
+const HTCLIENT: isize = 1;
 const PM_REMOVE: u32 = 1;
 const QS_ALLINPUT: u32 = 0x04FF;
 const SRCCOPY: u32 = 0x00CC_0020;
@@ -180,6 +190,7 @@ const WM_KILLFOCUS: u32 = 0x0008;
 const WM_PAINT: u32 = 0x000F;
 const WM_CLOSE: u32 = 0x0010;
 const WM_ERASEBKGND: u32 = 0x0014;
+const WM_SETCURSOR: u32 = 0x0020;
 const WM_GETMINMAXINFO: u32 = 0x0024;
 const WM_KEYDOWN: u32 = 0x0100;
 const WM_KEYUP: u32 = 0x0101;
@@ -200,6 +211,8 @@ const MIN_SIZE: (i32, i32) = (960, 640);
 thread_local! {
     static QUEUE: RefCell<Vec<Event>> = const { RefCell::new(Vec::new()) };
     static TRACKING: Cell<bool> = const { Cell::new(false) };
+    /// Curseur voulu dans la zone cliente (nul : celui de la classe).
+    static CURSOR: Cell<HANDLE> = const { Cell::new(null_mut()) };
 }
 
 fn push(ev: Event) {
@@ -245,6 +258,22 @@ fn vk_to_key(vk: usize) -> Option<Key> {
     })
 }
 
+/// Curseur système d'une forme. Windows n'a pas de main « saisie » : on
+/// reprend les quatre flèches du déplacement.
+fn cursor_id(cursor: Cursor) -> usize {
+    match cursor {
+        Cursor::Arrow => IDC_ARROW,
+        Cursor::Hand => IDC_HAND,
+        Cursor::Text => IDC_IBEAM,
+        Cursor::ResizeH => IDC_SIZEWE,
+        Cursor::ResizeV => IDC_SIZENS,
+        Cursor::ResizeNwSe => IDC_SIZENWSE,
+        Cursor::Move | Cursor::Grab => IDC_SIZEALL,
+        Cursor::Crosshair => IDC_CROSS,
+        Cursor::NotAllowed => IDC_NO,
+    }
+}
+
 fn min_window_size() -> (i32, i32) {
     let mut r = RECT { left: 0, top: 0, right: MIN_SIZE.0, bottom: MIN_SIZE.1 };
     // SAFETY: RECT valide.
@@ -273,6 +302,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
                 push(Event::Redraw);
             }
             WM_ERASEBKGND => return 1,
+            // Sans cela, Windows remettrait le curseur de la classe à chaque mouvement.
+            WM_SETCURSOR if (l & 0xffff) == HTCLIENT && !CURSOR.get().is_null() => {
+                SetCursor(CURSOR.get());
+                return 1;
+            }
             WM_GETMINMAXINFO => {
                 let info = &mut *(l as *mut MINMAXINFO);
                 let (mw, mh) = min_window_size();
@@ -342,6 +376,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
 pub(crate) struct Window {
     hwnd: HWND,
     size: (u32, u32),
+    cursor: Cursor,
 }
 
 impl Window {
@@ -393,7 +428,7 @@ impl Window {
 
             let mut client = RECT::default();
             GetClientRect(hwnd, &mut client);
-            Ok(Window { hwnd, size: ((client.right - client.left) as u32, (client.bottom - client.top) as u32) })
+            Ok(Window { hwnd, size: ((client.right - client.left) as u32, (client.bottom - client.top) as u32), cursor: Cursor::Arrow })
         }
     }
 
@@ -459,6 +494,23 @@ impl Window {
             ReleaseDC(self.hwnd, hdc);
         }
         Ok(())
+    }
+
+    pub(crate) fn set_cursor(&mut self, cursor: Cursor) {
+        if self.cursor == cursor {
+            return;
+        }
+        self.cursor = cursor;
+        // SAFETY: curseurs système partagés, jamais libérés ; appel sur le thread de la fenêtre.
+        unsafe {
+            let handle = LoadCursorW(null_mut(), cursor_id(cursor) as *const u16);
+            CURSOR.set(handle);
+            // Appliqué tout de suite si la souris est sur la zone cliente ; sinon
+            // au prochain WM_SETCURSOR.
+            if TRACKING.get() {
+                SetCursor(handle);
+            }
+        }
     }
 
     pub(crate) fn backend_name(&self) -> &'static str {

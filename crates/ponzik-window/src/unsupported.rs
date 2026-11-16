@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::{Event, WindowError};
+use crate::{Cursor, Event, WindowError};
 
 pub(crate) struct Window;
 
@@ -16,6 +16,7 @@ impl Window {
     pub(crate) fn present(&mut self, _: &[u32], _: u32, _: u32) -> Result<(), WindowError> {
         Err(WindowError::UnsupportedPlatform)
     }
+    pub(crate) fn set_cursor(&mut self, _: Cursor) {}
     pub(crate) fn backend_name(&self) -> &'static str {
         "aucun"
     }

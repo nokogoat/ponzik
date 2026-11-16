@@ -14,7 +14,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::{Event, Key, Modifiers, MouseButton, WindowError};
+use crate::{Cursor, Event, Key, Modifiers, MouseButton, WindowError};
 
 unsafe extern "C" {
     fn shmget(key: c_int, size: usize, flags: c_int) -> c_int;
@@ -28,12 +28,15 @@ const IPC_CREAT: c_int = 0o1000;
 const IPC_RMID: c_int = 0;
 
 const OP_CREATE_WINDOW: u8 = 1;
+const OP_CHANGE_WINDOW_ATTRIBUTES: u8 = 2;
 const OP_MAP_WINDOW: u8 = 8;
 const OP_INTERN_ATOM: u8 = 16;
 const OP_CHANGE_PROPERTY: u8 = 18;
 const OP_GET_INPUT_FOCUS: u8 = 43;
+const OP_OPEN_FONT: u8 = 45;
 const OP_CREATE_GC: u8 = 55;
 const OP_PUT_IMAGE: u8 = 72;
+const OP_CREATE_GLYPH_CURSOR: u8 = 94;
 const OP_QUERY_EXTENSION: u8 = 98;
 const OP_GET_KEYBOARD_MAPPING: u8 = 101;
 const SHM_ATTACH: u8 = 1;
@@ -58,6 +61,10 @@ const EVENT_MASK: u32 = 0x1 // KeyPress
     | 0x20_0000; // FocusChange
 
 const MIN_SIZE: (u32, u32) = (960, 640);
+/// Attribut de fenêtre CWCursor.
+const CW_CURSOR: u32 = 0x4000;
+/// Nombre de formes de [`Cursor`].
+const CURSOR_SHAPES: usize = 10;
 const BACKGROUND: u32 = 0x0f0f10;
 
 fn proto(msg: impl Into<String>) -> WindowError {
@@ -82,6 +89,61 @@ fn u32_at(b: &[u8], i: usize) -> u32 {
 
 fn pad4(n: usize) -> usize {
     (n + 3) & !3
+}
+
+/// Glyphe de la police de curseurs standard (`cursorfont.h`) pour une forme.
+/// Le masque est le glyphe suivant.
+fn cursor_glyph(cursor: Cursor) -> u16 {
+    match cursor {
+        Cursor::Arrow => 68,      // XC_left_ptr
+        Cursor::Hand => 60,       // XC_hand2
+        Cursor::Text => 152,      // XC_xterm
+        Cursor::ResizeH => 108,   // XC_sb_h_double_arrow
+        Cursor::ResizeV => 116,   // XC_sb_v_double_arrow
+        Cursor::ResizeNwSe => 14, // XC_bottom_right_corner
+        Cursor::Move => 52,       // XC_fleur
+        Cursor::Crosshair => 34,  // XC_crosshair
+        Cursor::NotAllowed => 0,  // XC_X_cursor
+        Cursor::Grab => 58,       // XC_hand1 : main pleine, distincte de la main à cliquer
+    }
+}
+
+fn cursor_index(cursor: Cursor) -> usize {
+    match cursor {
+        Cursor::Arrow => 0,
+        Cursor::Hand => 1,
+        Cursor::Text => 2,
+        Cursor::ResizeH => 3,
+        Cursor::ResizeV => 4,
+        Cursor::Move => 5,
+        Cursor::Crosshair => 6,
+        Cursor::NotAllowed => 7,
+        Cursor::Grab => 8,
+        Cursor::ResizeNwSe => 9,
+    }
+}
+
+/// OpenFont : ouvre la police `name` sous l'identifiant `fid`.
+fn open_font_req(fid: u32, name: &str) -> Vec<u8> {
+    let mut r = Req::new(OP_OPEN_FONT, 0);
+    r.u32(fid).u16(name.len() as u16).u16(0).bytes(name.as_bytes());
+    r.finish().to_vec()
+}
+
+/// CreateGlyphCursor : curseur noir bordé de blanc tiré de la police `font`.
+fn glyph_cursor_req(cid: u32, font: u32, glyph: u16) -> Vec<u8> {
+    let mut r = Req::new(OP_CREATE_GLYPH_CURSOR, 0);
+    r.u32(cid).u32(font).u32(font).u16(glyph).u16(glyph + 1);
+    r.u16(0).u16(0).u16(0); // avant-plan : noir
+    r.u16(0xffff).u16(0xffff).u16(0xffff); // fond : blanc
+    r.finish().to_vec()
+}
+
+/// ChangeWindowAttributes limité au curseur.
+fn window_cursor_req(window: u32, cursor: u32) -> Vec<u8> {
+    let mut r = Req::new(OP_CHANGE_WINDOW_ATTRIBUTES, 0);
+    r.u32(window).u32(CW_CURSOR).u32(cursor);
+    r.finish().to_vec()
 }
 
 /// Constructeur de requête : longueur en mots de 4 octets écrite à la fin.
@@ -459,6 +521,11 @@ pub(crate) struct Window {
     shm: Option<Shm>,
     shm_busy: bool,
     shm_failed: bool,
+    /// Police « cursor » (0 tant qu'elle n'est pas ouverte), curseurs déjà créés
+    /// (0 = pas encore) et forme appliquée à la fenêtre.
+    cursor_font: u32,
+    cursors: [u32; CURSOR_SHAPES],
+    cursor: Option<Cursor>,
 }
 
 impl Window {
@@ -497,6 +564,9 @@ impl Window {
             shm: None,
             shm_busy: false,
             shm_failed: false,
+            cursor_font: 0,
+            cursors: [0; CURSOR_SHAPES],
+            cursor: None,
             setup,
         };
         win.window = win.alloc_id();
@@ -767,6 +837,32 @@ impl Window {
         Ok(())
     }
 
+    /// Les curseurs sont créés à la première demande de chaque forme puis
+    /// gardés ; la fenêtre n'est modifiée que si la forme change.
+    pub(crate) fn set_cursor(&mut self, cursor: Cursor) {
+        if self.cursor == Some(cursor) {
+            return;
+        }
+        if self.cursor_font == 0 {
+            let fid = self.alloc_id();
+            if self.send(&open_font_req(fid, "cursor")).is_err() {
+                return;
+            }
+            self.cursor_font = fid;
+        }
+        let i = cursor_index(cursor);
+        if self.cursors[i] == 0 {
+            let cid = self.alloc_id();
+            if self.send(&glyph_cursor_req(cid, self.cursor_font, cursor_glyph(cursor))).is_err() {
+                return;
+            }
+            self.cursors[i] = cid;
+        }
+        if self.send(&window_cursor_req(self.window, self.cursors[i])).is_ok() {
+            self.cursor = Some(cursor);
+        }
+    }
+
     pub(crate) fn backend_name(&self) -> &'static str {
         if self.shm.is_some() { "X11 · MIT-SHM" } else { "X11 · PutImage" }
     }
@@ -779,5 +875,66 @@ impl Drop for Window {
             unsafe { shmdt(shm.addr.cast()) };
         }
         let _ = self.stream.shutdown(Shutdown::Both);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL: [Cursor; CURSOR_SHAPES] = [
+        Cursor::Arrow,
+        Cursor::Hand,
+        Cursor::Text,
+        Cursor::ResizeH,
+        Cursor::ResizeV,
+        Cursor::Move,
+        Cursor::Crosshair,
+        Cursor::NotAllowed,
+        Cursor::Grab,
+        Cursor::ResizeNwSe,
+    ];
+
+    #[test]
+    fn open_font_pads_name_and_counts_words() {
+        let req = open_font_req(0x0040_0001, "cursor");
+        // 12 octets d'en-tête + « cursor » (6) complété à 8.
+        assert_eq!(req.len(), 20);
+        assert_eq!(&req[..4], &[OP_OPEN_FONT, 0, 5, 0]);
+        assert_eq!(u32_at(&req, 4), 0x0040_0001);
+        assert_eq!(u16_at(&req, 8), 6);
+        assert_eq!(&req[12..18], b"cursor");
+        assert_eq!(&req[18..], &[0, 0]);
+    }
+
+    #[test]
+    fn glyph_cursor_uses_next_glyph_as_mask() {
+        let req = glyph_cursor_req(7, 3, 60);
+        assert_eq!(req.len(), 32);
+        assert_eq!(&req[..4], &[OP_CREATE_GLYPH_CURSOR, 0, 8, 0]);
+        assert_eq!((u32_at(&req, 4), u32_at(&req, 8), u32_at(&req, 12)), (7, 3, 3));
+        assert_eq!((u16_at(&req, 16), u16_at(&req, 18)), (60, 61));
+        assert!(req[20..26].iter().all(|&b| b == 0), "avant-plan noir");
+        assert!(req[26..32].iter().all(|&b| b == 0xff), "fond blanc");
+    }
+
+    #[test]
+    fn window_cursor_sets_only_cw_cursor() {
+        let req = window_cursor_req(0x10, 0x20);
+        assert_eq!(req.len(), 16);
+        assert_eq!(&req[..4], &[OP_CHANGE_WINDOW_ATTRIBUTES, 0, 4, 0]);
+        assert_eq!((u32_at(&req, 4), u32_at(&req, 8), u32_at(&req, 12)), (0x10, CW_CURSOR, 0x20));
+    }
+
+    #[test]
+    fn every_shape_has_its_own_slot_and_an_even_glyph() {
+        let mut seen = [false; CURSOR_SHAPES];
+        for c in ALL {
+            let i = cursor_index(c);
+            assert!(!seen[i], "{c:?} partage sa case");
+            seen[i] = true;
+            // Dans la police « cursor », un glyphe pair est suivi de son masque.
+            assert_eq!(cursor_glyph(c) % 2, 0, "{c:?}");
+        }
     }
 }

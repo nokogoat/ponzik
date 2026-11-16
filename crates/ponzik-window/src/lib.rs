@@ -58,6 +58,32 @@ pub enum Key {
     Char(char),
 }
 
+/// Forme du curseur de la souris au-dessus de la fenêtre.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Cursor {
+    /// Flèche ordinaire.
+    #[default]
+    Arrow,
+    /// Main : élément cliquable.
+    Hand,
+    /// Barre de saisie : champ de texte.
+    Text,
+    /// Double flèche horizontale : bord à étirer, séparateur vertical.
+    ResizeH,
+    /// Double flèche verticale : séparateur horizontal, valeur à glisser.
+    ResizeV,
+    /// Double flèche en diagonale : coin à tirer (haut-gauche / bas-droite).
+    ResizeNwSe,
+    /// Quatre flèches : objet déplaçable.
+    Move,
+    /// Réticule : pose précise.
+    Crosshair,
+    /// Action impossible ici.
+    NotAllowed,
+    /// Objet saisi, en cours de déplacement.
+    Grab,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Event {
     CloseRequested,
@@ -129,6 +155,12 @@ impl Window {
     pub fn present(&mut self, pixels: &[u32], width: u32, height: u32) -> Result<(), WindowError> {
         assert!(pixels.len() >= (width * height) as usize, "tampon trop petit");
         self.inner.present(pixels, width, height)
+    }
+
+    /// Change la forme du curseur au-dessus de la zone cliente. Peu coûteux :
+    /// rien n'est envoyé au système si la forme ne change pas.
+    pub fn set_cursor(&mut self, cursor: Cursor) {
+        self.inner.set_cursor(cursor);
     }
 
     /// Nom du chemin de rendu actif, pour le diagnostic.
