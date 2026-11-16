@@ -12,7 +12,11 @@ use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS, TRACKS};
 use ponzik_engine::instruments::drum_pads::{LAYERS, PADS as PAD_LIMIT};
 use ponzik_engine::{NOTE_FX_SLOTS, Note, PlayMode, TICKS_PER_BAR};
 
+use ponzik_engine::effects::fx_rack::{CHAIN_LEN, CHAINS, MACROS, MAX_MAPPINGS, UNITS};
+use ponzik_engine::{MacroMap, ModKind};
+
 use crate::json::{self, Json};
+use crate::rack::{ModTarget, ModulatorDef, RackDef, RackDevice, rack_accepts};
 use crate::{
     AudioClipDef, AutoPoint, AutoScope, AutoTarget, AutomationDef, ChannelDef, ClipDef, EffectDef, InstrumentDef,
     NoteFxDef, PatternDef, Project, TrackDef, TrackKind,
@@ -50,6 +54,41 @@ fn instrument_json(i: &InstrumentDef) -> Json {
     obj(pairs)
 }
 
+/// Chains and mappings of a rack.
+pub(crate) fn rack_json(r: &RackDef) -> Json {
+    let chains = r
+        .chains
+        .iter()
+        .map(|chain| {
+            let devices = chain.iter().map(|d| {
+                let mut pairs = vec![("unit", d.unit.into()), ("kind", d.kind.as_str().into())];
+                if d.bypass {
+                    pairs.push(("bypass", true.into()));
+                }
+                obj(pairs)
+            });
+            Json::Arr(devices.collect())
+        })
+        .collect();
+    let maps = r
+        .maps
+        .iter()
+        .map(|m| Json::Arr(vec![m.macro_index.into(), m.unit.into(), m.param.into(), m.min.into(), m.max.into()]))
+        .collect();
+    obj(vec![("chains", Json::Arr(chains)), ("maps", Json::Arr(maps))])
+}
+
+fn modulators_json(mods: &[ModulatorDef]) -> Json {
+    Json::Arr(
+        mods.iter()
+            .map(|m| {
+                let targets = m.targets.iter().map(|t| Json::Arr(vec![t.slot.into(), t.param.into(), t.depth.into()])).collect();
+                obj(vec![("kind", m.kind.id().into()), ("params", params_json(&m.params)), ("targets", Json::Arr(targets))])
+            })
+            .collect(),
+    )
+}
+
 fn channel_json(c: &ChannelDef) -> Json {
     let mut pairs = vec![
         ("name", c.name.as_str().into()),
@@ -72,6 +111,9 @@ fn channel_json(c: &ChannelDef) -> Json {
             })
             .collect();
         pairs.push(("note_fx", Json::Arr(slots)));
+    }
+    if !c.modulators.is_empty() {
+        pairs.push(("modulators", modulators_json(&c.modulators)));
     }
     obj(pairs)
 }
@@ -123,6 +165,9 @@ fn track_json(t: &TrackDef) -> Json {
                 if let Some(key) = fx.sidechain {
                     pairs.push(("sidechain", key.into()));
                 }
+                if let Some(rack) = fx.rack.as_deref() {
+                    pairs.push(("rack", rack_json(rack)));
+                }
                 obj(pairs)
             }
         })
@@ -146,6 +191,9 @@ fn track_json(t: &TrackDef) -> Json {
     }
     if let Some(vca) = t.vca {
         pairs.push(("vca", vca.into()));
+    }
+    if !t.modulators.is_empty() {
+        pairs.push(("modulators", modulators_json(&t.modulators)));
     }
     obj(pairs)
 }
@@ -376,6 +424,7 @@ fn load_channel(v: &Json) -> ChannelDef {
         track: usize_or(v.get("track"), 1).min(TRACKS - 1),
         root_note: u32_or(v.get("root_note"), 60).min(127) as u8,
         color: u32_or(v.get("color"), 0),
+        modulators: load_modulators(v.get("modulators"), 1),
     }
 }
 
@@ -422,12 +471,74 @@ fn load_clip(v: &Json, patterns: usize) -> Option<ClipDef> {
     })
 }
 
+/// A rack's chains and mappings: unknown kinds, repeated or out of range
+/// units and mappings of missing devices are dropped.
+pub(crate) fn load_rack(v: Option<&Json>) -> RackDef {
+    let mut rack = RackDef { chains: Vec::new(), maps: Vec::new() };
+    let mut used = [false; UNITS];
+    for chain in arr(v.and_then(|v| v.get("chains"))).iter().take(CHAINS) {
+        let mut row = Vec::new();
+        for d in arr(Some(chain)) {
+            let (Some(unit), Some(kind)) = (index(d.get("unit"), UNITS), d.get("kind").and_then(Json::as_str)) else { continue };
+            if used[unit] || !rack_accepts(kind) || row.len() >= CHAIN_LEN {
+                continue;
+            }
+            used[unit] = true;
+            row.push(RackDevice { unit, kind: kind.into(), bypass: bool_or(d.get("bypass"), false) });
+        }
+        rack.chains.push(row);
+    }
+    if rack.chains.is_empty() {
+        rack.chains.push(Vec::new());
+    }
+    for m in arr(v.and_then(|v| v.get("maps"))).iter().take(MAX_MAPPINGS) {
+        let m = arr(Some(m));
+        let (Some(k), Some(unit), Some(param)) = (index(m.first(), MACROS), index(m.get(1), UNITS), num(m.get(2))) else { continue };
+        if !used[unit] || !(0.0..=u32::MAX as f64).contains(&param) {
+            continue;
+        }
+        let (min, max) = (f32_or(m.get(3), 0.0).clamp(0.0, 1.0), f32_or(m.get(4), 1.0).clamp(0.0, 1.0));
+        let param = param as u32;
+        if rack.mapping(unit, param).is_none() {
+            rack.maps.push(MacroMap { macro_index: k, unit, param, min, max });
+        }
+    }
+    rack
+}
+
+/// Modulators: unknown kinds are dropped, depths clamped, at most
+/// [`ponzik_engine::modulation::MAX_MODULATORS`].
+fn load_modulators(v: Option<&Json>, slots: usize) -> Vec<ModulatorDef> {
+    arr(v)
+        .iter()
+        .filter_map(|m| {
+            let kind = ModKind::from_id(m.get("kind")?.as_str()?)?;
+            let mut def = ModulatorDef::new(kind);
+            for (id, value) in load_params(m.get("params")) {
+                def.set(id, value);
+            }
+            for t in arr(m.get("targets")) {
+                let t = arr(Some(t));
+                let (Some(slot), Some(param)) = (index(t.first(), slots), num(t.get(1))) else { continue };
+                if (0.0..=u32::MAX as f64).contains(&param) && def.target(slot, param as u32).is_none() {
+                    def.targets.push(ModTarget { slot, param: param as u32, depth: f32_or(t.get(2), 0.0).clamp(-1.0, 1.0) });
+                }
+            }
+            Some(def)
+        })
+        .take(ponzik_engine::modulation::MAX_MODULATORS)
+        .collect()
+}
+
 fn load_effect(v: &Json) -> Option<EffectDef> {
+    let kind = v.get("kind")?.as_str()?.to_string();
+    let rack = (kind == crate::rack::RACK).then(|| Box::new(load_rack(v.get("rack"))));
     Some(EffectDef {
-        kind: v.get("kind")?.as_str()?.to_string(),
+        kind,
         params: load_params(v.get("params")),
         bypass: bool_or(v.get("bypass"), false),
         sidechain: index(v.get("sidechain"), TRACKS),
+        rack,
     })
 }
 
@@ -464,6 +575,7 @@ fn load_track(v: &Json, index: usize) -> TrackDef {
             fx.sidechain = None;
         }
     }
+    t.modulators = load_modulators(v.get("modulators"), INSERT_SLOTS);
     t
 }
 
@@ -897,6 +1009,62 @@ mod tests {
         let c = &p.audio_clips[0];
         assert_eq!((c.track, c.len, c.offset, c.gain, c.fade_in), (TRACKS - 1, 1, 0.0, 16.0, 0.0));
         assert_eq!(load(&save(&p)).unwrap(), p);
+    }
+
+    #[test]
+    fn racks_and_modulators_round_trip() {
+        use ponzik_engine::effects::fx_rack::{P_MACRO, unit_param};
+        let mut p = demo_project();
+        let mut fx = EffectDef::new_rack();
+        fx.rack_insert(0, None, "eq");
+        fx.rack_insert(0, None, "saturator");
+        fx.rack_add_chain();
+        fx.rack_insert(1, None, "reverb");
+        fx.rack_set_bypass(1, true);
+        fx.set(unit_param(0, 1), 250.0);
+        fx.set(P_MACRO + 2, 0.75);
+        fx.map_macro(2, 2, 5, 0.9, 0.1);
+        p.tracks[3].inserts[2] = Some(fx);
+        let mut lfo = ModulatorDef::new(ModKind::Lfo);
+        lfo.set(ponzik_engine::modulation::LFO_RATE, 3.5);
+        lfo.connect(2, P_MACRO + 2, -0.4);
+        p.tracks[3].modulators.push(lfo);
+        let mut steps = ModulatorDef::new(ModKind::Steps);
+        steps.connect(0, 2, 0.3);
+        p.channels[1].modulators.push(steps);
+        let back = load(&save(&p)).unwrap();
+        assert_eq!(back.tracks[3].inserts[2], p.tracks[3].inserts[2]);
+        assert_eq!(back.tracks[3].modulators, p.tracks[3].modulators);
+        assert_eq!(back.channels[1].modulators, p.channels[1].modulators);
+        assert_eq!(back, p);
+        // Older files and other effects have no rack.
+        assert!(!save(&demo_project()).contains("modulators"));
+    }
+
+    #[test]
+    fn malformed_racks_and_modulators_are_tolerated() {
+        let text = r#"{"format": "ponzik-project", "version": 1,
+          "tracks": [{}, {"inserts": [{"kind": "rack", "rack": {"chains": [
+              [{"unit": 0, "kind": "eq"}, {"unit": 0, "kind": "delay"}, {"unit": 99, "kind": "eq"},
+               {"unit": 1, "kind": "rack"}, {"unit": 2, "kind": "nope"}, {"kind": "eq"}],
+              [], [], [], [{"unit": 5, "kind": "eq"}]],
+            "maps": [[0, 0, 1, 0.2, 0.8], [9, 0, 1], [1, 7, 1], "x", [1, 0, 1, 0, 1]]}},
+            {"kind": "rack"}],
+            "modulators": [{"kind": "lfo", "targets": [[0, 1, 4.0], [42, 1, 0.5], [0, 1, 0.2]]},
+                           {"kind": "wobble"}, {"params": []}]}]}"#;
+        let p = load(text).unwrap();
+        let rack = p.tracks[1].inserts[0].as_ref().unwrap().rack.as_deref().unwrap();
+        assert_eq!(rack.chains.len(), 4);
+        assert_eq!(rack.chains[0].len(), 1);
+        assert_eq!(rack.maps.len(), 1);
+        let empty = p.tracks[1].inserts[1].as_ref().unwrap().rack.as_deref().unwrap();
+        assert_eq!(empty.chains.len(), 1);
+        let mods = &p.tracks[1].modulators;
+        assert_eq!(mods.len(), 1);
+        assert_eq!(mods[0].targets.len(), 1);
+        assert_eq!(mods[0].targets[0].depth, 1.0);
+        // It builds.
+        let _ = p.build_engine(48_000.0, &|_| None);
     }
 
     #[test]

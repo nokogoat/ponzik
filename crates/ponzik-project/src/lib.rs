@@ -32,6 +32,7 @@ pub mod json;
 pub mod library;
 pub mod midi_file;
 pub mod presets;
+pub mod rack;
 pub mod render;
 pub mod scale;
 pub mod templates;
@@ -48,6 +49,7 @@ pub use render::{
     render_stems, write_wav,
     write_wav_channels,
 };
+pub use rack::{ModTarget, ModulatorDef, RackDef, RackDevice};
 pub use scale::{ChordKind, ScaleKind, Voicing, chord, revoice};
 pub use templates::templates;
 
@@ -102,11 +104,13 @@ pub struct EffectDef {
     pub bypass: bool,
     /// Piste clé de l'entrée latérale (compresseur, porte, ducking…).
     pub sidechain: Option<usize>,
+    /// Chains and macro mappings, for a rack (kind `"rack"`).
+    pub rack: Option<Box<RackDef>>,
 }
 
 impl EffectDef {
     pub fn new(kind: &str) -> Self {
-        Self { kind: kind.into(), params: Vec::new(), bypass: false, sidechain: None }
+        Self { kind: kind.into(), params: Vec::new(), bypass: false, sidechain: None, rack: None }
     }
 
     pub fn set(&mut self, id: u32, value: f32) {
@@ -167,6 +171,8 @@ pub struct ChannelDef {
     /// Note posée par un clic dans le step sequencer.
     pub root_note: u8,
     pub color: u32,
+    /// Modulators of the instrument's parameters.
+    pub modulators: Vec<ModulatorDef>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -282,6 +288,8 @@ pub struct TrackDef {
     pub folded: bool,
     /// VCA qui pilote le volume de la piste.
     pub vca: Option<usize>,
+    /// Modulators of the track's inserts.
+    pub modulators: Vec<ModulatorDef>,
 }
 
 /// Nom par défaut d'une piste de mixer (« Track 3 », « Piste 3 » en français).
@@ -310,6 +318,7 @@ impl TrackDef {
             kind: TrackKind::Normal,
             folded: false,
             vca: None,
+            modulators: Vec::new(),
         }
     }
 }
@@ -606,6 +615,9 @@ impl Project {
 
     /// `None` si l'identifiant est inconnu ou si le plugin CLAP ou VST 3 ne se charge pas.
     pub fn make_effect(def: &EffectDef, sample_rate: f32, bpm: f32) -> Option<Box<dyn Effect>> {
+        if def.kind == rack::RACK {
+            return Some(rack::make_rack(def, sample_rate, bpm));
+        }
         let mut fx = if def.kind.starts_with(ponzik_clap::KIND_PREFIX) {
             ponzik_clap::effect_from_kind(&def.kind).map_err(|e| eprintln!("CLAP : {e}")).ok()?
         } else if def.kind.starts_with(ponzik_vst3::KIND_PREFIX) {
@@ -642,6 +654,7 @@ impl Project {
         for (slot, def) in c.note_fx.iter().enumerate().take(NOTE_FX_SLOTS) {
             ch.note_fx[slot] = def.as_ref().and_then(|d| Self::make_note_fx(d, sample_rate, self.bpm));
         }
+        ch.mods = self.make_channel_mods(idx);
         ch
     }
 
@@ -663,6 +676,7 @@ impl Project {
                 t.bypass[slot] = fx.as_ref().is_some_and(|d| d.bypass);
                 t.sidechain[slot] = fx.as_ref().and_then(|d| d.sidechain);
             }
+            t.mods = self.make_track_mods(i);
         }
         if let Some(order) = self.routing_order() {
             mixer.order = order;
@@ -741,6 +755,7 @@ impl Project {
             track,
             root_note,
             color: 0,
+            modulators: Vec::new(),
         });
         for p in &mut self.patterns {
             p.notes.resize(self.channels.len(), Vec::new());

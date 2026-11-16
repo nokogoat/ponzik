@@ -4,6 +4,7 @@
 //! A preset is `{"kind": …, "name": …, "params": [[id, value], …]}`; params it
 //! leaves out keep their default.
 
+use crate::RackDef;
 use crate::json::{self, Json};
 
 include!(concat!(env!("OUT_DIR"), "/factory_presets.rs"));
@@ -25,15 +26,31 @@ pub fn parse_preset(text: &str) -> Result<Vec<(u32, f32)>, String> {
 
 /// Writes a preset file.
 pub fn preset_json(kind: &str, name: &str, params: &[(u32, f32)]) -> String {
-    Json::Obj(vec![
+    rack_preset_json(kind, name, params, None)
+}
+
+/// Writes a preset file; a rack preset also keeps its chains and mappings
+/// (`params` then holds the macro values and every device's settings).
+pub fn rack_preset_json(kind: &str, name: &str, params: &[(u32, f32)], rack: Option<&RackDef>) -> String {
+    let mut pairs = vec![
         ("kind".into(), Json::Str(kind.into())),
         ("name".into(), Json::Str(name.into())),
         (
             "params".into(),
             Json::Arr(params.iter().map(|&(id, v)| Json::Arr(vec![Json::Num(id as f64), Json::Num(v as f64)])).collect()),
         ),
-    ])
-    .pretty()
+    ];
+    if let Some(rack) = rack {
+        pairs.push(("rack".into(), crate::io::rack_json(rack)));
+    }
+    Json::Obj(pairs).pretty()
+}
+
+/// Chains and mappings of a rack preset (`None` for other presets).
+pub fn parse_rack(text: &str) -> Option<RackDef> {
+    let doc = json::parse(text).ok()?;
+    let rack = doc.get("rack")?;
+    Some(crate::io::load_rack(Some(rack)))
 }
 
 /// Names of the factory presets of a device kind, sorted.
@@ -50,6 +67,19 @@ pub fn factory_preset(kind: &str, name: &str) -> Option<Vec<(u32, f32)>> {
 mod tests {
     use super::*;
     use ponzik_engine::registry;
+
+    #[test]
+    fn rack_presets_keep_chains_mappings_and_macros() {
+        let mut fx = crate::EffectDef::new_rack();
+        fx.rack_insert(0, None, "eq");
+        fx.rack_insert(0, None, "chorus");
+        fx.map_macro(4, 1, 2, 1.0, 0.0);
+        fx.set(4, 0.6);
+        let text = rack_preset_json("rack", "Wide", &fx.params, fx.rack.as_deref());
+        assert_eq!(parse_rack(&text).as_ref(), fx.rack.as_deref());
+        assert_eq!(parse_preset(&text).unwrap(), fx.params);
+        assert!(parse_rack(&preset_json("eq", "x", &[])).is_none());
+    }
 
     #[test]
     fn every_factory_preset_matches_its_device() {

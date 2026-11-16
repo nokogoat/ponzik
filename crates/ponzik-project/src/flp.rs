@@ -922,6 +922,7 @@ pub fn import_flp(
             track,
             root_note: ch.root.unwrap_or(60).min(127) as u8,
             color: ch.color.unwrap_or(0),
+            modulators: Vec::new(),
         });
     }
     if !p.channels.is_empty() {
