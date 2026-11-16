@@ -1,6 +1,6 @@
 [package]
 name = "ponzik-audio"
-description = "Pilotes audio maison de Ponzik (ALSA sous Linux, WASAPI sous Windows)"
+description = "Pilotes audio maison de Ponzik (ALSA sous Linux, WASAPI sous Windows, CoreAudio sous macOS)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

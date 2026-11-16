@@ -3,6 +3,7 @@
 //!
 //! - Linux : ALSA (`libasound`), qui passe par PipeWire/PulseAudio s'ils tournent.
 //! - Windows : WASAPI en mode partagé, piloté par événement, thread MMCSS « Pro Audio ».
+//! - macOS (expérimental) : CoreAudio, unités AUHAL et rappels temps réel.
 //!
 //! Le pilote ne connaît pas le moteur : il appelle une fonction de rendu
 //! `FnMut(&mut [f32], canaux)` depuis son propre thread audio, et, pour la
@@ -43,7 +44,11 @@ mod backend;
 #[path = "wasapi.rs"]
 mod backend;
 
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(target_os = "macos")]
+#[path = "coreaudio.rs"]
+mod backend;
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 #[path = "unsupported.rs"]
 mod backend;
 
@@ -84,7 +89,7 @@ impl fmt::Display for AudioError {
             AudioError::NoOutputDevice => write!(f, "aucune sortie audio trouvée"),
             AudioError::NoInputDevice => write!(f, "aucune entrée audio trouvée"),
             AudioError::UnsupportedFormat(fmt) => write!(f, "format audio non géré : {fmt}"),
-            AudioError::UnsupportedPlatform => write!(f, "plateforme non supportée (Linux et Windows uniquement)"),
+            AudioError::UnsupportedPlatform => write!(f, "plateforme non supportée (Linux, Windows et macOS uniquement)"),
             AudioError::System(msg) => write!(f, "erreur audio système : {msg}"),
         }
     }
