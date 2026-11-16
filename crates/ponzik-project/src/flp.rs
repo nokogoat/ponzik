@@ -28,6 +28,8 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use ponzik_i18n::{tr, tr_fmt};
+
 use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS, TRACKS};
 use ponzik_engine::{Note, PPQ, PlayMode, TICKS_PER_BAR, TICKS_PER_STEP};
 
@@ -574,7 +576,7 @@ pub struct ImportReport {
 impl ImportReport {
     /// One line for a toast.
     pub fn summary(&self) -> String {
-        format!(
+        tr_fmt!(
             "FL Studio import: {} mapped, {} approximated, {} skipped",
             self.mapped.len(),
             self.approximated.len(),
@@ -584,12 +586,12 @@ impl ImportReport {
 
     /// Every entry, prefixed by its category.
     pub fn lines(&self) -> Vec<String> {
-        let tag = |t: &'static str| move |s: &String| format!("{t}: {s}");
+        let tag = |t: &'static str| move |s: &String| tr_fmt!("{}: {}", t, s);
         self.mapped
             .iter()
-            .map(tag("Mapped"))
-            .chain(self.approximated.iter().map(tag("Approximated")))
-            .chain(self.skipped.iter().map(tag("Skipped")))
+            .map(tag(tr("Mapped")))
+            .chain(self.approximated.iter().map(tag(tr("Approximated"))))
+            .chain(self.skipped.iter().map(tag(tr("Skipped"))))
             .collect()
     }
 
@@ -788,22 +790,22 @@ pub fn import_flp(
     let tick = |v: u32| -> u32 { (v as u64 * PPQ as u64 / ppq).min(u32::MAX as u64) as u32 };
 
     if let Some((a, b, c)) = fl.version {
-        report.mapped.push(format!("FL Studio {a}.{b}.{c} project, {} PPQ converted to {PPQ}", fl.ppq));
+        report.mapped.push(tr_fmt!("FL Studio {}.{}.{} project, {} PPQ converted to {}", a, b, c, fl.ppq, PPQ));
     }
     if fl.unread > 0 {
         report
             .skipped
-            .push(format!("The file is truncated or corrupted: {} bytes of project data could not be read", fl.unread));
+            .push(tr_fmt!("The file is truncated or corrupted: {} bytes of project data could not be read", fl.unread));
     }
     match fl.tempo {
         Some(t) if t.is_finite() && t > 0.0 => {
             p.bpm = t.clamp(10.0, 999.0);
-            report.mapped.push(format!("Tempo {:.2} BPM", p.bpm));
+            report.mapped.push(tr_fmt!("Tempo {:.2} BPM", p.bpm));
         }
-        _ => report.approximated.push("No tempo found: 120 BPM".into()),
+        _ => report.approximated.push(tr("No tempo found: 120 BPM").into()),
     }
     if fl.time_sig != (4, 4) && fl.time_sig.0 > 0 {
-        report.approximated.push(format!(
+        report.approximated.push(tr_fmt!(
             "Time signature {}/{}: Ponzik shows 4/4 bars, positions are unchanged",
             fl.time_sig.0, fl.time_sig.1
         ));
@@ -823,8 +825,10 @@ pub fn import_flp(
         match insert {
             Some(i) if i > 0 && (i as usize) < TRACKS => i as usize,
             Some(i) if i as usize >= TRACKS => {
-                report.approximated.push(format!(
-                    "{what}: FL insert {i} does not exist in Ponzik ({} tracks), routed to Master",
+                report.approximated.push(tr_fmt!(
+                    "{}: FL insert {} does not exist in Ponzik ({} tracks), routed to Master",
+                    what,
+                    i,
                     TRACKS - 1
                 ));
                 MASTER
@@ -842,18 +846,18 @@ pub fn import_flp(
     let mut empty_samplers = Vec::new();
     for ch in &fl.channels {
         let label = ch.name.clone().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| {
-            if ch.internal.is_empty() { format!("Channel {}", ch.iid + 1) } else { ch.internal.clone() }
+            if ch.internal.is_empty() { tr_fmt!("Channel {}", ch.iid + 1) } else { ch.internal.clone() }
         });
         match ch.kind {
             TYPE_AUTOMATION => {
-                report.skipped.push(format!("Automation clip '{label}': automation is not imported yet"));
+                report.skipped.push(tr_fmt!("Automation clip '{}': automation is not imported yet", label));
                 skipped_channels.insert(ch.iid, label);
                 continue;
             }
             TYPE_LAYER => {
                 report
                     .skipped
-                    .push(format!("Layer channel '{label}': layers are not supported, its notes are dropped"));
+                    .push(tr_fmt!("Layer channel '{}': layers are not supported, its notes are dropped", label));
                 skipped_channels.insert(ch.iid, label);
                 continue;
             }
@@ -863,16 +867,16 @@ pub fn import_flp(
             ch.kind == TYPE_SAMPLER || (ch.internal.is_empty() && matches!(ch.kind, TYPE_NATIVE | TYPE_INSTRUMENT));
         let wav = ch.sample.as_deref().and_then(|raw| {
             if !raw.to_lowercase().ends_with(".wav") {
-                report.skipped.push(format!("'{label}': sample {raw} is not a WAV file (only WAV is supported)"));
+                report.skipped.push(tr_fmt!("'{}': sample {} is not a WAV file (only WAV is supported)", label, raw));
                 return None;
             }
             let found = resolve(raw);
             if found.is_none() {
-                report.skipped.push(format!("'{label}': sample not found on this computer: {raw}"));
+                report.skipped.push(tr_fmt!("'{}': sample not found on this computer: {}", label, raw));
             }
             found
         });
-        let track = track_of(ch.insert, &format!("Channel '{label}'"), &mut report);
+        let track = track_of(ch.insert, &tr_fmt!("Channel '{}'", label), &mut report);
         if sample_like && in_playlist(ch.iid) {
             match &wav {
                 Some(path) => {
@@ -895,15 +899,15 @@ pub fn import_flp(
             def
         } else {
             let source = if ch.internal.eq_ignore_ascii_case("fruity wrapper") {
-                format!("VST plugin '{}'", ch.name.as_deref().unwrap_or("?"))
+                tr_fmt!("VST plugin '{}'", ch.name.as_deref().unwrap_or("?"))
             } else {
-                format!("generator '{}'", ch.internal)
+                tr_fmt!("generator '{}'", ch.internal)
             };
             let kind =
                 instrument_for(if ch.internal.eq_ignore_ascii_case("fruity wrapper") { &label } else { &ch.internal });
             report
                 .approximated
-                .push(format!("'{label}': FL {source} replaced by {} (settings not imported)", instrument_name(kind)));
+                .push(tr_fmt!("'{}': FL {} replaced by {} (settings not imported)", label, source, tr(instrument_name(kind))));
             generators += 1;
             InstrumentDef::new(kind)
         };
@@ -922,20 +926,22 @@ pub fn import_flp(
     }
     if !p.channels.is_empty() {
         let samplers = p.channels.len() - generators;
-        report.mapped.push(format!(
-            "{} channels ({samplers} samplers, {generators} instruments): name, colour, volume, pan, mixer track",
-            p.channels.len()
+        report.mapped.push(tr_fmt!(
+            "{} channels ({} samplers, {} instruments): name, colour, volume, pan, mixer track",
+            p.channels.len(),
+            samplers,
+            generators
         ));
     }
     if !empty_samplers.is_empty() {
-        report.approximated.push(format!(
+        report.approximated.push(tr_fmt!(
             "{} Sampler channels without a sample: {}",
             empty_samplers.len(),
             empty_samplers.join(", ")
         ));
     }
     if !audio_map.is_empty() {
-        report.mapped.push(format!("{} audio clip sources", audio_map.len()));
+        report.mapped.push(tr_fmt!("{} audio clip sources", audio_map.len()));
     }
 
     // Patterns.
@@ -987,20 +993,21 @@ pub fn import_flp(
         });
     }
     if !patterns.is_empty() {
-        report.mapped.push(format!("{} patterns, {kept} notes ({steps} step-sequencer steps)", patterns.len()));
+        report.mapped.push(tr_fmt!("{} patterns, {} notes ({} step-sequencer steps)", patterns.len(), kept, steps));
         p.patterns = patterns;
     }
     if dropped > 0 {
-        report.skipped.push(format!("{dropped} notes on channels that could not be imported"));
+        report.skipped.push(tr_fmt!("{} notes on channels that could not be imported", dropped));
     }
 
     // Playlist.
     if let Some(arr) = arrangement {
         let others = fl.arrangements.iter().filter(|a| !a.items.is_empty()).count().saturating_sub(1);
         if others > 0 {
-            report.skipped.push(format!(
-                "{others} other arrangement(s): only '{}' is imported",
-                arr.name.as_deref().unwrap_or("the current arrangement")
+            report.skipped.push(tr_fmt!(
+                "{} other arrangement(s): only '{}' is imported",
+                others,
+                arr.name.as_deref().unwrap_or(tr("the current arrangement"))
             ));
         }
         // Playlist tracks map to lanes; spread-out projects are compacted.
@@ -1012,7 +1019,7 @@ pub fn import_flp(
             if compact { used.binary_search(&t).unwrap_or(0) } else { t }
         };
         if compact {
-            report.approximated.push("Playlist tracks beyond 64 were packed together".into());
+            report.approximated.push(tr("Playlist tracks beyond 64 were packed together").into());
         }
         let (mut automation_items, mut missing_items, mut far_items, mut sampleless_items) = (0, 0, 0, 0);
         for it in &arr.items {
@@ -1053,25 +1060,25 @@ pub fn import_flp(
         }
         if !p.clips.is_empty() {
             p.mode = PlayMode::Song;
-            report.mapped.push(format!("{} pattern clips in the playlist", p.clips.len()));
+            report.mapped.push(tr_fmt!("{} pattern clips in the playlist", p.clips.len()));
         }
         if !p.audio_clips.is_empty() {
-            report.approximated.push(format!(
+            report.approximated.push(tr_fmt!(
                 "{} audio clips: placed whole from their start (trims, stretching and fades are not imported)",
                 p.audio_clips.len()
             ));
         }
         if automation_items > 0 {
-            report.skipped.push(format!("{automation_items} automation clips in the playlist"));
+            report.skipped.push(tr_fmt!("{} automation clips in the playlist", automation_items));
         }
         if sampleless_items > 0 {
-            report.skipped.push(format!("{sampleless_items} audio clips whose sample is missing or unsupported"));
+            report.skipped.push(tr_fmt!("{} audio clips whose sample is missing or unsupported", sampleless_items));
         }
         if missing_items > 0 {
-            report.skipped.push(format!("{missing_items} playlist clips pointing to a missing pattern or channel"));
+            report.skipped.push(tr_fmt!("{} playlist clips pointing to a missing pattern or channel", missing_items));
         }
         if far_items > 0 {
-            report.skipped.push(format!("{far_items} playlist clips placed too far in the song"));
+            report.skipped.push(tr_fmt!("{} playlist clips placed too far in the song", far_items));
         }
     }
 
@@ -1084,7 +1091,7 @@ pub fn import_flp(
         let has_fx = ins.slots.iter().any(|s| !s.internal.is_empty());
         if i >= TRACKS {
             if ins.name.is_some() || has_fx {
-                report.skipped.push(format!("Mixer insert {i} '{label}': Ponzik has {} tracks", TRACKS - 1));
+                report.skipped.push(tr_fmt!("Mixer insert {} '{}': Ponzik has {} tracks", i, label, TRACKS - 1));
             }
             continue;
         }
@@ -1117,12 +1124,12 @@ pub fn import_flp(
                 })
                 .collect();
             if targets.iter().any(|&(to, _)| to >= TRACKS) {
-                report.skipped.push(format!("'{label}': routes to inserts above {} dropped", TRACKS - 1));
+                report.skipped.push(tr_fmt!("'{}': routes to inserts above {} dropped", label, TRACKS - 1));
                 targets.retain(|&(to, _)| to < TRACKS);
             }
             if !ins.routes.is_empty() && targets.is_empty() {
                 if interesting {
-                    report.approximated.push(format!("'{label}' is not routed anywhere in FL Studio: muted"));
+                    report.approximated.push(tr_fmt!("'{}' is not routed anywhere in FL Studio: muted", label));
                 }
                 t.muted = true;
             }
@@ -1136,7 +1143,7 @@ pub fn import_flp(
             if extra.len() > SEND_SLOTS {
                 report
                     .skipped
-                    .push(format!("'{label}': {} routes beyond {SEND_SLOTS} sends dropped", extra.len() - SEND_SLOTS));
+                    .push(tr_fmt!("'{}': {} routes beyond {} sends dropped", label, extra.len() - SEND_SLOTS, SEND_SLOTS));
             }
             for (slot, &(to, level)) in t.sends.iter_mut().zip(extra.iter()) {
                 *slot = (to, level);
@@ -1150,23 +1157,23 @@ pub fn import_flp(
                 continue;
             }
             let shown = if fx.internal.eq_ignore_ascii_case("fruity wrapper") {
-                fx.name.clone().unwrap_or_else(|| "VST plugin".into())
+                fx.name.clone().unwrap_or_else(|| tr("VST plugin").into())
             } else {
                 fx.internal.clone()
             };
             let Some((kind, direct)) = effect_for(&shown) else {
-                report.skipped.push(format!("'{label}' slot {}: {shown} has no Ponzik equivalent", s + 1));
+                report.skipped.push(tr_fmt!("'{}' slot {}: {} has no Ponzik equivalent", label, s + 1, shown));
                 continue;
             };
             if slot_out >= INSERT_SLOTS {
-                report.skipped.push(format!("'{label}' slot {}: {shown} (no free insert slot left)", s + 1));
+                report.skipped.push(tr_fmt!("'{}' slot {}: {} (no free insert slot left)", label, s + 1, shown));
                 continue;
             }
             let mut def = EffectDef::new(kind);
             def.bypass = !fx.enabled || ins.slot_enabled.get(&s) == Some(&false);
             t.inserts[slot_out] = Some(def);
             slot_out += 1;
-            let line = format!("'{label}' slot {}: {shown} → {} (default settings)", s + 1, effect_name(kind));
+            let line = tr_fmt!("'{}' slot {}: {} → {} (default settings)", label, s + 1, shown, tr(effect_name(kind)));
             if direct {
                 fx_direct += 1;
                 report.mapped.push(line);
@@ -1178,18 +1185,18 @@ pub fn import_flp(
     if !fl.inserts.is_empty() {
         report
             .mapped
-            .push(format!("Mixer: master and {used_inserts} inserts (name, colour, volume, pan), {sends} sends"));
+            .push(tr_fmt!("Mixer: master and {} inserts (name, colour, volume, pan), {} sends", used_inserts, sends));
     }
     if p.routing_order().is_none() {
         for t in p.tracks.iter_mut().skip(1) {
             t.output = MASTER;
             t.sends = [(MASTER, 0.0); SEND_SLOTS];
         }
-        report.approximated.push("The mixer routing loops in Ponzik: every track now goes to the Master".into());
+        report.approximated.push(tr("The mixer routing loops in Ponzik: every track now goes to the Master").into());
     }
     if fx_direct > 0 || !p.channels.is_empty() {
         report.approximated.push(
-            "Plugin settings, envelopes and channel effects are not converted: devices start from their defaults"
+            tr("Plugin settings, envelopes and channel effects are not converted: devices start from their defaults")
                 .into(),
         );
     }

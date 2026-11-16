@@ -3,6 +3,7 @@
 
 use std::sync::mpsc::{self, TryRecvError};
 
+use ponzik_i18n::{tr, tr_fmt};
 use ponzik_project::library;
 
 use super::app::App;
@@ -24,7 +25,7 @@ impl App {
         });
         if spawned.is_ok() {
             self.library_build = Some(rx);
-            self.toast("Building the sound library…");
+            self.toast(tr("Building the sound library…"));
         }
     }
 
@@ -40,9 +41,9 @@ impl App {
         match result {
             Ok(n) => {
                 self.sample_files = compat::scan_samples();
-                self.toast(&format!("Sound library ready: {n} sounds in the browser"));
+                self.toast(&tr_fmt!("Sound library ready: {} sounds in the browser", n));
             }
-            Err(e) => self.toast(&format!("Sound library: {e}")),
+            Err(e) => self.toast(&tr_fmt!("Sound library: {}", e)),
         }
         true
     }

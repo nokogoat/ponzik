@@ -4215,11 +4215,7 @@ msgstr "Annulé dans le Sample Lab : {}"
 
 # --- Recording panel headings ---
 
-msgid "INPUT"
-msgstr "ENTRÉE"
 
-msgid "MONITORING"
-msgstr "ÉCOUTE"
 
 msgid "24-bit"
 msgstr "24 bits"
@@ -4760,3 +4756,342 @@ msgstr "PH"
 
 msgid "Factory"
 msgstr "Usine"
+
+# --- UI audit ---
+
+msgid "'{}' is not routed anywhere in FL Studio: muted"
+msgstr "« {} » n'est routé nulle part dans FL Studio : coupé"
+
+msgid "'{}' slot {}: {} (no free insert slot left)"
+msgstr "« {} » emplacement {} : {} (plus d'emplacement d'effet libre)"
+
+msgid "'{}' slot {}: {} has no Ponzik equivalent"
+msgstr "« {} » emplacement {} : {} n'a pas d'équivalent dans Ponzik"
+
+msgid "'{}' slot {}: {} → {} (default settings)"
+msgstr "« {} » emplacement {} : {} → {} (réglages par défaut)"
+
+msgid "'{}': FL {} replaced by {} (settings not imported)"
+msgstr "« {} » : {} de FL remplacé par {} (réglages non importés)"
+
+msgid "'{}': routes to inserts above {} dropped"
+msgstr "« {} » : routages vers les pistes au-delà de {} abandonnés"
+
+msgid "'{}': sample not found on this computer: {}"
+msgstr "« {} » : échantillon introuvable sur cet ordinateur : {}"
+
+msgid "'{}': sample {} is not a WAV file (only WAV is supported)"
+msgstr "« {} » : l'échantillon {} n'est pas un WAV (seul le WAV est pris en charge)"
+
+msgid "'{}': {} routes beyond {} sends dropped"
+msgstr "« {} » : {} routages au-delà de {} envois abandonnés"
+
+msgid "Add a velocity layer"
+msgstr "Ajouter une couche de vélocité"
+
+msgid "Approximated"
+msgstr "Approché"
+
+msgid "Automation clip '{}': automation is not imported yet"
+msgstr "Clip d'automation « {} » : l'automation n'est pas encore importée"
+
+msgid "Building the sound library…"
+msgstr "Création de la bibliothèque de sons…"
+
+msgid "Channel '{}'"
+msgstr "Canal « {} »"
+
+msgid "Channel {}"
+msgstr "Canal {}"
+
+msgid "Choke group"
+msgstr "Groupe d'étouffement"
+
+msgid "Choke group {}"
+msgstr "Groupe d'étouffement {}"
+
+msgid "Clear"
+msgstr "Vider"
+
+msgid "Clear a pad"
+msgstr "Vider un pad"
+
+msgid "Copy pad"
+msgstr "Copier le pad"
+
+msgid "Could not build the starter kit"
+msgstr "Impossible de créer le kit de départ"
+
+msgid "Decay: drag left to shorten the hit, all the way right for the full sample"
+msgstr "Déclin : glisse à gauche pour raccourcir la frappe, tout à droite pour l'échantillon entier"
+
+msgid "Drop a WAV on a pad"
+msgstr "Dépose un WAV sur un pad"
+
+msgid "FL Studio import report"
+msgstr "Rapport d'import FL Studio"
+
+msgid "FL Studio import: {} mapped, {} approximated, {} skipped"
+msgstr "Import FL Studio : {} repris, {} approchés, {} ignorés"
+
+msgid "FL Studio {}.{}.{} project, {} PPQ converted to {}"
+msgstr "Projet FL Studio {}.{}.{}, {} PPQ convertis en {}"
+
+msgid "Fills all sixteen pads"
+msgstr "Remplit les seize pads"
+
+msgid "Layer channel '{}': layers are not supported, its notes are dropped"
+msgstr "Canal Layer « {} » : les layers ne sont pas pris en charge, ses notes sont abandonnées"
+
+msgid "Library · {}"
+msgstr "Bibliothèque · {}"
+
+msgid "Load a pad sample"
+msgstr "Charger un échantillon sur un pad"
+
+msgid "Load starter kit"
+msgstr "Charger le kit de départ"
+
+msgid "Load the starter kit"
+msgstr "Charger le kit de départ"
+
+msgid "Load the starter kit on all sixteen pads"
+msgstr "Charger le kit de départ sur les seize pads"
+
+msgid "Mapped"
+msgstr "Repris"
+
+msgid "Mixer insert {} '{}': Ponzik has {} tracks"
+msgstr "Piste de mixage {} « {} » : Ponzik a {} pistes"
+
+msgid "Mixer: master and {} inserts (name, colour, volume, pan), {} sends"
+msgstr "Mixage : master et {} pistes (nom, couleur, volume, panoramique), {} envois"
+
+msgid "Monitoring"
+msgstr "Écoute"
+
+msgid "No FL Studio import yet"
+msgstr "Aucun import FL Studio pour l'instant"
+
+msgid "No FL Studio project found"
+msgstr "Aucun projet FL Studio trouvé"
+
+msgid "No choke group"
+msgstr "Pas de groupe d'étouffement"
+
+msgid "No tempo found: 120 BPM"
+msgstr "Aucun tempo trouvé : 120 BPM"
+
+msgid "Pad {} · {}"
+msgstr "Pad {} · {}"
+
+msgid "Pads of the same group cut each other, like closed and open hats"
+msgstr "Les pads d'un même groupe se coupent, comme un hat fermé et un hat ouvert"
+
+msgid "Paste a pad"
+msgstr "Coller un pad"
+
+msgid "Paste pad"
+msgstr "Coller le pad"
+
+msgid "Playlist tracks beyond 64 were packed together"
+msgstr "Les pistes de playlist au-delà de 64 ont été regroupées"
+
+msgid "Plugin settings, envelopes and channel effects are not converted: devices start from their defaults"
+msgstr "Les réglages des plugins, les enveloppes et les effets de canal ne sont pas convertis : les appareils partent de leurs réglages par défaut"
+
+msgid "Remove a velocity layer"
+msgstr "Retirer une couche de vélocité"
+
+msgid "Remove loudest layer"
+msgstr "Retirer la couche la plus forte"
+
+msgid "Removes the sample, keeps the settings"
+msgstr "Retire l'échantillon, garde les réglages"
+
+msgid "Reverse a pad"
+msgstr "Inverser un pad"
+
+msgid "Sample, layers and settings"
+msgstr "Échantillon, couches et réglages"
+
+msgid "Screenshot beat"
+msgstr "Beat de capture"
+
+msgid "Skipped"
+msgstr "Ignoré"
+
+msgid "Sound library ready: {} sounds in the browser"
+msgstr "Bibliothèque de sons prête : {} sons dans le navigateur"
+
+msgid "Sound library: {}"
+msgstr "Bibliothèque de sons : {}"
+
+msgid "Start: drag to skip the beginning of the sample"
+msgstr "Début : glisse pour sauter le début de l'échantillon"
+
+msgid "Starter kit"
+msgstr "Kit de départ"
+
+msgid "Starter kit loaded ({} pads from the library)"
+msgstr "Kit de départ chargé ({} pads venus de la bibliothèque)"
+
+msgid "Starter kit loaded from the Drum Machine"
+msgstr "Kit de départ chargé depuis la Boîte à rythmes"
+
+msgid "Taking {}"
+msgstr "Prise en cours : {}"
+
+msgid "Taking {} tracks"
+msgstr "Prise en cours : {} pistes"
+
+msgid "Tempo {:.2} BPM"
+msgstr "Tempo {:.2} BPM"
+
+msgid "The file is truncated or corrupted: {} bytes of project data could not be read"
+msgstr "Le fichier est tronqué ou abîmé : {} octets de données du projet n'ont pas pu être lus"
+
+msgid "The mixer routing loops in Ponzik: every track now goes to the Master"
+msgstr "Le routage du mixage boucle dans Ponzik : toutes les pistes vont maintenant au Master"
+
+msgid "This pad already has four velocity layers"
+msgstr "Ce pad a déjà quatre couches de vélocité"
+
+msgid "Time signature {}/{}: Ponzik shows 4/4 bars, positions are unchanged"
+msgstr "Mesure {}/{} : Ponzik affiche des mesures en 4/4, les positions sont inchangées"
+
+msgid "VST plugin"
+msgstr "Plugin VST"
+
+msgid "VST plugin '{}'"
+msgstr "plugin VST « {} »"
+
+msgid "Velocity layer {} of {} (softest first): {}"
+msgstr "Couche de vélocité {} sur {} (la plus douce d'abord) : {}"
+
+msgid "Your samples"
+msgstr "Tes échantillons"
+
+msgctxt "drum pad"
+msgid "Closed Hat"
+msgstr "Hat fermé"
+
+msgctxt "drum pad"
+msgid "Crash"
+msgstr "Crash"
+
+msgctxt "drum pad"
+msgid "Floor Tom"
+msgstr "Tom basse"
+
+msgctxt "drum pad"
+msgid "Floor Tom 2"
+msgstr "Tom basse 2"
+
+msgctxt "drum pad"
+msgid "High Tom"
+msgstr "Tom aigu"
+
+msgctxt "drum pad"
+msgid "Low Tom"
+msgstr "Tom grave"
+
+msgctxt "drum pad"
+msgid "Mid Tom"
+msgstr "Tom médium"
+
+msgctxt "drum pad"
+msgid "Mid Tom 2"
+msgstr "Tom médium 2"
+
+msgctxt "drum pad"
+msgid "Open Hat"
+msgstr "Hat ouvert"
+
+msgctxt "drum pad"
+msgid "Pedal Hat"
+msgstr "Hat pédale"
+
+msgctxt "drum pad"
+msgid "Ride"
+msgstr "Ride"
+
+msgctxt "drum pad"
+msgid "Snare 2"
+msgstr "Caisse 2"
+
+msgctxt "drum pads"
+msgid "Master"
+msgstr "Général"
+
+msgid "generator '{}'"
+msgstr "générateur « {} »"
+
+msgid "out {:.1}  in {:.1}  mix {:.1}"
+msgstr "sort. {:.1} entr. {:.1} mix {:.1}"
+
+msgid "the current arrangement"
+msgstr "l'arrangement en cours"
+
+msgid "{:.1} ms"
+msgstr "{:.1} ms"
+
+msgid "{} Sampler channels without a sample: {}"
+msgstr "{} canaux Sampler sans échantillon : {}"
+
+msgid "{} audio clip sources"
+msgstr "{} sources de clips audio"
+
+msgid "{} audio clips whose sample is missing or unsupported"
+msgstr "{} clips audio dont l'échantillon manque ou n'est pas pris en charge"
+
+msgid "{} audio clips: placed whole from their start (trims, stretching and fades are not imported)"
+msgstr "{} clips audio : posés entiers depuis leur début (coupes, étirements et fondus ne sont pas importés)"
+
+msgid "{} automation clips in the playlist"
+msgstr "{} clips d'automation dans la playlist"
+
+msgid "{} channels ({} samplers, {} instruments): name, colour, volume, pan, mixer track"
+msgstr "{} canaux ({} samplers, {} instruments) : nom, couleur, volume, panoramique, piste de mixage"
+
+msgid "{} copied"
+msgstr "{} copié"
+
+msgid "{} disarmed"
+msgstr "{} désarmée"
+
+msgid "{} layer"
+msgstr "{} couche"
+
+msgid "{} layers"
+msgstr "{} couches"
+
+msgid "{} notes on channels that could not be imported"
+msgstr "{} notes sur des canaux qui n'ont pas pu être importés"
+
+msgid "{} other arrangement(s): only '{}' is imported"
+msgstr "{} autre(s) arrangement(s) : seul « {} » est importé"
+
+msgid "{} pattern clips in the playlist"
+msgstr "{} clips de pattern dans la playlist"
+
+msgid "{} patterns, {} notes ({} step-sequencer steps)"
+msgstr "{} patterns, {} notes ({} pas du séquenceur)"
+
+msgid "{} playlist clips placed too far in the song"
+msgstr "{} clips de playlist placés trop loin dans le morceau"
+
+msgid "{} playlist clips pointing to a missing pattern or channel"
+msgstr "{} clips de playlist qui pointent vers un pattern ou un canal manquant"
+
+msgid "{} take {}"
+msgstr "{} prise {}"
+
+msgid "{} · muted"
+msgstr "{} · muet"
+
+msgid "{} · note {} · {}\nClick: play (higher is louder) · right-click: menu\nDrop a WAV here · Shift + drop: add a velocity layer"
+msgstr "{} · note {} · {}\nClic : jouer (plus haut, plus fort) · clic droit : menu\nDépose un WAV ici · Maj + dépôt : ajouter une couche de vélocité"
+
+msgid "{}: FL insert {} does not exist in Ponzik ({} tracks), routed to Master"
+msgstr "{} : la piste FL {} n'existe pas dans Ponzik ({} pistes), routé vers le Master"

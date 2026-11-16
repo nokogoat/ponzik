@@ -557,7 +557,7 @@ impl App {
             c.fill_rect(Rect::new(r.x + 1.0, r.y + 1.0, r.w - 2.0, 18.0), t.select.mix(t.panel, 0.5).alpha(0.9 * dim));
             let prev_clip = c.push_clip(r);
             let name = std::path::Path::new(&cl.path).file_stem().map_or(String::new(), |n| n.to_string_lossy().into_owned());
-            let name = if cl.muted { format!("{name} · muted") } else { name };
+            let name = if cl.muted { tr_fmt!("{} · muted", name) } else { name };
             self.text_fit(c, self.f.sans_med, 11.0, r.x + 8.0, r.y + 10.0, &name, r.w - 12.0, t.text.alpha(dim));
             if hov && cl.take > 0 {
                 self.set_tip(tr("Alt+click: play this take"), "");

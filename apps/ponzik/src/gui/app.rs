@@ -2184,7 +2184,7 @@ impl App {
         for p in &self.sample_files {
             let name = p.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
             let folder = match compat::library_folder(p) {
-                Some(f) => format!("Library · {f}"),
+                Some(f) => tr_fmt!("Library · {}", f),
                 None => p.parent().and_then(|p| p.file_name()).map_or(String::new(), |s| s.to_string_lossy().into_owned()),
             };
             v.push((2, name, folder, Payload::Sample(p.clone())));
@@ -2309,9 +2309,10 @@ impl App {
 
         let mut last_cat = usize::MAX;
         let mut last_group = "";
+        let lib_prefix = tr_fmt!("Library · {}", "");
         for (k, (cat, name, detail, payload)) in entries.iter().enumerate() {
             // Samples: the library first, one heading per folder, then the rest.
-            let group = if *cat != 2 { "" } else { detail.strip_prefix("Library · ").unwrap_or("Your samples") };
+            let group = if *cat != 2 { "" } else { detail.strip_prefix(lib_prefix.as_str()).unwrap_or(tr("Your samples")) };
             if !searching && group != last_group {
                 y += if last_group.is_empty() { 4.0 } else { 10.0 };
                 self.text(c, self.f.sans_med, 11.5, inner_x + 12.0, y + 8.0, group, t.muted);
@@ -2614,7 +2615,7 @@ impl App {
             }
             Popup::ImportFlp(files) => {
                 let items = if files.is_empty() {
-                    vec![MenuItem::new(Icon::Folder, "No FL Studio project found", Action::None)
+                    vec![MenuItem::new(Icon::Folder, tr("No FL Studio project found"), Action::None)
                         .tip(&compat::projects_dir().display().to_string())]
                 } else {
                     files
@@ -2626,11 +2627,11 @@ impl App {
                         })
                         .collect()
                 };
-                ("Import an FL Studio project".into(), items)
+                (tr("Import an FL Studio project").into(), items)
             }
             Popup::ImportReport => {
                 let items = if self.import_report.is_empty() {
-                    vec![MenuItem::plain("No FL Studio import yet", Action::None)]
+                    vec![MenuItem::plain(tr("No FL Studio import yet"), Action::None)]
                 } else {
                     let rows = self.import_report.iter().enumerate();
                     rows.map(|(i, (text, more))| {
@@ -2639,7 +2640,7 @@ impl App {
                     })
                     .collect()
                 };
-                ("FL Studio import report".into(), items)
+                (tr("FL Studio import report").into(), items)
             }
             Popup::Presets { device, kind } => {
                 let save = Popup::Rename { target: Rename::Preset(*device), text: String::new() };
@@ -3027,7 +3028,7 @@ impl App {
                 let (kind, _) = self.device_kind(device);
                 if let Some(params) = ponzik_project::presets::factory_preset(&kind, name) {
                     self.apply_preset(device, &params);
-                    self.toast(&format!("Preset loaded: {name}"));
+                    self.toast(&tr_fmt!("Preset loaded: {}", name));
                 }
             }
             Action::AssignSession(col, row, p) => {

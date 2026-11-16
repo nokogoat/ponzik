@@ -16,6 +16,7 @@ use ponzik_engine::instruments::drum_pads::{
     S_MODE, S_PAN, S_RESO, S_REVERSE, S_START, S_TUNE, S_VELOCITY, S_VOLUME, pad_param, tune_ratio,
 };
 use ponzik_engine::{Command, Instrument, ParamInfo, Sample, Unit};
+use ponzik_i18n::{tr, tr_ctx, tr_fmt, tr_fmt_n};
 use ponzik_ui::{Canvas, Color, Path as Shape, Rect};
 use ponzik_window::Cursor;
 
@@ -94,6 +95,39 @@ fn stem(path: &str) -> String {
     Path::new(path).file_stem().map_or_else(|| path.to_string(), |s| s.to_string_lossy().into_owned())
 }
 
+/// A pad label without the library's category prefix: on a pad, "Snare -
+/// Breakbeat 01" reads better as "Breakbeat 01".
+fn short_stem(path: &str) -> String {
+    let s = stem(path);
+    match s.split_once(" - ") {
+        Some((_, rest)) if !rest.trim().is_empty() => rest.trim().to_string(),
+        _ => s,
+    }
+}
+
+/// The General MIDI name of a pad, in the interface language.
+pub(super) fn pad_name(pad: usize) -> &'static str {
+    match PAD_NAMES.get(pad).copied().unwrap_or("") {
+        "Kick" => tr_ctx("drum pad", "Kick"),
+        "Rim" => tr_ctx("drum pad", "Rim"),
+        "Snare" => tr_ctx("drum pad", "Snare"),
+        "Clap" => tr_ctx("drum pad", "Clap"),
+        "Snare 2" => tr_ctx("drum pad", "Snare 2"),
+        "Floor Tom" => tr_ctx("drum pad", "Floor Tom"),
+        "Closed Hat" => tr_ctx("drum pad", "Closed Hat"),
+        "Floor Tom 2" => tr_ctx("drum pad", "Floor Tom 2"),
+        "Pedal Hat" => tr_ctx("drum pad", "Pedal Hat"),
+        "Low Tom" => tr_ctx("drum pad", "Low Tom"),
+        "Open Hat" => tr_ctx("drum pad", "Open Hat"),
+        "Mid Tom" => tr_ctx("drum pad", "Mid Tom"),
+        "Mid Tom 2" => tr_ctx("drum pad", "Mid Tom 2"),
+        "Crash" => tr_ctx("drum pad", "Crash"),
+        "High Tom" => tr_ctx("drum pad", "High Tom"),
+        "Ride" => tr_ctx("drum pad", "Ride"),
+        other => other,
+    }
+}
+
 impl App {
     fn pad_layers(&self, ch: usize, pad: usize) -> &[String] {
         self.project.channels.get(ch).and_then(|c| c.instrument.pads.get(pad)).map_or(&[], Vec::as_slice)
@@ -120,7 +154,7 @@ impl App {
         let layers = &mut pads[pad];
         let layer = if add_layer && !layers.is_empty() {
             if layers.len() >= LAYERS {
-                self.toast("This pad already has four velocity layers");
+                self.toast(tr("This pad already has four velocity layers"));
                 return;
             }
             layers.push(path.to_string());
@@ -131,7 +165,7 @@ impl App {
         };
         select(ch, pad, layer);
         self.focus = Focus::Channel(ch);
-        self.commit(if layer > 0 { "Add a velocity layer" } else { "Load a pad sample" });
+        self.commit(if layer > 0 { tr("Add a velocity layer") } else { tr("Load a pad sample") });
     }
 
     /// Plays a pad from the mouse, at `velocity`.
@@ -145,30 +179,31 @@ impl App {
 
     pub(super) fn pad_menu(&self, ch: usize, pad: usize) -> (String, Vec<MenuItem>) {
         let layers = self.pad_layers(ch, pad);
-        let title = layers.first().map_or_else(|| PAD_NAMES[pad].to_string(), |p| stem(p));
+        let title = layers.first().map_or_else(|| pad_name(pad).to_string(), |p| stem(p));
         let choke = self.pad_value(ch, pad_param(pad, S_CHOKE)) as u8;
         let reversed = self.pad_value(ch, pad_param(pad, S_REVERSE)) > 0.5;
         let op = |o| Action::Pad(ch, pad, o);
         let mut v = vec![
-            MenuItem::new(Icon::Swap, "Reverse", op(PadOp::Reverse)).on(reversed),
-            MenuItem::new(Icon::Duplicate, "Copy pad", op(PadOp::Copy)),
+            MenuItem::new(Icon::Swap, tr("Reverse"), op(PadOp::Reverse)).on(reversed),
+            MenuItem::new(Icon::Duplicate, tr("Copy pad"), op(PadOp::Copy)),
         ];
         if CLIPBOARD.with(|c| c.borrow().is_some()) {
-            v.push(MenuItem::new(Icon::Duplicate, "Paste pad", op(PadOp::Paste)).tip("Sample, layers and settings"));
+            v.push(MenuItem::new(Icon::Duplicate, tr("Paste pad"), op(PadOp::Paste)).tip(tr("Sample, layers and settings")));
         }
         if layers.len() > 1 {
-            v.push(MenuItem::new(Icon::Close, "Remove loudest layer", op(PadOp::RemoveLayer)).detail(format!("{} layers", layers.len())));
+            v.push(MenuItem::new(Icon::Close, tr("Remove loudest layer"), op(PadOp::RemoveLayer))
+                    .detail(tr_fmt_n!("{} layer", "{} layers", layers.len(), layers.len())));
         }
         if !layers.is_empty() {
-            v.push(MenuItem::new(Icon::Trash, "Clear", op(PadOp::Clear)).tip("Removes the sample, keeps the settings"));
+            v.push(MenuItem::new(Icon::Trash, tr("Clear"), op(PadOp::Clear)).tip(tr("Removes the sample, keeps the settings")));
         }
         for g in 0..=4u8 {
-            let name = if g == 0 { "No choke group".to_string() } else { format!("Choke group {g}") };
+            let name = if g == 0 { tr("No choke group").to_string() } else { tr_fmt!("Choke group {}", g) };
             let it = MenuItem::plain(&name, op(PadOp::Choke(g))).on(choke == g);
-            let it = if g == 0 { it.sep().tip("Pads of the same group cut each other, like closed and open hats") } else { it };
+            let it = if g == 0 { it.sep().tip(tr("Pads of the same group cut each other, like closed and open hats")) } else { it };
             v.push(it);
         }
-        v.push(MenuItem::new(Icon::Preset, "Load starter kit", op(PadOp::StarterKit)).sep().tip("Fills all sixteen pads"));
+        v.push(MenuItem::new(Icon::Preset, tr("Load starter kit"), op(PadOp::StarterKit)).sep().tip(tr("Fills all sixteen pads")));
         (title, v)
     }
 
@@ -183,31 +218,31 @@ impl App {
                 if let Some(l) = self.project.channels[ch].instrument.pads.get_mut(pad) {
                     l.clear();
                 }
-                self.commit("Clear a pad");
+                self.commit(tr("Clear a pad"));
             }
             PadOp::RemoveLayer => {
                 if let Some(l) = self.project.channels[ch].instrument.pads.get_mut(pad) {
                     l.pop();
                 }
                 select(ch, pad, 0);
-                self.commit("Remove a velocity layer");
+                self.commit(tr("Remove a velocity layer"));
             }
             PadOp::Reverse => {
                 let id = pad_param(pad, S_REVERSE);
                 let on = self.pad_value(ch, id) > 0.5;
                 self.project.channels[ch].instrument.set(id, if on { 0.0 } else { 1.0 });
-                self.commit("Reverse a pad");
+                self.commit(tr("Reverse a pad"));
             }
             PadOp::Choke(g) => {
                 self.project.channels[ch].instrument.set(pad_param(pad, S_CHOKE), f32::from(g));
-                self.commit("Choke group");
+                self.commit(tr("Choke group"));
             }
             PadOp::Copy => {
                 let def = &self.project.channels[ch].instrument;
                 let params = def.params.iter().filter(|(id, _)| (first..last).contains(id)).map(|&(id, v)| (id - first, v)).collect();
                 let layers = def.pads.get(pad).cloned().unwrap_or_default();
                 CLIPBOARD.with(|c| *c.borrow_mut() = Some(PadClip { params, layers }));
-                self.toast(&format!("{} copied", PAD_NAMES[pad]));
+                self.toast(&tr_fmt!("{} copied", pad_name(pad)));
             }
             PadOp::Paste => {
                 let Some(clip) = CLIPBOARD.with(|c| c.borrow().clone()) else { return };
@@ -220,7 +255,7 @@ impl App {
                     def.pads.resize(pad + 1, Vec::new());
                 }
                 def.pads[pad] = clip.layers;
-                self.commit("Paste a pad");
+                self.commit(tr("Paste a pad"));
             }
             PadOp::StarterKit => self.load_starter_kit(ch),
         }
@@ -250,7 +285,7 @@ impl App {
             plan.push((path, tune));
         }
         if plan.is_empty() {
-            self.toast("Could not build the starter kit");
+            self.toast(tr("Could not build the starter kit"));
             return;
         }
         let def = &mut self.project.channels[ch].instrument;
@@ -260,11 +295,11 @@ impl App {
             def.set(pad_param(pad, S_TUNE), tune);
         }
         select(ch, 0, 0);
-        self.commit("Load the starter kit");
+        self.commit(tr("Load the starter kit"));
         self.toast(&if from_library > 0 {
-            format!("Starter kit loaded ({from_library} pads from the library)")
+            tr_fmt!("Starter kit loaded ({} pads from the library)", from_library)
         } else {
-            "Starter kit loaded from the Drum Machine".to_string()
+            tr("Starter kit loaded from the Drum Machine").to_string()
         });
     }
 
@@ -312,7 +347,21 @@ impl App {
             }
             notes.sort_by_key(|n| n.start);
         }
-        self.commit("Screenshot beat");
+        self.commit(tr("Screenshot beat"));
+    }
+
+    /// A pad name that fits: whole, then its last words ("Low Electric 01"
+    /// becomes "Electric 01", keeping the number), then cut.
+    fn pad_label(&self, name: &str, max_w: f32) -> String {
+        let fits = |s: &str| self.fonts.measure(self.f.sans_med, 11.0, s) <= max_w;
+        let words: Vec<&str> = name.split_whitespace().collect();
+        for skip in 0..words.len().saturating_sub(1) {
+            let tail = words[skip..].join(" ");
+            if fits(&tail) {
+                return tail;
+            }
+        }
+        self.fit(self.f.sans_med, 11.0, name, max_w)
     }
 
     /// The Drum Pads card.
@@ -367,8 +416,8 @@ impl App {
                 let col = t.accent.mix(t.on_accent, glow).alpha(0.55 + 0.35 * glow);
                 mini_wave(c, &peaks, w, col);
             }
-            let label = layers.first().filter(|p| !is_kit_render(p)).map_or_else(|| PAD_NAMES[pad].to_string(), |p| stem(p));
-            let label = self.short_label(self.f.sans_med, 11.0, &label, face.w - 30.0);
+            let label = layers.first().filter(|p| !is_kit_render(p)).map_or_else(|| pad_name(pad).to_string(), |p| short_stem(p));
+            let label = self.pad_label(&label, face.w - 30.0);
             let label_col = if loaded { ink } else { t.muted.mix(t.text2, hv) };
             self.text(c, self.f.sans_med, 11.0, face.x + 7.0, face.y + 10.0, &label, label_col);
             // Choke group and velocity layers, top right.
@@ -383,12 +432,13 @@ impl App {
                 bx -= 6.0;
             }
             if hov {
-                let what = layers.first().map_or("Empty".to_string(), |p| stem(p));
+                let what = layers.first().map_or(tr("Empty").to_string(), |p| stem(p));
                 self.set_tip(
-                    &format!(
-                        "{} · note {} · {what}\nClick: play (higher is louder) · right-click: menu\nDrop a WAV here · Shift + drop: add a velocity layer",
-                        PAD_NAMES[pad],
-                        FIRST_NOTE as usize + pad
+                    &tr_fmt!(
+                        "{} · note {} · {}\nClick: play (higher is louder) · right-click: menu\nDrop a WAV here · Shift + drop: add a velocity layer",
+                        pad_name(pad),
+                        FIRST_NOTE as usize + pad,
+                        what
                     ),
                     "",
                 );
@@ -419,7 +469,7 @@ impl App {
         // Header: pad name, reverse toggle, layer chips.
         let reversed = self.pad_value(ch, pad_param(pad, S_REVERSE)) > 0.5;
         let rev = Rect::new(r.right() - 30.0, r.y + 4.0, 24.0, 24.0);
-        if self.icon_button(c, input, wid("pads-rev", ch, pad), rev, Icon::Swap, reversed, ("Reverse", "")) {
+        if self.icon_button(c, input, wid("pads-rev", ch, pad), rev, Icon::Swap, reversed, (tr("Reverse"), "")) {
             self.pad_action(ch, pad, PadOp::Reverse);
         }
         let mut chip_x = rev.x - 4.0;
@@ -432,7 +482,7 @@ impl App {
             c.fill_rrect(chip, 5.0, if on { t.accent } else { t.raised.mix(t.raised_hi, f32::from(u8::from(hov))) });
             self.text_center(c, self.f.mono, 9.0, chip.x + 11.0, chip.y + 8.0, &format!("V{}", k + 1), if on { t.on_accent } else { t.text2 });
             if hov {
-                self.set_tip(&format!("Velocity layer {} of {} (softest first): {}", k + 1, layers.len(), stem(&layers[k])), "");
+                self.set_tip(&tr_fmt!("Velocity layer {} of {} (softest first): {}", k + 1, layers.len(), stem(&layers[k])), "");
                 if input.pressed {
                     select(ch, pad, k);
                     let vel = ((k as f32 + 0.5) / layers.len() as f32).clamp(0.05, 1.0);
@@ -440,7 +490,7 @@ impl App {
                 }
             }
         }
-        let title = layers.get(layer).map_or_else(|| PAD_NAMES[pad].to_string(), |p| stem(p));
+        let title = layers.get(layer).map_or_else(|| pad_name(pad).to_string(), |p| stem(p));
         let title = self.fit(self.f.sans_med, 11.0, &title, chip_x - r.x - 14.0);
         self.text(c, self.f.sans_med, 11.0, r.x + 10.0, r.y + 16.0, &title, t.text2);
 
@@ -448,7 +498,7 @@ impl App {
         let kit = Rect::new(r.x + 8.0, r.bottom() - 30.0, 100.0, 24.0);
         self.kit_button(c, input, kit, ch);
         let Some(path) = layers.get(layer).cloned() else {
-            self.empty_state(c, g, Icon::Sample, "Drop a WAV on a pad");
+            self.empty_state(c, g, Icon::Sample, tr("Drop a WAV on a pad"));
             return;
         };
         let (Some(peaks), Some(sample)) = (self.waveform(&path), self.samples.get(&path).cloned()) else { return };
@@ -510,7 +560,7 @@ impl App {
         }
         let hv = self.hover_anim(start_id, hov || self.is_dragging(start_id));
         if hov {
-            self.set_tip("Start: drag to skip the beginning of the sample", "");
+            self.set_tip(tr("Start: drag to skip the beginning of the sample"), "");
             self.set_cursor(Cursor::ResizeH);
         }
         c.fill_rect(Rect::new(sx.round() - 1.0, g.y - 2.0, 2.0, g.h + 4.0), t.text.alpha(0.6 + 0.4 * hv));
@@ -536,7 +586,7 @@ impl App {
         }
         let hv = self.hover_anim(decay_id, hov || self.is_dragging(decay_id));
         if hov {
-            self.set_tip("Decay: drag left to shorten the hit, all the way right for the full sample", "");
+            self.set_tip(tr("Decay: drag left to shorten the hit, all the way right for the full sample"), "");
             self.set_cursor(Cursor::ResizeH);
         }
         let hy = dy.clamp(g.y + 5.0, g.bottom() - 5.0);
@@ -555,9 +605,9 @@ impl App {
         let hv = self.hover_anim(id, hov);
         c.fill_rrect(r, 8.0, t.raised.mix(t.raised_hi, hv));
         draw_icon(c, Icon::Preset, r.x + 13.0, r.y + r.h * 0.5, 13.0, t.accent);
-        self.text(c, self.f.sans_med, 11.0, r.x + 25.0, r.y + r.h * 0.5, "Starter kit", t.text2.mix(t.text, hv));
+        self.text(c, self.f.sans_med, 11.0, r.x + 25.0, r.y + r.h * 0.5, tr("Starter kit"), t.text2.mix(t.text, hv));
         if hov {
-            self.set_tip("Load the starter kit on all sixteen pads", "");
+            self.set_tip(tr("Load the starter kit on all sixteen pads"), "");
             self.set_cursor(Cursor::Hand);
             if input.pressed {
                 self.load_starter_kit(ch);
@@ -570,11 +620,11 @@ impl App {
         let t = self.theme;
         let find = |id: u32| params.iter().find(|p| p.id == id);
         c.fill_rect(Rect::new(x - GAP * 0.5, body.y + 20.0, 1.0, body.h - 28.0), t.hairline);
-        let head = format!("Pad {} · {}", pad + 1, PAD_NAMES[pad]);
+        let head = tr_fmt!("Pad {} · {}", pad + 1, pad_name(pad));
         self.text(c, self.f.sans_med, 11.0, x + 4.0, body.y + 6.0, &head, t.muted);
         let mx = x + 6.0 * CELL_W + GAP;
         c.fill_rect(Rect::new(mx - GAP * 0.5, body.y + 20.0, 1.0, body.h - 28.0), t.hairline);
-        self.text(c, self.f.sans_med, 11.0, mx + 4.0, body.y + 6.0, "Master", t.muted);
+        self.text(c, self.f.sans_med, 11.0, mx + 4.0, body.y + 6.0, tr_ctx("drum pads", "Master"), t.muted);
         let mut cells: Vec<(Rect, u32)> = Vec::with_capacity(13);
         for (row, slots) in ROWS.iter().enumerate() {
             for (col, &slot) in slots.iter().enumerate() {
