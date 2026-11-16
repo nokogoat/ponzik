@@ -224,7 +224,7 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
     let (w, h) = window.size();
     let started = Instant::now();
     let mut canvas = Canvas::new(w as usize, h as usize);
-    let mut scale = system_scale(Some(window));
+    let mut scale = system_scale(Some(window)) * app.ui_scale();
     canvas.set_scale(scale);
     let mut input = Input::default();
     let mut clicks = ClickTracker::default();
@@ -258,8 +258,8 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
         }
         window.poll_events(&mut events);
 
-        // Échelle de l'image : la souris immobile garde sa place à l'écran.
-        let k = system_scale(Some(window));
+        // Échelle de l'image (écran × réglage) : la souris immobile garde sa place à l'écran.
+        let k = system_scale(Some(window)) * app.ui_scale();
         if k != scale {
             (input.x, input.y) = (input.x * scale / k, input.y * scale / k);
             scale = k;
@@ -306,7 +306,8 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
             }
             window.set_cursor(app.cursor);
             window.present(canvas.pixels(), w, h).map_err(|e| e.to_string())?;
-            dirty = false;
+            // Taille de l'interface changée pendant l'image : la suivante suit tout de suite.
+            dirty = system_scale(Some(window)) * app.ui_scale() != scale;
         }
     }
 }
@@ -429,7 +430,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     if let Some(n) = std::env::var("PONZIK_FLOAT").ok().and_then(|v| v.parse().ok()) {
         app.screenshot_floats(n);
     }
-    let scale = system_scale(None);
+    // PONZIK_UI_SIZE=125 : taille de l'interface choisie, en %.
+    if let Some(pct) = std::env::var("PONZIK_UI_SIZE").ok().and_then(|v| v.trim().parse::<f32>().ok()) {
+        app.prefs.ui_scale = settings::UiScale::new(pct / 100.0);
+    }
+    let scale = system_scale(None) * app.ui_scale();
     let (pw, ph) = ((width as f32 * scale).round() as usize, (height as f32 * scale).round() as usize);
     let mut canvas = Canvas::new(pw, ph);
     canvas.set_scale(scale);

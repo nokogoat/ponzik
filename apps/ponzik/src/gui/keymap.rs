@@ -197,6 +197,9 @@ pub enum Shortcut {
     NextView,
     ToggleBrowser,
     TogglePanel,
+    ZoomIn,
+    ZoomOut,
+    ZoomReset,
     NewPattern,
     NextPattern,
     PrevPattern,
@@ -217,7 +220,7 @@ pub enum Shortcut {
 pub const GROUPS: [&str; 5] = ["Transport", "Vues", "Pattern", "Édition", "Fichier"];
 
 impl Shortcut {
-    pub const ALL: [Shortcut; 29] = [
+    pub const ALL: [Shortcut; 32] = [
         Shortcut::PlayStop,
         Shortcut::ToggleMode,
         Shortcut::Record,
@@ -233,6 +236,9 @@ impl Shortcut {
         Shortcut::NextView,
         Shortcut::ToggleBrowser,
         Shortcut::TogglePanel,
+        Shortcut::ZoomIn,
+        Shortcut::ZoomOut,
+        Shortcut::ZoomReset,
         Shortcut::NewPattern,
         Shortcut::NextPattern,
         Shortcut::PrevPattern,
@@ -267,6 +273,9 @@ impl Shortcut {
             Shortcut::NextView => "next_view",
             Shortcut::ToggleBrowser => "toggle_browser",
             Shortcut::TogglePanel => "toggle_panel",
+            Shortcut::ZoomIn => "ui_zoom_in",
+            Shortcut::ZoomOut => "ui_zoom_out",
+            Shortcut::ZoomReset => "ui_zoom_reset",
             Shortcut::NewPattern => "new_pattern",
             Shortcut::NextPattern => "next_pattern",
             Shortcut::PrevPattern => "prev_pattern",
@@ -305,6 +314,9 @@ impl Shortcut {
             Shortcut::NextView => "Vue suivante",
             Shortcut::ToggleBrowser => "Navigateur",
             Shortcut::TogglePanel => "Panneau d'appareils",
+            Shortcut::ZoomIn => "Agrandir l'interface",
+            Shortcut::ZoomOut => "Réduire l'interface",
+            Shortcut::ZoomReset => "Interface à 100 %",
             Shortcut::NewPattern => "Nouveau pattern",
             Shortcut::NextPattern => "Pattern suivant",
             Shortcut::PrevPattern => "Pattern précédent",
@@ -339,6 +351,8 @@ impl Shortcut {
             Shortcut::NextView => Icon::ChevronRight,
             Shortcut::ToggleBrowser => Icon::Sidebar,
             Shortcut::TogglePanel => Icon::Panel,
+            Shortcut::ZoomIn | Shortcut::ZoomOut => Icon::Search,
+            Shortcut::ZoomReset => Icon::Reset,
             Shortcut::NewPattern => Icon::Plus,
             Shortcut::NextPattern => Icon::ChevronRight,
             Shortcut::PrevPattern => Icon::ChevronLeft,
@@ -372,7 +386,10 @@ impl Shortcut {
             | Shortcut::ViewLab
             | Shortcut::NextView
             | Shortcut::ToggleBrowser
-            | Shortcut::TogglePanel => "Vues",
+            | Shortcut::TogglePanel
+            | Shortcut::ZoomIn
+            | Shortcut::ZoomOut
+            | Shortcut::ZoomReset => "Vues",
             Shortcut::NewPattern | Shortcut::NextPattern | Shortcut::PrevPattern => "Pattern",
             Shortcut::Undo
             | Shortcut::Redo
@@ -403,6 +420,9 @@ impl Shortcut {
             Shortcut::NextView => Combo::key(Tab),
             Shortcut::ToggleBrowser => Combo::alt(F(8)),
             Shortcut::TogglePanel => return None,
+            Shortcut::ZoomIn => Combo::ctrl(Char('=')),
+            Shortcut::ZoomOut => Combo::ctrl(Char('-')),
+            Shortcut::ZoomReset => Combo::ctrl(Char('0')),
             Shortcut::NewPattern => Combo::key(F(4)),
             Shortcut::NextPattern => Combo::key(Char('+')),
             Shortcut::PrevPattern => Combo::key(Char('-')),
@@ -537,6 +557,12 @@ mod tests {
         assert_eq!(k.lookup(Key::Char('s'), CTRL), Some(Shortcut::Save));
         assert_eq!(k.lookup(Key::Char('s'), CTRL_SHIFT), Some(Shortcut::SaveAs));
         assert_eq!(k.lookup(Key::Char('s'), NONE), None);
+        // Taille de l'interface : Ctrl =, Ctrl −, Ctrl 0 ; sans Ctrl, + et − changent de pattern.
+        assert_eq!(k.lookup(Key::Char('='), CTRL), Some(Shortcut::ZoomIn));
+        assert_eq!(k.lookup(Key::Char('='), CTRL_SHIFT), Some(Shortcut::ZoomIn));
+        assert_eq!(k.lookup(Key::Char('-'), CTRL), Some(Shortcut::ZoomOut));
+        assert_eq!(k.lookup(Key::Char('0'), CTRL), Some(Shortcut::ZoomReset));
+        assert_eq!(k.lookup(Key::Char('-'), NONE), Some(Shortcut::PrevPattern));
         for s in Shortcut::ALL {
             if let Some(c) = s.default_combo() {
                 assert_eq!(k.conflict(c, s), None, "{s:?}");
@@ -555,7 +581,7 @@ mod tests {
 
     #[test]
     fn combo_text_round_trip() {
-        for text in ["ctrl+shift+s", "alt+f8", "space", "plus", "-", "ctrl+,", "f12", "tab"] {
+        for text in ["ctrl+shift+s", "alt+f8", "space", "plus", "-", "ctrl+,", "f12", "tab", "ctrl+=", "ctrl+-", "ctrl+0"] {
             let c = Combo::parse(text).unwrap_or_else(|| panic!("{text}"));
             assert_eq!(Combo::parse(&c.to_text()), Some(c), "{text}");
         }

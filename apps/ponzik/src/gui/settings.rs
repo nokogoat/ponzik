@@ -222,11 +222,64 @@ pub fn presets() -> [(&'static str, &'static str, Workspace); 5] {
     ]
 }
 
+/// Taille de l'interface choisie par l'utilisateur (75 % à 200 %), multipliée
+/// par l'échelle du système (écran HiDPI).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct UiScale(f32);
+
+impl Default for UiScale {
+    fn default() -> Self {
+        UiScale(1.0)
+    }
+}
+
+impl UiScale {
+    pub const MIN: f32 = 0.75;
+    pub const MAX: f32 = 2.0;
+
+    /// Bornée et arrondie au pas de 5 %.
+    pub fn new(v: f32) -> Self {
+        if !v.is_finite() {
+            return Self::default();
+        }
+        UiScale((v.clamp(Self::MIN, Self::MAX) * 20.0).round() / 20.0)
+    }
+
+    pub fn get(self) -> f32 {
+        self.0
+    }
+
+    pub fn percent(self) -> u32 {
+        (self.0 * 100.0).round() as u32
+    }
+
+    /// Cran suivant pour Ctrl = / Ctrl − : le multiple de 10 % au-dessus ou en dessous.
+    pub fn step(self, up: bool) -> Self {
+        let tenths = self.0 * 10.0;
+        let next = if up { (tenths + 1e-3).floor() + 1.0 } else { (tenths - 1e-3).ceil() - 1.0 };
+        Self::new(next / 10.0)
+    }
+
+    /// Position 0..1 sur la glissière, et retour.
+    fn fraction(self) -> f32 {
+        (self.0 - Self::MIN) / (Self::MAX - Self::MIN)
+    }
+
+    fn from_fraction(t: f32) -> Self {
+        Self::new(Self::MIN + t.clamp(0.0, 1.0) * (Self::MAX - Self::MIN))
+    }
+
+    fn from_json(j: &Json) -> Self {
+        j.get("ui_scale").and_then(Json::as_f64).map_or_else(Self::default, |v| Self::new(v as f32))
+    }
+}
+
 /// Réglages enregistrés et état de leur écran.
 #[derive(Default)]
 pub struct Prefs {
     pub ws: Workspace,
     pub keymap: Keymap,
+    pub ui_scale: UiScale,
     /// Action dont on attend la nouvelle touche.
     capture: Option<Shortcut>,
     /// Touche demandée déjà prise : (action, touche, action qui l'a).
@@ -316,12 +369,17 @@ impl App {
             self.theme = *th;
         }
         self.prefs.keymap = keymap;
+        self.prefs.ui_scale = UiScale::from_json(&j);
         self.apply_workspace(ws, false);
     }
 
     pub fn save_settings(&mut self) {
         self.sync_workspace();
-        let text = to_json(&self.prefs.ws, &self.prefs.keymap, self.theme.name).pretty();
+        let mut j = to_json(&self.prefs.ws, &self.prefs.keymap, self.theme.name);
+        if let Json::Obj(fields) = &mut j {
+            fields.push(("ui_scale".into(), (self.prefs.ui_scale.percent() as f64 / 100.0).into()));
+        }
+        let text = j.pretty();
         let path = settings_path();
         let tmp = path.with_extension("json.tmp");
         let res = path
@@ -359,6 +417,24 @@ impl App {
         if let Some((name, _, ws)) = presets().into_iter().nth(i) {
             self.apply_workspace(ws, true);
             self.toast(&format!("Profil : {name}"));
+        }
+    }
+
+    // --- Taille de l'interface ---
+
+    /// Taille choisie, à multiplier par l'échelle du système.
+    pub fn ui_scale(&self) -> f32 {
+        self.prefs.ui_scale.get()
+    }
+
+    /// Change la taille de l'interface et l'enregistre ; `announce` la montre en bulle.
+    pub fn set_ui_scale(&mut self, s: UiScale, announce: bool) {
+        if s != self.prefs.ui_scale {
+            self.prefs.ui_scale = s;
+            self.save_settings();
+        }
+        if announce {
+            self.toast(&format!("Taille de l'interface : {} %", s.percent()));
         }
     }
 
@@ -435,6 +511,14 @@ impl App {
             }
             Shortcut::ToggleBrowser => Action::ToggleSidebar,
             Shortcut::TogglePanel => Action::TogglePanel,
+            Shortcut::ZoomIn | Shortcut::ZoomOut | Shortcut::ZoomReset => {
+                let s = match s {
+                    Shortcut::ZoomReset => UiScale::default(),
+                    _ => self.prefs.ui_scale.step(s == Shortcut::ZoomIn),
+                };
+                self.set_ui_scale(s, true);
+                return;
+            }
             Shortcut::NewPattern => {
                 let p = self.project.add_pattern();
                 self.select_pattern(p);
@@ -752,6 +836,11 @@ impl App {
                 *hint = Some(format!("{label} · {desc}"));
             }
         }
+        let rows = cells.len().div_ceil(cols);
+        y += rows as f32 * (64.0 + gap) - gap + 18.0;
+        self.section(c, left.x, y, "Taille de l'interface");
+        self.ui_scale_slider(c, input, Rect::new(left.x, y + 20.0, left.w, 34.0), hint);
+
         if let Some(k) = toggled {
             let mut ws = current.clone();
             match k {
@@ -788,6 +877,57 @@ impl App {
             let cx = right.x + 14.0 + i as f32 * 34.0;
             c.fill_rrect(Rect::new(cx - 14.0, y + 42.0, 28.0, 28.0), 8.0, t.raised);
             draw_icon(c, v.icon(), cx, y + 56.0, 15.0, t.accent);
+        }
+    }
+
+    /// Glissière de la taille de l'interface, appliquée au relâchement : changer
+    /// l'échelle pendant le glisser déplacerait la glissière sous la souris.
+    fn ui_scale_slider(&mut self, c: &mut Canvas, input: &Input, r: Rect, hint: &mut Option<String>) {
+        let t = self.theme;
+        let id = wid("set-ui-scale", 0, 0);
+        let track = Rect::new(r.x + 10.0, r.y, r.w - 10.0 - 96.0, r.h);
+        let at = |x: f32| UiScale::from_fraction((x - track.x) / track.w);
+        let hov = self.hovered(input, id, track);
+        let hv = self.hover_anim(id, hov || self.is_dragging(id));
+        if hov && input.pressed {
+            self.begin_drag(id, input, 0.0);
+        }
+        let mut value = self.prefs.ui_scale;
+        if self.is_dragging(id) {
+            value = at(input.x);
+            self.set_cursor(ponzik_window::Cursor::ResizeH);
+            if input.released || !input.down {
+                self.set_ui_scale(value, false);
+            }
+        }
+        if hov && input.double {
+            self.drag = None;
+            value = UiScale::default();
+            self.set_ui_scale(value, false);
+        }
+        let pos = self.anim.to(id ^ 0x504f53, value.fraction(), T_PRESS);
+        let cy = track.y + track.h * 0.5;
+        let bar = Rect::new(track.x, cy - 3.0, track.w, 6.0);
+        c.fill_rrect(bar, 3.0, t.well.mix(t.raised_hi, hv * 0.5));
+        c.fill_rrect(Rect::new(bar.x, bar.y, bar.w * pos, bar.h), 3.0, t.accent.alpha(0.55 + 0.45 * hv));
+        // Repère de 100 %.
+        let x100 = track.x + UiScale::default().fraction() * track.w;
+        c.fill_rect(Rect::new(x100 - 0.5, cy + 6.0, 1.0, 5.0), t.muted.alpha(0.6));
+        let kx = track.x + pos * track.w;
+        c.fill_circle(kx, cy, 8.0 + hv, t.text);
+        c.fill_circle(kx, cy, 3.0, t.accent);
+        let label = format!("{} %", value.percent());
+        self.text_right(c, self.f.mono_med, 14.0, r.right() - 34.0, cy, &label, t.text);
+        // Retour à 100 %.
+        let reset = Rect::new(r.right() - 28.0, cy - 14.0, 28.0, 28.0);
+        let changed = value != UiScale::default();
+        let key = self.key_label(Shortcut::ZoomReset);
+        if changed && self.icon_button(c, input, wid("set-ui-scale-reset", 0, 0), reset, Icon::Reset, false, ("Revenir à 100 %", &key)) {
+            self.set_ui_scale(UiScale::default(), false);
+        }
+        if hov || self.is_dragging(id) {
+            let (up, down) = (self.key_label(Shortcut::ZoomIn), self.key_label(Shortcut::ZoomOut));
+            *hint = Some(format!("Taille du texte et des contrôles, en plus de l'échelle de l'écran · {up} / {down}"));
         }
     }
 
@@ -1128,6 +1268,30 @@ mod tests {
         assert!(ws.panel);
         assert_eq!(keymap.get(Shortcut::Undo), Some(Combo::ctrl(Key::Char('u'))));
         assert_eq!(keymap.get(Shortcut::Save), Shortcut::Save.default_combo());
+    }
+
+    #[test]
+    fn ui_scale_snaps_steps_and_loads() {
+        assert_eq!(UiScale::new(1.234).get(), 1.25);
+        assert_eq!(UiScale::new(0.1).get(), UiScale::MIN);
+        assert_eq!(UiScale::new(9.0).get(), UiScale::MAX);
+        assert_eq!(UiScale::new(f32::NAN), UiScale::default());
+        // Crans de 10 %, raccrochés à la dizaine depuis une valeur de 5 %.
+        assert_eq!(UiScale::new(1.0).step(true).percent(), 110);
+        assert_eq!(UiScale::new(1.0).step(false).percent(), 90);
+        assert_eq!(UiScale::new(1.15).step(true).percent(), 120);
+        assert_eq!(UiScale::new(1.15).step(false).percent(), 110);
+        assert_eq!(UiScale::new(0.8).step(false).percent(), 75);
+        assert_eq!(UiScale::new(0.75).step(false).percent(), 75);
+        assert_eq!(UiScale::new(2.0).step(true).percent(), 200);
+        // Glissière : bornes et pas de 5 %.
+        assert_eq!(UiScale::from_fraction(0.0).percent(), 75);
+        assert_eq!(UiScale::from_fraction(1.0).percent(), 200);
+        assert_eq!(UiScale::from_fraction(UiScale::default().fraction()), UiScale::default());
+        // Fichier : absent ou illisible → 100 %.
+        assert_eq!(UiScale::from_json(&json::parse(r#"{"ui_scale": 1.5}"#).unwrap()).percent(), 150);
+        assert_eq!(UiScale::from_json(&json::parse(r#"{"ui_scale": "grand"}"#).unwrap()), UiScale::default());
+        assert_eq!(UiScale::from_json(&json::parse("{}").unwrap()), UiScale::default());
     }
 
     #[test]
