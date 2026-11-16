@@ -27,6 +27,7 @@ pub mod history;
 pub mod io;
 pub mod flp;
 pub mod json;
+pub mod library;
 pub mod midi_file;
 pub mod presets;
 pub mod render;
