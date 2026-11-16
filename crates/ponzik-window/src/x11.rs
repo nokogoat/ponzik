@@ -610,7 +610,12 @@ pub(crate) struct Window {
     /// whether the user may resize it.
     frame_extents: u32,
     resizable: bool,
+    /// Size asked by `set_plugin_size` and when, until the server confirms it.
+    awaiting: Option<((u32, u32), Instant)>,
 }
+
+/// How long the sizes reported after our own resize are taken as stale.
+const RESIZE_WAIT: Duration = Duration::from_millis(500);
 
 /// `WM_NORMAL_HINTS` of a plugin window: position given by the user (so the
 /// window manager keeps it), fixed size unless resizable.
@@ -689,6 +694,7 @@ impl Window {
             resources_changed: false,
             frame_extents: 0,
             resizable: true,
+            awaiting: None,
             setup,
         };
         win.window = win.alloc_id();
@@ -784,6 +790,7 @@ impl Window {
             resources_changed: false,
             frame_extents,
             resizable: o.resizable,
+            awaiting: None,
             setup,
         };
         win.window = win.alloc_id();
@@ -838,6 +845,7 @@ impl Window {
             return;
         }
         self.size = size;
+        self.awaiting = Some((size, Instant::now()));
         if !self.resizable {
             let hints = plugin_hints(None, size, false);
             let _ = self.set_property(ATOM_WM_NORMAL_HINTS, ATOM_WM_SIZE_HINTS, 32, &hints);
@@ -909,6 +917,15 @@ impl Window {
         match msg {
             Incoming::Event(ev) => {
                 if let Event::Resized { width, height } = ev {
+                    // Our own resize: sizes the server reports before it are stale.
+                    if let Some((target, since)) = self.awaiting {
+                        if (width, height) == target || since.elapsed() >= RESIZE_WAIT {
+                            self.awaiting = None;
+                        }
+                        if (width, height) == target || self.awaiting.is_some() {
+                            return None;
+                        }
+                    }
                     if (width, height) == self.size {
                         return None;
                     }
