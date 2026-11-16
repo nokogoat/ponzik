@@ -5303,3 +5303,7 @@ msgstr "clic"
 
 msgid "{} BPM"
 msgstr "{} BPM"
+
+msgctxt "section"
+msgid "Drop"
+msgstr "Drop"

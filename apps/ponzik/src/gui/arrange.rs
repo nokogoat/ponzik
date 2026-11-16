@@ -3,7 +3,7 @@
 //! the tempo map.
 
 use ponzik_engine::{PlayMode, TempoMap, TimeSig};
-use ponzik_i18n::{tr, tr_fmt, tr_noop};
+use ponzik_i18n::{tr, tr_ctx, tr_fmt, tr_noop};
 use ponzik_project::{MARKER_COLORS, Placement};
 use ponzik_ui::{Canvas, Color, Path, Rect};
 use ponzik_window::Cursor;
@@ -595,7 +595,7 @@ impl App {
         let bar = ponzik_engine::TICKS_PER_BAR;
         let p = &mut self.project;
         p.markers.clear();
-        for (b, name) in [(0, tr("Intro")), (4, tr("Build-up")), (8, tr("Drop")), (16, tr("Break"))] {
+        for (b, name) in [(0, tr("Intro")), (4, tr("Build-up")), (8, tr_ctx("section", "Drop")), (16, tr("Break"))] {
             p.add_marker(b * bar, name);
         }
         p.set_tempo_change(8 * bar, p.bpm, false);
