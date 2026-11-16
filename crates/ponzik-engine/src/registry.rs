@@ -362,6 +362,14 @@ pub fn effect_kind(id: &str) -> Option<&'static EffectKind> {
     effects().iter().find(|k| k.id == id)
 }
 
+/// Effets qui écoutent une entrée latérale ([`Effect::sidechain`]).
+const SIDECHAIN_EFFECTS: [&str; 4] = ["compressor", "bus_comp", "gate", "ducker"];
+
+/// Vrai si l'effet `id` accepte une piste clé.
+pub fn takes_sidechain(id: &str) -> bool {
+    SIDECHAIN_EFFECTS.contains(&id)
+}
+
 pub fn note_fx_kind(id: &str) -> Option<&'static NoteFxKind> {
     note_fx().iter().find(|k| k.id == id)
 }
@@ -381,6 +389,14 @@ pub fn create_effect(id: &str) -> Option<Box<dyn Effect>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sidechain_effects_exist() {
+        for id in SIDECHAIN_EFFECTS {
+            assert!(effect_kind(id).is_some(), "{id}");
+        }
+        assert!(!takes_sidechain("reverb"));
+    }
 
     #[test]
     fn every_kind_reports_its_own_id() {

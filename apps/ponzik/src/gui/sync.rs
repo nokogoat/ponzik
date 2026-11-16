@@ -120,12 +120,23 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: &dyn Fn(&str
                     if x.bypass != y.bypass {
                         cmds.push(Command::SetInsertBypass { track: t, slot, bypass: y.bypass });
                     }
+                    if x.sidechain != y.sidechain {
+                        cmds.push(Command::SetInsertSidechain { track: t, slot, key: y.sidechain });
+                        routing = true;
+                    }
                 }
                 (None, None) => {}
                 (_, y) => {
                     let effect = y.as_ref().and_then(|d| Project::make_effect(d, sample_rate, new.bpm));
                     cmds.push(Command::SetInsert { track: t, slot, effect });
                     cmds.push(Command::SetInsertBypass { track: t, slot, bypass: y.as_ref().is_some_and(|d| d.bypass) });
+                    // Le nouvel effet ne garde pas la clé de l'ancien.
+                    let key = y.as_ref().and_then(|d| d.sidechain);
+                    let old_key = a.inserts[slot].as_ref().and_then(|d| d.sidechain);
+                    if key.is_some() || old_key.is_some() {
+                        cmds.push(Command::SetInsertSidechain { track: t, slot, key });
+                        routing |= key != old_key;
+                    }
                 }
             }
         }
@@ -170,5 +181,27 @@ mod tests {
         let cmds = names(&diff(&a, &c, 48_000.0, &none));
         assert!(cmds.contains(&"RemoveChannel".to_string()));
         assert!(cmds.contains(&"SetSequence".to_string()));
+    }
+
+    #[test]
+    fn sidechain_key_is_sent_and_reorders() {
+        let mut a = demo_project();
+        a.tracks[3].inserts[5] = Some(ponzik_project::EffectDef::new("compressor"));
+        let mut b = a.clone();
+        b.tracks[3].inserts[5].as_mut().unwrap().sidechain = Some(2);
+        let cmds = diff(&a, &b, 48_000.0, &none);
+        assert!(cmds.iter().any(|c| matches!(c, Command::SetInsertSidechain { track: 3, slot: 5, key: Some(2) })));
+        let order = cmds.iter().find_map(|c| match c {
+            Command::SetRoutingOrder(o) => Some(o.clone()),
+            _ => None,
+        });
+        let order = order.expect("nouvel ordre de routage");
+        let pos = |t| order.iter().position(|&x| x == t).unwrap();
+        assert!(pos(2) < pos(3));
+        // Retirer l'effet libère la clé.
+        let mut c = b.clone();
+        c.tracks[3].inserts[5] = None;
+        let cmds = diff(&b, &c, 48_000.0, &none);
+        assert!(cmds.iter().any(|c| matches!(c, Command::SetInsertSidechain { track: 3, slot: 5, key: None })));
     }
 }
