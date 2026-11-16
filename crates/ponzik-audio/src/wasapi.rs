@@ -59,8 +59,10 @@ const WAIT_TIMEOUT: u32 = 0x102;
 const WAVE_FORMAT_PCM: u16 = 1;
 const WAVE_FORMAT_IEEE_FLOAT: u16 = 3;
 const WAVE_FORMAT_EXTENSIBLE: u16 = 0xFFFE;
-/// Tampon demandé, en unités de 100 ns (20 ms).
-const BUFFER_HNS: i64 = 200_000;
+/// Tampon demandé, en unités de 100 ns.
+fn buffer_hns() -> i64 {
+    i64::from(crate::target_latency_ms()) * 10_000
+}
 
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
@@ -326,7 +328,7 @@ impl Client {
                 client.this(),
                 AUDCLNT_SHAREMODE_SHARED,
                 AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
-                BUFFER_HNS,
+                buffer_hns(),
                 0,
                 fmt,
                 null(),

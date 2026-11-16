@@ -43,8 +43,6 @@ const SND_PCM_ACCESS_RW_INTERLEAVED: c_int = 3;
 const SND_PCM_FORMAT_FLOAT: c_int = 14;
 #[cfg(target_endian = "big")]
 const SND_PCM_FORMAT_FLOAT: c_int = 15;
-/// Latence visée ; ALSA découpe ce tampon en périodes.
-const LATENCY_US: c_uint = 20_000;
 
 struct Pcm(*mut SndPcm);
 
@@ -97,7 +95,8 @@ fn open_pcm(stream: c_int, channels: u16, rate: u32) -> Result<(Pcm, usize, c_ul
                 channels as c_uint,
                 rate,
                 1, // ALSA rééchantillonne si la carte ne suit pas
-                LATENCY_US,
+                // Latence visée ; ALSA découpe ce tampon en périodes.
+                crate::target_latency_ms() * 1000,
             ),
             "snd_pcm_set_params",
         )?;

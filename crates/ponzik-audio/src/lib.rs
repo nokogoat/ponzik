@@ -25,6 +25,12 @@ mod backend;
 #[path = "unsupported.rs"]
 mod backend;
 
+/// Latence de sortie visée, en millisecondes : 10 par défaut, ou
+/// `PONZIK_LATENCY_MS` (2 à 100) pour une machine qui décroche.
+pub fn target_latency_ms() -> u32 {
+    std::env::var("PONZIK_LATENCY_MS").ok().and_then(|v| v.trim().parse::<u32>().ok()).map_or(10, |ms| ms.clamp(2, 100))
+}
+
 /// Ce qu'on demande au système quand il nous laisse le choix.
 const PREFERRED: OutputConfig = OutputConfig { sample_rate: 48_000, channels: 2 };
 
