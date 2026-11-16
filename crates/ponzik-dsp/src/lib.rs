@@ -10,6 +10,7 @@ pub mod biquad;
 pub mod delay;
 pub mod dynamics;
 pub mod env;
+pub mod fft;
 pub mod filter;
 pub mod lfo;
 pub mod noise;
