@@ -1,6 +1,13 @@
 //! Plugin CLAP minimal pour les tests de `ponzik-clap` : un effet « gain »
 //! (un paramètre) et un instrument « sinus » monophonique.
 //!
+//! Le gain a une interface (`clap.gui`) réduite à sa comptabilité : taille,
+//! échelle, parent, visibilité. Créée, elle arme une minuterie
+//! (`clap.timer-support`) dont le premier tick simule une édition du gain à
+//! 0,25 (gestes et valeur sortent au `process` suivant), et, sous Unix, un tube
+//! surveillé (`clap.posix-fd-support`) dont la lecture demande à l'hôte un
+//! redimensionnement à 420 × 260.
+//!
 //! Construire avec `cargo build -p ponzik-clap-test-plugin` avant
 //! `cargo test -p ponzik-clap`.
 
@@ -86,11 +93,36 @@ struct Test {
     freq: f64,
     amp: f64,
     phase: f64,
+    host: *const ClapHost,
+    gui: Gui,
 }
+
+/// Interface de test : rien n'est dessiné, tout est noté.
+#[derive(Default)]
+struct Gui {
+    created: bool,
+    shown: bool,
+    scale: f64,
+    size: (u32, u32),
+    parent: usize,
+    timer: Option<ClapId>,
+    ticks: u32,
+    /// Tube (lecture, écriture) surveillé par l'hôte.
+    pipe: Option<(i32, i32)>,
+    /// Édition simulée, sortie au prochain `process`.
+    edit: Option<f64>,
+}
+
+/// Valeur que l'interface de test donne au gain au premier tick.
+pub const GUI_EDIT: f64 = 0.25;
+/// Taille demandée à l'hôte quand le tube devient lisible.
+pub const GUI_REQUEST: (u32, u32) = (420, 260);
+/// Taille de l'interface à l'échelle 1.
+pub const GUI_SIZE: (u32, u32) = (300, 200);
 
 unsafe extern "C" fn create_plugin(
     _: *const ClapPluginFactory,
-    _: *const ClapHost,
+    host: *const ClapHost,
     id: *const c_char,
 ) -> *const ClapPlugin {
     // SAFETY : chaîne C fournie par l'hôte.
@@ -122,6 +154,8 @@ unsafe extern "C" fn create_plugin(
         freq: 0.0,
         amp: 0.0,
         phase: 0.0,
+        host,
+        gui: Gui::default(),
     });
     Box::into_raw(t) as *const ClapPlugin
 }
@@ -138,6 +172,11 @@ unsafe extern "C" fn p_init(_: *const ClapPlugin) -> bool {
 unsafe extern "C" fn p_noop(_: *const ClapPlugin) {}
 
 unsafe extern "C" fn destroy(p: *const ClapPlugin) {
+    // Un hôte correct a détruit l'interface avant le plugin.
+    if me(p).gui.created {
+        eprintln!("ponzik-clap-test-plugin : plugin détruit avant son interface");
+        std::process::abort();
+    }
     // SAFETY : allocation de `create_plugin`.
     drop(unsafe { Box::from_raw(p as *mut Test) });
 }
@@ -182,6 +221,10 @@ unsafe extern "C" fn process(p: *const ClapPlugin, process: *const ClapProcess) 
     let pr = unsafe { &*process };
     handle_events(t, pr.in_events);
     let n = pr.frames_count as usize;
+    if let Some(v) = t.gui.edit.take() {
+        t.gain = v;
+        push_edit(pr.out_events, v);
+    }
     let out = unsafe { &*pr.audio_outputs };
     let outs = unsafe { std::slice::from_raw_parts(out.data32, out.channel_count as usize) };
     if t.instrument {
@@ -215,6 +258,12 @@ unsafe extern "C" fn get_extension(p: *const ClapPlugin, id: *const c_char) -> *
         &PARAMS as *const ClapPluginParams as *const c_void
     } else if id == CLAP_EXT_NOTE_PORTS && instrument {
         &NOTE_PORTS as *const ClapPluginNotePorts as *const c_void
+    } else if id == CLAP_EXT_GUI && !instrument {
+        &GUI as *const ClapPluginGui as *const c_void
+    } else if id == CLAP_EXT_TIMER_SUPPORT {
+        &TIMER as *const ClapPluginTimerSupport as *const c_void
+    } else if id == CLAP_EXT_POSIX_FD_SUPPORT {
+        &FD as *const ClapPluginPosixFdSupport as *const c_void
     } else if id == CLAP_EXT_LATENCY && !instrument {
         &LATENCY as *const ClapPluginLatency as *const c_void
     } else {
@@ -321,4 +370,258 @@ unsafe extern "C" fn text_to_value(_: *const ClapPlugin, _: ClapId, _: *const c_
 
 unsafe extern "C" fn flush(p: *const ClapPlugin, input: *const ClapInputEvents, _: *const ClapOutputEvents) {
     handle_events(me(p), input);
+}
+
+// --- Interface (comptabilité seulement) -------------------------------------
+
+/// Édition simulée : geste, valeur, fin de geste.
+fn push_edit(out: *const ClapOutputEvents, value: f64) {
+    let header = |kind: u16, size: usize| ClapEventHeader {
+        size: size as u32,
+        time: 0,
+        space_id: CLAP_CORE_EVENT_SPACE_ID,
+        kind,
+        flags: 0,
+    };
+    let gesture = |kind| ClapEventParamGesture {
+        header: header(kind, size_of::<ClapEventParamGesture>()),
+        param_id: GAIN_PARAM,
+    };
+    let begin = gesture(CLAP_EVENT_PARAM_GESTURE_BEGIN);
+    let end = gesture(CLAP_EVENT_PARAM_GESTURE_END);
+    let param = ClapEventParamValue {
+        header: header(CLAP_EVENT_PARAM_VALUE, size_of::<ClapEventParamValue>()),
+        param_id: GAIN_PARAM,
+        cookie: std::ptr::null_mut(),
+        note_id: -1,
+        port_index: -1,
+        channel: -1,
+        key: -1,
+        value,
+    };
+    // SAFETY : file fournie par l'hôte pendant `process`.
+    unsafe {
+        let list = &*out;
+        (list.try_push)(list, &begin.header);
+        (list.try_push)(list, &param.header);
+        (list.try_push)(list, &end.header);
+    }
+}
+
+/// Extension de l'hôte, nulle s'il ne la propose pas.
+fn host_ext<T>(t: &Test, id: &[u8]) -> Option<&'static T> {
+    // SAFETY : hôte fourni à la création, vivant tant que le plugin l'est.
+    unsafe { ((*t.host).get_extension)(t.host, id.as_ptr().cast()).cast::<T>().as_ref() }
+}
+
+#[cfg(target_os = "macos")]
+const API: &CStr = c"cocoa";
+#[cfg(windows)]
+const API: &CStr = c"win32";
+#[cfg(not(any(target_os = "macos", windows)))]
+const API: &CStr = c"x11";
+
+#[cfg(unix)]
+mod sys {
+    use std::ffi::{c_int, c_void};
+    unsafe extern "C" {
+        pub fn pipe(fds: *mut c_int) -> c_int;
+        pub fn read(fd: c_int, buf: *mut c_void, n: usize) -> isize;
+        pub fn write(fd: c_int, buf: *const c_void, n: usize) -> isize;
+        pub fn close(fd: c_int) -> c_int;
+    }
+}
+
+static GUI: ClapPluginGui = ClapPluginGui {
+    is_api_supported: gui_api_supported,
+    get_preferred_api: gui_preferred_api,
+    create: gui_create,
+    destroy: gui_destroy,
+    set_scale: gui_set_scale,
+    get_size: gui_get_size,
+    can_resize: gui_can_resize,
+    get_resize_hints: gui_resize_hints,
+    adjust_size: gui_adjust_size,
+    set_size: gui_set_size,
+    set_parent: gui_set_parent,
+    set_transient: gui_set_transient,
+    suggest_title: gui_suggest_title,
+    show: gui_show,
+    hide: gui_hide,
+};
+
+unsafe extern "C" fn gui_api_supported(_: *const ClapPlugin, api: *const c_char, floating: bool) -> bool {
+    // SAFETY : chaîne C fournie par l'hôte.
+    !floating && unsafe { CStr::from_ptr(api) } == API
+}
+
+unsafe extern "C" fn gui_preferred_api(_: *const ClapPlugin, api: *mut *const c_char, floating: *mut bool) -> bool {
+    // SAFETY : sorties fournies par l'hôte.
+    unsafe {
+        *api = API.as_ptr();
+        *floating = false;
+    }
+    true
+}
+
+unsafe extern "C" fn gui_create(p: *const ClapPlugin, api: *const c_char, floating: bool) -> bool {
+    let t = me(p);
+    // SAFETY : chaîne C fournie par l'hôte.
+    if t.gui.created || floating || unsafe { CStr::from_ptr(api) } != API {
+        return false;
+    }
+    // L'interface se crée sur le thread principal de l'hôte.
+    let main = host_ext::<ClapHostThreadCheck>(t, CLAP_EXT_THREAD_CHECK);
+    if !main.is_some_and(|c| unsafe { (c.is_main_thread)(t.host) }) {
+        return false;
+    }
+    t.gui = Gui { created: true, scale: 1.0, size: GUI_SIZE, ..Gui::default() };
+    if let Some(timer) = host_ext::<ClapHostTimerSupport>(t, CLAP_EXT_TIMER_SUPPORT) {
+        let mut id = CLAP_INVALID_ID;
+        // SAFETY : extension de l'hôte, sortie locale.
+        if unsafe { (timer.register_timer)(t.host, 1, &mut id) } {
+            t.gui.timer = Some(id);
+        }
+    }
+    #[cfg(unix)]
+    if let Some(fd) = host_ext::<ClapHostPosixFdSupport>(t, CLAP_EXT_POSIX_FD_SUPPORT) {
+        let mut fds = [0; 2];
+        // SAFETY : tube neuf, un octet écrit pour le rendre lisible.
+        unsafe {
+            if sys::pipe(fds.as_mut_ptr()) == 0 {
+                sys::write(fds[1], b"!".as_ptr().cast(), 1);
+                if (fd.register_fd)(t.host, fds[0], CLAP_POSIX_FD_READ) {
+                    t.gui.pipe = Some((fds[0], fds[1]));
+                } else {
+                    sys::close(fds[0]);
+                    sys::close(fds[1]);
+                }
+            }
+        }
+    }
+    true
+}
+
+unsafe extern "C" fn gui_destroy(p: *const ClapPlugin) {
+    let t = me(p);
+    if let (Some(id), Some(timer)) = (t.gui.timer, host_ext::<ClapHostTimerSupport>(t, CLAP_EXT_TIMER_SUPPORT)) {
+        // SAFETY : minuterie enregistrée par `gui_create`.
+        unsafe { (timer.unregister_timer)(t.host, id) };
+    }
+    #[cfg(unix)]
+    if let Some((r, w)) = t.gui.pipe {
+        if let Some(fd) = host_ext::<ClapHostPosixFdSupport>(t, CLAP_EXT_POSIX_FD_SUPPORT) {
+            // SAFETY : descripteur enregistré par `gui_create`.
+            unsafe { (fd.unregister_fd)(t.host, r) };
+        }
+        // SAFETY : tube ouvert par `gui_create`.
+        unsafe {
+            sys::close(r);
+            sys::close(w);
+        }
+    }
+    t.gui = Gui::default();
+}
+
+unsafe extern "C" fn gui_set_scale(p: *const ClapPlugin, scale: f64) -> bool {
+    let g = &mut me(p).gui;
+    g.scale = scale;
+    g.size = ((GUI_SIZE.0 as f64 * scale) as u32, (GUI_SIZE.1 as f64 * scale) as u32);
+    true
+}
+
+unsafe extern "C" fn gui_get_size(p: *const ClapPlugin, w: *mut u32, h: *mut u32) -> bool {
+    let g = &me(p).gui;
+    // SAFETY : sorties fournies par l'hôte.
+    unsafe { (*w, *h) = g.size };
+    g.created
+}
+
+unsafe extern "C" fn gui_can_resize(_: *const ClapPlugin) -> bool {
+    true
+}
+
+unsafe extern "C" fn gui_resize_hints(_: *const ClapPlugin, hints: *mut ClapGuiResizeHints) -> bool {
+    // SAFETY : sortie fournie par l'hôte.
+    unsafe {
+        *hints = ClapGuiResizeHints { can_resize_horizontally: true, can_resize_vertically: true, ..Default::default() };
+    }
+    true
+}
+
+/// Au moins 100 × 80, par pas de 10 pixels.
+unsafe extern "C" fn gui_adjust_size(_: *const ClapPlugin, w: *mut u32, h: *mut u32) -> bool {
+    // SAFETY : entrées-sorties fournies par l'hôte.
+    unsafe {
+        *w = (*w).max(100) / 10 * 10;
+        *h = (*h).max(80) / 10 * 10;
+    }
+    true
+}
+
+unsafe extern "C" fn gui_set_size(p: *const ClapPlugin, w: u32, h: u32) -> bool {
+    let g = &mut me(p).gui;
+    if !g.created || w % 10 != 0 || h % 10 != 0 {
+        return false;
+    }
+    g.size = (w, h);
+    true
+}
+
+unsafe extern "C" fn gui_set_parent(p: *const ClapPlugin, window: *const ClapWindow) -> bool {
+    let g = &mut me(p).gui;
+    // SAFETY : fenêtre fournie par l'hôte.
+    let w = unsafe { &*window };
+    if !g.created || w.specific == 0 || unsafe { CStr::from_ptr(w.api) } != API {
+        return false;
+    }
+    g.parent = w.specific;
+    true
+}
+
+unsafe extern "C" fn gui_set_transient(_: *const ClapPlugin, _: *const ClapWindow) -> bool {
+    false
+}
+
+unsafe extern "C" fn gui_suggest_title(_: *const ClapPlugin, _: *const c_char) {}
+
+unsafe extern "C" fn gui_show(p: *const ClapPlugin) -> bool {
+    let g = &mut me(p).gui;
+    g.shown = g.created && g.parent != 0;
+    g.shown
+}
+
+unsafe extern "C" fn gui_hide(p: *const ClapPlugin) -> bool {
+    me(p).gui.shown = false;
+    true
+}
+
+static TIMER: ClapPluginTimerSupport = ClapPluginTimerSupport { on_timer };
+
+unsafe extern "C" fn on_timer(p: *const ClapPlugin, id: ClapId) {
+    let g = &mut me(p).gui;
+    if g.timer == Some(id) {
+        g.ticks += 1;
+        if g.ticks == 1 {
+            g.edit = Some(GUI_EDIT);
+        }
+    }
+}
+
+static FD: ClapPluginPosixFdSupport = ClapPluginPosixFdSupport { on_fd };
+
+unsafe extern "C" fn on_fd(p: *const ClapPlugin, fd: i32, flags: u32) {
+    let t = me(p);
+    #[cfg(unix)]
+    if t.gui.pipe.is_some_and(|(r, _)| r == fd) && flags & CLAP_POSIX_FD_READ != 0 {
+        let mut b = [0u8; 1];
+        // SAFETY : tube lisible ouvert par `gui_create`.
+        unsafe { sys::read(fd, b.as_mut_ptr().cast(), 1) };
+        if let Some(gui) = host_ext::<ClapHostGui>(t, CLAP_EXT_GUI) {
+            // SAFETY : extension de l'hôte, appelée sur son thread principal.
+            unsafe { (gui.request_resize)(t.host, GUI_REQUEST.0, GUI_REQUEST.1) };
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = (t, fd, flags);
 }

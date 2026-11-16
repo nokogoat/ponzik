@@ -1,5 +1,6 @@
-//! Hôte de plugins CLAP pour Ponzik : audio, paramètres et notes (pas encore
-//! d'interface graphique de plugin).
+//! Hôte de plugins CLAP pour Ponzik : audio, paramètres, notes et interface
+//! du plugin (`clap.gui`, avec les minuteries et descripteurs de
+//! `clap.timer-support` / `clap.posix-fd-support` pompés par l'éditeur).
 //!
 //! L'ABI C est écrite à la main dans [`abi`] ; les bibliothèques sont chargées
 //! avec `dlopen` (Unix) ou `LoadLibraryExW` (Windows). Seuls les `.clap` qui
@@ -11,6 +12,7 @@
 //! ce que renvoient `Instrument::kind` et `Effect::kind`.
 
 pub mod abi;
+mod host;
 mod library;
 mod plugin;
 

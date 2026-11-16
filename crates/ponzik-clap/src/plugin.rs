@@ -9,38 +9,17 @@ use std::path::Path;
 use std::ptr::{null, null_mut};
 use std::sync::{Arc, Mutex};
 
-use ponzik_engine::{Effect, Instrument, ParamInfo, Params, Unit};
+use ponzik_engine::ring::Producer;
+use ponzik_engine::{Editor, Effect, Instrument, ParamInfo, Params, Unit};
 
 use crate::abi::*;
+use crate::host::{ClapEditor, HostShared, OutMsg, as_audio_thread, new_host};
 use crate::library::Library;
 
 /// Taille de bloc maximale annoncée au plugin ; les blocs plus longs sont découpés.
 pub const MAX_BLOCK: usize = 4096;
 /// Capacité des files d'événements : au-delà, les événements du bloc sont perdus.
 const EVENT_CAPACITY: usize = 1024;
-
-// --- Hôte ------------------------------------------------------------------
-
-unsafe extern "C" fn host_get_extension(_: *const ClapHost, _: *const c_char) -> *const c_void {
-    null()
-}
-
-unsafe extern "C" fn host_noop(_: *const ClapHost) {}
-
-fn new_host() -> Box<ClapHost> {
-    Box::new(ClapHost {
-        clap_version: CLAP_VERSION,
-        host_data: null_mut(),
-        name: c"Ponzik".as_ptr(),
-        vendor: c"Ponzik".as_ptr(),
-        url: c"https://github.com/ponzik".as_ptr(),
-        version: c"0.1.0".as_ptr(),
-        get_extension: host_get_extension,
-        request_restart: host_noop,
-        request_process: host_noop,
-        request_callback: host_noop,
-    })
-}
 
 // --- Files d'événements ----------------------------------------------------
 
@@ -87,20 +66,29 @@ impl InEvents {
     }
 }
 
-/// File de sortie : on ne garde que les changements de paramètres.
+/// File de sortie : on ne garde que les changements de paramètres et les gestes.
 struct OutEvents {
     list: ClapOutputEvents,
-    params: Vec<(ClapId, f64)>,
+    params: Vec<OutMsg>,
 }
 
 unsafe extern "C" fn out_push(list: *const ClapOutputEvents, e: *const ClapEventHeader) -> bool {
     // SAFETY : `ctx` pointe sur l'`OutEvents` propriétaire, `e` sur un événement valide.
     let (out, h) = unsafe { (&mut *((*list).ctx as *mut OutEvents), &*e) };
-    if h.space_id == CLAP_CORE_EVENT_SPACE_ID && h.kind == CLAP_EVENT_PARAM_VALUE && out.params.len() < EVENT_CAPACITY {
-        // SAFETY : le type annoncé garantit la structure.
-        let p = unsafe { &*(e as *const ClapEventParamValue) };
-        out.params.push((p.param_id, p.value));
+    if h.space_id != CLAP_CORE_EVENT_SPACE_ID || out.params.len() >= EVENT_CAPACITY {
+        return true;
     }
+    // SAFETY : le type annoncé garantit la structure.
+    let msg = match h.kind {
+        CLAP_EVENT_PARAM_VALUE => {
+            let p = unsafe { &*(e as *const ClapEventParamValue) };
+            OutMsg::Param(p.param_id, p.value)
+        }
+        CLAP_EVENT_PARAM_GESTURE_BEGIN => OutMsg::Begin(unsafe { (*(e as *const ClapEventParamGesture)).param_id }),
+        CLAP_EVENT_PARAM_GESTURE_END => OutMsg::End(unsafe { (*(e as *const ClapEventParamGesture)).param_id }),
+        _ => return true,
+    };
+    out.params.push(msg);
     true
 }
 
@@ -209,7 +197,10 @@ struct Core {
     latency: usize,
     active: bool,
     processing: bool,
+    /// Éditions de l'interface du plugin, vers l'interface de Ponzik.
+    edits: Producer<OutMsg>,
     // Détruits après le plugin (ordre de déclaration).
+    shared: Arc<HostShared>,
     _host: Box<ClapHost>,
     _lib: Arc<Library>,
 }
@@ -256,7 +247,8 @@ impl Core {
         let lib = Library::load(path)?;
         let factory = lib.factory().ok_or_else(|| format!("{}: no plugin factory", path.display()))?;
         let cid = std::ffi::CString::new(id).map_err(|_| "identifiant invalide".to_string())?;
-        let host = new_host();
+        let (shared, edits) = HostShared::new();
+        let host = new_host(&shared);
         // SAFETY : fabrique valide ; l'hôte vit plus longtemps que le plugin.
         let plugin = unsafe { (factory.create_plugin)(factory, &*host, cid.as_ptr()) };
         if plugin.is_null() {
@@ -267,6 +259,7 @@ impl Core {
             unsafe { ((*plugin).destroy)(plugin) };
             return Err(format!("initialization of \"{id}\" failed"));
         }
+        shared.attach(plugin);
         let params_ext = ext::<ClapPluginParams>(plugin, CLAP_EXT_PARAMS);
         let kind = crate::kind_for(path, id);
         let (kind, infos) = shared_infos(kind, plugin, params_ext);
@@ -299,6 +292,8 @@ impl Core {
             latency: 0,
             active: false,
             processing: false,
+            edits,
+            shared,
             _host: host,
             _lib: lib,
         })
@@ -323,7 +318,7 @@ impl Core {
         // SAFETY : appels symétriques de `start_processing` / `activate`.
         unsafe {
             if self.processing {
-                ((*self.plugin).stop_processing)(self.plugin);
+                as_audio_thread(|| ((*self.plugin).stop_processing)(self.plugin));
             }
             if self.active {
                 ((*self.plugin).deactivate)(self.plugin);
@@ -400,7 +395,7 @@ impl Core {
         }
         if !self.processing {
             // SAFETY : plugin actif, thread audio.
-            self.processing = unsafe { ((*self.plugin).start_processing)(self.plugin) };
+            self.processing = as_audio_thread(|| unsafe { ((*self.plugin).start_processing)(self.plugin) });
             if !self.processing {
                 return false;
             }
@@ -418,14 +413,18 @@ impl Core {
             out_events: &self.out_events.list,
         };
         // SAFETY : tous les pointeurs de `process` vivent pendant l'appel.
-        let status = unsafe { ((*self.plugin).process)(self.plugin, &process) };
+        let status = as_audio_thread(|| unsafe { ((*self.plugin).process)(self.plugin, &process) });
         self.in_events.events.clear();
         self.steady_time += frames as i64;
         for k in 0..self.out_events.params.len() {
-            let (id, v) = self.out_events.params[k];
-            if let Some(i) = self.param_index(id) {
+            let msg = self.out_events.params[k];
+            if let OutMsg::Param(id, v) = msg
+                && let Some(i) = self.param_index(id)
+            {
                 self.values[i].value = v as f32;
             }
+            // File pleine : l'interface de Ponzik ne suivra pas cette édition.
+            let _ = self.edits.push(msg);
         }
         self.out_events.params.clear();
         status != CLAP_PROCESS_ERROR
@@ -434,6 +433,8 @@ impl Core {
 
 impl Drop for Core {
     fn drop(&mut self) {
+        // L'interface du plugin d'abord, puis l'éditeur devient inerte.
+        self.shared.detach();
         self.stop();
         // SAFETY : plus aucun appel après la destruction.
         unsafe { ((*self.plugin).destroy)(self.plugin) };
@@ -526,6 +527,12 @@ macro_rules! impl_params {
 impl_params!(ClapInstrument);
 impl_params!(ClapEffect);
 
+impl Core {
+    fn editor(&self) -> Option<Editor> {
+        Some(Arc::new(ClapEditor(self.shared.clone())))
+    }
+}
+
 impl Instrument for ClapInstrument {
     fn kind(&self) -> &'static str {
         self.0.kind
@@ -549,6 +556,10 @@ impl Instrument for ClapInstrument {
 
     fn all_notes_off(&mut self) {
         self.0.all_notes_off();
+    }
+
+    fn editor(&self) -> Option<Editor> {
+        self.0.editor()
     }
 
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
@@ -587,10 +598,14 @@ impl Effect for ClapEffect {
         self.0.latency
     }
 
+    fn editor(&self) -> Option<Editor> {
+        self.0.editor()
+    }
+
     fn reset(&mut self) {
         if self.0.active {
             // SAFETY : plugin actif.
-            unsafe { ((*self.0.plugin).reset)(self.0.plugin) };
+            as_audio_thread(|| unsafe { ((*self.0.plugin).reset)(self.0.plugin) });
         }
     }
 

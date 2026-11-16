@@ -4,8 +4,10 @@
 
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use ponzik_clap::{create_effect, create_instrument, kind_for, scan_dir};
+use ponzik_engine::{EditorEvent, ParentWindow};
 
 const SR: f32 = 48_000.0;
 
@@ -122,4 +124,68 @@ fn instrument_plays_the_right_pitch() {
     inst.all_notes_off();
     inst.render(&mut l, &mut r);
     assert_eq!(rms(&l), 0.0);
+}
+
+#[cfg(target_os = "macos")]
+const PARENT: ParentWindow = ParentWindow::Cocoa(0x1234);
+#[cfg(windows)]
+const PARENT: ParentWindow = ParentWindow::Win32(0x1234);
+#[cfg(not(any(target_os = "macos", windows)))]
+const PARENT: ParentWindow = ParentWindow::X11(0x1234);
+
+#[test]
+fn editor_lifecycle_timers_and_fds() {
+    let Some(path) = fixture("gui") else { return };
+    let inst = create_instrument(&path, "ponzik.test.sine").unwrap();
+    let ed = inst.editor().expect("every CLAP instance has an editor handle");
+    assert!(!ed.has_gui());
+    assert!(ed.open(PARENT, 1.0).is_err());
+
+    let mut fx = create_effect(&path, "ponzik.test.gain").unwrap();
+    fx.set_sample_rate(SR);
+    let ed = fx.editor().unwrap();
+    assert!(ed.has_gui() && ed.is_alive() && !ed.is_open());
+    // Scale 2: the interface doubles.
+    let size = ed.open(PARENT, 2.0).unwrap();
+    assert_eq!((size.width, size.height, size.resizable), (600, 400, true));
+    assert!(ed.is_open() && ed.resizable());
+    assert_eq!(ed.open(PARENT, 2.0).unwrap().width, 600, "already open: same interface");
+    // Size adjusted to the plugin's steps (10 px, at least 100 × 80).
+    assert_eq!(ed.set_size(455, 50), Some((450, 80)));
+
+    // Pump: the readable pipe asks for a resize, the timer for an edit that
+    // comes out of the next `process`.
+    std::thread::sleep(Duration::from_millis(5));
+    let mut ev = Vec::new();
+    ed.idle(&mut ev);
+    assert_eq!(ev, [EditorEvent::Resize { width: 420, height: 260 }]);
+    let (mut l, mut r) = (vec![0.5; 64], vec![0.5; 64]);
+    fx.process(&mut l, &mut r);
+    ev.clear();
+    ed.idle(&mut ev);
+    assert_eq!(
+        ev,
+        [EditorEvent::GestureBegin(7), EditorEvent::Param { id: 7, value: 0.25 }, EditorEvent::GestureEnd(7)]
+    );
+    assert_eq!(fx.get_param(7), 0.25);
+    assert!((l[0] - 0.125).abs() < 1e-6);
+
+    // Closed: timer and pipe are given back, nothing comes anymore.
+    ed.close();
+    assert!(!ed.is_open() && !ed.resizable());
+    assert_eq!(ed.set_size(300, 200), None);
+    std::thread::sleep(Duration::from_millis(5));
+    ev.clear();
+    ed.idle(&mut ev);
+    fx.process(&mut l, &mut r);
+    ed.idle(&mut ev);
+    assert!(ev.is_empty(), "{ev:?}");
+
+    // Destroyed with its interface open: the host closes it first (the plugin
+    // aborts the process otherwise), then the editor turns inert.
+    ed.open(PARENT, 1.0).unwrap();
+    drop(fx);
+    assert!(!ed.is_alive() && !ed.is_open() && !ed.has_gui());
+    assert!(ed.open(PARENT, 1.0).is_err());
+    ed.idle(&mut ev);
 }

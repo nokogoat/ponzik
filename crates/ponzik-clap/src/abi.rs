@@ -1,7 +1,9 @@
 //! Sous-ensemble de l'ABI C de CLAP 1.x, recopié à la main depuis les en-têtes
 //! officiels (`entry.h`, `plugin-factory.h`, `plugin.h`, `host.h`, `process.h`,
 //! `events.h`, `audio-buffer.h`, `ext/params.h`, `ext/audio-ports.h`,
-//! `ext/note-ports.h`, `ext/latency.h`). Les noms suivent ceux du C, en casse Rust.
+//! `ext/note-ports.h`, `ext/latency.h`, `ext/gui.h`, `ext/timer-support.h`,
+//! `ext/posix-fd-support.h`, `ext/thread-check.h`, `ext/log.h`, `ext/state.h`).
+//! Les noms suivent ceux du C, en casse Rust.
 
 use std::ffi::{c_char, c_void};
 
@@ -133,6 +135,8 @@ pub const CLAP_EVENT_NOTE_ON: u16 = 0;
 pub const CLAP_EVENT_NOTE_OFF: u16 = 1;
 pub const CLAP_EVENT_NOTE_CHOKE: u16 = 2;
 pub const CLAP_EVENT_PARAM_VALUE: u16 = 5;
+pub const CLAP_EVENT_PARAM_GESTURE_BEGIN: u16 = 6;
+pub const CLAP_EVENT_PARAM_GESTURE_END: u16 = 7;
 pub const CLAP_EVENT_MIDI: u16 = 10;
 
 #[repr(C)]
@@ -167,6 +171,14 @@ pub struct ClapEventParamValue {
     pub channel: i16,
     pub key: i16,
     pub value: f64,
+}
+
+/// `clap_event_param_gesture` : début ou fin d'un geste de l'utilisateur.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ClapEventParamGesture {
+    pub header: ClapEventHeader,
+    pub param_id: ClapId,
 }
 
 #[repr(C)]
@@ -279,4 +291,130 @@ pub const CLAP_EXT_LATENCY: &[u8] = b"clap.latency\0";
 #[repr(C)]
 pub struct ClapPluginLatency {
     pub get: unsafe extern "C" fn(plugin: *const ClapPlugin) -> u32,
+}
+
+/// Côté hôte : la latence a changé (plugin désactivé entre-temps).
+#[repr(C)]
+pub struct ClapHostLatency {
+    pub changed: unsafe extern "C" fn(host: *const ClapHost),
+}
+
+// --- ext/params.h (côté hôte) ----------------------------------------------
+
+#[repr(C)]
+pub struct ClapHostParams {
+    pub rescan: unsafe extern "C" fn(host: *const ClapHost, flags: u32),
+    pub clear: unsafe extern "C" fn(host: *const ClapHost, param_id: ClapId, flags: u32),
+    pub request_flush: unsafe extern "C" fn(host: *const ClapHost),
+}
+
+// --- ext/gui.h -------------------------------------------------------------
+
+pub const CLAP_EXT_GUI: &[u8] = b"clap.gui\0";
+pub const CLAP_WINDOW_API_X11: &[u8] = b"x11\0";
+pub const CLAP_WINDOW_API_WIN32: &[u8] = b"win32\0";
+pub const CLAP_WINDOW_API_COCOA: &[u8] = b"cocoa\0";
+
+/// `clap_window` : API puis union `x11` (`unsigned long`) / `win32` (`HWND`) /
+/// `cocoa` (`NSView*`), de la taille d'un pointeur sur les plateformes 64 bits.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ClapWindow {
+    pub api: *const c_char,
+    pub specific: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug)]
+pub struct ClapGuiResizeHints {
+    pub can_resize_horizontally: bool,
+    pub can_resize_vertically: bool,
+    pub preserve_aspect_ratio: bool,
+    pub aspect_ratio_width: u32,
+    pub aspect_ratio_height: u32,
+}
+
+#[repr(C)]
+pub struct ClapPluginGui {
+    pub is_api_supported: unsafe extern "C" fn(plugin: *const ClapPlugin, api: *const c_char, floating: bool) -> bool,
+    pub get_preferred_api:
+        unsafe extern "C" fn(plugin: *const ClapPlugin, api: *mut *const c_char, floating: *mut bool) -> bool,
+    pub create: unsafe extern "C" fn(plugin: *const ClapPlugin, api: *const c_char, floating: bool) -> bool,
+    pub destroy: unsafe extern "C" fn(plugin: *const ClapPlugin),
+    pub set_scale: unsafe extern "C" fn(plugin: *const ClapPlugin, scale: f64) -> bool,
+    pub get_size: unsafe extern "C" fn(plugin: *const ClapPlugin, width: *mut u32, height: *mut u32) -> bool,
+    pub can_resize: unsafe extern "C" fn(plugin: *const ClapPlugin) -> bool,
+    pub get_resize_hints: unsafe extern "C" fn(plugin: *const ClapPlugin, hints: *mut ClapGuiResizeHints) -> bool,
+    pub adjust_size: unsafe extern "C" fn(plugin: *const ClapPlugin, width: *mut u32, height: *mut u32) -> bool,
+    pub set_size: unsafe extern "C" fn(plugin: *const ClapPlugin, width: u32, height: u32) -> bool,
+    pub set_parent: unsafe extern "C" fn(plugin: *const ClapPlugin, window: *const ClapWindow) -> bool,
+    pub set_transient: unsafe extern "C" fn(plugin: *const ClapPlugin, window: *const ClapWindow) -> bool,
+    pub suggest_title: unsafe extern "C" fn(plugin: *const ClapPlugin, title: *const c_char),
+    pub show: unsafe extern "C" fn(plugin: *const ClapPlugin) -> bool,
+    pub hide: unsafe extern "C" fn(plugin: *const ClapPlugin) -> bool,
+}
+
+#[repr(C)]
+pub struct ClapHostGui {
+    pub resize_hints_changed: unsafe extern "C" fn(host: *const ClapHost),
+    pub request_resize: unsafe extern "C" fn(host: *const ClapHost, width: u32, height: u32) -> bool,
+    pub request_show: unsafe extern "C" fn(host: *const ClapHost) -> bool,
+    pub request_hide: unsafe extern "C" fn(host: *const ClapHost) -> bool,
+    pub closed: unsafe extern "C" fn(host: *const ClapHost, was_destroyed: bool),
+}
+
+// --- ext/timer-support.h ---------------------------------------------------
+
+pub const CLAP_EXT_TIMER_SUPPORT: &[u8] = b"clap.timer-support\0";
+
+#[repr(C)]
+pub struct ClapPluginTimerSupport {
+    pub on_timer: unsafe extern "C" fn(plugin: *const ClapPlugin, timer_id: ClapId),
+}
+
+#[repr(C)]
+pub struct ClapHostTimerSupport {
+    pub register_timer: unsafe extern "C" fn(host: *const ClapHost, period_ms: u32, timer_id: *mut ClapId) -> bool,
+    pub unregister_timer: unsafe extern "C" fn(host: *const ClapHost, timer_id: ClapId) -> bool,
+}
+
+// --- ext/posix-fd-support.h ------------------------------------------------
+
+pub const CLAP_EXT_POSIX_FD_SUPPORT: &[u8] = b"clap.posix-fd-support\0";
+pub const CLAP_POSIX_FD_READ: u32 = 1 << 0;
+pub const CLAP_POSIX_FD_WRITE: u32 = 1 << 1;
+pub const CLAP_POSIX_FD_ERROR: u32 = 1 << 2;
+
+#[repr(C)]
+pub struct ClapPluginPosixFdSupport {
+    pub on_fd: unsafe extern "C" fn(plugin: *const ClapPlugin, fd: i32, flags: u32),
+}
+
+#[repr(C)]
+pub struct ClapHostPosixFdSupport {
+    pub register_fd: unsafe extern "C" fn(host: *const ClapHost, fd: i32, flags: u32) -> bool,
+    pub modify_fd: unsafe extern "C" fn(host: *const ClapHost, fd: i32, flags: u32) -> bool,
+    pub unregister_fd: unsafe extern "C" fn(host: *const ClapHost, fd: i32) -> bool,
+}
+
+// --- ext/thread-check.h, ext/log.h, ext/state.h (côté hôte) ----------------
+
+pub const CLAP_EXT_THREAD_CHECK: &[u8] = b"clap.thread-check\0";
+pub const CLAP_EXT_LOG: &[u8] = b"clap.log\0";
+pub const CLAP_EXT_STATE: &[u8] = b"clap.state\0";
+
+#[repr(C)]
+pub struct ClapHostThreadCheck {
+    pub is_main_thread: unsafe extern "C" fn(host: *const ClapHost) -> bool,
+    pub is_audio_thread: unsafe extern "C" fn(host: *const ClapHost) -> bool,
+}
+
+#[repr(C)]
+pub struct ClapHostLog {
+    pub log: unsafe extern "C" fn(host: *const ClapHost, severity: i32, msg: *const c_char),
+}
+
+#[repr(C)]
+pub struct ClapHostState {
+    pub mark_dirty: unsafe extern "C" fn(host: *const ClapHost),
 }

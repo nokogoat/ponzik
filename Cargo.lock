@@ -27,6 +27,7 @@ name = "ponzik-clap"
 version = "0.1.0"
 dependencies = [
  "ponzik-engine",
+ "ponzik-window",
 ]
 
 [[package]]
