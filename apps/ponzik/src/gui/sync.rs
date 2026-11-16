@@ -98,6 +98,8 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: &dyn Fn(&str
 
     if old.patterns != new.patterns
         || old.bpm != new.bpm
+        || old.tempo_changes != new.tempo_changes
+        || old.signatures != new.signatures
         || old.clips != new.clips
         || old.mode != new.mode
         || old.swing != new.swing

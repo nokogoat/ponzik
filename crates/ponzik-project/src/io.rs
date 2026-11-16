@@ -220,6 +220,36 @@ pub fn save(project: &Project) -> String {
         ("automation", Json::Arr(project.automation.iter().map(automation_json).collect())),
         ("audio_clips", Json::Arr(project.audio_clips.iter().map(audio_clip_json).collect())),
         (
+            "tempo_changes",
+            Json::Arr(
+                project
+                    .tempo_changes
+                    .iter()
+                    .map(|p| obj(vec![("tick", p.tick.into()), ("bpm", p.bpm.into()), ("ramp", p.ramp.into())]))
+                    .collect(),
+            ),
+        ),
+        (
+            "signatures",
+            Json::Arr(
+                project
+                    .signatures
+                    .iter()
+                    .map(|s| obj(vec![("tick", s.tick.into()), ("num", (s.num as u32).into()), ("den", (s.den as u32).into())]))
+                    .collect(),
+            ),
+        ),
+        (
+            "markers",
+            Json::Arr(
+                project
+                    .markers
+                    .iter()
+                    .map(|m| obj(vec![("tick", m.tick.into()), ("name", m.name.as_str().into()), ("color", m.color.into())]))
+                    .collect(),
+            ),
+        ),
+        (
             "session",
             Json::Arr(
                 project
@@ -592,6 +622,27 @@ pub fn load(text: &str) -> Result<Project, String> {
         }
     }
     p.audio_clips = arr(root.get("audio_clips")).iter().filter_map(load_audio_clip).collect();
+    // Tempo, meter and markers: optional (older projects: one tempo, 4/4, no markers).
+    for v in arr(root.get("tempo_changes")) {
+        if let Some(bpm) = num(v.get("bpm")).filter(|_| v.get("tick").is_some()) {
+            let tick = u32_or(v.get("tick"), 0);
+            if tick > 0 {
+                p.set_tempo_change(tick, bpm as f32, bool_or(v.get("ramp"), false));
+            }
+        }
+    }
+    for v in arr(root.get("signatures")) {
+        let (num, den) = (u32_or(v.get("num"), 0), u32_or(v.get("den"), 0));
+        if (1..=32).contains(&num) && den <= 32 && crate::TimeSig::valid_den(den as u8) {
+            p.set_signature(u32_or(v.get("tick"), 0), num as u8, den as u8);
+        }
+    }
+    p.normalize_tempo();
+    for v in arr(root.get("markers")) {
+        let Some(tick) = num(v.get("tick")).map(|t| t.round().clamp(0.0, u32::MAX as f64) as u32) else { continue };
+        let i = p.add_marker(tick, string_or(v.get("name"), ""));
+        p.markers[i].color = u32_or(v.get("color"), p.markers[i].color) & 0xff_ffff;
+    }
     Ok(p)
 }
 
@@ -606,6 +657,34 @@ pub fn load_from_file(path: impl AsRef<Path>) -> Result<Project, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tempo_meter_and_markers_roundtrip_and_old_files_load() {
+        let mut p = crate::demo_project();
+        p.set_tempo_change(768, 140.0, true);
+        p.set_tempo_change(1536, 90.5, false);
+        p.set_signature(1536, 7, 8);
+        let i = p.add_marker(384, "Chorus");
+        p.markers[i].color = 0xe878b4;
+        let back = load(&save(&p)).unwrap();
+        assert_eq!(back.tempo_changes, p.tempo_changes);
+        assert_eq!(back.signatures, p.signatures);
+        assert_eq!(back.markers, p.markers);
+        // Without the fields: one tempo, 4/4, no markers.
+        let old = load(r#"{"format": "ponzik-project", "bpm": 128}"#).unwrap();
+        assert_eq!(old.tempo_map(), ponzik_engine::TempoMap::constant(128.0));
+        assert!(old.markers.is_empty());
+        // Broken entries are skipped.
+        let text = r#"{"format": "ponzik-project", "tempo_changes": [{"tick": 96}, {"tick": 0, "bpm": 10}, {"tick": 384, "bpm": 1e9}],
+            "signatures": [{"tick": 0, "num": 0, "den": 4}, {"tick": 384, "num": 3, "den": 5}, {"tick": 384, "num": 3, "den": 4}],
+            "markers": [{"name": "x"}, {"tick": 768, "name": "Drop"}]}"#;
+        let q = load(text).unwrap();
+        assert_eq!(q.tempo_changes.len(), 1);
+        assert_eq!(q.tempo_changes[0].bpm, 999.0);
+        assert_eq!(q.signatures, [crate::TimeSig { tick: 384, num: 3, den: 4 }]);
+        assert_eq!(q.markers.len(), 1);
+        assert_eq!(q.markers[0].tick, 768);
+    }
 
     #[test]
     fn session_grid_roundtrip() {

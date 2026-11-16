@@ -21,6 +21,7 @@ pub use ponzik_engine::{AutoPoint, AutoScope, AutoTarget, SessionSlot};
 pub const SESSION_COLUMNS: usize = 8;
 pub const SESSION_SCENES: usize = 8;
 
+mod arrange;
 pub mod autosave;
 mod breakcore;
 mod demo;
@@ -35,6 +36,7 @@ pub mod render;
 pub mod scale;
 pub mod templates;
 
+pub use arrange::{MARKER_COLORS, Placement, TimeSlice};
 pub use breakcore::demo_breakcore;
 pub use demo::demo_project;
 pub use history::History;
@@ -334,6 +336,22 @@ pub struct Project {
     pub session_live: Vec<SessionSlot>,
     pub automation: Vec<AutomationDef>,
     pub audio_clips: Vec<AudioClipDef>,
+    /// Tempo changes after tick 0, sorted (the tempo at tick 0 is `bpm`).
+    pub tempo_changes: Vec<TempoPoint>,
+    /// Time signature changes, sorted (4/4 from tick 0 unless one is there).
+    pub signatures: Vec<TimeSig>,
+    /// Arrangement markers, sorted by tick: each one starts a section that
+    /// runs to the next marker (the last one to the end of the song).
+    pub markers: Vec<Marker>,
+}
+
+/// A named section start on the arrangement lane.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Marker {
+    pub tick: u32,
+    pub name: String,
+    /// 0: the default color for its place.
+    pub color: u32,
 }
 
 /// Fonction de chargement de fichiers audio (fournie par l'application).
@@ -366,15 +384,20 @@ impl Project {
             session_live: Vec::new(),
             automation: Vec::new(),
             audio_clips: Vec::new(),
+            tempo_changes: Vec::new(),
+            signatures: Vec::new(),
+            markers: Vec::new(),
         }
     }
 
-    /// Fin du morceau : fin du dernier clip (pattern ou audio), arrondie à la mesure.
+    /// Fin du morceau : fin du dernier clip (pattern ou audio), arrondie à la
+    /// mesure (of the time signature map), one bar at least.
     pub fn song_len(&self) -> u32 {
         let patterns = self.clips.iter().map(|c| c.start.saturating_add(c.len));
         let audio = self.audio_clips.iter().map(|c| c.start.saturating_add(c.len));
         let end = patterns.chain(audio).max().unwrap_or(0);
-        end.div_ceil(TICKS_PER_BAR).max(1).saturating_mul(TICKS_PER_BAR)
+        let map = self.tempo_map();
+        map.ceil_bar(end as f64).max(map.bar_start(1))
     }
 
     /// Instantané de séquence pour le moteur, sans les clips audio (aucun
@@ -387,13 +410,25 @@ impl Project {
     /// lane when there is one (its points become tempo points, straight
     /// segments become ramps and curved ones a chain of short ramps).
     pub fn tempo_map(&self) -> TempoMap {
-        TempoMap::new(self.tempo_points(), Vec::new())
+        TempoMap::new(self.tempo_points(), self.signatures.clone())
+    }
+
+    /// The tempo map drawn on the tempo lane: `bpm` and the tempo changes,
+    /// without the tempo automation lane.
+    pub fn tempo_lane_map(&self) -> TempoMap {
+        let mut points = vec![TempoPoint { tick: 0, bpm: self.bpm, ramp: false }];
+        points.extend(self.tempo_changes.iter().filter(|p| p.tick > 0));
+        TempoMap::new(points, self.signatures.clone())
+    }
+
+    /// True when a song tempo automation lane overrides the tempo lane.
+    pub fn tempo_automated(&self) -> bool {
+        self.automation_lane(AutoTarget::Tempo, AutoScope::Song).is_some_and(|l| !l.points.is_empty())
     }
 
     fn tempo_points(&self) -> Vec<TempoPoint> {
-        let base = TempoPoint { tick: 0, bpm: self.bpm, ramp: false };
         let Some(lane) = self.automation_lane(AutoTarget::Tempo, AutoScope::Song).filter(|l| !l.points.is_empty()) else {
-            return vec![base];
+            return self.tempo_lane_map().tempos().to_vec();
         };
         const PIECES: u32 = 16;
         let mut out = vec![TempoPoint { tick: 0, bpm: lane.points[0].value, ramp: false }];
@@ -770,10 +805,6 @@ impl Project {
         Some(p)
     }
 
-    /// Secondes par tick au tempo du projet.
-    fn secs_per_tick(&self) -> f64 {
-        60.0 / (self.bpm.clamp(20.0, 999.0) as f64 * ponzik_engine::PPQ as f64)
-    }
 
     /// Vide la plage `[a, b)` de la playlist : les clips qui la chevauchent sont
     /// raccourcis, ou coupés en deux s'ils la traversent.
@@ -796,7 +827,7 @@ impl Project {
             }
         }
         self.clips = clips;
-        let spt = self.secs_per_tick();
+        let map = self.tempo_map();
         let mut audio = Vec::with_capacity(self.audio_clips.len());
         for c in &self.audio_clips {
             let end = c.start.saturating_add(c.len);
@@ -808,7 +839,7 @@ impl Project {
                 audio.push(AudioClipDef { len: a - c.start, fade_out: 0.0, ..c.clone() });
             }
             if end > b {
-                let offset = c.offset + (b - c.start) as f64 * spt;
+                let offset = c.offset + map.secs_at(b as f64) - map.secs_at(c.start as f64);
                 audio.push(AudioClipDef { start: b, len: end - b, offset, fade_in: 0.0, ..c.clone() });
             }
         }
@@ -836,7 +867,7 @@ impl Project {
                 Some(ClipDef { start: start + span, len, offset: c.offset + skip, ..*c })
             })
             .collect();
-        let secs_per_tick = self.secs_per_tick();
+        let map = self.tempo_map();
         let audio: Vec<AudioClipDef> = self
             .audio_clips
             .iter()
@@ -845,7 +876,7 @@ impl Project {
                 // Une coupe à l'intérieur du clip n'a pas de fondu d'entrée ou de sortie.
                 let fade_in = if skip == 0 { c.fade_in } else { 0.0 };
                 let fade_out = if start + len == c.start + c.len { c.fade_out } else { 0.0 };
-                let offset = c.offset + skip as f64 * secs_per_tick;
+                let offset = c.offset + map.secs_at((c.start + skip) as f64) - map.secs_at(c.start as f64);
                 Some(AudioClipDef { start: start + span, len, offset, fade_in, fade_out, ..c.clone() })
             })
             .collect();

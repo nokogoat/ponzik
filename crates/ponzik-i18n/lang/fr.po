@@ -5139,3 +5139,15 @@ msgstr "Visite guidée : un beat, une basse, un export"
 
 msgid "Help"
 msgstr "Aide"
+
+msgid "Bridge"
+msgstr "Pont"
+
+msgid "Build-up"
+msgstr "Montée"
+
+msgid "Outro"
+msgstr "Outro"
+
+msgid "Verse"
+msgstr "Couplet"
