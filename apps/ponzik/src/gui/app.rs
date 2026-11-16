@@ -198,8 +198,6 @@ pub enum Action {
     ExportMidi,
     AssignSession(usize, usize, usize),
     RemoveAutomation(ponzik_engine::AutoTarget),
-    /// Accord du tampon : un type, ou `None` pour l'accord de la gamme.
-    SetChord(Option<ChordKind>),
     /// Humanise les notes du piano roll : écart de début (ticks), écart relatif de vélocité.
     Humanize(u32, f32),
     /// Revient à l'état qui suit les n premières étapes de l'historique.
@@ -338,6 +336,9 @@ pub struct PianoState {
     /// Un clic pose un accord entier : de ce type, ou celui de la gamme (`None`).
     pub chord_stamp: bool,
     pub chord: Option<ChordKind>,
+    /// Renversement de l'accord posé (0 = fondamental).
+    pub chord_inv: u8,
+    pub voicing: ponzik_project::Voicing,
 }
 
 pub struct PlaylistState {
@@ -488,6 +489,8 @@ impl App {
                 scale_snap: false,
                 chord_stamp: false,
                 chord: None,
+                chord_inv: 0,
+                voicing: ponzik_project::Voicing::Close,
             },
             playlist: PlaylistState { scroll_x: 0.0, zoom: 44.0, brush: 0, selected: None },
             sidebar_scroll: 0.0,
@@ -1761,8 +1764,17 @@ impl App {
         let w = 320.0;
         let key_w = (w - 24.0 - 5.0 * GAP) / 6.0;
         let (key_h, row_h) = (36.0, 32.0);
-        let scale_rows = ScaleKind::ALL.len().div_ceil(2) as f32;
-        let h = 40.0 + 2.0 * key_h + GAP + 17.0 + scale_rows * row_h + 10.0;
+        // Familles de gammes, chacune sous un petit titre, sur deux colonnes.
+        let mut groups: Vec<(&str, Vec<ScaleKind>)> = Vec::new();
+        for sc in ScaleKind::ALL {
+            match groups.last_mut() {
+                Some((g, v)) if *g == sc.group() => v.push(sc),
+                _ => groups.push((sc.group(), vec![sc])),
+            }
+        }
+        const HEAD: f32 = 22.0;
+        let list_h: f32 = groups.iter().map(|(_, v)| HEAD + v.len().div_ceil(2) as f32 * row_h).sum();
+        let h = (40.0 + 2.0 * key_h + GAP + 17.0 + list_h + 10.0).min(screen.h - anchor.bottom() - 20.0);
         let x = anchor.x.min(screen.right() - 12.0 - w).max(12.0);
         let r = Rect::new(x, anchor.bottom() + 8.0 + (1.0 - open) * 6.0, w, h);
         c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, Color::rgba(0, 0, 0, (90.0 * open) as u8));
@@ -1795,9 +1807,19 @@ impl App {
         let sep_y = r.y + 36.0 + 2.0 * key_h + GAP + 8.0;
         c.fill_rect(Rect::new(r.x + 12.0, sep_y, r.w - 24.0, 1.0), t.hairline);
         let col_w = (r.w - 24.0 - GAP) * 0.5;
-        for (i, sc) in ScaleKind::ALL.into_iter().enumerate() {
-            let row = Rect::new(r.x + 12.0 + (i % 2) as f32 * (col_w + GAP), sep_y + 8.0 + (i / 2) as f32 * row_h, col_w, row_h - 4.0);
-            let hov = over(row);
+        let prev = c.push_clip(Rect::new(r.x, sep_y + 1.0, r.w, r.bottom() - sep_y - 1.0));
+        let mut y = sep_y + 4.0;
+        let mut cells = Vec::new();
+        for (g, list) in &groups {
+            self.text(c, self.f.sans_med, 11.0, r.x + 16.0, y + HEAD * 0.5 + 2.0, g, t.muted);
+            y += HEAD;
+            for (j, &sc) in list.iter().enumerate() {
+                cells.push((sc, Rect::new(r.x + 12.0 + (j % 2) as f32 * (col_w + GAP), y + (j / 2) as f32 * row_h, col_w, row_h - 4.0)));
+            }
+            y += list.len().div_ceil(2) as f32 * row_h;
+        }
+        for (i, (sc, row)) in cells.into_iter().enumerate() {
+            let hov = over(row) && row.bottom() <= r.bottom();
             let hv = self.hover_anim(wid("scale-kind", i, 0), hov);
             let cur = sc == scale;
             if hv > 0.01 || cur {
@@ -1814,6 +1836,7 @@ impl App {
                 self.commit("Gamme");
             }
         }
+        c.set_clip(Some(prev));
         let clicked = input.pressed || input.right_pressed;
         !clicked || r.contains(input.x, input.y) || anchor.contains(input.x, input.y)
     }
@@ -2252,29 +2275,6 @@ impl App {
                     })
                     .collect(),
             ),
-            Popup::Chord => {
-                let cur = self.piano.chord;
-                if self.project.scale != ponzik_project::ScaleKind::Chromatic {
-                    // Gamme fixée : on choisit une forme, la gamme décide majeur ou mineur.
-                    let shape = super::piano::scale_shape(cur).0;
-                    let title = format!("Accord · {} {}", key_name(self.project.key), self.project.scale.name());
-                    let v = super::piano::SCALE_SHAPES
-                        .iter()
-                        .map(|&(kind, name, sym)| MenuItem::plain(name, Action::SetChord(kind)).detail(sym.into()).on(name == shape))
-                        .collect();
-                    return (title, v);
-                }
-                let cur = cur.unwrap_or(ChordKind::Major);
-                let v = ChordKind::ALL
-                    .into_iter()
-                    .map(|kind| {
-                        MenuItem::plain(super::piano::chord_name(kind), Action::SetChord(Some(kind)))
-                            .detail(super::piano::chord_symbol(kind).into())
-                            .on(cur == kind)
-                    })
-                    .collect();
-                ("Accord".into(), v)
-            }
             Popup::History => {
                 // Le plus récent en haut : les étapes annulées (en retrait), puis celles
                 // qui ont mené à l'état actuel, jusqu'au départ.
@@ -2335,7 +2335,7 @@ impl App {
                     })
                     .collect(),
             ),
-            Popup::Rename { .. } | Popup::Palette { .. } | Popup::Scale => (String::new(), Vec::new()),
+            Popup::Rename { .. } | Popup::Palette { .. } | Popup::Scale | Popup::Chord => (String::new(), Vec::new()),
         }
     }
 
@@ -2523,10 +2523,6 @@ impl App {
             }
             Action::Humanize(ticks, vel) => self.humanize(ticks, vel),
             Action::JumpHistory(n) => self.jump_history(n),
-            Action::SetChord(kind) => {
-                self.piano.chord = kind;
-                self.piano.chord_stamp = true;
-            }
             Action::RemoveAutomation(target) => {
                 self.project.automation.retain(|a| a.target != target);
                 self.commit("Retirer une automation");
@@ -2621,6 +2617,12 @@ impl App {
             }
             if let Some(action) = run {
                 self.run_action(action, Rect::new(screen.w * 0.5 - 150.0, screen.h * 0.2, 300.0, 0.0));
+            }
+            return;
+        }
+        if matches!(state.kind, Popup::Chord) {
+            if self.chord_popup(c, input, state.anchor, screen) {
+                self.popup = Some(state);
             }
             return;
         }
@@ -2865,6 +2867,17 @@ fn scale_label(key: u8, scale: ScaleKind) -> String {
         ScaleKind::PentatonicMajor => "penta maj.",
         ScaleKind::PentatonicMinor => "penta min.",
         ScaleKind::Blues => "blues",
+        ScaleKind::Locrian => "locrien",
+        ScaleKind::HarmonicMajor => "maj. harm.",
+        ScaleKind::BluesMajor => "blues maj.",
+        ScaleKind::PhrygianDominant => "phryg. dom.",
+        ScaleKind::DoubleHarmonic => "arabe",
+        ScaleKind::HungarianMinor => "hongrois",
+        ScaleKind::Hirajoshi => "hirajoshi",
+        ScaleKind::InSen => "in sen",
+        ScaleKind::WholeTone => "par tons",
+        ScaleKind::Diminished => "diminuée",
+        ScaleKind::BebopDominant => "bebop",
     };
     format!("{} {mode}", key_name(key))
 }

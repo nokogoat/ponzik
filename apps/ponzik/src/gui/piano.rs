@@ -1,8 +1,8 @@
 //! Piano roll : notes du canal sélectionné dans le pattern courant.
 
 use ponzik_engine::{Note, PlayMode, TICKS_PER_BAR, TICKS_PER_STEP};
-use ponzik_project::{ChordKind, ScaleKind};
-use ponzik_ui::{Canvas, Rect};
+use ponzik_project::{ChordKind, ScaleKind, Voicing, revoice};
+use ponzik_ui::{Canvas, Color, Rect};
 use ponzik_window::Key;
 
 use super::Input;
@@ -57,33 +57,57 @@ pub fn chord_name(kind: ChordKind) -> &'static str {
         ChordKind::MinorMajor7 => "Mineur maj. 7",
         ChordKind::Add9 => "Add 9",
         ChordKind::MinorAdd9 => "Mineur add 9",
+        ChordKind::Six => "Sixte",
+        ChordKind::Minor6 => "Mineur 6",
+        ChordKind::SixNine => "Six-neuf",
+        ChordKind::SevenSus4 => "7 sus 4",
+        ChordKind::Major9 => "Majeur 9",
+        ChordKind::Minor9 => "Mineur 9",
+        ChordKind::Dominant9 => "Neuvième",
+        ChordKind::Add11 => "Add 11",
+        ChordKind::Minor11 => "Mineur 11",
+        ChordKind::Dominant11 => "Onzième",
+        ChordKind::Major13 => "Majeur 13",
+        ChordKind::Dominant13 => "Treizième",
     }
 }
 
 /// Forme d'accord quand une gamme est fixée : la qualité vient de la gamme,
-/// seul le nombre de notes et leur empilement comptent.
-pub const SCALE_SHAPES: [(Option<ChordKind>, &str, &str); 6] = [
+/// seuls le nombre de notes et leur empilement comptent.
+pub const SCALE_SHAPES: [(Option<ChordKind>, &str, &str); 11] = [
     (None, "Triade", "3"),
+    (Some(ChordKind::Six), "Sixte", "6"),
     (Some(ChordKind::Major7), "Septième", "7"),
+    (Some(ChordKind::Major9), "Neuvième", "9"),
+    (Some(ChordKind::Minor11), "Onzième", "11"),
+    (Some(ChordKind::Major13), "Treizième", "13"),
     (Some(ChordKind::Add9), "Add 9", "add9"),
     (Some(ChordKind::Sus2), "Sus 2", "sus2"),
     (Some(ChordKind::Sus4), "Sus 4", "sus4"),
+    (Some(ChordKind::SevenSus4), "7 sus 4", "7sus4"),
     (Some(ChordKind::Power), "Quinte", "5"),
 ];
 
 /// Forme (nom, symbole) d'un type d'accord une fois ramené dans la gamme.
 pub fn scale_shape(kind: Option<ChordKind>) -> (&'static str, &'static str) {
     use ChordKind as K;
-    let i = match kind {
+    let i = SCALE_SHAPES.iter().position(|s| s.0 == kind).unwrap_or(match kind {
         None | Some(K::Major | K::Minor | K::Diminished | K::Augmented) => 0,
-        Some(K::Add9 | K::MinorAdd9) => 2,
-        Some(K::Sus2) => 3,
-        Some(K::Sus4) => 4,
-        Some(K::Power) => 5,
-        Some(_) => 1,
-    };
+        Some(K::Minor6) => 1,
+        Some(K::MinorAdd9) => 6,
+        Some(K::SixNine | K::Minor9 | K::Dominant9) => 3,
+        Some(K::Add11 | K::Dominant11) => 4,
+        Some(K::Dominant13) => 5,
+        Some(_) => 2,
+    });
     (SCALE_SHAPES[i].1, SCALE_SHAPES[i].2)
 }
+
+/// Case du choix d'accord : type (`None` : triade de la gamme), libellé, nom complet.
+type ChordChoice = (Option<ChordKind>, &'static str, &'static str);
+
+/// Libellés des renversements.
+const INVERSIONS: [&str; 4] = ["Fond.", "1er", "2e", "3e"];
 
 /// Symbole court ; « M » pour l'accord majeur, « b5 » à la place de « ♭5 »
 /// (les polices embarquées n'ont pas ♭).
@@ -114,6 +138,7 @@ impl App {
     fn chord_at(&self, root: u8) -> Vec<u8> {
         let kind = self.piano.chord.unwrap_or(ChordKind::Major);
         let notes = self.project.scale.shaped_chord(self.project.key, root, kind);
+        let notes = revoice(&notes, usize::from(self.piano.chord_inv), self.piano.voicing);
         if notes.is_empty() { vec![root] } else { notes }
     }
 
@@ -121,6 +146,149 @@ impl App {
     fn stamp_keys(&self, key: u8) -> Vec<u8> {
         let root = if self.piano.scale_snap { self.project.snap(key) } else { key };
         if self.piano.chord_stamp { self.chord_at(root) } else { vec![root] }
+    }
+
+    /// Choix de l'accord : formes (ou types, sans gamme), renversement,
+    /// disposition, et l'accord sur la tonique en aperçu. Renvoie faux quand il se ferme.
+    pub(super) fn chord_popup(&mut self, c: &mut Canvas, input: &Input, anchor: Rect, screen: Rect) -> bool {
+        let t = self.theme;
+        let open = self.anim.to(wid("popup", 0, 0), 1.0, T_HOVER);
+        const GAP: f32 = 4.0;
+        const COLS: usize = 4;
+        const HEAD: f32 = 24.0;
+        let (w, cell_h) = (372.0, 34.0);
+        let cell_w = (w - 24.0 - (COLS - 1) as f32 * GAP) / COLS as f32;
+        let in_scale = self.project.scale != ScaleKind::Chromatic;
+
+        // Sections : (titre, [(choix, libellé, nom complet)]).
+        let mut forms: Vec<(String, Vec<ChordChoice>)> = Vec::new();
+        if in_scale {
+            let title = format!("Forme · {} {}", super::app::key_name(self.project.key), self.project.scale.name().to_lowercase());
+            forms.push((title, SCALE_SHAPES.iter().map(|&(k, name, _)| (k, name, name)).collect()));
+        } else {
+            for group in ["Triades", "Septièmes et sixtes", "Enrichis"] {
+                let items = ChordKind::ALL
+                    .into_iter()
+                    .filter(|k| k.group() == group)
+                    .map(|k| (Some(k), chord_symbol(k), chord_name(k)))
+                    .collect();
+                forms.push((group.to_string(), items));
+            }
+        }
+        let rows = |n: usize| n.div_ceil(COLS) as f32 * (cell_h + GAP);
+        let forms_h: f32 = forms.iter().map(|(_, v)| HEAD + rows(v.len())).sum();
+        let preview_h = 54.0;
+        let h = 40.0 + forms_h + 2.0 * (HEAD + cell_h + GAP) + preview_h + 14.0;
+        let x = anchor.x.min(screen.right() - 12.0 - w).max(12.0);
+        let mut y0 = anchor.bottom() + 8.0;
+        if y0 + h > screen.bottom() - 8.0 {
+            y0 = (screen.bottom() - 8.0 - h).max(8.0);
+        }
+        let r = Rect::new(x, y0 + (1.0 - open) * 6.0, w, h);
+        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, Color::rgba(0, 0, 0, (90.0 * open) as u8));
+        c.fill_rrect(r, 14.0, t.panel);
+        c.stroke_rrect(r, 14.0, 1.0, t.hairline.alpha(1.6));
+        self.text(c, self.f.sans_med, 12.0, r.x + 16.0, r.y + 20.0, "Accord", t.muted);
+
+        let over = |b: Rect| input.inside && b.contains(input.x, input.y);
+        let mut hovered_name: Option<&str> = None;
+        let mut y = r.y + 34.0;
+        let mut n = 0;
+        let cur_shape = scale_shape(self.piano.chord).0;
+        for (title, items) in &forms {
+            self.text(c, self.f.sans_med, 11.0, r.x + 16.0, y + HEAD * 0.5, title, t.muted);
+            y += HEAD;
+            for (j, &(kind, label, name)) in items.iter().enumerate() {
+                let cell = Rect::new(r.x + 12.0 + (j % COLS) as f32 * (cell_w + GAP), y + (j / COLS) as f32 * (cell_h + GAP), cell_w, cell_h);
+                let cur = if in_scale { name == cur_shape } else { self.piano.chord.unwrap_or(ChordKind::Major) == kind.unwrap_or(ChordKind::Major) };
+                let hov = over(cell);
+                if hov {
+                    hovered_name = Some(name);
+                }
+                self.choice_cell(c, cell, wid("chord-kind", n, 0), hov, cur, label);
+                n += 1;
+                if hov && input.pressed {
+                    self.piano.chord = kind;
+                    self.piano.chord_stamp = true;
+                }
+            }
+            y += rows(items.len());
+        }
+
+        // Renversement et disposition.
+        self.text(c, self.f.sans_med, 11.0, r.x + 16.0, y + HEAD * 0.5, "Renversement", t.muted);
+        y += HEAD;
+        for (i, label) in INVERSIONS.iter().enumerate() {
+            let cell = Rect::new(r.x + 12.0 + i as f32 * (cell_w + GAP), y, cell_w, cell_h);
+            let hov = over(cell);
+            self.choice_cell(c, cell, wid("chord-inv", i, 0), hov, usize::from(self.piano.chord_inv) == i, label);
+            if hov && input.pressed {
+                self.piano.chord_inv = i as u8;
+                self.piano.chord_stamp = true;
+            }
+        }
+        y += cell_h + GAP;
+        self.text(c, self.f.sans_med, 11.0, r.x + 16.0, y + HEAD * 0.5, "Disposition", t.muted);
+        y += HEAD;
+        let vw = (w - 24.0 - 2.0 * GAP) / 3.0;
+        for (i, v) in Voicing::ALL.into_iter().enumerate() {
+            let cell = Rect::new(r.x + 12.0 + i as f32 * (vw + GAP), y, vw, cell_h);
+            let hov = over(cell);
+            self.choice_cell(c, cell, wid("chord-voicing", i, 0), hov, self.piano.voicing == v, v.name());
+            if hov && input.pressed {
+                self.piano.voicing = v;
+                self.piano.chord_stamp = true;
+            }
+        }
+        y += cell_h + GAP + 6.0;
+
+        // Aperçu : l'accord posé sur la tonique, sur deux octaves et demie de clavier.
+        let kb = Rect::new(r.x + 12.0, y, w - 24.0, preview_h - 8.0);
+        let root = 60 + self.project.key % 12;
+        let notes = self.chord_at(root);
+        let low = notes.first().map_or(48, |&n| (n / 12) * 12).min(root / 12 * 12);
+        let whites: Vec<u8> = (low..low + 36).filter(|k| !matches!(k % 12, 1 | 3 | 6 | 8 | 10)).collect();
+        let kw = kb.w / whites.len() as f32;
+        c.fill_rrect(kb, 6.0, t.well);
+        for (i, &k) in whites.iter().enumerate() {
+            let key = Rect::new(kb.x + i as f32 * kw + 0.5, kb.y + 1.0, kw - 1.0, kb.h - 2.0);
+            let on = notes.contains(&k);
+            c.fill_rrect(key, 3.0, if on { t.accent } else { t.text2.alpha(0.18) });
+        }
+        for (i, &k) in whites.iter().enumerate() {
+            let black = k + 1;
+            if matches!(black % 12, 1 | 3 | 6 | 8 | 10) && black < low + 36 {
+                let key = Rect::new(kb.x + (i as f32 + 1.0) * kw - kw * 0.3, kb.y + 1.0, kw * 0.6, kb.h * 0.58);
+                let on = notes.contains(&black);
+                c.fill_rrect(key, 2.0, if on { t.accent.mix(WHITE, 0.15) } else { t.bg_deep });
+            }
+        }
+        // Nom de l'accord obtenu (ou du choix survolé), en haut à droite.
+        let shown = match hovered_name {
+            Some(name) => name.to_string(),
+            None => {
+                ChordKind::identify(&notes).map_or_else(
+                    || format!("{} notes", notes.len()),
+                    |k| format!("{}{}", super::app::key_name(notes[0]), chord_symbol(k)),
+                )
+            }
+        };
+        self.text_right(c, self.f.mono_med, 12.0, r.right() - 16.0, r.y + 20.0, &shown, t.text2);
+
+        let clicked = input.pressed || input.right_pressed;
+        !clicked || r.contains(input.x, input.y) || anchor.contains(input.x, input.y)
+    }
+
+    /// Case de choix d'un popup : surlignée au survol, pleine d'accent si choisie.
+    fn choice_cell(&mut self, c: &mut Canvas, cell: Rect, id: u64, hov: bool, cur: bool, label: &str) {
+        let t = self.theme;
+        let hv = self.hover_anim(id, hov);
+        let on = self.anim.to(id ^ 0x6f6e, cur as u8 as f32, T_HOVER);
+        c.fill_rrect(cell, 8.0, t.raised.mix(t.raised_hi, hv).alpha(0.55 + 0.45 * hv).mix(t.accent, on));
+        let (cx, cy) = cell.center();
+        let ink = t.text2.mix(t.text, hv).mix(t.on_accent, on);
+        let label = self.fit(self.f.sans_med, 12.0, label, cell.w - 8.0);
+        self.text_center(c, self.f.sans_med, 12.0, cx, cy, &label, ink);
     }
 
     fn notes(&self, ch: usize) -> &[Note] {
@@ -203,15 +371,24 @@ impl App {
         self.text_center(c, self.f.sans_med, 12.0, kx - 5.0, ky, label, t.muted.mix(t.text, on.max(chv * 0.6)));
         draw_icon(c, Icon::ChevronDown, chip.right() - 10.0, ky, 9.0, t.muted);
         if chov {
+            let inv = INVERSIONS[usize::from(self.piano.chord_inv.min(3))];
             let tip = if in_scale {
-                format!("Accord · {}\nSuit la gamme du projet", scale_shape(self.piano.chord).0)
+                format!("Accord · {} · {inv}\nSuit la gamme · molette : renversement", scale_shape(self.piano.chord).0)
             } else {
-                format!("Accord · {}", self.piano.chord.map_or("Majeur", chord_name))
+                format!("Accord · {} · {inv}\nMolette : renversement", self.piano.chord.map_or("Majeur", chord_name))
             };
             self.set_tip(&tip, "");
         }
         if chov && input.pressed {
             self.open_popup(Popup::Chord, chip);
+        }
+        if chov && input.wheel != 0.0 {
+            let inv = (i32::from(self.piano.chord_inv) + input.wheel.signum() as i32).clamp(0, 3);
+            self.piano.chord_inv = inv as u8;
+            self.piano.chord_stamp = true;
+        }
+        if self.piano.chord_inv > 0 {
+            c.fill_circle(chip.right() - 4.0, chip.y + 4.0, 2.5, t.accent);
         }
 
         hx += chip.w + 12.0;
