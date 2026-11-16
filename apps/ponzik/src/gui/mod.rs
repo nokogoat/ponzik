@@ -13,6 +13,7 @@ mod dnd;
 mod float;
 mod keymap;
 mod keys;
+mod library;
 mod midiout;
 mod mixer;
 mod notefx;
@@ -40,6 +41,7 @@ use ponzik_window::{Event, Key, Modifiers, MouseButton, Window};
 
 use app::{App, View};
 pub use settings::init_language;
+pub use compat::library_dir;
 
 const FRAME: Duration = Duration::from_micros(16_667);
 const DOUBLE_CLICK: f32 = 0.35;
@@ -216,6 +218,7 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     }
     app.load_settings();
     app.start_autosave();
+    app.start_library();
     let (play, find) = (app.key_label(keymap::Shortcut::PlayStop), app.key_label(keymap::Shortcut::Palette));
     app.toast(&tr_fmt!("{} to play · {} to find anything", play, find));
     eprintln!("Ponzik · {} · {} Hz · {}", window.backend_name(), config.sample_rate, output_name);
@@ -290,6 +293,7 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
         clicks.check(&mut input);
         dirty |= app.poll_midi();
         app.autosave_tick(started.elapsed().as_secs_f64());
+        dirty |= app.library_tick();
         if app.rec.output.as_ref().is_some_and(|s| !s.is_running()) {
             return Err(tr("the audio driver stopped").into());
         }
@@ -336,6 +340,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
         if let Some((_, _, ws)) = settings::presets().into_iter().nth(i) {
             app.apply_workspace(ws, false);
         }
+    }
+    // PONZIK_BROWSER=n: browser tab (0 instruments, 1 effects, 2 samples, 3 plugins).
+    if let Some(i) = std::env::var("PONZIK_BROWSER").ok().and_then(|v| v.parse::<usize>().ok()) {
+        app.sidebar_tab = i.min(3);
     }
     let view = match view {
         "piano" => View::Piano,

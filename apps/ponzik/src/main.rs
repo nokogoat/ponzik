@@ -29,6 +29,8 @@ Usage:
                                            PONZIK_SAMPLELAB=demo|<wav> opens the Sample Lab;
                                            PONZIK_SCALE_UI=2 renders at 2× for HiDPI;
                                            PONZIK_LANG=fr picks the language)
+  ponzik library [dir]                     renders the bundled sound library (24-bit WAV)
+                                           into dir (default: ~/Music/Ponzik/Library)
   ponzik help                              shows this help")
 }
 
@@ -41,6 +43,7 @@ fn main() -> ExitCode {
         Some("play") => play(args.get(1).map(String::as_str)),
         Some("render") => render(&args[1..]),
         Some("screenshot") => screenshot(&args[1..]),
+        Some("library") => library(args.get(1).map(String::as_str)),
         Some("help" | "-h" | "--help") => {
             println!("{}", help());
             Ok(())
@@ -116,6 +119,17 @@ fn render(args: &[String]) -> Result<(), String> {
             20.0 * peak.max(1e-9).log10()
         )
     );
+    Ok(())
+}
+
+fn library(dir: Option<&str>) -> Result<(), String> {
+    let dir = dir.map_or_else(gui::library_dir, std::path::PathBuf::from);
+    let started = Instant::now();
+    let threads = thread::available_parallelism().map_or(4, |n| n.get());
+    let progress = |done: usize, total: usize| eprint!("\r{done}/{total}");
+    let count = ponzik_project::library::generate_library(&dir, threads, &progress)?;
+    eprintln!();
+    println!("{}: {count} sounds in {:.1} s", dir.display(), started.elapsed().as_secs_f32());
     Ok(())
 }
 

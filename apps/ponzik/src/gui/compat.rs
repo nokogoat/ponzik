@@ -25,6 +25,11 @@ pub fn projects_dir() -> PathBuf {
     music_dir().join("Ponzik")
 }
 
+/// The bundled sound library, rendered at first run.
+pub fn library_dir() -> PathBuf {
+    projects_dir().join("Library")
+}
+
 /// Dossier des réglages : `$XDG_CONFIG_HOME/ponzik` (ou `~/.config/ponzik`) sous
 /// Linux, `%APPDATA%\Ponzik` sous Windows, `~/Library/Application Support/Ponzik` sous macOS.
 pub fn config_dir() -> PathBuf {
@@ -99,9 +104,18 @@ pub fn load_sample(path: &str) -> Result<Sample, String> {
     ponzik_engine::wav::load_wav(path)
 }
 
-/// Cherche des fichiers WAV dans les dossiers habituels.
+/// Cherche des fichiers WAV dans les dossiers habituels. The library comes
+/// first, sorted by folder, then everything else by name.
 pub fn scan_samples() -> Vec<PathBuf> {
     let h = home();
+    let library = library_dir();
+    let mut found = Vec::new();
+    walk(&library, 0, None, &mut found);
+    let order = ponzik_project::library::library_order();
+    found.sort_by_cached_key(|p| {
+        let rel = p.strip_prefix(&library).unwrap_or(p);
+        (order.iter().position(|o| o == rel).unwrap_or(usize::MAX), p.clone())
+    });
     let roots = [
         projects_dir().join("Samples"),
         projects_dir().join("Échantillons"),
@@ -111,14 +125,21 @@ pub fn scan_samples() -> Vec<PathBuf> {
     ];
     let mut out = Vec::new();
     for root in roots {
-        walk(&root, 0, &mut out);
+        walk(&root, 0, Some(&library), &mut out);
         if out.len() >= SAMPLE_SCAN_LIMIT {
             break;
         }
     }
     out.sort_by_key(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()));
     out.dedup();
-    out
+    found.extend(out);
+    found
+}
+
+/// Folder of a library file relative to the library root (`Drums/Kicks`), if it is one.
+pub fn library_folder(path: &Path) -> Option<String> {
+    let rel = path.parent()?.strip_prefix(library_dir()).ok()?;
+    Some(rel.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/"))
 }
 
 /// Cherche des fichiers MIDI dans les mêmes dossiers que les échantillons.
@@ -187,8 +208,8 @@ pub fn export_midi(project: &Project, pattern: usize) -> Result<PathBuf, String>
     Ok(path)
 }
 
-fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
-    if depth > 4 || out.len() >= SAMPLE_SCAN_LIMIT {
+fn walk(dir: &Path, depth: usize, skip: Option<&Path>, out: &mut Vec<PathBuf>) {
+    if depth > 4 || out.len() >= SAMPLE_SCAN_LIMIT || skip.is_some_and(|s| s == dir) {
         return;
     }
     let Ok(entries) = std::fs::read_dir(dir) else { return };
@@ -198,7 +219,7 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
             continue;
         }
         if p.is_dir() {
-            walk(&p, depth + 1, out);
+            walk(&p, depth + 1, skip, out);
         } else if p.extension().is_some_and(|x| x.eq_ignore_ascii_case("wav")) {
             out.push(p);
             if out.len() >= SAMPLE_SCAN_LIMIT {

@@ -445,6 +445,8 @@ pub struct App {
     /// Réponses d'effets déjà calculées, par réglages.
     pub responses: HashMap<String, Arc<Vec<f32>>>,
     pub sample_files: Vec<PathBuf>,
+    /// Sound library being built in the background.
+    pub library_build: Option<std::sync::mpsc::Receiver<Result<usize, String>>>,
     /// Plugins CLAP trouvés au démarrage.
     pub plugins: Vec<ponzik_clap::PluginInfo>,
     /// Plugins VST 3 trouvés au démarrage.
@@ -584,6 +586,7 @@ impl App {
             waveforms: HashMap::new(),
             responses: HashMap::new(),
             sample_files: compat::scan_samples(),
+            library_build: None,
             plugins: ponzik_clap::scan(),
             vst3_plugins: ponzik_vst3::scan(),
             playing: false,
@@ -2180,7 +2183,10 @@ impl App {
         }
         for p in &self.sample_files {
             let name = p.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
-            let folder = p.parent().and_then(|p| p.file_name()).map_or(String::new(), |s| s.to_string_lossy().into_owned());
+            let folder = match compat::library_folder(p) {
+                Some(f) => format!("Library · {f}"),
+                None => p.parent().and_then(|p| p.file_name()).map_or(String::new(), |s| s.to_string_lossy().into_owned()),
+            };
             v.push((2, name, folder, Payload::Sample(p.clone())));
         }
         let clap = self.plugins.iter().map(|p| ("CLAP", p.kind(), &p.name, &p.vendor, p.is_instrument));
@@ -2302,7 +2308,16 @@ impl App {
         }
 
         let mut last_cat = usize::MAX;
+        let mut last_group = "";
         for (k, (cat, name, detail, payload)) in entries.iter().enumerate() {
+            // Samples: the library first, one heading per folder, then the rest.
+            let group = if *cat != 2 { "" } else { detail.strip_prefix("Library · ").unwrap_or("Your samples") };
+            if !searching && group != last_group {
+                y += if last_group.is_empty() { 4.0 } else { 10.0 };
+                self.text(c, self.f.sans_med, 11.5, inner_x + 12.0, y + 8.0, group, t.muted);
+                y += 20.0;
+                last_group = group;
+            }
             if searching && *cat != last_cat {
                 // Section : son icône et un filet.
                 y += if last_cat == usize::MAX { 4.0 } else { 12.0 };
