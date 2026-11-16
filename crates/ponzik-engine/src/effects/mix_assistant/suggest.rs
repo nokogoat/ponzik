@@ -176,13 +176,20 @@ pub fn detect(a: &Analysis) -> Profile {
     }
     let centroid = if den > 0.0 { 2f32.powf(num / den) } else { 1_000.0 };
     let stereo = a.side_db > -15.0;
-    if a.crest_db > 13.0 && a.range_db > 8.0 {
-        Profile::Drums
-    } else if low > 0.6 && high < 0.02 {
+    let percussive = (a.attack_db > 14.0 && (a.crest_db > 8.0 || a.range_db > 15.0)) || (a.crest_db > 13.0 && a.range_db > 8.0);
+    // Une source surtout grave est une basse, même jouée staccato.
+    if low > 0.5 && high < 0.02 {
         Profile::Bass
+    } else if percussive {
+        Profile::Drums
     } else if stereo && low > 0.12 && high > 0.02 {
         Profile::Mix
-    } else if !stereo && a.sibilance_db > -16.0 && (250.0..4_000.0).contains(&centroid) && low < 0.2 {
+    } else if !stereo
+        && a.sibilance_db > -16.0
+        && a.sib_spread_db > 6.0
+        && (250.0..4_000.0).contains(&centroid)
+        && low < 0.2
+    {
         Profile::Vocal
     } else if !stereo && (300.0..2_500.0).contains(&centroid) && high < 0.03 {
         Profile::Guitar
@@ -243,6 +250,9 @@ pub fn suggest(a: &Analysis, requested: Profile) -> Suggestion {
         let f = centers[i];
         a.bands[i] > top - 45.0 && f >= sp.range.0 && f <= sp.range.1
     });
+    // On n'accentue que là où la source a vraiment de quoi : relever ce qui
+    // n'existe pas n'apporte que du bruit et du souffle.
+    let strong: [bool; N_BANDS] = std::array::from_fn(|i| useful[i] && a.bands[i] > top - 20.0);
     // Recalage sur la médiane de l'écart au cœur de la plage, où les cibles sont les plus sûres.
     let core = (sp.range.0.max(150.0), sp.range.1.min(5_000.0));
     let mut dev = [0.0f32; N_BANDS];
@@ -281,6 +291,7 @@ pub fn suggest(a: &Analysis, requested: Profile) -> Suggestion {
         }
         r[i] = sum / k as f32;
     }
+    let measured = r;
     let apply = |r: &mut [f32; N_BANDS], c: &BiquadCoefs| {
         for i in 0..N_BANDS {
             if useful[i] {
@@ -299,15 +310,24 @@ pub fn suggest(a: &Analysis, requested: Profile) -> Suggestion {
         if k == 0 { 0.0 } else { sum / k as f32 }
     };
     let gentle = |excess: f32| if excess > 0.0 { (-0.6 * excess).max(-4.0) } else { (-0.6 * excess).min(3.0) };
+    // Plateau : une accentuation demande que la moitié de sa zone soit présente.
+    let present = |lo: f32, hi: f32| {
+        let zone = (0..N_BANDS).filter(|&i| useful[i] && centers[i] >= lo && centers[i] <= hi);
+        let (all, strong_n) = zone.fold((0, 0), |(n, k), i| (n + 1, k + strong[i] as usize));
+        all > 0 && 2 * strong_n >= all
+    };
+    let shelf = |excess: f32, lo: f32, hi: f32| {
+        if excess.abs() <= 1.5 || (excess < 0.0 && !present(lo, hi)) { 0.0 } else { round_db(gentle(excess)) }
+    };
 
     // --- Plateaux ---
     let ls = mean_in(&r, sp.range.0, sp.low_shelf);
-    let ls_gain = if ls.abs() > 1.5 { round_db(gentle(ls)) } else { 0.0 };
+    let ls_gain = shelf(ls, sp.range.0, sp.low_shelf);
     if ls_gain != 0.0 {
         apply(&mut r, &BiquadCoefs::low_shelf(sp.low_shelf, 0.707, ls_gain, SR));
     }
     let hs = mean_in(&r, sp.high_shelf, sp.range.1);
-    let hs_gain = if hs.abs() > 1.5 { round_db(gentle(hs)) } else { 0.0 };
+    let hs_gain = shelf(hs, sp.high_shelf, sp.range.1);
     if hs_gain != 0.0 {
         apply(&mut r, &BiquadCoefs::high_shelf(sp.high_shelf, 0.707, hs_gain, SR));
     }
@@ -322,13 +342,19 @@ pub fn suggest(a: &Analysis, requested: Profile) -> Suggestion {
     let mut bells = [(0.0f32, 0.0f32, 1.0f32); 3];
     let mut found = 0;
     let (lo, hi) = (sp.range.0.max(60.0), sp.range.1.min(12_000.0));
-    for bell in &mut bells {
-        let score = |x: f32| if x > 0.0 { x } else { -0.6 * x };
+    for k in 0..bells.len() {
+        let score = |i: usize| match r[i] {
+            x if x > 0.0 => x,
+            x if strong[i] => -0.6 * x,
+            _ => 0.0,
+        };
+        // Une demi-octave au moins entre deux cloches.
+        let free = |i: usize| bells[..found].iter().all(|b| (centers[i] / b.0).log2().abs() >= 0.5);
         let best = (0..N_BANDS)
-            .filter(|&i| useful[i] && centers[i] >= lo && centers[i] <= hi)
-            .max_by(|&i, &j| score(r[i]).total_cmp(&score(r[j])));
+            .filter(|&i| useful[i] && centers[i] >= lo && centers[i] <= hi && free(i))
+            .max_by(|&i, &j| score(i).total_cmp(&score(j)));
         let Some(i) = best else { break };
-        if score(r[i]) < 1.5 {
+        if score(i) < 1.5 {
             break;
         }
         // Largeur : les voisines du même signe au moins à mi-hauteur.
@@ -345,10 +371,15 @@ pub fn suggest(a: &Analysis, requested: Profile) -> Suggestion {
         let octaves = ((right - left + 1).max(3) as f32) / 6.0;
         let max_q = if r[i] > 0.0 { 2.5 } else { 1.2 };
         let q = (2f32.powf(octaves / 2.0) / (2f32.powf(octaves) - 1.0)).clamp(0.5, max_q);
-        let gain = if r[i] > 0.0 { (-0.75 * r[i]).max(-6.0) } else { (-0.5 * r[i]).min(3.0) };
+        // Accentuations : +3 dB par cloche, +4 dB en tout avec ce qui relève déjà la zone.
+        let boosted = r[i] - measured[i];
+        let gain = if r[i] > 0.0 { (-0.75 * r[i]).max(-6.0) } else { (-0.5 * r[i]).min(3.0).min(4.0 - boosted) };
+        if gain.abs() < 0.5 {
+            break;
+        }
         let (hz, gain, q) = (round_hz(centers[i]), round_db(gain), (q * 100.0).round() / 100.0);
         apply(&mut r, &BiquadCoefs::peaking(hz, q, gain, SR));
-        *bell = (hz, gain, q);
+        bells[k] = (hz, gain, q);
         found += 1;
     }
     // Rangées par fréquence ; les cloches inutilisées gardent leurs défauts, à plat.
@@ -443,7 +474,8 @@ pub fn suggest(a: &Analysis, requested: Profile) -> Suggestion {
     }
     let eq_change = if before > 0.0 { 10.0 * (after / before).max(1e-6).log10() } else { 0.0 };
     let level = a.rms_db + eq_change - est_gr + makeup;
-    let peak = a.peak_db + eq_change.max(0.0) - comp_curve(a.peak_db, threshold, ratio) + makeup;
+    // Les transitoires passent avant l'attaque du compresseur : crête non réduite.
+    let peak = a.peak_db + eq_change.max(0.0) + makeup;
     let out = (sp.rms_target - level).min(-1.0 - peak).clamp(-12.0, 12.0);
     s.set(P_OUTPUT, round_db(out));
     s

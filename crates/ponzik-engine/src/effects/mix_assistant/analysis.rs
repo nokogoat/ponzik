@@ -68,6 +68,9 @@ pub struct Analysis {
     /// Écart des sifflantes : 90e − 50e centile de (5–9 kHz − total). Grand quand
     /// des « s » ressortent par moments, nul sur un bruit régulier.
     pub sib_spread_db: f32,
+    /// Attaques : 95e centile des montées de niveau d'un bloc au suivant (dB).
+    /// Élevé pour les sons frappés, modéré pour une voix ou un instrument tenu.
+    pub attack_db: f32,
     /// Énergie du côté par rapport au centre (dB) ; très bas pour un son mono.
     pub side_db: f32,
     /// Corrélation gauche/droite, de −1 à 1.
@@ -76,7 +79,7 @@ pub struct Analysis {
     pub seconds: f32,
 }
 
-const SCALARS: usize = 15;
+const SCALARS: usize = 16;
 const ANALYSIS_LEN: usize = N_BANDS + SCALARS;
 
 impl Analysis {
@@ -99,6 +102,7 @@ impl Analysis {
             self.correlation,
             self.seconds,
             self.sib_spread_db,
+            self.attack_db,
         ];
         a[N_BANDS..].copy_from_slice(&s);
         a
@@ -119,6 +123,7 @@ impl Analysis {
             correlation: s[12],
             seconds: s[13],
             sib_spread_db: s[14],
+            attack_db: s[15],
         }
     }
 }
@@ -472,6 +477,12 @@ impl Analyzer {
         let rms_db = to_db(self.total_sq / self.total_n.max(1) as f64);
         let crest = (0..n).map(|b| self.peaks[b] - self.rms[b]).sum::<f32>() / n.max(1) as f32;
         let sc = &mut self.scratch;
+        for (d, w) in sc.iter_mut().zip(self.rms[..n].windows(2)) {
+            *d = (w[1] - w[0]).max(0.0);
+        }
+        let rises = n.saturating_sub(1);
+        sc[..rises].sort_unstable_by(f32::total_cmp);
+        let attack = if rises == 0 { 0.0 } else { sc[((rises - 1) as f32 * 0.95).round() as usize] };
         let range = Self::percentile(sc, &self.rms, n, 0.9) - Self::percentile(sc, &self.rms, n, 0.1);
         let peaks_db = [0.1, 0.25, 0.5, 0.75, 0.9].map(|q| Self::percentile(sc, &self.peaks, n, q));
         let sib_level = Self::percentile(sc, &self.hf_rms, n, 0.9);
@@ -495,6 +506,7 @@ impl Analyzer {
             sibilance_db: sibilance,
             sib_level_db: sib_level,
             sib_spread_db: sibilance - sib_median,
+            attack_db: attack,
             side_db,
             correlation,
             seconds: n as f32 * BLOCK_SECONDS,

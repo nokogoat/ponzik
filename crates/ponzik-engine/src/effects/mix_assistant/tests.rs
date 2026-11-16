@@ -278,6 +278,15 @@ fn detects_obvious_sources() {
     let a = listen(&mut fx, &sibilant_signal(48_000 * 5));
     assert_eq!(detect(&a), Profile::Vocal);
     assert_eq!(suggest(&a, Profile::Auto).profile, Profile::Vocal);
+    // Des coups de bruit qui retombent : une batterie.
+    let hits: Vec<f32> = noise(0.8, 48_000 * 8, 51)
+        .iter()
+        .enumerate()
+        .map(|(n, s)| s * (-((n % 24_000) as f32) / 3_000.0).exp())
+        .collect();
+    let a = listen(&mut fx, &hits);
+    assert!(a.attack_db > 14.0, "{}", a.attack_db);
+    assert_eq!(detect(&a), Profile::Drums);
 }
 
 #[test]
