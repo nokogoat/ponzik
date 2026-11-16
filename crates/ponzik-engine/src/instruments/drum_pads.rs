@@ -62,9 +62,10 @@ pub const PAD_NAMES: [&str; PADS] = [
 ];
 
 const OFF_ON: &[&str] = &["Off", "On"];
-const FILTERS: &[&str] = &["Off", "Low-pass", "High-pass"];
+const FILTERS: &[&str] = &["Off", "LP", "HP"];
 const CHOKES: &[&str] = &["None", "1", "2", "3", "4"];
-const MODES: &[&str] = &["One-shot", "Gate"];
+/// Shot plays the whole hit, Gate stops at the note-off.
+const MODES: &[&str] = &["Shot", "Gate"];
 
 /// Parameter slots of a pad: the id of slot `s` of pad `p` is `16p + s`.
 pub const S_VOLUME: u32 = 0;
