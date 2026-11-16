@@ -156,6 +156,14 @@ impl ClickTracker {
 }
 
 pub fn run(project: ponzik_project::Project) -> Result<(), String> {
+    // Sous PipeWire, l'appareil ALSA « default » ajoute son propre tampon
+    // (souvent 1024 trames) : on lui demande la même latence que la nôtre.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("PIPEWIRE_LATENCY").is_none() {
+        let frames = ponzik_audio::target_latency_ms() * 48;
+        // SAFETY: appelé au démarrage, avant le lancement des threads audio et MIDI.
+        unsafe { std::env::set_var("PIPEWIRE_LATENCY", format!("{frames}/48000")) };
+    }
     let output = ponzik_audio::open_default().map_err(|e| e.to_string())?;
     let config = output.config();
     let none = |_: &str| None;
@@ -196,6 +204,13 @@ fn event_loop(window: &mut Window, app: &mut App, stream: &ponzik_audio::OutputS
             while let Some(left) = deadline.checked_duration_since(Instant::now()) {
                 window.wait_events(left.min(slice), &mut events);
                 dirty |= app.poll_midi();
+                // Un clic ou une touche n'attend pas la prochaine image : la note
+                // part tout de suite, l'image est simplement dessinée en avance.
+                if events.iter().any(|e| {
+                    matches!(e, Event::MouseDown { .. } | Event::KeyDown { .. } | Event::Physical { down: true, .. })
+                }) {
+                    break;
+                }
             }
         } else {
             // Avec un contrôleur MIDI branché, on se réveille souvent pour ses notes.
