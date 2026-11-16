@@ -304,6 +304,8 @@ impl Drop for WorkerPool {
 
 fn worker(s: &Shared, idx: usize) {
     promote_current_thread();
+    // Same arithmetic as the audio thread (see `Engine::process`).
+    let _flush = crate::FlushDenormals::new();
     let mut seen = s.epoch.load(Ordering::Acquire);
     loop {
         // Wait for the next job: spin, then park.

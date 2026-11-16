@@ -698,6 +698,8 @@ impl Engine {
 
     fn run(&mut self, out: &mut [f32], channels: usize, stop_at_end: bool, input: &[f32], in_channels: usize) -> usize {
         let started = Instant::now();
+        // Ringing tails would otherwise fall into slow denormal arithmetic.
+        let _flush = crate::FlushDenormals::new();
         // Repère de temps avant les commandes : les notes jouées en direct
         // (et les coupures) sont datées du début de ce bloc.
         self.midi.begin(self.clock, self.mixer.latency());
