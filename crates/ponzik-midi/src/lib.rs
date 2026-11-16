@@ -3,6 +3,7 @@
 //!
 //! - Linux : ALSA rawmidi (`libasound`), un thread de lecture par port.
 //! - Windows : WinMM (`midiIn*`), rappel système.
+//! - macOS (expérimental) : CoreMIDI, rappel système par port.
 //!
 //! Les événements arrivent dans un canal ; [`MidiInput::poll`] les vide sans bloquer.
 //! Les canaux MIDI sont numérotés de 0 à 15.
@@ -20,7 +21,11 @@ mod backend;
 #[path = "winmm.rs"]
 mod backend;
 
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(target_os = "macos")]
+#[path = "coremidi.rs"]
+mod backend;
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 #[path = "unsupported.rs"]
 mod backend;
 
@@ -60,7 +65,7 @@ impl fmt::Display for MidiError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             MidiError::PortNotFound(id) => write!(f, "port MIDI introuvable : {id}"),
-            MidiError::UnsupportedPlatform => write!(f, "MIDI non supporté sur cette plateforme (Linux et Windows uniquement)"),
+            MidiError::UnsupportedPlatform => write!(f, "MIDI non supporté sur cette plateforme (Linux, Windows et macOS uniquement)"),
             MidiError::System(msg) => write!(f, "erreur MIDI système : {msg}"),
         }
     }
