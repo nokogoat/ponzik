@@ -2714,7 +2714,7 @@ impl App {
                     .iter()
                     .enumerate()
                     .map(|(i, th)| {
-                        let mut it = MenuItem::plain(th.name, Action::SetTheme(i)).on(th.name == self.theme.name);
+                        let mut it = MenuItem::plain(ponzik_i18n::tr(th.label), Action::SetTheme(i)).on(th.name == self.theme.name);
                         it.color = Some(th.accent);
                         it
                     })

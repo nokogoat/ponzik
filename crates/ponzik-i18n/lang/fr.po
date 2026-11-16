@@ -52,3 +52,14 @@ msgstr "D {}"
 
 msgid "Saw"
 msgstr "Scie"
+
+# --- Themes ---
+
+msgid "Ponzik"
+msgstr "Ponzik"
+
+msgid "Ice"
+msgstr "Glace"
+
+msgid "Amber"
+msgstr "Ambre"
