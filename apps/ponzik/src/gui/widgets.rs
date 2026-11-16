@@ -139,6 +139,8 @@ pub enum Icon {
     Spectral,
     /// Micro : entrée audio, panneau d'enregistrement.
     Mic,
+    /// Globe : langue de l'interface.
+    Globe,
 }
 
 /// Dessine une icône au trait, dans un carré de `size` centré sur (`cx`, `cy`).
@@ -389,6 +391,19 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
                 path.polygon(&[p(x - 2.2, -7.0), p(x + 2.2, -7.0), p(x, -4.2)]);
                 c.fill_path(&path, col);
             }
+        }
+        Icon::Globe => {
+            // Sphère, méridien en ellipse (deux polylignes) et deux parallèles.
+            c.stroke_circle(cx, cy, 7.0 * s, stroke, col);
+            let meridian: Vec<_> = (0..=16).map(|i| {
+                let a = -std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::PI / 16.0;
+                (a.cos() * 3.2, a.sin() * 7.0)
+            }).collect();
+            c.stroke_polyline(&meridian.iter().map(|&(x, y)| p(x, y)).collect::<Vec<_>>(), stroke * 0.8, col);
+            c.stroke_polyline(&meridian.iter().map(|&(x, y)| p(-x, y)).collect::<Vec<_>>(), stroke * 0.8, col);
+            c.stroke_polyline(&[p(-7.0, 0.0), p(7.0, 0.0)], stroke * 0.8, col);
+            c.stroke_polyline(&[p(-5.6, -3.6), p(5.6, -3.6)], stroke * 0.6, col.alpha(0.6));
+            c.stroke_polyline(&[p(-5.6, 3.6), p(5.6, 3.6)], stroke * 0.6, col.alpha(0.6));
         }
         Icon::Stretch => {
             c.stroke_polyline(&[p(-7.0, 0.0), p(7.0, 0.0)], stroke, col);

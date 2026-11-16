@@ -37,6 +37,7 @@ use ponzik_ui::{Canvas, encode_png};
 use ponzik_window::{Event, Key, Modifiers, MouseButton, Window};
 
 use app::{App, View};
+pub use settings::init_language;
 
 const FRAME: Duration = Duration::from_micros(16_667);
 const DOUBLE_CLICK: f32 = 0.35;

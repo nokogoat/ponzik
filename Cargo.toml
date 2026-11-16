@@ -14,6 +14,7 @@ ponzik-engine = { path = "crates/ponzik-engine" }
 ponzik-audio = { path = "crates/ponzik-audio" }
 ponzik-window = { path = "crates/ponzik-window" }
 ponzik-ui = { path = "crates/ponzik-ui" }
+ponzik-i18n = { path = "crates/ponzik-i18n" }
 ponzik-project = { path = "crates/ponzik-project" }
 ponzik-midi = { path = "crates/ponzik-midi" }
 ponzik-clap = { path = "crates/ponzik-clap" }

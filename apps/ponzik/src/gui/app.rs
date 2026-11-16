@@ -251,6 +251,8 @@ pub enum Action {
     Dissolve(usize),
     /// Profil d'espace de travail n.
     ApplyPreset(usize),
+    /// Langue de l'interface (`None` : celle du système).
+    SetLanguage(Option<ponzik_i18n::Lang>),
     /// Affiche ou masque une vue.
     ToggleViewShown(View),
 }
@@ -2960,6 +2962,7 @@ impl App {
                 self.save_settings();
             }
             Action::ApplyPreset(i) => self.apply_profile(i),
+            Action::SetLanguage(lang) => self.set_language(lang),
             Action::ToggleViewShown(v) => self.toggle_view_shown(v),
             Action::Automate(target, value) => self.create_automation(target, value),
             Action::SaveAs => {

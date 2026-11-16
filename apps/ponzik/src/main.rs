@@ -27,6 +27,7 @@ Usage :
   ponzik help                              affiche cette aide";
 
 fn main() -> ExitCode {
+    gui::init_language();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         None => gui::run(demo_project()),

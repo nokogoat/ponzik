@@ -96,6 +96,10 @@ impl App {
         for (i, (name, desc, _)) in super::settings::presets().into_iter().enumerate() {
             add(format!("Profil : {name} · {}", desc.to_lowercase()), "Réglages", none(), Action::ApplyPreset(i));
         }
+        add(ponzik_i18n::tr_fmt!("Language: System ({})", ponzik_i18n::Lang::detect().name()), "Réglages", none(), Action::SetLanguage(None));
+        for lang in ponzik_i18n::Lang::all() {
+            add(ponzik_i18n::tr_fmt!("Language: {}", lang.name()), "Réglages", none(), Action::SetLanguage(Some(lang)));
+        }
         for view in View::ALL {
             let verb = if self.view_shown(view) { "Masquer" } else { "Afficher" };
             add(format!("{verb} la vue {}", view.label()), "Réglages", none(), Action::ToggleViewShown(view));

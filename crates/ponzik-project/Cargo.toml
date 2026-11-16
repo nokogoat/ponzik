@@ -11,3 +11,4 @@ ponzik-dsp.workspace = true
 ponzik-engine.workspace = true
 ponzik-clap.workspace = true
 ponzik-vst3.workspace = true
+ponzik-i18n.workspace = true

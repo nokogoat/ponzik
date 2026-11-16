@@ -2,6 +2,7 @@
 //! profils en un clic) et les raccourcis remappables, enregistrés dans
 //! `settings.json` du dossier de configuration de l'utilisateur.
 
+use ponzik_i18n::{Lang, tr, tr_fmt};
 use ponzik_project::json::{self, Json};
 use ponzik_ui::{Canvas, Color, Rect};
 use ponzik_window::Key;
@@ -285,14 +286,16 @@ pub struct Prefs {
     /// Touche demandée déjà prise : (action, touche, action qui l'a).
     conflict: Option<(Shortcut, Combo, Shortcut)>,
     scroll: f32,
+    /// Langue choisie ; `None` suit celle du système.
+    pub lang: Option<Lang>,
 }
 
 /// Texte JSON des réglages.
-pub fn to_json(ws: &Workspace, keymap: &Keymap, theme: &str) -> Json {
+pub fn to_json(ws: &Workspace, keymap: &Keymap, theme: &str, lang: Option<Lang>) -> Json {
     let views = View::ALL.iter().map(|&v| (view_id(v).to_string(), Json::Bool(ws.view(v)))).collect();
     let bar = Bar::ALL.iter().map(|&b| (b.id().to_string(), Json::Bool(ws.bar(b)))).collect();
     let keys = keymap.overrides().into_iter().map(|(id, text)| (id.to_string(), Json::Str(text))).collect();
-    Json::Obj(vec![
+    let mut fields = vec![
         ("version".into(), VERSION.into()),
         ("theme".into(), theme.into()),
         ("views".into(), Json::Obj(views)),
@@ -301,7 +304,24 @@ pub fn to_json(ws: &Workspace, keymap: &Keymap, theme: &str) -> Json {
         ("count_in".into(), ws.count_in.into()),
         ("bar".into(), Json::Obj(bar)),
         ("keys".into(), Json::Obj(keys)),
-    ])
+    ];
+    if let Some(lang) = lang {
+        fields.push(("language".into(), lang.code().into()));
+    }
+    Json::Obj(fields)
+}
+
+/// Langue enregistrée (absente : celle du système).
+pub fn lang_from_json(j: &Json) -> Option<Lang> {
+    j.get("language").and_then(Json::as_str).and_then(Lang::from_code)
+}
+
+/// Langue au démarrage, avant de construire quoi que ce soit : `PONZIK_LANG`,
+/// sinon celle des réglages, sinon celle du système (anglais par défaut).
+pub fn init_language() {
+    let env = std::env::var("PONZIK_LANG").ok().and_then(|v| Lang::from_code(&v));
+    let saved = || std::fs::read_to_string(settings_path()).ok().and_then(|t| json::parse(&t).ok()).and_then(|j| lang_from_json(&j));
+    ponzik_i18n::set_lang(env.or_else(saved).unwrap_or_else(Lang::detect));
 }
 
 /// Lecture tolérante : tout ce qui manque ou ne se lit pas garde sa valeur par défaut.
@@ -365,6 +385,7 @@ impl App {
             }
         };
         let (ws, keymap, theme) = from_json(&j);
+        self.prefs.lang = lang_from_json(&j);
         if let Some(th) = theme.and_then(|name| THEMES.iter().find(|t| t.name == name)) {
             self.theme = *th;
         }
@@ -375,7 +396,7 @@ impl App {
 
     pub fn save_settings(&mut self) {
         self.sync_workspace();
-        let mut j = to_json(&self.prefs.ws, &self.prefs.keymap, self.theme.name);
+        let mut j = to_json(&self.prefs.ws, &self.prefs.keymap, self.theme.name, self.prefs.lang);
         if let Json::Obj(fields) = &mut j {
             fields.push(("ui_scale".into(), (self.prefs.ui_scale.percent() as f64 / 100.0).into()));
         }
@@ -436,6 +457,16 @@ impl App {
         if announce {
             self.toast(&format!("Taille de l'interface : {} %", s.percent()));
         }
+    }
+
+    /// Change la langue de l'interface tout de suite et l'enregistre
+    /// (`None` : suivre le système).
+    pub fn set_language(&mut self, lang: Option<Lang>) {
+        self.prefs.lang = lang;
+        let lang = lang.unwrap_or_else(Lang::detect);
+        ponzik_i18n::set_lang(lang);
+        self.save_settings();
+        self.toast(&tr_fmt!("Language: {}", lang.name()));
     }
 
     // --- Requêtes ---
@@ -878,6 +909,35 @@ impl App {
             c.fill_rrect(Rect::new(cx - 14.0, y + 42.0, 28.0, 28.0), 8.0, t.raised);
             draw_icon(c, v.icon(), cx, y + 56.0, 15.0, t.accent);
         }
+
+        // Langue de l'interface : effet immédiat.
+        let y = (y + 96.0).min(right.bottom() - 58.0);
+        self.section(c, right.x, y, tr("Language"));
+        let mut choices: Vec<(Option<Lang>, String)> = vec![(None, tr_fmt!("System ({})", Lang::detect().name()))];
+        choices.extend(Lang::all().map(|l| (Some(l), l.name().to_string())));
+        let mut x = right.x;
+        let mut row_y = y + 20.0;
+        for (k, (choice, label)) in choices.into_iter().enumerate() {
+            let w = self.fonts.measure(self.f.sans_med, 12.0, &label) + 44.0;
+            if x + w > right.right() && x > right.x {
+                x = right.x;
+                row_y += 36.0;
+            }
+            let r = Rect::new(x, row_y, w, 30.0);
+            let id = wid("set-lang", k, 0);
+            let active = self.prefs.lang == choice;
+            let icon = if active { Icon::Check } else { Icon::Globe };
+            if self.pill_button(c, input, id, r, icon, &label, active) && !active {
+                self.set_language(choice);
+            }
+            if self.hovered(input, id, r) {
+                *hint = Some(match choice {
+                    None => tr("Follow the language of the system").to_string(),
+                    Some(l) => tr_fmt!("Interface in {} · takes effect immediately", l.name()),
+                });
+            }
+            x += w + 8.0;
+        }
     }
 
     /// Glissière de la taille de l'interface, appliquée au relâchement : changer
@@ -1244,8 +1304,10 @@ mod tests {
         let mut keymap = Keymap::default();
         keymap.rebind(Shortcut::ViewSession, Combo::key(Key::F(11)), false);
         keymap.set(Shortcut::TapTempo, None);
-        let text = to_json(&ws, &keymap, "Glace").pretty();
-        let (ws2, keymap2, theme) = from_json(&json::parse(&text).expect("JSON valide"));
+        let text = to_json(&ws, &keymap, "Glace", Lang::from_code("fr")).pretty();
+        let j = json::parse(&text).expect("JSON valide");
+        let (ws2, keymap2, theme) = from_json(&j);
+        assert_eq!(lang_from_json(&j).map(Lang::code), Some("fr"));
         assert_eq!(ws2, ws);
         assert_eq!(keymap2, keymap);
         assert_eq!(theme.as_deref(), Some("Glace"));

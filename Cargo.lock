@@ -10,6 +10,7 @@ dependencies = [
  "ponzik-clap",
  "ponzik-dsp",
  "ponzik-engine",
+ "ponzik-i18n",
  "ponzik-midi",
  "ponzik-project",
  "ponzik-ui",
@@ -44,8 +45,13 @@ name = "ponzik-engine"
 version = "0.1.0"
 dependencies = [
  "ponzik-dsp",
+ "ponzik-i18n",
  "ponzik-midi",
 ]
+
+[[package]]
+name = "ponzik-i18n"
+version = "0.1.0"
 
 [[package]]
 name = "ponzik-midi"
@@ -58,6 +64,7 @@ dependencies = [
  "ponzik-clap",
  "ponzik-dsp",
  "ponzik-engine",
+ "ponzik-i18n",
  "ponzik-vst3",
 ]
 

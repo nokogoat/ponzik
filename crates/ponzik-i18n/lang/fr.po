@@ -1,0 +1,54 @@
+# French catalog of Ponzik.
+# Keys (msgid) are the English source strings of the code; a missing or
+# empty msgstr falls back to English. List what is missing with:
+#   cargo run -p ponzik-i18n --example missing -- crates/ponzik-i18n/lang/fr.po apps crates
+msgid ""
+msgstr ""
+"Language-Name: Français\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"X-Decimal-Separator: ,\n"
+
+# --- Common ---
+
+msgid "Cancel"
+msgstr "Annuler"
+
+msgid "{} note"
+msgstr "{} note"
+
+msgid "{} notes"
+msgstr "{} notes"
+
+# --- Language picker ---
+
+msgid "Language"
+msgstr "Langue"
+
+msgid "System ({})"
+msgstr "Système ({})"
+
+msgid "Follow the language of the system"
+msgstr "Suivre la langue du système"
+
+msgid "Interface in {} · takes effect immediately"
+msgstr "Interface : {} · effet immédiat"
+
+msgid "Language: {}"
+msgstr "Langue : {}"
+
+msgid "Language: System ({})"
+msgstr "Langue : système ({})"
+
+# --- Parameter values ---
+
+msgid "{}%"
+msgstr "{} %"
+
+msgid "L {}"
+msgstr "G {}"
+
+msgid "R {}"
+msgstr "D {}"
+
+msgid "Saw"
+msgstr "Scie"
