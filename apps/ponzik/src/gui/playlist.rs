@@ -17,9 +17,12 @@ const LANE_H: f32 = 52.0;
 const EDGE: f32 = 8.0;
 const PLAYLIST_HELP: &str = "Playlist
 Clic : poser le pattern choisi · bord : durée
-Clic droit : effacer · double-clic : éditer
-Règle : départ et boucle · Ctrl+B : dupliquer
+Clic droit : effacer · sur le titre : menu du clip
+Double-clic : éditer · Ctrl+B : dupliquer
+Règle : départ et boucle
 Molette : défiler · Ctrl : zoom · milieu : glisser";
+/// Hauteur de la barre de titre d'un clip (clic droit : menu).
+const CLIP_TITLE: f32 = 19.0;
 
 #[derive(Clone, Copy, Debug)]
 pub enum ClipDrag {
@@ -36,7 +39,43 @@ pub fn pattern_color(i: usize) -> Color {
     Color::hex(P[i % P.len()])
 }
 
+/// Couleurs proposées pour un pattern : la famille de Ponzik, puis des teintes
+/// chaudes pour distinguer les sections. Pas de rouge : il dit l'enregistrement.
+pub const PATTERN_COLORS: [(&str, u32); 12] = [
+    ("Vert", 0x3fd45a),
+    ("Sarcelle", 0x3ccfc4),
+    ("Lime", 0x9be15d),
+    ("Ciel", 0x2fb6e0),
+    ("Menthe", 0x67e8a4),
+    ("Citron", 0xc7e85a),
+    ("Ambre", 0xf0b44a),
+    ("Corail", 0xf08a5d),
+    ("Rose", 0xe878b4),
+    ("Lilas", 0xa98cf0),
+    ("Indigo", 0x6b7cf0),
+    ("Ardoise", 0x8a9aa6),
+];
+
 impl App {
+    /// Couleur affichée d'un pattern : celle choisie, sinon celle de sa place.
+    pub fn pattern_tint(&self, p: usize) -> Color {
+        match self.project.patterns.get(p).map_or(0, |p| p.color) {
+            0 => pattern_color(p),
+            hex => Color::hex(hex),
+        }
+    }
+
+    /// « Make unique » : le clip joue désormais sa propre copie du pattern.
+    pub fn make_unique(&mut self, clip: usize) {
+        if let Some(p) = self.project.make_unique(clip) {
+            self.playlist.brush = p;
+            self.playlist.selected = Some(clip);
+            let name = self.project.patterns[p].name.clone();
+            self.commit("Rendre unique");
+            self.toast(&format!("Clip rendu unique : {name}"));
+        }
+    }
+
     pub(super) fn playlist_view(&mut self, c: &mut Canvas, input: &Input, header: Rect, body: Rect) {
         let t = self.theme;
         let snap_box = Rect::new(header.right() - 120.0, header.y, 120.0, header.h);
@@ -78,7 +117,7 @@ impl App {
             let current = self.playlist.brush == p;
             let sel = self.anim.to(wid("pl-pat-sel", p, 0), current as u8 as f32, T_HOVER);
             c.fill_rrect(row, 10.0, t.raised.alpha((hv * 0.6).max(sel)));
-            c.fill_rrect(Rect::new(row.x + 10.0, row.y + 12.0, 4.0, 16.0), 2.0, pattern_color(p));
+            c.fill_rrect(Rect::new(row.x + 10.0, row.y + 12.0, 4.0, 16.0), 2.0, self.pattern_tint(p));
             let name = self.project.patterns[p].name.clone();
             let edit = Rect::new(row.right() - 32.0, row.y + 6.0, 28.0, 28.0);
             let name_w = if hov { row.w - 66.0 } else { row.w - 36.0 };
@@ -86,7 +125,11 @@ impl App {
             if hov && edit.contains(input.x, input.y) {
                 // Bouton d'édition, au-dessus de la ligne.
             } else if hov {
-                self.set_tip("Clic : pinceau · double-clic : renommer", "");
+                self.set_tip("Clic : pinceau · double-clic : renommer\nClic droit : couleur, dupliquer, supprimer", "");
+                if input.right_pressed {
+                    self.select_pattern(p);
+                    self.open_popup(Popup::PatternMenu(p), Rect::new(input.x, input.y, 0.0, 0.0));
+                }
                 if input.pressed {
                     self.playlist.brush = p;
                     if input.double {
@@ -296,10 +339,24 @@ impl App {
                 }
             }
         }
-        if over && input.right_down && let Some((i, _)) = hover_clip {
+        // Clic droit sur la barre de titre : menu du clip ; ailleurs (ou en
+        // balayant, bouton maintenu) : effacer, comme dans FL Studio.
+        let on_title = |cl: &ClipDef| input.y - (lanes_r.y + cl.lane as f32 * LANE_H + 3.0) < CLIP_TITLE;
+        if over && input.right_pressed && let Some((i, _)) = hover_clip && on_title(&self.project.clips[i]) {
+            self.playlist.selected = Some(i);
+            let cl = self.project.clips[i];
+            let title = Rect::new(x_of(cl.start as f32), lanes_r.y + cl.lane as f32 * LANE_H + 3.0, 0.0, CLIP_TITLE);
+            self.open_popup(Popup::ClipMenu(i), Rect::new(input.x, title.y, 0.0, title.h));
+        } else if over && input.right_down && self.popup.is_none() && let Some((i, _)) = hover_clip {
             self.project.clips.remove(i);
             self.playlist.selected = None;
             self.commit("Effacer des clips");
+        }
+        if let Some((i, _)) = hover_clip
+            && self.drag.is_none()
+            && self.project.clips.get(i).is_some_and(on_title)
+        {
+            self.set_tip("Clic droit : rendre unique, renommer, couleur", "");
         }
         if self.is_dragging(grid_id) {
             match self.clip_drag {
@@ -376,7 +433,7 @@ impl App {
             if r.right() < area.x || r.x > area.right() || r.y > area.bottom() {
                 continue;
             }
-            let col = pattern_color(cl.pattern);
+            let col = self.pattern_tint(cl.pattern);
             let selected = self.playlist.selected == Some(i);
             let hov = hover_clip.is_some_and(|(h, _)| h == i);
             let hv = self.hover_anim(wid("pl-clip", i, 0), hov);
@@ -411,6 +468,13 @@ impl App {
                         rep += 1;
                     }
                 }
+            }
+            // Chevron du menu, au survol de la barre de titre.
+            let title_hov = hov && input.y - r.y < CLIP_TITLE;
+            let ch = self.anim.to(wid("pl-clip-menu", i, 0), title_hov as u8 as f32, T_HOVER);
+            if ch > 0.01 && r.w > 40.0 {
+                c.fill_rect(Rect::new(r.right() - 22.0, r.y + 1.0, 21.0, 17.0), col.mix(t.panel, 0.45));
+                draw_icon(c, Icon::ChevronDown, r.right() - 11.0, r.y + 10.0, 11.0, t.text.alpha(ch));
             }
             c.set_clip(Some(prev_clip));
             if hover_clip.is_some_and(|(h, e)| h == i && e) {

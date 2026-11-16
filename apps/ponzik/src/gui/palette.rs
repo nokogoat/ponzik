@@ -91,6 +91,10 @@ impl App {
             "",
             Action::Popup(Popup::Rename { target: Rename::Pattern(cur), text: self.project.patterns[cur].name.clone() }),
         );
+        if let Some(clip) = self.playlist.selected.filter(|&i| i < self.project.clips.len()) {
+            add("Rendre unique le clip sélectionné".into(), "Playlist", "", Action::MakeUnique(clip));
+        }
+        add("Couleur du pattern".into(), "Pattern", "", Action::Popup(Popup::PatternColor(cur)));
         for (i, p) in self.project.patterns.iter().enumerate() {
             add(format!("Pattern : {}", p.name), "Pattern", "", Action::SelectPattern(i));
         }

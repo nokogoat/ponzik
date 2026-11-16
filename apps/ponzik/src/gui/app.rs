@@ -126,6 +126,12 @@ pub enum Popup {
     MainMenu,
     /// Choix du thème.
     Themes,
+    /// Clic droit sur un clip de pattern de la playlist.
+    ClipMenu(usize),
+    /// Clic droit sur un pattern de la liste de la playlist.
+    PatternMenu(usize),
+    /// Couleur d'un pattern.
+    PatternColor(usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -213,6 +219,13 @@ pub enum Action {
     /// Revient à l'état qui suit les n premières étapes de l'historique.
     JumpHistory(usize),
     SetParamValue(ponzik_engine::AutoTarget, f32),
+    /// Le clip reçoit sa propre copie du pattern.
+    MakeUnique(usize),
+    /// Couleur d'un pattern (0 : celle de sa place dans la liste).
+    SetPatternColor(usize, u32),
+    /// Ouvre un pattern dans le Channel Rack.
+    EditPattern(usize),
+    DeleteClip(usize),
 }
 
 /// Ligne de menu : une icône (ou la couleur d'un pattern), un nom court, une
@@ -597,6 +610,16 @@ impl App {
             "notefx" => Popup::AddNoteFx { channel: self.selected_channel().unwrap_or(0), slot: 0 },
             _ if name.starts_with("palette:") => {
                 Popup::Palette { query: name["palette:".len()..].to_string(), selected: 0 }
+            }
+            "clip" => {
+                self.project.patterns[2].color = 0xf0b44a;
+                self.playlist.selected = Some(1);
+                self.open_popup(Popup::ClipMenu(1), Rect::new(700.0, 168.0, 0.0, 19.0));
+                return;
+            }
+            "colors" => {
+                self.open_popup(Popup::PatternColor(0), Rect::new(330.0, 150.0, 0.0, 19.0));
+                return;
             }
             "countin" => {
                 self.stop();
@@ -1830,7 +1853,7 @@ impl App {
         }
         let name = self.project.patterns[cur].name.clone();
         let (cx, cy) = mid.center();
-        c.fill_rrect(Rect::new(mid.x + 6.0, cy - 6.0, 3.0, 12.0), 1.5, super::playlist::pattern_color(cur));
+        c.fill_rrect(Rect::new(mid.x + 6.0, cy - 6.0, 3.0, 12.0), 1.5, self.pattern_tint(cur));
         let label = self.fit(self.f.sans_med, 13.0, &name, mid.w - 22.0);
         self.text_center(c, self.f.sans_med, 13.0, cx + 4.0, cy, &label, t.text2.mix(t.text, 0.6 + 0.4 * hv));
     }
@@ -2278,7 +2301,7 @@ impl App {
                     .enumerate()
                     .map(|(i, pat)| {
                         let mut it = MenuItem::plain(&pat.name, Action::SelectPattern(i)).detail(bars(pat.len)).on(i == p.current_pattern);
-                        it.color = Some(super::playlist::pattern_color(i));
+                        it.color = Some(self.pattern_tint(i));
                         it
                     })
                     .collect();
@@ -2408,7 +2431,7 @@ impl App {
                     .enumerate()
                     .map(|(i, pat)| {
                         let mut it = MenuItem::plain(&pat.name, Action::AssignSession(*col, *row, i)).detail(bars(pat.len));
-                        it.color = Some(super::playlist::pattern_color(i));
+                        it.color = Some(self.pattern_tint(i));
                         it
                     })
                     .collect(),
@@ -2486,6 +2509,59 @@ impl App {
                     })
                     .collect(),
             ),
+            Popup::ClipMenu(i) => {
+                let Some(clip) = p.clips.get(*i) else { return (String::new(), Vec::new()) };
+                let pat = clip.pattern;
+                let shared = p.clips.iter().filter(|c| c.pattern == pat).count();
+                let rename = Popup::Rename { target: Rename::Pattern(pat), text: p.patterns[pat].name.clone() };
+                let unique = MenuItem::new(Icon::Duplicate, "Rendre unique", Action::MakeUnique(*i));
+                let unique = if shared > 1 {
+                    unique.detail(format!("{shared} clips")).tip("Copie du pattern pour ce clip seul")
+                } else {
+                    unique.tip("Ce clip est déjà le seul à jouer ce pattern")
+                };
+                let mut color = MenuItem::plain("Couleur", Action::Popup(Popup::PatternColor(pat)));
+                color.color = Some(self.pattern_tint(pat));
+                (
+                    p.patterns[pat].name.clone(),
+                    vec![
+                        unique,
+                        MenuItem::new(Icon::Pencil, "Renommer", Action::Popup(rename)).tip("Renomme le pattern et tous ses clips"),
+                        color,
+                        MenuItem::new(Icon::Rack, "Éditer", Action::EditPattern(pat)).detail("double-clic".into()),
+                        MenuItem::new(Icon::Trash, "Supprimer le clip", Action::DeleteClip(*i)).tip("Clic droit maintenu : effacer en balayant"),
+                    ],
+                )
+            }
+            Popup::PatternMenu(pat) => {
+                let pat = *pat;
+                let rename = Popup::Rename { target: Rename::Pattern(pat), text: p.patterns[pat].name.clone() };
+                let mut color = MenuItem::plain("Couleur", Action::Popup(Popup::PatternColor(pat)));
+                color.color = Some(self.pattern_tint(pat));
+                let mut v = vec![
+                    MenuItem::new(Icon::Rack, "Éditer", Action::EditPattern(pat)).detail("F6".into()),
+                    MenuItem::new(Icon::Pencil, "Renommer", Action::Popup(rename)),
+                    color,
+                    MenuItem::new(Icon::Duplicate, "Dupliquer", Action::DuplicatePattern),
+                ];
+                if p.patterns.len() > 1 {
+                    v.push(MenuItem::new(Icon::Trash, "Supprimer", Action::DeletePattern).tip("Retire aussi ses clips"));
+                }
+                (p.patterns[pat].name.clone(), v)
+            }
+            Popup::PatternColor(pat) => {
+                let pat = *pat;
+                let cur = p.patterns[pat].color;
+                let mut auto = MenuItem::plain("Automatique", Action::SetPatternColor(pat, 0)).on(cur == 0);
+                auto.color = Some(super::playlist::pattern_color(pat));
+                let mut v = vec![auto];
+                for (i, &(name, hex)) in super::playlist::PATTERN_COLORS.iter().enumerate() {
+                    let mut it = MenuItem::plain(name, Action::SetPatternColor(pat, hex)).on(cur == hex);
+                    it.color = Some(Color::hex(hex));
+                    v.push(if i == 0 { it.sep() } else { it });
+                }
+                (format!("Couleur · {}", p.patterns[pat].name), v)
+            }
             Popup::Rename { .. } | Popup::Palette { .. } | Popup::Scale | Popup::Chord => (String::new(), Vec::new()),
         }
     }
@@ -2536,6 +2612,25 @@ impl App {
             Action::AddEffect(track, kind) => self.add_effect(track, kind),
             Action::AddNoteFx(channel, slot, kind) => self.add_note_fx(channel, slot, kind),
             Action::SelectPattern(i) => self.select_pattern(i),
+            Action::MakeUnique(clip) => self.make_unique(clip),
+            Action::SetPatternColor(pat, color) => {
+                if let Some(p) = self.project.patterns.get_mut(pat) {
+                    p.color = color;
+                    self.commit("Couleur du pattern");
+                }
+            }
+            Action::EditPattern(pat) => {
+                self.select_pattern(pat);
+                self.set_view(View::Rack);
+            }
+            Action::DeleteClip(clip) => {
+                if clip < self.project.clips.len() {
+                    self.project.clips.remove(clip);
+                    self.playlist.selected = None;
+                    self.commit("Effacer un clip");
+                }
+            }
+
             Action::NewPattern => {
                 let p = self.project.add_pattern();
                 self.select_pattern(p);
@@ -2883,6 +2978,8 @@ impl App {
         let mut hover_tip = None;
         let list = Rect::new(r.x, r.y + 36.0, r.w, r.h - 40.0);
         let prev = c.push_clip(list);
+        let has_icons = items.iter().any(|it| it.icon.is_some());
+        let prev = c.push_clip(Rect::new(r.x, r.y + 36.0, r.w, r.h - 40.0));
         let mut ry = r.y + 38.0 - scroll;
         for (i, it) in items.iter().enumerate() {
             if it.sep {
@@ -2910,6 +3007,12 @@ impl App {
             let mut tx = row.x + 12.0;
             if let Some(icon) = it.icon {
                 draw_icon(c, icon, row.x + 20.0, cy, 15.0, if danger { t.negative } else { t.muted.mix(t.accent, hv) });
+                tx = row.x + 38.0;
+            } else if let Some(col) = it.color
+                && has_icons
+            {
+                // Parmi des lignes à icône : une pastille à la place de l'icône.
+                c.fill_circle(row.x + 20.0, cy, 6.0, col);
                 tx = row.x + 38.0;
             } else if let Some(col) = it.color {
                 c.fill_rrect(Rect::new(row.x + 12.0, cy - 7.0, 4.0, 14.0), 2.0, col);

@@ -7,7 +7,6 @@ use ponzik_ui::{Canvas, Path, Rect};
 
 use super::Input;
 use super::app::{App, Popup};
-use super::playlist::pattern_color;
 use super::theme::*;
 use super::widgets::{Icon, draw_icon, wid};
 
@@ -187,7 +186,7 @@ impl App {
                         }
                     }
                     Some(p) => {
-                        let col = pattern_color(p);
+                        let col = self.pattern_tint(p);
                         let on = self.anim.to(wid("ses-on", k, r), playing as u8 as f32, T_HOVER);
                         c.fill_rrect(cell, 10.0, col.mix(t.panel, 0.7 - on * 0.35 - hv * 0.08));
                         if queued {
