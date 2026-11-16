@@ -4722,3 +4722,44 @@ msgstr "Importer un projet FL Studio (.flp)"
 
 msgid "Show the FL Studio import report"
 msgstr "Afficher le rapport d'import FL Studio"
+
+# --- Drum Pads ---
+
+msgid "Drum Pads"
+msgstr "Pads de batterie"
+
+msgid "Sixteen sample pads: drop a WAV on a pad, tune, trim, filter, choke groups, velocity layers"
+msgstr "Seize pads d'échantillons : dépose un WAV sur un pad, accorde, recadre, filtre, groupes d'étouffement, couches de vélocité"
+
+msgid "Crash"
+msgstr "Crash"
+
+msgid "Floor Tom"
+msgstr "Tom basse"
+
+msgid "Floor Tom 2"
+msgstr "Tom basse 2"
+
+msgid "Mid Tom"
+msgstr "Tom médium"
+
+msgid "Mid Tom 2"
+msgstr "Tom médium 2"
+
+msgid "Pedal Hat"
+msgstr "Charleston pédale"
+
+msgid "Rim"
+msgstr "Cerclage"
+
+msgid "Snare 2"
+msgstr "Caisse claire 2"
+
+msgid "Shot"
+msgstr "Coup"
+
+msgid "LP"
+msgstr "PB"
+
+msgid "HP"
+msgstr "PH"

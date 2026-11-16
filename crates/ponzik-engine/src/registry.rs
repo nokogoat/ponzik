@@ -133,7 +133,7 @@ pub fn instruments() -> &'static [InstrumentKind] {
         InstrumentKind {
             id: "drum_pads",
             name: "Drum Pads",
-            category: "Batterie",
+            category: "Drums",
             description: "Sixteen sample pads: drop a WAV on a pad, tune, trim, filter, choke groups, velocity layers",
             create: || Box::new(DrumPads::new()),
         },
