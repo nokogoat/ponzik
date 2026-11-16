@@ -36,6 +36,10 @@ const MAX_LATENCY_SECONDS: f32 = 1.0;
 /// par la file [`Garbage`] pour être libérés hors du thread audio.
 pub enum Command {
     Play,
+    /// Pré-compte : `ticks` de clics de métronome (même coupé), puis lecture
+    /// depuis la position courante. La séquence et l'enregistrement attendent la
+    /// fin du pré-compte.
+    CountIn(u32),
     /// Premier appui : pause ; second appui : retour au début.
     Stop,
     /// Saute à une position, en ticks.
@@ -86,6 +90,7 @@ impl std::fmt::Debug for Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = match self {
             Command::Play => "Play",
+            Command::CountIn(_) => "CountIn",
             Command::Stop => "Stop",
             Command::Locate(_) => "Locate",
             Command::SetBpm(_) => "SetBpm",
@@ -139,6 +144,8 @@ struct SharedState {
     playing: AtomicBool,
     /// Position en ticks (bits d'un `f64`).
     position: AtomicU64,
+    /// Pré-compte restant en ticks (bits d'un `f64`), 0 hors pré-compte.
+    count_in: AtomicU64,
     channel_peaks: Vec<PeakMeter>,
     track_peaks: Vec<PeakMeter>,
     input_peak: PeakMeter,
@@ -178,6 +185,11 @@ impl EngineHandle {
     /// Position de lecture en ticks.
     pub fn position(&self) -> f64 {
         f64::from_bits(self.state.position.load(Ordering::Relaxed))
+    }
+
+    /// Pré-compte restant en ticks (0 : pas de pré-compte en cours).
+    pub fn count_in(&self) -> f64 {
+        f64::from_bits(self.state.count_in.load(Ordering::Relaxed))
     }
 
     /// Crête [gauche, droite] du canal depuis le dernier appel (après gain et pan).
@@ -260,6 +272,9 @@ pub struct Engine {
     anchor_tick: f64,
     anchor_clock: u64,
     metronome: bool,
+    /// Pré-compte : ticks restants et durée totale ; la lecture démarre à 0.
+    count_in: f64,
+    count_len: f64,
     click_phase: f32,
     click_env: f32,
     click_hz: f32,
@@ -310,6 +325,7 @@ impl Engine {
         let state = Arc::new(SharedState {
             playing: AtomicBool::new(false),
             position: AtomicU64::new(0f64.to_bits()),
+            count_in: AtomicU64::new(0f64.to_bits()),
             channel_peaks: (0..MAX_CHANNELS).map(|_| PeakMeter::default()).collect(),
             track_peaks: (0..TRACKS).map(|_| PeakMeter::default()).collect(),
             input_peak: PeakMeter::default(),
@@ -335,6 +351,8 @@ impl Engine {
             anchor_tick: 0.0,
             anchor_clock: 0,
             metronome: false,
+            count_in: 0.0,
+            count_len: 0.0,
             click_phase: 0.0,
             click_env: 0.0,
             click_hz: 0.0,
@@ -437,6 +455,10 @@ impl Engine {
                     let left = ((end - self.pos) * self.spt() - 1e-6).ceil().max(1.0) as usize;
                     n = n.min(left);
                 }
+            } else if self.count_in > 0.0 {
+                // Le bloc s'arrête pile à la fin du pré-compte.
+                let left = (self.count_in * self.spt() - 1e-6).ceil().max(1.0) as usize;
+                n = n.min(left);
             }
             self.process_chunk(n);
             let (l, r) = self.mixer.master(n);
@@ -445,6 +467,8 @@ impl Engine {
         }
         self.state.position.store(self.pos.to_bits(), Ordering::Relaxed);
         self.state.latency.store(self.mixer.latency() as u32, Ordering::Relaxed);
+        self.state.count_in.store(self.count_in.to_bits(), Ordering::Relaxed);
+        self.state.playing.store(self.playing, Ordering::Relaxed);
         if frames > 0 {
             let budget = frames as f32 / self.sample_rate;
             let load = started.elapsed().as_secs_f32() / budget;
@@ -583,6 +607,14 @@ impl Engine {
         } else {
             self.audio_next = f64::NAN;
         }
+        if self.count_in > 0.0 {
+            self.count_in -= n as f64 / spt;
+            if self.count_in <= 1e-6 {
+                self.count_in = 0.0;
+                self.playing = true;
+                self.anchor();
+            }
+        }
     }
 
     /// Clips audio (mode morceau) : lecture à la fréquence de l'échantillon,
@@ -700,12 +732,17 @@ impl Engine {
         }
     }
 
-    /// Clic de métronome sur chaque temps, ajouté directement au master.
+    /// Clic de métronome sur chaque temps, ajouté directement au master. Pendant
+    /// le pré-compte, les temps se comptent depuis son début.
     fn metronome_click(&mut self, pos_start: f64, n: usize, spt: f64) {
-        if !self.playing || !self.metronome {
+        let pos_start = if self.count_in > 0.0 {
+            self.count_len - self.count_in
+        } else if self.playing && self.metronome {
+            pos_start
+        } else {
             self.click_env = 0.0;
             return;
-        }
+        };
         let sr = self.sample_rate;
         let decay = (-1.0 / (0.012 * sr)).exp();
         let beat_ticks = PPQ as f64;
@@ -759,13 +796,26 @@ impl Engine {
     fn apply(&mut self, cmd: Command) {
         match cmd {
             Command::Play => {
+                self.count_in = 0.0;
                 self.playing = true;
                 self.anchor();
             }
+            Command::CountIn(ticks) => {
+                if ticks == 0 {
+                    self.count_in = 0.0;
+                    self.playing = true;
+                    self.anchor();
+                } else {
+                    self.playing = false;
+                    self.count_in = ticks as f64;
+                    self.count_len = ticks as f64;
+                }
+            }
             Command::Stop => {
-                if !self.playing {
+                if !self.playing && self.count_in == 0.0 {
                     self.pos = 0.0;
                 }
+                self.count_in = 0.0;
                 self.playing = false;
                 self.silence_all();
                 self.mixer.reset_effects();
@@ -1286,6 +1336,51 @@ mod tests {
         let mut buf = vec![0.0; 2 * 2_000];
         engine.process(&mut buf, 2);
         assert!(buf.iter().any(|s| s.abs() > 0.05), "clic au premier temps");
+    }
+
+    #[test]
+    fn count_in_clicks_one_bar_then_plays() {
+        for block in [100, 512] {
+            let (mut engine, mut handle, probe) = setup(&[0]);
+            handle.send(Command::SetChannelMute { channel: 0, muted: true }).unwrap();
+            handle.send(Command::CountIn(4 * PPQ)).unwrap();
+            // Une mesure à 120 BPM : 96 000 échantillons de clics, sans note ni avancée.
+            let mut buf = vec![0.0; 2 * 96_000];
+            for chunk in buf.chunks_mut(2 * block) {
+                engine.process(chunk, 2);
+            }
+            // Pré-compte fini pile à la fin du bloc : la lecture est lancée, toujours au début.
+            assert_eq!(handle.count_in(), 0.0);
+            assert!(handle.is_playing());
+            assert_eq!(handle.position(), 0.0);
+            assert!(ons(&probe).is_empty(), "bloc {block}");
+            // Quatre clics, un par temps, le premier accentué (même métronome coupé).
+            for beat in 0..4 {
+                let at = beat * 24_000;
+                assert!(buf[2 * at..2 * (at + 200)].iter().any(|s| s.abs() > 0.05), "temps {beat}");
+                assert!(buf[2 * (at + 12_000)..2 * (at + 12_100)].iter().all(|s| s.abs() < 1e-3));
+            }
+            // Puis la lecture part du début : la première note tombe juste après.
+            handle.send(Command::SetChannelMute { channel: 0, muted: false }).unwrap();
+            run(&mut engine, 1_000, block);
+            assert_eq!(ons(&probe), [96_000], "bloc {block}");
+            assert!((handle.position() - 1_000.0 / 250.0).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn stop_cancels_count_in_without_rewinding() {
+        let (mut engine, mut handle, probe) = setup(&[0]);
+        handle.send(Command::Locate(96.0)).unwrap();
+        handle.send(Command::CountIn(4 * PPQ)).unwrap();
+        run(&mut engine, 10_000, 256);
+        assert!(handle.count_in() > 300.0);
+        handle.send(Command::Stop).unwrap();
+        run(&mut engine, 200_000, 256);
+        assert_eq!(handle.count_in(), 0.0);
+        assert!(!handle.is_playing());
+        assert_eq!(handle.position(), 96.0);
+        assert!(ons(&probe).is_empty());
     }
 
     fn lane(target: AutoTarget, scope: AutoScope, points: &[(u32, f32)]) -> AutomationLane {
