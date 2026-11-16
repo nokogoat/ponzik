@@ -23,6 +23,7 @@ mod breakcore;
 mod demo;
 pub mod history;
 pub mod io;
+pub mod flp;
 pub mod json;
 pub mod midi_file;
 pub mod render;
@@ -32,6 +33,7 @@ pub mod templates;
 pub use breakcore::demo_breakcore;
 pub use demo::demo_project;
 pub use history::History;
+pub use flp::{ImportReport, import_flp, resolve_sample};
 pub use io::{load, load_from_file, save, save_to_file};
 pub use midi_file::{MidiFile, MidiTrack, import_midi, read_smf, write_smf};
 pub use render::{
