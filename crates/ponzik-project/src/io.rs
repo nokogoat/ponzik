@@ -12,7 +12,7 @@ use ponzik_engine::{NOTE_FX_SLOTS, Note, PlayMode, TICKS_PER_BAR};
 use crate::json::{self, Json};
 use crate::{
     AudioClipDef, AutoPoint, AutoScope, AutoTarget, AutomationDef, ChannelDef, ClipDef, EffectDef, InstrumentDef,
-    NoteFxDef, PatternDef, Project, TrackDef,
+    NoteFxDef, PatternDef, Project, TrackDef, TrackKind,
 };
 
 pub const FORMAT: &str = "ponzik-project";
@@ -113,7 +113,7 @@ fn track_json(t: &TrackDef) -> Json {
             }
         })
         .collect();
-    obj(vec![
+    let mut pairs = vec![
         ("name", t.name.as_str().into()),
         ("gain", t.gain.into()),
         ("pan", t.pan.into()),
@@ -122,7 +122,18 @@ fn track_json(t: &TrackDef) -> Json {
         ("color", t.color.into()),
         ("sends", Json::Arr(sends)),
         ("inserts", Json::Arr(inserts)),
-    ])
+    ];
+    // Champs ajoutés après la version 1 : écrits seulement s'ils servent.
+    if t.kind != TrackKind::Normal {
+        pairs.push(("kind", t.kind.id().into()));
+    }
+    if t.folded {
+        pairs.push(("folded", true.into()));
+    }
+    if let Some(vca) = t.vca {
+        pairs.push(("vca", vca.into()));
+    }
+    obj(pairs)
 }
 
 fn target_json(t: AutoTarget) -> Json {
@@ -380,6 +391,14 @@ fn load_track(v: &Json, index: usize) -> TrackDef {
         let amount = f32_or(s.get(1), 0.0).clamp(0.0, 16.0);
         t.sends[slot] = if target < TRACKS && target != index { (target, amount) } else { (MASTER, 0.0) };
     }
+    if index != MASTER {
+        t.kind = match v.get("kind") {
+            Some(Json::Str(k)) => TrackKind::from_id(k).unwrap_or_default(),
+            _ => TrackKind::Normal,
+        };
+        t.folded = t.kind == TrackKind::Bus && bool_or(v.get("folded"), false);
+        t.vca = crate::io::index(v.get("vca"), TRACKS).filter(|&x| x != index && x != MASTER);
+    }
     for (slot, fx) in arr(v.get("inserts")).iter().take(INSERT_SLOTS).enumerate() {
         t.inserts[slot] = load_effect(fx);
         if let Some(fx) = &mut t.inserts[slot]
@@ -502,6 +521,13 @@ pub fn load(text: &str) -> Result<Project, String> {
     for (i, t) in p.tracks.iter_mut().enumerate() {
         if let Some(v) = tracks.get(i) {
             *t = load_track(v, i);
+        }
+    }
+    // Un VCA ne suit que les VCA : une piste pilotée par une piste qui n'en est pas un est libérée.
+    let kinds: Vec<TrackKind> = p.tracks.iter().map(|t| t.kind).collect();
+    for t in &mut p.tracks {
+        if t.kind == TrackKind::Vca || t.vca.is_some_and(|v| kinds[v] != TrackKind::Vca) {
+            t.vca = None;
         }
     }
     if p.routing_order().is_none() {
@@ -799,6 +825,44 @@ mod tests {
         assert_eq!((fx[1].is_none(), fx[2].is_none()), (true, true));
         let ch = p.make_channel(0, 48_000.0, &|_| None);
         assert!(ch.note_fx[0].is_some() && ch.note_fx[3].is_none());
+    }
+
+    #[test]
+    fn buses_and_vcas_round_trip() {
+        let mut p = demo_project();
+        let bus = p.add_bus(&[1, 2]).unwrap();
+        p.tracks[bus].folded = true;
+        let vca = p.add_vca(&[3, 4]).unwrap();
+        let text = save(&p);
+        assert!(text.contains(r#""kind": "bus""#) && text.contains(r#""folded": true"#) && text.contains(r#""vca": "#));
+        let back = load(&text).unwrap();
+        assert_eq!(back, p);
+        assert_eq!((back.tracks[bus].kind, back.tracks[vca].kind), (TrackKind::Bus, TrackKind::Vca));
+        assert_eq!(back.vca_members(vca), [3, 4]);
+        // Une piste ordinaire n'écrit aucun des nouveaux champs.
+        assert!(!save(&demo_project()).contains(r#""folded""#));
+    }
+
+    #[test]
+    fn old_and_odd_track_kinds_load_safely() {
+        // Fichier d'avant les bus : pistes ordinaires.
+        let p = load(r#"{"format": "ponzik-project", "tracks": [{}, {"output": 2}, {"name": "Batterie"}]}"#).unwrap();
+        assert!(p.tracks.iter().all(|t| t.kind == TrackKind::Normal && !t.folded && t.vca.is_none()));
+        // Type inconnu, repli hors bus, VCA vers soi, vers une piste ordinaire, hors limites, master typé.
+        let text = r#"{"format": "ponzik-project", "tracks": [
+          {"kind": "bus", "folded": true},
+          {"kind": "lune", "folded": true, "vca": 1},
+          {"vca": 3}, {"kind": "vca", "vca": 4}, {"kind": "vca"}, {"vca": 99}, {"vca": 4}
+        ]}"#;
+        let p = load(text).unwrap();
+        assert_eq!((p.tracks[MASTER].kind, p.tracks[MASTER].folded), (TrackKind::Normal, false));
+        assert_eq!((p.tracks[1].kind, p.tracks[1].folded, p.tracks[1].vca), (TrackKind::Normal, false, None));
+        assert_eq!(p.tracks[2].vca, Some(3));
+        assert_eq!((p.tracks[3].kind, p.tracks[3].vca), (TrackKind::Vca, None), "un VCA ne suit pas un VCA");
+        assert_eq!(p.tracks[5].vca, None);
+        assert_eq!(p.tracks[6].vca, Some(4));
+        let p = load(r#"{"format": "ponzik-project", "tracks": [{}, {"vca": 2}]}"#).unwrap();
+        assert_eq!(p.tracks[1].vca, None, "la piste 2 n'est pas un VCA");
     }
 
     #[test]

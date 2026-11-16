@@ -202,6 +202,43 @@ pub struct AudioClipDef {
     pub fade_out: f32,
 }
 
+/// Rôle d'une piste de mixer.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TrackKind {
+    /// Piste ordinaire : reçoit des canaux, des clips audio ou d'autres pistes.
+    #[default]
+    Normal,
+    /// Bus : d'autres pistes y sortent ; ses inserts traitent leur somme.
+    Bus,
+    /// VCA : aucun son ne le traverse, son fader pilote les pistes qui le suivent.
+    Vca,
+}
+
+impl TrackKind {
+    pub fn id(self) -> &'static str {
+        match self {
+            TrackKind::Normal => "normal",
+            TrackKind::Bus => "bus",
+            TrackKind::Vca => "vca",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        [TrackKind::Normal, TrackKind::Bus, TrackKind::Vca].into_iter().find(|k| k.id() == id)
+    }
+}
+
+/// Couleurs données tour à tour aux nouveaux bus et VCA.
+pub const BUS_COLORS: [u32; 6] = [0xf0b44a, 0xa98cf0, 0x2fb6e0, 0xe878b4, 0x3ccfc4, 0xf08a5d];
+
+/// Effets proposés pour un bus de retour : type, nom du bus, réglages (100 % mouillé).
+pub const RETURN_EFFECTS: [(&str, &str, &[(u32, f32)]); 2] = [
+    // Réverbe : salle moyenne, pré-délai qui détache la voix, aigus adoucis.
+    ("reverb", "Réverbe", &[(0, 0.03), (1, 0.7), (2, 2.2), (3, 0.55), (5, 1.0)]),
+    // Délai : croche pointée en ping-pong, répétitions filtrées.
+    ("delay", "Délai", &[(0, 9.0), (2, 0.35), (3, 1.0), (4, 200.0), (5, 6_000.0), (6, 1.0)]),
+];
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct TrackDef {
     pub name: String,
@@ -212,6 +249,11 @@ pub struct TrackDef {
     pub sends: [(usize, f32); SEND_SLOTS],
     pub inserts: [Option<EffectDef>; INSERT_SLOTS],
     pub color: u32,
+    pub kind: TrackKind,
+    /// Bus replié : les pistes qui y sortent sont cachées sous lui dans le mixer.
+    pub folded: bool,
+    /// VCA qui pilote le volume de la piste.
+    pub vca: Option<usize>,
 }
 
 impl TrackDef {
@@ -225,6 +267,9 @@ impl TrackDef {
             sends: [(MASTER, 0.0); SEND_SLOTS],
             inserts: std::array::from_fn(|_| None),
             color: 0,
+            kind: TrackKind::Normal,
+            folded: false,
+            vca: None,
         }
     }
 }
@@ -497,6 +542,7 @@ impl Project {
             t.muted = def.muted;
             t.output = def.output;
             t.sends = def.sends;
+            t.vca = def.vca;
             for (slot, fx) in def.inserts.iter().enumerate() {
                 t.inserts[slot] = fx.as_ref().and_then(|d| Self::make_effect(d, sample_rate, self.bpm));
                 t.bypass[slot] = fx.as_ref().is_some_and(|d| d.bypass);
@@ -565,7 +611,8 @@ impl Project {
     /// Ajoute un canal et sa piste de mixer libre suivante.
     pub fn add_channel(&mut self, name: impl Into<String>, instrument: InstrumentDef, root_note: u8) -> usize {
         let used: Vec<usize> = self.channels.iter().map(|c| c.track).collect();
-        let track = (1..TRACKS).find(|t| !used.contains(t)).unwrap_or(1);
+        let free = |t: &usize| !used.contains(t) && self.tracks[*t].kind == TrackKind::Normal;
+        let track = (1..TRACKS).find(free).unwrap_or(1);
         let name = name.into();
         if self.tracks[track].name.starts_with("Piste ") {
             self.tracks[track].name = name.clone();
@@ -756,6 +803,151 @@ impl Project {
             lane.points.splice(at..at, copy);
         }
         copied
+    }
+
+    // --- Bus et VCA ---
+
+    /// Vrai si la piste sert à quelque chose : canal, clip audio, effet, nom
+    /// donné, rôle de bus ou de VCA, ou destination d'une autre piste.
+    pub fn track_in_use(&self, t: usize) -> bool {
+        let Some(tr) = self.tracks.get(t) else { return false };
+        t == MASTER
+            || tr.kind != TrackKind::Normal
+            || !tr.name.starts_with("Piste ")
+            || tr.inserts.iter().any(Option::is_some)
+            || self.channels.iter().any(|c| c.track == t)
+            || self.audio_clips.iter().any(|c| c.track == t)
+            || self.tracks.iter().enumerate().any(|(i, x)| {
+                i != t && (x.output == t || x.vca == Some(t) || x.sends.iter().any(|s| s.0 == t && s.1 > 0.0))
+            })
+    }
+
+    /// Piste libre pour un nouveau bus, prise par la fin comme dans FL (les
+    /// canaux prennent les premières).
+    pub fn free_track(&self) -> Option<usize> {
+        (1..TRACKS).rev().find(|&t| !self.track_in_use(t))
+    }
+
+    /// Pistes qui sortent dans `bus`.
+    pub fn bus_members(&self, bus: usize) -> Vec<usize> {
+        (1..TRACKS).filter(|&t| t != bus && self.tracks[t].output == bus).collect()
+    }
+
+    /// Pistes pilotées par le VCA `vca`.
+    pub fn vca_members(&self, vca: usize) -> Vec<usize> {
+        (1..TRACKS).filter(|&t| self.tracks[t].vca == Some(vca)).collect()
+    }
+
+    /// Premier nom libre de la forme « Bus 1 », « Bus 2 »…
+    fn numbered_name(&self, base: &str) -> String {
+        (1..).map(|n| format!("{base} {n}")).find(|name| self.tracks.iter().all(|t| &t.name != name)).unwrap_or_default()
+    }
+
+    fn claim_track(&mut self, kind: TrackKind, name: String) -> Option<usize> {
+        let t = self.free_track()?;
+        let others = self.tracks.iter().filter(|t| t.kind != TrackKind::Normal).count();
+        let tr = &mut self.tracks[t];
+        *tr = TrackDef::new(name);
+        tr.kind = kind;
+        tr.color = BUS_COLORS[others % BUS_COLORS.len()];
+        Some(t)
+    }
+
+    /// Crée un bus et y fait sortir `members` (le master, le bus et les pistes
+    /// qui boucleraient sont ignorés). Si toutes les pistes sortaient dans un
+    /// même bus, le nouveau s'y range à leur place. `None` si plus aucune piste
+    /// n'est libre.
+    pub fn add_bus(&mut self, members: &[usize]) -> Option<usize> {
+        let members: Vec<usize> = members.iter().copied().filter(|&m| m != MASTER && m < TRACKS).collect();
+        let name = self.numbered_name("Bus");
+        let bus = self.claim_track(TrackKind::Bus, name)?;
+        let mut outputs = members.iter().map(|&m| self.tracks[m].output);
+        if let Some(first) = outputs.next()
+            && first != MASTER
+            && first != bus
+            && outputs.all(|o| o == first)
+        {
+            self.tracks[bus].output = first;
+        }
+        for &m in &members {
+            self.route_into(m, bus);
+        }
+        Some(bus)
+    }
+
+    /// Fait sortir `track` dans `bus`, sauf si cela crée une boucle.
+    pub fn route_into(&mut self, track: usize, bus: usize) -> bool {
+        if track == MASTER || track == bus || track >= TRACKS || bus >= TRACKS {
+            return false;
+        }
+        let old = self.tracks[track].output;
+        self.tracks[track].output = bus;
+        if self.routing_order().is_none() {
+            self.tracks[track].output = old;
+            return false;
+        }
+        true
+    }
+
+    /// Bus de retour d'effet (`RETURN_EFFECTS`) ; `from` y envoie un peu de son signal.
+    pub fn add_return(&mut self, effect: &str, from: Option<usize>) -> Option<usize> {
+        let &(kind, name, params) = RETURN_EFFECTS.iter().find(|e| e.0 == effect)?;
+        let name = if self.tracks.iter().any(|t| t.name == name) { self.numbered_name(name) } else { name.into() };
+        let bus = self.claim_track(TrackKind::Bus, name)?;
+        let mut fx = EffectDef::new(kind);
+        for &(id, v) in params {
+            fx.set(id, v);
+        }
+        self.tracks[bus].inserts[0] = Some(fx);
+        if let Some(src) = from.filter(|&t| t != MASTER && t != bus && t < TRACKS) {
+            let sends = &mut self.tracks[src].sends;
+            if let Some(slot) = sends.iter().position(|s| s.1 <= 0.0) {
+                sends[slot] = (bus, 0.3);
+            }
+        }
+        Some(bus)
+    }
+
+    /// Crée un VCA qui pilote `members` (le master et les VCA sont ignorés).
+    pub fn add_vca(&mut self, members: &[usize]) -> Option<usize> {
+        let name = self.numbered_name("VCA");
+        let vca = self.claim_track(TrackKind::Vca, name)?;
+        for &m in members {
+            if m != MASTER && m != vca && m < TRACKS && self.tracks[m].kind != TrackKind::Vca {
+                self.tracks[m].vca = Some(vca);
+            }
+        }
+        Some(vca)
+    }
+
+    /// Défait un bus ou un VCA : ses pistes sortent là où il sortait, les envois
+    /// et les clés qui le visaient sont retirés, et la piste redevient libre.
+    pub fn dissolve(&mut self, t: usize) {
+        if t == MASTER || t >= TRACKS || self.tracks[t].kind == TrackKind::Normal {
+            return;
+        }
+        let output = self.tracks[t].output;
+        for (i, tr) in self.tracks.iter_mut().enumerate() {
+            if i != t && tr.output == t {
+                tr.output = output;
+            }
+            if tr.vca == Some(t) {
+                tr.vca = None;
+            }
+            for s in &mut tr.sends {
+                if s.0 == t {
+                    *s = (MASTER, 0.0);
+                }
+            }
+            for fx in tr.inserts.iter_mut().flatten() {
+                if fx.sidechain == Some(t) {
+                    fx.sidechain = None;
+                }
+            }
+        }
+        self.automation.retain(|a| !matches!(a.target, AutoTarget::TrackGain(x) | AutoTarget::TrackPan(x) if x == t));
+        self.automation.retain(|a| !matches!(a.target, AutoTarget::EffectParam { track, .. } if track == t));
+        self.tracks[t] = TrackDef::new(format!("Piste {t}"));
     }
 
     pub fn add_pattern(&mut self) -> usize {
@@ -1058,5 +1250,119 @@ mod tests {
             targets,
             [AutoTarget::ChannelGain(0), AutoTarget::InstrumentParam { channel: 1, id: 3 }, AutoTarget::TrackGain(1)]
         );
+    }
+
+    #[test]
+    fn group_into_a_bus_routes_and_nests() {
+        let mut p = Project::empty();
+        let a = p.add_channel("Kick", InstrumentDef::new("drumsynth"), 60);
+        let b = p.add_channel("Snare", InstrumentDef::new("drumsynth"), 60);
+        let (ta, tb) = (p.channels[a].track, p.channels[b].track);
+        let bus = p.add_bus(&[ta, tb, MASTER]).unwrap();
+        assert_eq!(bus, TRACKS - 1, "les bus se prennent par la fin");
+        assert_eq!((p.tracks[bus].kind, p.tracks[bus].name.as_str()), (TrackKind::Bus, "Bus 1"));
+        assert_ne!(p.tracks[bus].color, 0);
+        assert_eq!(p.bus_members(bus), [ta, tb]);
+        assert_eq!(p.tracks[MASTER].output, MASTER);
+        // Un bus dans un bus : le nouveau prend la place de ses pistes.
+        let inner = p.add_bus(&[ta]).unwrap();
+        assert_eq!(p.tracks[inner].name, "Bus 2");
+        assert_eq!((p.tracks[ta].output, p.tracks[inner].output), (inner, bus));
+        // Une boucle est refusée.
+        assert!(!p.route_into(bus, inner));
+        assert_eq!(p.tracks[bus].output, MASTER);
+        // Le canal suivant ne tombe pas sur un bus.
+        let c = p.add_channel("Hat", InstrumentDef::new("drumsynth"), 60);
+        assert!(p.tracks[p.channels[c].track].kind == TrackKind::Normal);
+        // Défaire le bus intérieur rend sa piste à son bus parent.
+        p.dissolve(inner);
+        assert_eq!(p.tracks[ta].output, bus);
+        assert_eq!(p.tracks[inner], TrackDef::new(format!("Piste {inner}")));
+        assert!(!p.track_in_use(inner));
+    }
+
+    #[test]
+    fn return_bus_has_a_wet_effect_and_a_send() {
+        let mut p = Project::empty();
+        let ch = p.add_channel("Voix", InstrumentDef::new("pulse"), 60);
+        let t = p.channels[ch].track;
+        let rev = p.add_return("reverb", Some(t)).unwrap();
+        let fx = p.tracks[rev].inserts[0].as_ref().unwrap();
+        assert_eq!((fx.kind.as_str(), fx.get(5)), ("reverb", Some(1.0)));
+        assert_eq!(p.tracks[rev].name, "Réverbe");
+        assert_eq!(p.tracks[t].sends[0], (rev, 0.3));
+        let second = p.add_return("reverb", None).unwrap();
+        assert_eq!(p.tracks[second].name, "Réverbe 1");
+        let delay = p.add_return("delay", None).unwrap();
+        assert_eq!(p.tracks[delay].inserts[0].as_ref().unwrap().kind, "delay");
+        assert!(p.add_return("inconnu", None).is_none());
+        assert!(p.routing_order().is_some());
+        // Défaire le retour libère l'envoi.
+        p.dissolve(rev);
+        assert_eq!(p.tracks[t].sends[0], (MASTER, 0.0));
+    }
+
+    #[test]
+    fn tracks_run_out_gracefully() {
+        let mut p = Project::empty();
+        let made = (0..TRACKS).filter_map(|_| p.add_bus(&[])).count();
+        assert_eq!(made, TRACKS - 1);
+        assert!(p.add_vca(&[]).is_none());
+    }
+
+    #[test]
+    fn vca_reaches_the_engine() {
+        let mut p = Project::empty();
+        let vca = p.add_vca(&[2, 3, MASTER]).unwrap();
+        assert_eq!(p.tracks[vca].kind, TrackKind::Vca);
+        assert_eq!(p.vca_members(vca), [2, 3]);
+        assert!(p.add_vca(&[vca]).is_some_and(|v| p.tracks[vca].vca.is_none() && v != vca), "un VCA ne pilote pas un VCA");
+        let (mut engine, _) = p.build_engine(48_000.0, &no_samples);
+        assert_eq!(engine.mixer_mut().tracks[2].vca, Some(vca));
+        p.dissolve(vca);
+        assert!(p.vca_members(vca).is_empty());
+    }
+
+    /// Crête du master pendant une mesure de deux canaux groupés dans un bus.
+    fn bus_peak(edit: impl Fn(&mut Project, usize)) -> f32 {
+        let mut p = Project::empty();
+        for name in ["A", "B"] {
+            let ch = p.add_channel(name, InstrumentDef::new("pulse"), 60);
+            for step in [0, 4, 8, 12] {
+                p.set_step(0, ch, step, true);
+            }
+        }
+        let members: Vec<usize> = p.channels.iter().map(|c| c.track).collect();
+        let bus = p.add_bus(&members).unwrap();
+        // Un effet sur le bus, avec la clé d'entrée latérale sur une autre piste et de la latence.
+        let mut comp = EffectDef::new("compressor");
+        comp.sidechain = Some(5);
+        p.tracks[bus].inserts[0] = Some(comp);
+        p.tracks[bus].inserts[1] = Some(EffectDef::new("limiter"));
+        edit(&mut p, bus);
+        let (mut engine, mut handle) = p.build_engine(48_000.0, &no_samples);
+        {
+            let mixer = engine.mixer_mut();
+            let pos = |t| mixer.order.iter().position(|&x| x == t).unwrap();
+            assert!(members.iter().all(|&m| pos(m) < pos(bus)));
+            assert!(pos(5) < pos(bus), "la clé passe avant le bus");
+        }
+        handle.send(Command::Play).unwrap();
+        let mut buf = vec![0.0f32; 2 * 48_000];
+        for chunk in buf.chunks_mut(1_024) {
+            engine.process(chunk, 2);
+        }
+        assert!(engine.mixer_mut().latency() > 0, "la latence du limiteur du bus est compensée");
+        buf.iter().fold(0.0f32, |m, s| m.max(s.abs()))
+    }
+
+    #[test]
+    fn two_tracks_sum_through_a_bus_with_effects() {
+        let open = bus_peak(|_, _| {});
+        assert!(open > 0.05, "{open}");
+        let muted = bus_peak(|p, bus| p.tracks[bus].muted = true);
+        assert_eq!(muted, 0.0, "tout passe par le bus");
+        let quiet = bus_peak(|p, bus| p.tracks[bus].gain = 0.25);
+        assert!(quiet < open * 0.6, "{quiet} / {open}");
     }
 }
