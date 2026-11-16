@@ -121,7 +121,7 @@ msgid "Clap"
 msgstr "Clap"
 
 msgid "Open Hat"
-msgstr "Charleston ouverte"
+msgstr "Hat ouvert"
 
 msgid "Bass"
 msgstr "Basse"
@@ -3090,7 +3090,7 @@ msgid "Oscillator"
 msgstr "Oscillateur"
 
 msgid "Tune"
-msgstr "Accord"
+msgstr "Accordage"
 
 msgid "Performance"
 msgstr "Jeu"
@@ -3294,7 +3294,7 @@ msgid "Interval 4"
 msgstr "Intervalle 4"
 
 msgid "Added Velocity"
-msgstr "Vélocité ajoutées"
+msgstr "Vélocité ajoutée"
 
 msgid "Probability"
 msgstr "Probabilité"
@@ -3669,7 +3669,7 @@ msgid "Low-latency monitoring\nLookahead effects on the monitored path are bypas
 msgstr "Écoute à faible latence\nLes effets à anticipation sur le chemin écouté sont contournés\net la compensation de délai est sautée. Les prises restent sèches et alignées."
 
 msgid "32-bit float"
-msgstr "32 bits flottant"
+msgstr "32 flottant"
 
 msgid "24-bit PCM WAV at the device rate"
 msgstr "WAV PCM 24 bits à la fréquence de l'appareil"
@@ -3687,10 +3687,10 @@ msgid "Punch"
 msgstr "Punch"
 
 msgid "Loop recording: every pass of the selection becomes a take"
-msgstr "Enregistrement en boucle : chaque passage de la sélection devient une prise"
+msgstr "En boucle : chaque passage de la sélection devient une prise"
 
 msgid "Tip: select a range in the ruler to loop and stack takes"
-msgstr "Astuce : sélectionne une zone dans la règle pour boucler et empiler les prises"
+msgstr "Sélectionne une zone dans la règle pour empiler les prises en boucle"
 
 msgid "sweet spot"
 msgstr "zone idéale"
@@ -4373,7 +4373,7 @@ msgid "Zoom out to see the whole sound"
 msgstr "Dézoomer pour voir tout le son"
 
 msgid "or press Space"
-msgstr "ou appuie sur Espace"
+msgstr "ou touche Espace"
 
 msgid "Listen from the selected piece to the end\nClick a piece on the wave to hear only that piece"
 msgstr "Écouter du morceau choisi jusqu'à la fin\nClique un morceau sur l'onde pour n'entendre que lui"
@@ -4804,9 +4804,6 @@ msgstr "Canal « {} »"
 msgid "Channel {}"
 msgstr "Canal {}"
 
-msgid "Click a slot to put a pattern in it, then click the clip to launch it on the next bar"
-msgstr "Clique une case pour y mettre un pattern, puis clique le clip pour le lancer à la mesure suivante"
-
 msgid "Choke group"
 msgstr "Groupe d'étouffement"
 
@@ -4818,6 +4815,9 @@ msgstr "Vider"
 
 msgid "Clear a pad"
 msgstr "Vider un pad"
+
+msgid "Click a slot to put a pattern in it, then click the clip to launch it on the next bar"
+msgstr "Clique une case pour y mettre un pattern, puis clique le clip pour le lancer à la mesure suivante"
 
 msgid "Copy pad"
 msgstr "Copier le pad"
