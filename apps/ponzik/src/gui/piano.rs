@@ -5,10 +5,10 @@ use ponzik_ui::{Canvas, Rect};
 use ponzik_window::Key;
 
 use super::Input;
-use super::app::{App, Focus, View};
+use super::app::{App, Focus, Popup, Rename, View};
 use super::rack::note_name;
 use super::theme::*;
-use super::widgets::{Icon, wid};
+use super::widgets::{Icon, draw_icon, wid};
 
 const KEY_H: f32 = 16.0;
 const KEYBOARD: f32 = 64.0;
@@ -16,6 +16,12 @@ const RULER: f32 = 28.0;
 const VELOCITY: f32 = 76.0;
 const EDGE: f32 = 7.0;
 const SNAPS: [u32; 4] = [96, 48, 24, 12];
+const PIANO_HELP: &str = "Piano roll
+Clic : poser · bord : durée · clic droit : effacer
+Ctrl + glisser : sélectionner · règle : boucle
+Ctrl+B : dupliquer · Ctrl+Q : quantifier
+Molette : défiler · Maj : horizontal · Ctrl : zoom
+Bouton du milieu : glisser la vue";
 
 #[derive(Clone, Debug)]
 pub enum PianoDrag {
@@ -70,8 +76,7 @@ impl App {
         let t = self.theme;
         let Some(ch) = self.piano_channel() else {
             c.fill_rrect(body, 16.0, t.panel);
-            let (cx, cy) = body.center();
-            self.text_center(c, self.f.sans, 14.0, cx, cy, "Ajoute un instrument pour écrire des notes", t.text2);
+            self.empty_state(c, body, Icon::Piano, "Ajoute un instrument pour écrire des notes");
             return;
         };
         let pat = self.project.current_pattern;
@@ -81,11 +86,11 @@ impl App {
         c.fill_rrect(chan_box, 10.0, t.raised);
         c.stroke_rrect(chan_box, 10.0, 1.0, t.hairline);
         let n = self.project.channels.len();
-        if self.icon_button(c, input, wid("pr-prev", 0, 0), Rect::new(chan_box.x + 2.0, chan_box.y + 2.0, 28.0, chan_box.h - 4.0), Icon::ChevronLeft, false) {
+        if self.icon_button(c, input, wid("pr-prev", 0, 0), Rect::new(chan_box.x + 2.0, chan_box.y + 2.0, 28.0, chan_box.h - 4.0), Icon::ChevronLeft, false, ("Canal précédent", "")) {
             self.focus = Focus::Channel((ch + n - 1) % n);
             self.piano.selected.clear();
         }
-        if self.icon_button(c, input, wid("pr-next", 0, 0), Rect::new(chan_box.right() - 30.0, chan_box.y + 2.0, 28.0, chan_box.h - 4.0), Icon::ChevronRight, false) {
+        if self.icon_button(c, input, wid("pr-next", 0, 0), Rect::new(chan_box.right() - 30.0, chan_box.y + 2.0, 28.0, chan_box.h - 4.0), Icon::ChevronRight, false, ("Canal suivant", "")) {
             self.focus = Focus::Channel((ch + 1) % n);
             self.piano.selected.clear();
         }
@@ -93,17 +98,23 @@ impl App {
         let (bx, by) = chan_box.center();
         let label = self.fit(self.f.sans_med, 13.0, &name, chan_box.w - 70.0);
         self.text_center(c, self.f.sans_med, 13.0, bx, by, &label, t.text);
+        let name_r = Rect::new(chan_box.x + 32.0, chan_box.y, chan_box.w - 64.0, chan_box.h);
+        if input.inside && name_r.contains(input.x, input.y) && self.drag.is_none() {
+            self.set_tip("Canal\nDouble-clic : renommer", "");
+            if input.double {
+                self.open_popup(Popup::Rename { target: Rename::Channel(ch), text: name.clone() }, chan_box);
+            }
+        }
 
         let snap_box = Rect::new(header.right() - 236.0, header.y, 236.0, header.h);
         let snap_sel = SNAPS.iter().position(|&s| s == self.piano.snap).unwrap_or(2);
-        if let Some(i) = self.segmented(c, input, wid("pr-snap", 0, 0), snap_box, &["1/4", "1/8", "1/16", "1/32"], snap_sel) {
+        let tips = [("Aimanter à la noire", ""), ("Aimanter à la croche", ""), ("Aimanter à la double", ""), ("Aimanter à la triple", "")];
+        if let Some(i) = self.segmented_tips(c, input, wid("pr-snap", 0, 0), snap_box, &["1/4", "1/8", "1/16", "1/32"], &tips, snap_sel) {
             self.piano.snap = SNAPS[i];
         }
-        let hint_room = snap_box.x - chan_box.right() - 32.0;
-        if hint_room > 200.0 {
-            let hint = "Clic : poser · Bord : durée · Clic droit : effacer · Ctrl+B dupliquer · Ctrl+Q quantifier";
-            self.text_fit(c, self.f.sans, 12.0, chan_box.right() + 16.0, header.y + header.h * 0.5, hint, hint_room, t.muted);
-        }
+        draw_icon(c, Icon::Magnet, snap_box.x - 18.0, header.y + header.h * 0.5, 15.0, t.muted);
+        let help = Rect::new(snap_box.x - 74.0, header.y, 36.0, header.h);
+        self.icon_button(c, input, wid("pr-help", 0, 0), help, Icon::Info, false, (PIANO_HELP, ""));
 
         c.fill_rrect(body, 16.0, t.panel);
         c.stroke_rrect(body, 16.0, 1.0, t.hairline);
@@ -128,6 +139,17 @@ impl App {
             self.piano.scroll_y = (center + grid.h / KEY_H * 0.5).round().clamp(grid.h / KEY_H, 127.0);
         }
 
+        // Bouton du milieu : faire glisser la vue dans les deux sens.
+        let pan_id = wid("pr-pan", 0, 0);
+        if input.inside && grid.contains(input.x, input.y) && input.middle_pressed {
+            self.pan = Some((pan_id, input.x, input.y, self.piano.scroll_x, self.piano.scroll_y));
+        }
+        if let Some((_, x0, y0, sx0, sy0)) = self.pan.filter(|p| p.0 == pan_id) {
+            self.piano.scroll_x = (sx0 - (input.x - x0) / self.piano.zoom).max(0.0);
+            self.piano.scroll_y = (sy0 + (input.y - y0) / KEY_H).clamp(grid.h / KEY_H, 127.0);
+            self.anim.set(wid("pr-sx", 0, 0), self.piano.scroll_x);
+            self.anim.set(wid("pr-sy", 0, 0), self.piano.scroll_y);
+        }
         // Molette : défilement vertical, Maj horizontal, Ctrl zoom.
         if input.inside && (grid.contains(input.x, input.y) || keys.contains(input.x, input.y)) && input.wheel != 0.0 {
             if input.mods.ctrl {
@@ -452,7 +474,8 @@ impl App {
             c.fill_circle(x + 1.5, vel_lane.bottom() - 6.0 - h, 3.0, col);
         }
         c.set_clip(Some(prev));
-        self.text(c, self.f.sans, 11.0, inner.x + 4.0, vel_lane.y + 12.0, "Vélocité", t.muted);
+        draw_icon(c, Icon::Mixer, inner.x + KEYBOARD * 0.5, vel_lane.y + vel_lane.h * 0.5, 15.0, t.muted.alpha(0.7));
+        self.tip_zone(input, Rect::new(inner.x, vel_lane.y, KEYBOARD, vel_lane.h), "Vélocité\nGlisser dans le couloir pour la dessiner", "");
     }
 
     /// Raccourcis d'édition du piano roll, ceux de FL Studio.

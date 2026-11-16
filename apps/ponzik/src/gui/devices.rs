@@ -10,7 +10,8 @@ use ponzik_engine::{ParamInfo, Unit, registry};
 use ponzik_ui::{Canvas, Rect};
 
 use super::Input;
-use super::app::{App, Focus, Popup};
+use super::app::{App, Focus, Popup, Rename};
+use super::dnd::DropTarget;
 use super::playlist::pattern_color;
 use super::theme::*;
 use super::visuals::device_key;
@@ -106,7 +107,7 @@ fn groups(params: &'static [ParamInfo]) -> Vec<Group> {
 }
 
 /// Instruments qui jouent un échantillon : ils montrent sa forme d'onde.
-fn sample_kind(kind: &str) -> bool {
+pub fn sample_kind(kind: &str) -> bool {
     matches!(kind, "sampler" | "slicer" | "granular")
 }
 const SAMPLE_W: f32 = 320.0;
@@ -160,24 +161,39 @@ impl App {
         let track = self.focused_track();
         let header = Rect::new(r.x + PAD, r.y + 10.0, r.w - 2.0 * PAD, 28.0);
 
-        // Titre : ce qu'on édite et où ça sort.
-        let (title, detail) = match self.focus {
+        // Titre : ce qu'on édite (double-clic : renommer) et, discrètement, où ça sort.
+        let (title, out, rename) = match self.focus {
             Focus::Channel(ch) if ch < self.project.channels.len() => {
                 let c = &self.project.channels[ch];
-                (c.name.clone(), format!("Canal {} → {}", ch + 1, self.project.tracks[c.track].name))
+                let dest = &self.project.tracks[c.track].name;
+                (c.name.clone(), (dest != &c.name).then(|| dest.clone()), Rename::Channel(ch))
             }
             _ => {
-                let name = self.project.tracks[track].name.clone();
-                let out = if track == MASTER {
-                    "Sortie audio".to_string()
-                } else {
-                    format!("→ {}", self.project.tracks[self.project.tracks[track].output].name)
-                };
-                (name, out)
+                let tr = &self.project.tracks[track];
+                let out = (track != MASTER && tr.output != MASTER).then(|| self.project.tracks[tr.output].name.clone());
+                (tr.name.clone(), out, Rename::Track(track))
             }
         };
-        let w = self.text(c, self.f.sans_med, 15.0, header.x, header.y + 14.0, &title, t.text);
-        self.text(c, self.f.sans, 12.0, header.x + w + 12.0, header.y + 14.0, &detail, t.muted);
+        let tw = self.fonts.measure(self.f.sans_med, 15.0, &title);
+        let title_r = Rect::new(header.x - 6.0, header.y, tw + 12.0, 28.0);
+        let tid = wid("dev-title", 0, 0);
+        let thov = self.hovered(input, tid, title_r);
+        let thv = self.hover_anim(tid, thov);
+        if thv > 0.01 {
+            c.fill_rrect(title_r, 8.0, t.raised.alpha(thv));
+        }
+        if thov {
+            self.set_tip("Double-clic : renommer", "");
+            if input.double {
+                self.open_popup(Popup::Rename { target: rename, text: title.clone() }, title_r);
+            }
+        }
+        self.text(c, self.f.sans_med, 15.0, header.x, header.y + 14.0, &title, t.text);
+        if let Some(out) = out {
+            let x = header.x + tw + 14.0;
+            draw_icon(c, Icon::Route, x + 7.0, header.y + 14.0, 13.0, t.muted);
+            self.text(c, self.f.sans, 12.0, x + 20.0, header.y + 14.0, &out, t.muted);
+        }
 
         let mut devices = Vec::new();
         if let Focus::Channel(ch) = self.focus
@@ -205,9 +221,20 @@ impl App {
         if (over_header || (over_chain && input.mods.shift)) && input.wheel != 0.0 {
             self.chain_scroll -= input.wheel * 80.0;
         }
+        // Bouton du milieu : faire glisser la chaîne.
+        let pan_id = wid("chain-pan", 0, 0);
+        if over_chain && input.middle_pressed {
+            self.pan = Some((pan_id, input.x, input.y, self.chain_scroll, 0.0));
+        }
+        if let Some((_, x0, _, s0, _)) = self.pan.filter(|p| p.0 == pan_id) {
+            self.chain_scroll = s0 - (input.x - x0);
+            self.chain_scroll = self.chain_scroll.clamp(0.0, (total - chain.w).max(0.0));
+            self.anim.set(wid("chain-sx", 0, 0), self.chain_scroll);
+        }
         self.chain_scroll = self.chain_scroll.clamp(0.0, (total - chain.w).max(0.0));
         let sx = self.anim.to(wid("chain-sx", 0, 0), self.chain_scroll, T_LAYOUT);
 
+        self.drop_zone(input, chain, DropTarget::Track(track));
         let prev = c.push_clip(chain);
         let mut x = chain.x - sx;
         for (d, w) in devices.iter().zip(widths) {
@@ -218,14 +245,17 @@ impl App {
             x += w + CARD_GAP;
         }
         // Emplacement d'ajout.
-        let add = Rect::new(x, chain.y, 110.0, chain.h);
+        let add = Rect::new(x, chain.y, 64.0, chain.h);
         let id = wid("chain-add", track, 0);
         let hov = self.hovered(input, id, add);
         let hv = self.hover_anim(id, hov);
+        c.fill_rrect(add, 14.0, t.panel.alpha(hv * 0.6));
         c.stroke_rrect(add, 14.0, 1.0, t.hairline.alpha(1.0 + hv * 2.0));
         let (ax, ay) = add.center();
-        draw_icon(c, Icon::Plus, ax, ay - 10.0, 18.0, t.muted.mix(t.accent, hv));
-        self.text_center(c, self.f.sans, 12.0, ax, ay + 16.0, "Effet", t.muted.mix(t.text2, hv));
+        draw_icon(c, Icon::Plus, ax, ay, 20.0, t.muted.mix(t.accent, hv));
+        if hov {
+            self.set_tip("Ajouter un effet\nou glisser un effet du navigateur", "");
+        }
         if hov && input.pressed {
             self.open_popup(Popup::AddEffect { track }, add);
         }
@@ -236,6 +266,9 @@ impl App {
         let t = self.theme;
         c.fill_rrect(card, 14.0, t.panel);
         c.stroke_rrect(card, 14.0, 1.0, t.hairline);
+        if let Device::Instrument(ch) = device {
+            self.drop_zone(input, card, DropTarget::Channel(ch));
+        }
         let head = Rect::new(card.x, card.y, card.w, 34.0);
         let (kind, inst) = self.device_kind(device);
         let params = params_of(&kind, inst);
@@ -258,20 +291,21 @@ impl App {
         // Presets de l'appareil.
         let preset_x = if matches!(device, Device::Effect { .. }) { head.right() - 92.0 } else { head.right() - 32.0 };
         let preset = Rect::new(preset_x, head.y + 5.0, 26.0, 26.0);
-        if self.icon_button(c, input, wid("fx-preset", device_key(device), 0), preset, Icon::Folder, false) {
+        if self.icon_button(c, input, wid("fx-preset", device_key(device), 0), preset, Icon::Preset, false, ("Presets", "")) {
             self.open_popup(Popup::Presets { device, kind: kind.clone() }, preset);
         }
 
         if let Device::Effect { track, slot } = device {
             let power = Rect::new(head.right() - 60.0, head.y + 5.0, 26.0, 26.0);
-            if self.icon_button(c, input, wid("fx-power", track, slot), power, Icon::Power, !bypass) {
+            let tip = if bypass { ("Activer", "") } else { ("Contourner", "") };
+            if self.icon_button(c, input, wid("fx-power", track, slot), power, Icon::Power, !bypass, tip) {
                 if let Some(fx) = self.project.tracks[track].inserts[slot].as_mut() {
                     fx.bypass = !fx.bypass;
                 }
                 self.commit("Contourner un effet");
             }
             let close = Rect::new(head.right() - 32.0, head.y + 5.0, 26.0, 26.0);
-            if self.icon_button(c, input, wid("fx-close", track, slot), close, Icon::Close, false) {
+            if self.icon_button(c, input, wid("fx-close", track, slot), close, Icon::Close, false, ("Retirer", "")) {
                 self.project.tracks[track].inserts[slot] = None;
                 self.commit("Retirer un effet");
                 return;

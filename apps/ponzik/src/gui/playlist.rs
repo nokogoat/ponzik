@@ -6,14 +6,20 @@ use ponzik_ui::{Canvas, Color, Rect};
 use ponzik_window::Key;
 
 use super::Input;
-use super::app::{App, View};
+use super::app::{App, Popup, Rename, View};
+use super::dnd::DropTarget;
 use super::theme::*;
-use super::widgets::{Btn, wid};
+use super::widgets::{Icon, draw_icon, wid};
 
 const PALETTE_W: f32 = 196.0;
 const RULER: f32 = 30.0;
 const LANE_H: f32 = 52.0;
 const EDGE: f32 = 8.0;
+const PLAYLIST_HELP: &str = "Playlist
+Clic : poser le pattern choisi · bord : durée
+Clic droit : effacer · double-clic : éditer
+Règle : départ et boucle · Ctrl+B : dupliquer
+Molette : défiler · Ctrl : zoom · milieu : glisser";
 
 #[derive(Clone, Copy, Debug)]
 pub enum ClipDrag {
@@ -33,16 +39,25 @@ pub fn pattern_color(i: usize) -> Color {
 impl App {
     pub(super) fn playlist_view(&mut self, c: &mut Canvas, input: &Input, header: Rect, body: Rect) {
         let t = self.theme;
-        let snap_box = Rect::new(header.right() - 200.0, header.y, 200.0, header.h);
+        let snap_box = Rect::new(header.right() - 120.0, header.y, 120.0, header.h);
         let snap_key = wid("pl-snap-v", 0, 0);
         let snap_sel = self.anim.get(snap_key).unwrap_or(0.0) as usize;
-        if let Some(i) = self.segmented(c, input, wid("pl-snap", 0, 0), snap_box, &["Mesure", "Temps"], snap_sel) {
+        let tips = [("Aimanter à la mesure", ""), ("Aimanter au temps", "")];
+        if let Some(i) = self.segmented_tips(c, input, wid("pl-snap", 0, 0), snap_box, &["1", "1/4"], &tips, snap_sel) {
             self.anim.set(snap_key, i as f32);
         }
+        draw_icon(c, Icon::Magnet, snap_box.x - 18.0, header.y + header.h * 0.5, 15.0, t.muted);
         let snap = if self.anim.get(snap_key).unwrap_or(0.0) as usize == 0 { TICKS_PER_BAR } else { 96 } as f32;
+        let help = Rect::new(snap_box.x - 74.0, header.y, 36.0, header.h);
+        self.icon_button(c, input, wid("pl-help", 0, 0), help, Icon::Info, false, (PLAYLIST_HELP, ""));
+        // Hors mode morceau, la playlist ne joue pas : un bouton pour y passer.
         if self.project.mode != PlayMode::Song {
-            let hint_room = snap_box.x - header.x - 16.0;
-            self.text_fit(c, self.f.sans, 12.0, header.x, header.y + header.h * 0.5, "Passe en mode Morceau pour écouter la playlist", hint_room, t.muted);
+            let song = Rect::new(help.x - 44.0, header.y, 36.0, header.h);
+            let glow = 0.5 + 0.5 * (self.time * 3.0).sin();
+            c.fill_rrect(song.inset(-2.0), 10.0, t.accent.alpha(0.08 + 0.06 * glow));
+            if self.icon_button(c, input, wid("pl-song", 0, 0), song, Icon::Playlist, false, ("Jouer le morceau", "L")) {
+                self.set_mode(PlayMode::Song);
+            }
         }
 
         c.fill_rrect(body, 16.0, t.panel);
@@ -51,8 +66,7 @@ impl App {
 
         // Palette de patterns : le pattern choisi est celui qu'on pose.
         let palette = Rect::new(inner.x, inner.y, PALETTE_W - 12.0, inner.h);
-        self.text(c, self.f.sans_med, 12.0, palette.x + 4.0, palette.y + 10.0, "Patterns", t.muted);
-        let mut y = palette.y + 28.0;
+        let mut y = palette.y + 4.0;
         for p in 0..self.project.patterns.len() {
             let row = Rect::new(palette.x, y, palette.w, 40.0);
             if row.bottom() > palette.bottom() - 44.0 {
@@ -66,21 +80,41 @@ impl App {
             c.fill_rrect(row, 10.0, t.raised.alpha((hv * 0.6).max(sel)));
             c.fill_rrect(Rect::new(row.x + 10.0, row.y + 12.0, 4.0, 16.0), 2.0, pattern_color(p));
             let name = self.project.patterns[p].name.clone();
-            self.text_fit(c, self.f.sans_med, 13.0, row.x + 24.0, row.y + 20.0, &name, row.w - 36.0, if current { t.text } else { t.text2 });
-            if hov && input.pressed {
-                self.playlist.brush = p;
-                if input.double {
-                    self.select_pattern(p);
-                    self.set_view(View::Rack);
+            let edit = Rect::new(row.right() - 32.0, row.y + 6.0, 28.0, 28.0);
+            let name_w = if hov { row.w - 66.0 } else { row.w - 36.0 };
+            self.text_fit(c, self.f.sans_med, 13.0, row.x + 24.0, row.y + 20.0, &name, name_w, if current { t.text } else { t.text2 });
+            if hov && edit.contains(input.x, input.y) {
+                // Bouton d'édition, au-dessus de la ligne.
+            } else if hov {
+                self.set_tip("Clic : pinceau · double-clic : renommer", "");
+                if input.pressed {
+                    self.playlist.brush = p;
+                    if input.double {
+                        self.open_popup(Popup::Rename { target: Rename::Pattern(p), text: name.clone() }, row);
+                    }
                 }
+            }
+            if hv > 0.01 && self.icon_button(c, input, wid("pl-pat-edit", p, 0), edit, Icon::Rack, false, ("Éditer", "F6")) {
+                self.select_pattern(p);
+                self.set_view(View::Rack);
             }
             y += 44.0;
         }
-        let add = Rect::new(palette.x, (y + 4.0).min(palette.bottom() - 36.0), palette.w, 36.0);
-        if self.button(c, input, wid("pl-add-pat", 0, 0), add, "+ Nouveau pattern", Btn::Ghost) {
-            let p = self.project.add_pattern();
-            self.playlist.brush = p;
-            self.select_pattern(p);
+        let add = Rect::new(palette.x, (y + 4.0).min(palette.bottom() - 40.0), palette.w, 40.0);
+        let id = wid("pl-add-pat", 0, 0);
+        let hov = self.hovered(input, id, add);
+        let hv = self.hover_anim(id, hov);
+        c.fill_rrect(add, 10.0, t.raised.alpha(hv * 0.6));
+        c.stroke_rrect(add, 10.0, 1.0, t.hairline.alpha(1.0 + hv * 1.5));
+        let (ax, ay) = add.center();
+        draw_icon(c, Icon::Plus, ax, ay, 16.0, t.muted.mix(t.accent, hv));
+        if hov {
+            self.set_tip("Nouveau pattern", "F4");
+            if input.pressed {
+                let p = self.project.add_pattern();
+                self.playlist.brush = p;
+                self.select_pattern(p);
+            }
         }
 
         // Ligne de temps.
@@ -100,6 +134,15 @@ impl App {
         let fit = ((lanes_r.h - autos as f32 * super::automation::AUTO_LANE_H) / LANE_H).floor().max(1.0) as usize;
         let lanes = (lanes_used + 1).max(fit).min(64);
 
+        // Bouton du milieu : faire glisser le temps.
+        let pan_id = wid("pl-pan", 0, 0);
+        if input.inside && area.contains(input.x, input.y) && input.middle_pressed {
+            self.pan = Some((pan_id, input.x, input.y, self.playlist.scroll_x, 0.0));
+        }
+        if let Some((_, x0, _, sx0, _)) = self.pan.filter(|p| p.0 == pan_id) {
+            self.playlist.scroll_x = (sx0 - (input.x - x0) / self.playlist.zoom * TICKS_PER_BAR as f32).max(0.0);
+            self.anim.set(wid("pl-sx", 0, 0), self.playlist.scroll_x);
+        }
         if input.inside && area.contains(input.x, input.y) && input.wheel != 0.0 {
             if input.mods.ctrl {
                 let at = self.playlist.scroll_x + (input.x - area.x) / self.playlist.zoom * TICKS_PER_BAR as f32;
@@ -154,6 +197,16 @@ impl App {
             })
         };
         let hover_clip = if over { hit(self, input.x, input.y) } else { None };
+
+        // Dépôt d'un échantillon : sur la ligne visée, à la position aimantée.
+        if self.dnd_active() && input.inside && clip_zone.contains(input.x, input.y) {
+            let lane = lane_at(input.y) as usize;
+            let tick = ((tick_at(input.x) / snap).floor() * snap).max(0.0) as u32;
+            let x = x_of(tick as f32);
+            // La zone part du point aimanté et contient toujours le curseur.
+            let zone = Rect::new(x, lanes_r.y + lane as f32 * LANE_H + 2.0, (ppt * 96.0 * 4.0).max(input.x - x + 2.0), LANE_H - 4.0);
+            self.drop_zone(input, zone, DropTarget::Lane { lane, tick });
+        }
 
         // Clips audio : prioritaires sur les clips de pattern.
         let audio_id = wid("pl-audio", 0, 0);

@@ -6,8 +6,9 @@ use ponzik_ui::{Canvas, Rect};
 
 use super::Input;
 use super::app::{App, Focus, Meter, Popup};
+use super::dnd::DropTarget;
 use super::theme::*;
-use super::widgets::{Btn, wid};
+use super::widgets::{Icon, draw_icon, wid};
 
 const STRIP_W: f32 = 112.0;
 const STRIP_GAP: f32 = 8.0;
@@ -34,6 +35,15 @@ pub fn fmt_db(gain: f32) -> String {
         format!("+{s} dB")
     } else {
         "0,0 dB".into()
+    }
+}
+
+/// Pan lisible : « C », « G 30 », « D 45 ».
+pub fn fmt_pan(pan: f32) -> String {
+    match (pan * 100.0).round() as i32 {
+        0 => "C".to_string(),
+        p if p < 0 => format!("G {}", -p),
+        p => format!("D {p}"),
     }
 }
 
@@ -65,8 +75,9 @@ impl App {
         let t = self.theme;
         let all_key = wid("mx-all", 0, 0);
         let all = self.anim.get(all_key).unwrap_or(0.0) > 0.5;
-        let toggle = Rect::new(header.right() - 210.0, header.y, 210.0, header.h);
-        if self.button(c, input, wid("mx-all-btn", 0, 0), toggle, if all { "Pistes utilisées" } else { "Toutes les pistes" }, Btn::Secondary) {
+        let toggle = Rect::new(header.right() - 36.0, header.y, 36.0, header.h);
+        let tip = if all { ("Pistes utilisées seulement", "") } else { ("Toutes les pistes", "") };
+        if self.icon_button(c, input, wid("mx-all-btn", 0, 0), toggle, Icon::Columns, all, tip) {
             self.anim.set(all_key, if all { 0.0 } else { 1.0 });
         }
 
@@ -77,6 +88,15 @@ impl App {
         let content_w = tracks.len() as f32 * (STRIP_W + STRIP_GAP) + 12.0;
         if input.inside && inner.contains(input.x, input.y) && input.wheel != 0.0 && input.mods.shift {
             self.mixer_scroll = (self.mixer_scroll - input.wheel * 80.0).clamp(0.0, (content_w - inner.w).max(0.0));
+        }
+        // Bouton du milieu : faire glisser les tranches.
+        let pan_id = wid("mx-pan-drag", 0, 0);
+        if input.inside && inner.contains(input.x, input.y) && input.middle_pressed {
+            self.pan = Some((pan_id, input.x, input.y, self.mixer_scroll, 0.0));
+        }
+        if let Some((_, x0, _, s0, _)) = self.pan.filter(|p| p.0 == pan_id) {
+            self.mixer_scroll = s0 - (input.x - x0);
+            self.anim.set(wid("mx-sx", 0, 0), self.mixer_scroll.clamp(0.0, (content_w - inner.w).max(0.0)));
         }
         self.mixer_scroll = self.mixer_scroll.clamp(0.0, (content_w - inner.w).max(0.0));
         let sx = self.anim.to(wid("mx-sx", 0, 0), self.mixer_scroll, T_LAYOUT);
@@ -101,6 +121,7 @@ impl App {
         let fv = self.anim.to(wid("mx-focus", tr, 0), focused as u8 as f32, T_HOVER);
         c.fill_rrect(r, 12.0, t.strip.mix(t.raised, fv * 0.6));
         c.stroke_rrect(r, 12.0, 1.0, if focused { t.select.alpha(0.6) } else { t.hairline });
+        self.drop_zone(input, r, DropTarget::Track(tr));
         let inner = r.inset(8.0);
 
         // Nom : clic pour afficher la chaîne d'effets en bas.
@@ -119,6 +140,9 @@ impl App {
             self.focus = Focus::Track(tr);
             self.open_popup(Popup::TrackMenu(tr), Rect::new(input.x, input.y, 0.0, 0.0));
         }
+        if nhov {
+            self.set_tip("Double-clic : renommer · clic droit : menu", "");
+        }
         let name = self.project.tracks[tr].name.clone();
         let label = self.fit(self.f.sans_med, 13.0, &name, inner.w - 4.0);
         self.text_center(c, self.f.sans_med, 13.0, inner.x + inner.w * 0.5, inner.y + 10.0, &label, t.text);
@@ -131,9 +155,12 @@ impl App {
             let ahv = self.hover_anim(aid, ahov);
             let col = if armed { t.negative } else { t.muted.mix(t.text2, ahv) };
             if armed {
-                c.fill_circle(arm.x + 9.0, arm.y + 9.0, 5.0, col);
+                c.fill_circle(arm.x + 9.0, arm.y + 9.0, 6.0, col);
             } else {
-                c.stroke_circle(arm.x + 9.0, arm.y + 9.0, 5.0, 1.4, col);
+                draw_icon(c, Icon::Record, arm.x + 9.0, arm.y + 9.0, 13.0, col);
+            }
+            if ahov {
+                self.set_tip(if armed { "Désarmer" } else { "Armer l'enregistrement audio" }, "");
             }
             if ahov && input.pressed {
                 self.toggle_arm(tr);
@@ -149,6 +176,7 @@ impl App {
             let id = wid("mx-slot", tr, slot);
             let hov = self.hovered(input, id, row);
             let hv = self.hover_anim(id, hov);
+            self.drop_zone(input, row, DropTarget::Slot(tr, slot));
             let fx = self.project.tracks[tr].inserts[slot].clone();
             match &fx {
                 Some(def) => {
@@ -161,7 +189,7 @@ impl App {
                 None => {
                     c.stroke_rrect(row, 6.0, 1.0, t.hairline.alpha(0.6 + hv));
                     if hv > 0.01 {
-                        self.text_center(c, self.f.sans, 11.0, row.x + row.w * 0.5, row.y + 10.0, "+", t.muted.alpha(hv));
+                        draw_icon(c, Icon::Plus, row.x + row.w * 0.5, row.y + 10.0, 11.0, t.muted.mix(t.accent, hv).alpha(hv));
                     }
                 }
             }
@@ -171,6 +199,9 @@ impl App {
                 if fx.is_none() {
                     self.open_popup(Popup::AddEffect { track: tr }, row);
                 }
+            }
+            if hov {
+                self.set_tip(if fx.is_some() { "Clic droit : retirer" } else { "Ajouter un effet" }, "");
             }
             if hov && input.right_pressed && fx.is_some() {
                 self.project.tracks[tr].inserts[slot] = None;
@@ -209,12 +240,9 @@ impl App {
             self.project.tracks[tr].pan = ((v * 2.0 - 1.0) * 100.0).round() / 100.0;
             self.commit("Pan de piste");
         }
-        let pan_text = match (pan * 100.0).round() as i32 {
-            0 => "C".to_string(),
-            p if p < 0 => format!("G {}", -p),
-            p => format!("D {p}"),
-        };
+        let pan_text = fmt_pan(pan);
         self.text_right(c, self.f.mono, 11.0, inner.right(), pan_y, &pan_text, t.text2);
+        self.tip_zone(input, Rect::new(inner.x, pan_y - 14.0, inner.w, 28.0), "Pan", "");
 
         // Bas : sortie, mute ; valeur au-dessus ; fader au milieu.
         let mute = Rect::new(inner.x, inner.bottom() - 26.0, inner.w, 26.0);
@@ -233,9 +261,18 @@ impl App {
         if ohv > 0.01 {
             c.fill_rrect(out_r, 6.0, t.raised.alpha(ohv));
         }
-        let out_label = if tr == MASTER { "Sortie audio".to_string() } else { format!("→ {}", self.project.tracks[self.project.tracks[tr].output].name) };
-        let lw = self.fit(self.f.sans, 11.0, &out_label, out_r.w - 8.0);
-        self.text_center(c, self.f.sans, 11.0, out_r.x + out_r.w * 0.5, out_r.y + 12.0, &lw, t.muted.mix(t.text2, ohv));
+        if tr != MASTER {
+            let out_label = self.project.tracks[self.project.tracks[tr].output].name.clone();
+            let lw = self.fit(self.f.sans, 11.0, &out_label, out_r.w - 26.0);
+            let tw = self.fonts.measure(self.f.sans, 11.0, &lw) + 16.0;
+            let x0 = out_r.x + (out_r.w - tw) * 0.5;
+            let ink = t.muted.mix(t.text2, ohv);
+            draw_icon(c, Icon::Route, x0 + 5.0, out_r.y + 12.0, 11.0, ink);
+            self.text(c, self.f.sans, 11.0, x0 + 16.0, out_r.y + 12.0, &lw, ink);
+        }
+        if ohov {
+            self.set_tip("Sortie", "");
+        }
         if ohov && input.pressed {
             self.open_popup(Popup::Output(tr), out_r);
         }
@@ -253,7 +290,10 @@ impl App {
         let (fill, ink) = if muted { (t.text.mix(WHITE, hv * 0.2), t.bg_deep) } else { (t.raised.mix(t.raised_hi, hv), t.text2) };
         c.fill_rrect(mute_r, 8.0, fill);
         let (mx, my) = mute_r.center();
-        self.text_center(c, self.f.sans_med, 12.0, mx, my, if tr == MASTER { "Mute" } else { "M" }, ink);
+        draw_icon(c, Icon::Mute, mx, my, 14.0, ink);
+        if hov {
+            self.set_tip(if muted { "Réactiver" } else { "Couper" }, "");
+        }
         if tr != MASTER {
             let solo_r = Rect::new(mute.x + half + 4.0, mute.y, half, mute.h);
             let sid = wid("mx-solo", tr, 0);
@@ -266,7 +306,10 @@ impl App {
             let (fill, ink) = if on { (t.select, t.bg_deep) } else { (t.raised.mix(t.raised_hi, shv), t.text2) };
             c.fill_rrect(solo_r, 8.0, fill);
             let (sx, sy) = solo_r.center();
-            self.text_center(c, self.f.sans_med, 12.0, sx, sy, "S", ink);
+            draw_icon(c, Icon::Solo, sx, sy, 14.0, ink);
+            if shov {
+                self.set_tip("Solo", "");
+            }
         }
     }
 

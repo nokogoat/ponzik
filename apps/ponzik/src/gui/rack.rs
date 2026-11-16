@@ -4,9 +4,10 @@ use ponzik_engine::{TICKS_PER_BAR, TICKS_PER_STEP};
 use ponzik_ui::{Canvas, Color, Rect};
 
 use super::Input;
-use super::app::{App, Focus, Popup, View};
+use super::app::{App, Focus, Popup, Rename, View};
+use super::dnd::DropTarget;
 use super::theme::*;
-use super::widgets::{Btn, wid};
+use super::widgets::{Icon, draw_icon, wid};
 
 const ROW_H: f32 = 56.0;
 const ROW_GAP: f32 = 6.0;
@@ -56,13 +57,14 @@ impl App {
         // En-tête : longueur du pattern et swing.
         let pat = self.project.current_pattern;
         let bars = (self.project.patterns[pat].len / TICKS_PER_BAR).clamp(1, 4) as usize;
-        let len_box = Rect::new(header.right() - 228.0, header.y, 228.0, header.h);
+        let len_box = Rect::new(header.right() - 150.0, header.y, 150.0, header.h);
         let sel = match bars {
             1 => 0,
             2 => 1,
             _ => 2,
         };
-        if let Some(i) = self.segmented(c, input, wid("rack-len", 0, 0), len_box, &["1 mesure", "2", "4"], sel) {
+        let tips = [("1 mesure", ""), ("2 mesures", ""), ("4 mesures", "")];
+        if let Some(i) = self.segmented_tips(c, input, wid("rack-len", 0, 0), len_box, &["1", "2", "4"], &tips, sel) {
             self.project.patterns[pat].len = [1, 2, 4][i] * TICKS_PER_BAR;
             self.commit("Longueur du pattern");
         }
@@ -75,9 +77,11 @@ impl App {
                 self.commit("Swing");
             }
         }
+        self.tip_zone(input, swing_box, "Swing\nGlisser ou molette", "");
 
         c.fill_rrect(body, 16.0, t.panel);
         c.stroke_rrect(body, 16.0, 1.0, t.hairline);
+        self.drop_zone(input, body, DropTarget::Rack);
         let inner = body.inset(16.0);
         let steps = self.steps_in_pattern();
         let pads = Rect::new(inner.x + LEFT, inner.y, inner.w - LEFT, inner.h);
@@ -145,9 +149,22 @@ impl App {
             }
             y += ROW_H + ROW_GAP;
         }
-        let add = Rect::new(rows.x, y + 4.0, 200.0, 36.0);
-        if self.button(c, input, wid("rack-add", 0, 0), add, "+ Ajouter un instrument", Btn::Ghost) {
-            self.open_popup(Popup::AddInstrument { replace: None }, add);
+        let add = Rect::new(rows.x, y + 2.0, LEFT - 12.0, 44.0);
+        let id = wid("rack-add", 0, 0);
+        let hov = self.hovered(input, id, add);
+        let hv = self.hover_anim(id, hov);
+        c.fill_rrect(add, 12.0, t.raised.alpha(hv * 0.7));
+        c.stroke_rrect(add, 12.0, 1.0, t.hairline.alpha(1.0 + hv * 1.5));
+        let (ax, ay) = add.center();
+        draw_icon(c, Icon::Plus, ax, ay, 18.0, t.muted.mix(t.accent, hv));
+        if hov {
+            self.set_tip("Ajouter un instrument\nou glisser depuis le navigateur", "");
+            if input.pressed {
+                self.open_popup(Popup::AddInstrument { replace: None }, add);
+            }
+        }
+        if self.project.channels.is_empty() {
+            self.empty_state(c, Rect::new(pads.x, rows.y, pads.w, 160.0), Icon::Instrument, "Glisse un instrument ici");
         }
         c.set_clip(Some(prev));
     }
@@ -165,6 +182,7 @@ impl App {
     ) {
         let t = self.theme;
         let cy = row.y + row.h * 0.5;
+        self.drop_zone(input, row, DropTarget::Channel(ch));
         let selected = self.selected_channel() == Some(ch);
         let sel = self.anim.to(wid("row-sel", ch, 0), selected as u8 as f32, T_HOVER);
         let left = Rect::new(row.x, row.y, LEFT - 12.0, row.h);
@@ -182,6 +200,9 @@ impl App {
             self.project.channels[ch].muted = !self.project.channels[ch].muted;
             self.commit("Muet");
         }
+        if hov {
+            self.set_tip(if self.project.channels[ch].muted { "Réactiver" } else { "Couper" }, "");
+        }
         c.fill_rrect(led, 8.0, t.raised_hi.alpha(0.4 + hv * 0.6));
         let (lx, ly) = led.center();
         let muted = self.project.channels[ch].muted;
@@ -192,8 +213,8 @@ impl App {
             c.fill_circle(lx, ly, 5.0, t.text2.mix(t.accent, activity));
         }
 
-        // Nom : clic pour sélectionner (et pré-écouter), double-clic pour le piano roll.
-        let name_r = Rect::new(row.x + 46.0, row.y, LEFT - 46.0 - 12.0 - 64.0, row.h);
+        // Nom : clic pour sélectionner (et pré-écouter), double-clic pour renommer.
+        let name_r = Rect::new(row.x + 46.0, row.y, LEFT - 46.0 - 12.0 - 64.0 - 30.0, row.h);
         let nid = wid("ch-name", ch, 0);
         let nhov = self.hovered(input, nid, name_r);
         if nhov && input.right_pressed {
@@ -203,11 +224,14 @@ impl App {
         if nhov && input.pressed {
             self.focus = Focus::Channel(ch);
             if input.double {
-                self.set_view(View::Piano);
+                self.release_preview();
+                let text = self.project.channels[ch].name.clone();
+                self.open_popup(Popup::Rename { target: Rename::Channel(ch), text }, Rect::new(name_r.x - 8.0, cy - 18.0, name_r.w + 8.0, 36.0));
+            } else {
+                let note = self.project.channels[ch].root_note;
+                self.preview_note(ch, note);
+                self.begin_drag(nid, input, note as f32);
             }
-            let note = self.project.channels[ch].root_note;
-            self.preview_note(ch, note);
-            self.begin_drag(nid, input, note as f32);
         }
         let nh = self.hover_anim(nid, nhov);
         let (name, kind) = {
@@ -218,9 +242,24 @@ impl App {
         };
         let track = self.project.channels[ch].track;
         let name_col = if muted { t.text2 } else { t.text.mix(WHITE, nh * 0.3) };
-        self.text_fit(c, self.f.sans_med, 15.0, name_r.x, cy - 8.0, &name, name_r.w, name_col);
-        let detail = format!("{kind} · piste {track}");
-        self.text_fit(c, self.f.sans, 12.0, name_r.x, cy + 11.0, &detail, name_r.w, t.muted);
+        self.text_fit(c, self.f.sans_med, 15.0, name_r.x, cy, &name, name_r.w, name_col);
+        if nhov {
+            self.set_tip(&format!("{kind} · piste {track}\nDouble-clic : renommer · clic droit : menu"), "");
+        }
+
+        // Piano roll du canal : visible au survol de la ligne ou quand elle est choisie.
+        let row_hov = input.inside && row.contains(input.x, input.y) && self.drag.is_none();
+        let pv = self.anim.to(wid("ch-pr-v", ch, 0), (row_hov || selected) as u8 as f32, T_HOVER);
+        if pv > 0.01 {
+            let pr = Rect::new(name_r.right() + 2.0, cy - 14.0, 28.0, 28.0);
+            if self.icon_button(c, input, wid("ch-pr", ch, 0), pr, Icon::Piano, false, ("Piano roll", "F7")) {
+                self.focus = Focus::Channel(ch);
+                self.set_view(View::Piano);
+            }
+            if pv < 0.99 {
+                c.fill_rrect(pr, 8.0, t.panel.mix(t.raised, sel).alpha(1.0 - pv));
+            }
+        }
 
         // Volume et pan du canal, petits potards.
         let vol_c = (row.x + LEFT - 12.0 - 52.0, cy);
@@ -230,11 +269,15 @@ impl App {
             self.project.channels[ch].gain = v * 1.25;
             self.commit("Volume du canal");
         }
+        let vol_tip = format!("Volume {}", super::mixer::fmt_db(self.project.channels[ch].gain));
+        self.tip_zone(input, Rect::new(vol_c.0 - 14.0, vol_c.1 - 14.0, 28.0, 28.0), &vol_tip, "");
         let pan = self.project.channels[ch].pan;
         if let Some(v) = self.mini_knob(c, input, wid("ch-pan", ch, 0), pan_c, (pan + 1.0) * 0.5, true) {
             self.project.channels[ch].pan = ((v * 2.0 - 1.0) * 100.0).round() / 100.0;
             self.commit("Pan du canal");
         }
+        let pan_tip = format!("Pan {}", super::mixer::fmt_pan(self.project.channels[ch].pan));
+        self.tip_zone(input, Rect::new(pan_c.0 - 14.0, pan_c.1 - 14.0, 28.0, 28.0), &pan_tip, "");
 
         let kind = self.project.channels[ch].instrument.kind.clone();
         let melodic = self.is_melodic(&kind);

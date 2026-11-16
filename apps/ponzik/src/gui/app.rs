@@ -13,8 +13,9 @@ use ponzik_window::Key;
 
 use super::Input;
 use super::compat;
+use super::dnd::Payload;
 use super::theme::*;
-use super::widgets::{Icon, draw_icon, wid};
+use super::widgets::{Icon, TipState, draw_icon, wid};
 
 const SCOPE_LEN: usize = 8_192;
 /// Échantillons par paquet de crêtes des formes d'onde.
@@ -32,6 +33,27 @@ pub enum View {
 
 impl View {
     pub const ALL: [View; 5] = [View::Rack, View::Piano, View::Playlist, View::Session, View::Mixer];
+
+    pub fn icon(self) -> Icon {
+        match self {
+            View::Rack => Icon::Rack,
+            View::Piano => Icon::Piano,
+            View::Playlist => Icon::Playlist,
+            View::Session => Icon::Session,
+            View::Mixer => Icon::Mixer,
+        }
+    }
+
+    /// Raccourci clavier, ceux de FL Studio.
+    pub fn key(self) -> &'static str {
+        match self {
+            View::Rack => "F6",
+            View::Piano => "F7",
+            View::Playlist => "F5",
+            View::Session => "",
+            View::Mixer => "F9",
+        }
+    }
 
     pub fn label(self) -> &'static str {
         match self {
@@ -146,6 +168,44 @@ pub enum Action {
     AssignSession(usize, usize, usize),
     RemoveAutomation(ponzik_engine::AutoTarget),
     SetParamValue(ponzik_engine::AutoTarget, f32),
+}
+
+/// Ligne de menu : une icône (ou la couleur d'un pattern), un nom court, une
+/// valeur à droite ; la description passe en infobulle.
+pub struct MenuItem {
+    pub icon: Option<Icon>,
+    pub color: Option<Color>,
+    pub name: String,
+    pub detail: String,
+    pub tip: String,
+    /// Filet de séparation au-dessus.
+    pub sep: bool,
+    pub action: Action,
+}
+
+impl MenuItem {
+    fn plain(name: &str, action: Action) -> Self {
+        Self { icon: None, color: None, name: name.into(), detail: String::new(), tip: String::new(), sep: false, action }
+    }
+
+    fn new(icon: Icon, name: &str, action: Action) -> Self {
+        Self { icon: Some(icon), ..Self::plain(name, action) }
+    }
+
+    fn detail(mut self, d: String) -> Self {
+        self.detail = d;
+        self
+    }
+
+    fn tip(mut self, t: &str) -> Self {
+        self.tip = t.into();
+        self
+    }
+
+    fn sep(mut self) -> Self {
+        self.sep = true;
+        self
+    }
 }
 
 pub struct PopupState {
@@ -310,6 +370,14 @@ pub struct App {
     pub time_selection: Option<(View, u32, u32)>,
     pub midi_inputs: Vec<ponzik_midi::MidiInput>,
     midi_events: Vec<ponzik_midi::MidiEvent>,
+    pub tips: TipState,
+    /// Glisser-déposer depuis le navigateur, et les zones de dépôt de l'image.
+    pub dnd: Option<super::dnd::Dnd>,
+    pub drops: Vec<(Rect, super::dnd::DropTarget)>,
+    /// Défilement au bouton du milieu : zone, point de départ, défilement d'origine (x, y).
+    pub pan: Option<(u64, f32, f32, f32, f32)>,
+    /// Catégorie affichée par le navigateur.
+    pub sidebar_tab: usize,
 }
 
 impl App {
@@ -392,6 +460,11 @@ impl App {
             time_selection: None,
             midi_inputs: ponzik_midi::open_all_inputs(),
             midi_events: Vec::new(),
+            tips: TipState::default(),
+            dnd: None,
+            drops: Vec::new(),
+            pan: None,
+            sidebar_tab: 0,
         }
     }
 
@@ -568,8 +641,9 @@ impl App {
         Some(w)
     }
 
-    /// Pose un fichier audio dans la playlist, au marqueur de départ, sur une nouvelle ligne.
-    pub fn add_audio_clip(&mut self, path: &str) {
+    /// Pose un fichier audio dans la playlist : à (ligne, tick) donnés, sinon au
+    /// marqueur de départ sur une nouvelle ligne.
+    pub fn add_audio_clip(&mut self, path: &str, at: Option<(usize, u32)>) {
         if !self.ensure_sample(path) {
             return;
         }
@@ -581,6 +655,7 @@ impl App {
         self.project.tracks[track].name = name.clone();
         let lane = self.project.clips.iter().map(|c| c.lane + 1).chain(self.project.audio_clips.iter().map(|c| c.lane + 1)).max().unwrap_or(0);
         let start = (self.start_marker.max(0.0) as u32 / 96) * 96;
+        let (lane, start) = at.unwrap_or((lane, start));
         self.project.audio_clips.push(ponzik_project::AudioClipDef {
             path: path.to_string(),
             lane,
@@ -593,7 +668,7 @@ impl App {
             fade_out: 0.002,
         });
         self.commit("Poser un clip audio");
-        self.toast(&format!("{name} posé dans la playlist (piste {track})"));
+        self.toast(&format!("{name} posé dans la playlist"));
     }
 
     pub fn selected_channel(&self) -> Option<usize> {
@@ -1017,6 +1092,8 @@ impl App {
             || self.anim.is_moving()
             || self.drag.is_some()
             || !self.toasts.is_empty()
+            || self.tips.waiting
+            || self.dnd.is_some()
             || self.track_meters.iter().any(Meter::active)
             || self.channel_meters.iter().any(Meter::active)
     }
@@ -1168,10 +1245,19 @@ impl App {
         self.top_bar(c, ui, Rect::new(0.0, 0.0, w, TOP_BAR));
         self.popup_layer(c, input, Rect::new(0.0, 0.0, w, h));
         self.toast_layer(c, dt, Rect::new(sb, TOP_BAR, w - sb, h - TOP_BAR - pn));
+        self.dnd_layer(c, input);
+        if self.popup.is_none() {
+            self.tooltip_layer(c, input, Rect::new(0.0, 0.0, w, h));
+        } else {
+            self.tips = TipState::default();
+        }
 
         if !input.down {
             self.drag = None;
             self.release_preview();
+        }
+        if !input.middle_down {
+            self.pan = None;
         }
     }
 
@@ -1183,7 +1269,7 @@ impl App {
         c.fill_rect(Rect::new(r.x, r.bottom() - 1.0, r.w, 1.0), t.hairline);
         let cy = r.y + r.h * 0.5;
 
-        if self.icon_button(c, input, wid("tb-sidebar", 0, 0), Rect::new(12.0, cy - 16.0, 32.0, 32.0), Icon::Sidebar, self.sidebar) {
+        if self.icon_button(c, input, wid("tb-sidebar", 0, 0), Rect::new(12.0, cy - 16.0, 32.0, 32.0), Icon::Sidebar, self.sidebar, ("Navigateur", "Alt F8")) {
             self.sidebar = !self.sidebar;
         }
         // Marque : le nom et sa LED, qui s'allume quand ça joue.
@@ -1192,7 +1278,7 @@ impl App {
         let wordmark = self.text(c, self.f.sans_med, 18.0, 70.0, cy, "Ponzik", t.text);
 
         // Transport, centré.
-        let cluster = 40.0 + 6.0 + 40.0 + 14.0 + 264.0 + 10.0 + 188.0 + 10.0 + 116.0 + 10.0 + 132.0 + 6.0 + 36.0 + 4.0 + 36.0 + 4.0 + 36.0;
+        let cluster = 40.0 + 6.0 + 40.0 + 14.0 + 132.0 + 10.0 + 188.0 + 10.0 + 116.0 + 10.0 + 132.0 + 6.0 + 36.0 + 4.0 + 36.0 + 4.0 + 36.0;
         let mut x = ((r.w - cluster) * 0.5).round().max(70.0 + wordmark + 24.0);
         let start = x;
 
@@ -1201,6 +1287,9 @@ impl App {
         if hov && input.pressed {
             self.toggle_play();
         }
+        if hov {
+            self.set_tip(if self.playing { "Pause" } else { "Lecture" }, "Espace");
+        }
         let hv = self.hover_anim(wid("tb-play", 0, 0), hov);
         let on = self.anim.to(wid("tb-play-on", 0, 0), self.playing as u8 as f32, T_HOVER);
         c.fill_rrect(play, 10.0, t.text.mix(t.accent, on).mix(WHITE, 0.12 * hv));
@@ -1208,19 +1297,20 @@ impl App {
         let (px, py) = play.center();
         draw_icon(c, if self.playing { Icon::Pause } else { Icon::Play }, px, py, 16.0, t.bg_deep.mix(t.on_accent, on));
         x += 46.0;
-        if self.icon_button(c, input, wid("tb-stop", 0, 0), Rect::new(x, cy - 18.0, 40.0, 36.0), Icon::Stop, false) {
+        if self.icon_button(c, input, wid("tb-stop", 0, 0), Rect::new(x, cy - 18.0, 40.0, 36.0), Icon::Stop, false, ("Arrêt", "")) {
             self.stop();
         }
         x += 54.0;
 
+        // Mode de lecture : l'icône de la vue où l'on construit ce qui joue.
         let mode = match self.project.mode {
             PlayMode::Pattern(_) => 0,
             PlayMode::Song => 1,
             PlayMode::Session => 2,
         };
-        if let Some(m) =
-            self.segmented(c, input, wid("tb-mode", 0, 0), Rect::new(x, cy - 18.0, 264.0, 36.0), &["Pattern", "Morceau", "Session"], mode)
-        {
+        let icons = [Icon::Rack, Icon::Playlist, Icon::Session];
+        let tips = [("Jouer le pattern", "L"), ("Jouer le morceau", "L"), ("Jouer la session", "")];
+        if let Some(m) = self.icon_segmented(c, input, wid("tb-mode", 0, 0), Rect::new(x, cy - 18.0, 132.0, 36.0), &icons, &tips, mode) {
             let cur = self.project.current_pattern;
             self.set_mode(match m {
                 0 => PlayMode::Pattern(cur),
@@ -1231,22 +1321,26 @@ impl App {
                 self.set_view(View::Session);
             }
         }
-        x += 274.0;
+        x += 142.0;
         self.pattern_selector(c, input, Rect::new(x, cy - 18.0, 188.0, 36.0));
         x += 198.0;
 
         let bpm_text = format!("{:.1}", self.project.bpm).replace('.', ",");
-        if let Some(bpm) = self.drag_field(c, input, wid("tb-bpm", 0, 0), Rect::new(x, cy - 18.0, 116.0, 36.0), self.project.bpm, 0.25, 1.0, &bpm_text, "BPM") {
+        let bpm_r = Rect::new(x, cy - 18.0, 116.0, 36.0);
+        if let Some(bpm) = self.drag_field(c, input, wid("tb-bpm", 0, 0), bpm_r, self.project.bpm, 0.25, 1.0, &bpm_text, "BPM") {
             let bpm = ((bpm * 10.0).round() / 10.0).clamp(40.0, 300.0);
             if bpm != self.project.bpm {
                 self.project.bpm = bpm;
                 self.commit("Tempo");
             }
         }
+        self.tip_zone(input, bpm_r, "Tempo\nGlisser ou molette · Maj : fin", "");
         x += 126.0;
-        self.position_field(c, Rect::new(x, cy - 18.0, 132.0, 36.0));
+        let pos_r = Rect::new(x, cy - 18.0, 132.0, 36.0);
+        self.position_field(c, pos_r);
+        self.tip_zone(input, pos_r, "Position\nmesure . temps . pas", "");
         x += 138.0;
-        if self.icon_button(c, input, wid("tb-metro", 0, 0), Rect::new(x, cy - 18.0, 36.0, 36.0), Icon::Metronome, self.metronome) {
+        if self.icon_button(c, input, wid("tb-metro", 0, 0), Rect::new(x, cy - 18.0, 36.0, 36.0), Icon::Metronome, self.metronome, ("Métronome", "Ctrl M")) {
             self.metronome = !self.metronome;
             let m = self.metronome;
             self.send(Command::SetMetronome(m));
@@ -1261,12 +1355,15 @@ impl App {
         let (rx0, ry0) = rec.center();
         let pulse = if self.record && self.playing { 0.75 + 0.25 * (self.time * 6.0).sin().abs() } else { 1.0 };
         c.fill_circle(rx0, ry0, 6.0, t.muted.mix(t.text2, rhv).mix(t.negative, on).alpha(pulse));
+        if rhov {
+            self.set_tip("Enregistrer les notes\njouées pendant la lecture", "R");
+        }
         if rhov && input.pressed {
             self.record = !self.record;
-            self.toast(if self.record { "Enregistrement armé : joue au clavier pendant la lecture" } else { "Enregistrement désarmé" });
+            self.toast(if self.record { "Enregistrement armé" } else { "Enregistrement désarmé" });
         }
         x += 40.0;
-        if self.icon_button(c, input, wid("tb-keys", 0, 0), Rect::new(x, cy - 18.0, 36.0, 36.0), Icon::Keyboard, self.typing_keyboard) {
+        if self.icon_button(c, input, wid("tb-keys", 0, 0), Rect::new(x, cy - 18.0, 36.0, 36.0), Icon::Keyboard, self.typing_keyboard, ("Clavier musical", "Ctrl T")) {
             self.toggle_typing_keyboard();
         }
         let cluster_end = x + 36.0;
@@ -1274,20 +1371,20 @@ impl App {
         // Droite : fichier et historique, puis la charge DSP si la place le permet.
         let mut rx = r.w - 12.0 - 32.0;
         let buttons = [
-            (Icon::Search, "tb-search"),
-            (Icon::Panel, "tb-panel"),
-            (Icon::Export, "tb-export"),
-            (Icon::Save, "tb-save"),
-            (Icon::Folder, "tb-open"),
-            (Icon::Redo, "tb-redo"),
-            (Icon::Undo, "tb-undo"),
+            (Icon::Search, "tb-search", ("Tout trouver", "Ctrl K")),
+            (Icon::Panel, "tb-panel", ("Appareils", "")),
+            (Icon::Export, "tb-export", ("Exporter en WAV", "Ctrl R")),
+            (Icon::Save, "tb-save", ("Enregistrer", "Ctrl S")),
+            (Icon::Folder, "tb-open", ("Ouvrir", "Ctrl O")),
+            (Icon::Redo, "tb-redo", ("Rétablir", "Ctrl Y")),
+            (Icon::Undo, "tb-undo", ("Annuler", "Ctrl Z")),
         ];
-        for (icon, name) in buttons {
+        for (icon, name, tip) in buttons {
             if rx < cluster_end + 8.0 {
                 break;
             }
             let on = icon == Icon::Panel && self.panel;
-            if self.icon_button(c, input, wid(name, 0, 0), Rect::new(rx, cy - 16.0, 32.0, 32.0), icon, on) {
+            if self.icon_button(c, input, wid(name, 0, 0), Rect::new(rx, cy - 16.0, 32.0, 32.0), icon, on, tip) {
                 match icon {
                     Icon::Search => self.open_palette(),
                     Icon::Panel => self.panel = !self.panel,
@@ -1303,10 +1400,17 @@ impl App {
             }
             rx -= 36.0;
         }
-        let dsp = format!("DSP {:>2.0} %", (self.load * 100.0).min(999.0));
-        let dsp_w = self.fonts.measure(self.f.mono, 12.0, &dsp);
-        if rx + 32.0 - 16.0 - dsp_w > cluster_end + 16.0 {
-            self.text_right(c, self.f.mono, 12.0, rx + 32.0 - 12.0, cy, &dsp, t.muted);
+        // Charge DSP : une jauge discrète, la valeur en infobulle.
+        if rx + 32.0 - 40.0 > cluster_end + 16.0 {
+            let gauge = Rect::new(rx + 32.0 - 34.0, cy - 3.0, 26.0, 6.0);
+            let load = self.load.clamp(0.0, 1.0);
+            c.fill_rrect(gauge, 3.0, t.raised);
+            if load > 0.005 {
+                let col = if load > 0.85 { t.negative } else { t.muted.mix(t.text2, load) };
+                c.fill_rrect(Rect::new(gauge.x, gauge.y, (gauge.w * load).max(6.0), gauge.h), 3.0, col);
+            }
+            let tip = format!("Charge DSP : {:.0} %", self.load * 100.0);
+            self.tip_zone(input, gauge.inset(-8.0), &tip, "");
         }
 
         // Nom du projet entre la marque et le transport.
@@ -1323,6 +1427,9 @@ impl App {
             if hv > 0.01 {
                 c.fill_rrect(area, 8.0, t.raised.alpha(hv));
             }
+            if hov {
+                self.set_tip("Projet\nDouble-clic : renommer", "");
+            }
             if hov && input.double {
                 self.open_popup(Popup::Rename { target: Rename::Project, text: name }, area);
             }
@@ -1338,10 +1445,11 @@ impl App {
         let cur = self.project.current_pattern;
         let prev = Rect::new(r.x + 2.0, r.y + 2.0, 28.0, r.h - 4.0);
         let next = Rect::new(r.right() - 30.0, r.y + 2.0, 28.0, r.h - 4.0);
-        if self.icon_button(c, input, wid("pat-prev", 0, 0), prev, Icon::ChevronLeft, false) && cur > 0 {
+        if self.icon_button(c, input, wid("pat-prev", 0, 0), prev, Icon::ChevronLeft, false, ("Pattern précédent", "−")) && cur > 0 {
             self.select_pattern(cur - 1);
         }
-        if self.icon_button(c, input, wid("pat-next", 0, 0), next, Icon::ChevronRight, false) {
+        let next_tip = if cur + 1 < n { ("Pattern suivant", "+") } else { ("Nouveau pattern", "F4") };
+        if self.icon_button(c, input, wid("pat-next", 0, 0), next, Icon::ChevronRight, false, next_tip) {
             if cur + 1 < n {
                 self.select_pattern(cur + 1);
             } else {
@@ -1357,10 +1465,20 @@ impl App {
         if hov && (input.pressed || input.right_pressed) {
             self.open_popup(Popup::Patterns, r);
         }
+        if hov {
+            self.set_tip("Patterns", "");
+        }
+        if hov && input.wheel != 0.0 {
+            let p = (cur as i32 - input.wheel.signum() as i32).clamp(0, n as i32 - 1) as usize;
+            if p != cur {
+                self.select_pattern(p);
+            }
+        }
         let name = self.project.patterns[cur].name.clone();
         let (cx, cy) = mid.center();
-        let label = self.fit(self.f.sans_med, 13.0, &name, mid.w - 8.0);
-        self.text_center(c, self.f.sans_med, 13.0, cx, cy, &label, t.text2.mix(t.text, 0.6 + 0.4 * hv));
+        c.fill_rrect(Rect::new(mid.x + 6.0, cy - 6.0, 3.0, 12.0), 1.5, super::playlist::pattern_color(cur));
+        let label = self.fit(self.f.sans_med, 13.0, &name, mid.w - 22.0);
+        self.text_center(c, self.f.sans_med, 13.0, cx + 4.0, cy, &label, t.text2.mix(t.text, 0.6 + 0.4 * hv));
     }
 
     fn position_field(&mut self, c: &mut Canvas, r: Rect) {
@@ -1386,9 +1504,10 @@ impl App {
 
     fn main_area(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
         let t = self.theme;
-        let tabs = Rect::new(r.x + PAD, r.y + 12.0, 580.0f32.min(r.w - 2.0 * PAD), 36.0);
-        let labels: Vec<&str> = View::ALL.iter().map(|v| v.label()).collect();
-        if let Some(i) = self.segmented(c, input, wid("tabs", 0, 0), tabs, &labels, self.view.index()) {
+        let tabs = Rect::new(r.x + PAD, r.y + 12.0, 270.0f32.min(r.w - 2.0 * PAD), 36.0);
+        let icons: Vec<Icon> = View::ALL.iter().map(|v| v.icon()).collect();
+        let tips: Vec<(&str, &str)> = View::ALL.iter().map(|v| (v.label(), v.key())).collect();
+        if let Some(i) = self.icon_segmented(c, input, wid("tabs", 0, 0), tabs, &icons, &tips, self.view.index()) {
             self.set_view(View::ALL[i]);
         }
         let header = Rect::new(tabs.right() + 16.0, r.y + 12.0, r.right() - PAD - tabs.right() - 16.0, 36.0);
@@ -1415,6 +1534,16 @@ impl App {
         c.set_clip(Some(prev));
     }
 
+    /// État vide : une icône et une ligne courte, centrées.
+    pub(super) fn empty_state(&mut self, c: &mut Canvas, r: Rect, icon: Icon, line: &str) {
+        let t = self.theme;
+        let (cx, cy) = r.center();
+        c.fill_circle(cx, cy - 14.0, 22.0, t.raised.alpha(0.7));
+        draw_icon(c, icon, cx, cy - 14.0, 20.0, t.muted);
+        let line = self.fit(self.f.sans, 13.0, line, r.w - 16.0);
+        self.text_center(c, self.f.sans, 13.0, cx, cy + 24.0, &line, t.text2);
+    }
+
     // --- Panneau d'appareils ---
 
     fn panel_area(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
@@ -1428,7 +1557,39 @@ impl App {
 
     // --- Navigateur ---
 
+    /// Tout ce que propose le navigateur : (catégorie, nom, description, contenu).
+    fn browser_entries(&self) -> Vec<(usize, String, String, Payload)> {
+        let mut v = Vec::new();
+        for k in registry::instruments() {
+            let payload = Payload::Instrument { kind: k.id.into(), name: k.name.into() };
+            v.push((0, k.name.to_string(), k.description.to_string(), payload));
+        }
+        for k in registry::effects() {
+            let payload = Payload::Effect { kind: k.id.into(), name: k.name.into() };
+            v.push((1, k.name.to_string(), k.description.to_string(), payload));
+        }
+        for p in &self.sample_files {
+            let name = p.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
+            let folder = p.parent().and_then(|p| p.file_name()).map_or(String::new(), |s| s.to_string_lossy().into_owned());
+            v.push((2, name, folder, Payload::Sample(p.clone())));
+        }
+        for p in &self.plugins {
+            let kind = ponzik_clap::kind_for(&p.path, &p.id);
+            let what = if p.is_instrument { "Instrument" } else { "Effet" };
+            let detail = if p.vendor.is_empty() { what.to_string() } else { format!("{what} · {}", p.vendor) };
+            let payload = if p.is_instrument {
+                Payload::Instrument { kind, name: p.name.clone() }
+            } else {
+                Payload::Effect { kind, name: p.name.clone() }
+            };
+            v.push((3, p.name.clone(), detail, payload));
+        }
+        v
+    }
+
     fn sidebar_area(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
+        const CATS: [(Icon, &str); 4] =
+            [(Icon::Instrument, "Instruments"), (Icon::Effect, "Effets"), (Icon::Sample, "Échantillons"), (Icon::Plugin, "Plugins CLAP")];
         let t = self.theme;
         c.fill_rect(r, t.bg_deep);
         c.fill_rect(Rect::new(r.right() - 1.0, r.y, 1.0, r.h), t.hairline);
@@ -1436,14 +1597,28 @@ impl App {
         let inner_x = r.right() - SIDEBAR + 12.0;
         let w = SIDEBAR - 24.0;
 
-        // Thème, en bas, fixe.
-        let theme_box = Rect::new(inner_x, r.bottom() - 52.0, w, 36.0);
-        let names: Vec<&str> = THEMES.iter().map(|t| t.name).collect();
-        let cur = THEMES.iter().position(|x| x.name == self.theme.name).unwrap_or(0);
-        if let Some(i) = self.segmented(c, input, wid("theme", 0, 0), theme_box, &names, cur) {
-            self.theme = THEMES[i];
+        // Thèmes, en bas : une pastille de couleur par thème.
+        let theme_y = r.bottom() - 34.0;
+        c.fill_rect(Rect::new(r.x, theme_y - 18.0, r.w - 1.0, 1.0), t.hairline);
+        for (i, th) in THEMES.iter().enumerate() {
+            let cx = inner_x + 18.0 + i as f32 * 34.0;
+            let hit = Rect::new(cx - 15.0, theme_y - 15.0, 30.0, 30.0);
+            let id = wid("theme", i, 0);
+            let hov = self.hovered(input, id, hit);
+            let hv = self.hover_anim(id, hov);
+            let cur = th.name == self.theme.name;
+            if cur || hv > 0.01 {
+                c.stroke_circle(cx, theme_y, 12.0, 1.5, if cur { t.text2 } else { t.hairline.alpha(2.0 * hv) });
+            }
+            c.fill_circle(cx, theme_y, 8.0, th.bg_deep.mix(th.raised_hi, 0.5));
+            c.fill_circle(cx + 2.5, theme_y + 2.5, 4.5, th.accent);
+            if hov {
+                self.set_tip(&format!("Thème {}", th.name), "");
+                if input.pressed {
+                    self.theme = *th;
+                }
+            }
         }
-        c.fill_rect(Rect::new(r.x, theme_box.y - 12.0, r.w - 1.0, 1.0), t.hairline);
 
         // Recherche : filtre instruments, effets et échantillons.
         let field = Rect::new(inner_x, r.y + 12.0, w, 36.0);
@@ -1478,132 +1653,82 @@ impl App {
         let fhv = self.hover_anim(fid, fhov);
         c.fill_rrect(field, 10.0, t.raised.mix(t.raised_hi, fhv * 0.5));
         c.stroke_rrect(field, 10.0, 1.0 + fv * 0.5, t.hairline.mix(t.select, fv * 0.8));
-        c.stroke_circle(field.x + 16.0, field.y + 17.0, 5.0, 1.5, t.muted);
-        c.stroke_polyline(&[(field.x + 20.0, field.y + 21.0), (field.x + 23.0, field.y + 24.0)], 1.5, t.muted);
+        draw_icon(c, Icon::Search, field.x + 18.0, field.y + 18.0, 14.0, t.muted);
         let query = self.sidebar_query.clone();
-        let (shown, ink) = if query.is_empty() && !self.sidebar_focus { ("Rechercher  Ctrl F".to_string(), t.muted) } else { (query.clone(), t.text) };
-        let tw = self.text(c, self.f.sans, 13.0, field.x + 32.0, field.y + 18.0, &shown, ink);
+        if query.is_empty() && !self.sidebar_focus {
+            self.text(c, self.f.sans, 13.0, field.x + 34.0, field.y + 18.0, "Rechercher", t.muted);
+            if fhv > 0.01 {
+                self.keycap(c, field.right() - 8.0, field.y + 18.0, "Ctrl F", fhv);
+            }
+        }
+        let tw = self.text(c, self.f.sans, 13.0, field.x + 34.0, field.y + 18.0, &query, t.text);
         if self.sidebar_focus {
             if (self.time * 2.0).fract() < 0.6 {
-                c.fill_rect(Rect::new(field.x + 33.0 + if query.is_empty() { 0.0 } else { tw }, field.y + 9.0, 1.5, 18.0), t.select);
+                c.fill_rect(Rect::new(field.x + 35.0 + if query.is_empty() { 0.0 } else { tw }, field.y + 9.0, 1.5, 18.0), t.select);
             }
             self.anim.set(wid("caret", 0, 0), self.time);
         }
-        let list = Rect::new(r.x, field.bottom() + 8.0, r.w, theme_box.y - 12.0 - field.bottom() - 8.0);
 
+        // Catégories : des icônes ; la recherche les parcourt toutes.
+        let searching = !query.trim().is_empty();
+        let cats = Rect::new(inner_x, field.bottom() + 10.0, w, 36.0);
+        let icons: Vec<Icon> = CATS.iter().map(|c| c.0).collect();
+        let tips: Vec<(&str, &str)> = CATS.iter().map(|c| (c.1, "")).collect();
+        if let Some(i) = self.icon_segmented(c, input, wid("sb-cats", 0, 0), cats, &icons, &tips, self.sidebar_tab) {
+            self.sidebar_tab = i;
+            self.sidebar_scroll = 0.0;
+            self.sidebar_query.clear();
+        }
+
+        let list = Rect::new(r.x, cats.bottom() + 6.0, r.w, theme_y - 18.0 - cats.bottom() - 6.0);
         let hov_list = input.inside && list.contains(input.x, input.y);
         if hov_list && input.wheel != 0.0 {
             self.sidebar_scroll = (self.sidebar_scroll - input.wheel * 60.0).max(0.0);
         }
         let scroll = self.anim.to(wid("sb-scroll", 0, 0), self.sidebar_scroll, T_LAYOUT);
         let inner = c.push_clip(list);
-        let mut y = list.y + 12.0 - scroll;
+        let mut y = list.y + 6.0 - scroll;
 
-        let section = |app: &mut App, c: &mut Canvas, y: &mut f32, title: &str| {
-            app.text(c, app.f.sans_med, 12.0, inner_x + 4.0, *y + 8.0, title, t.muted);
-            *y += 24.0;
-        };
         // Filtre et tri par pertinence.
-        let rank = |items: Vec<(usize, String, String)>| -> Vec<(usize, String, String)> {
-            if query.trim().is_empty() {
-                return items;
-            }
-            let mut scored: Vec<(i32, (usize, String, String))> = items
+        let mut entries: Vec<(usize, String, String, Payload)> = self.browser_entries();
+        if searching {
+            let mut scored: Vec<(i32, (usize, String, String, Payload))> = entries
                 .into_iter()
-                .filter_map(|it| super::palette::fuzzy_score(&query, &format!("{} {}", it.1, it.2)).map(|s| (s, it)))
+                .filter_map(|e| super::palette::fuzzy_score(&query, &format!("{} {}", e.1, e.2)).map(|s| (s, e)))
                 .collect();
-            scored.sort_by_key(|s| std::cmp::Reverse(s.0));
-            scored.into_iter().map(|(_, it)| it).collect()
-        };
-        let insts = rank(registry::instruments().iter().enumerate().map(|(i, k)| (i, k.name.to_string(), k.description.to_string())).collect());
-        let fxs = rank(registry::effects().iter().enumerate().map(|(i, k)| (i, k.name.to_string(), k.description.to_string())).collect());
-        let files = self.sample_files.clone();
-        let wavs = rank(
-            files
-                .iter()
-                .enumerate()
-                .map(|(i, p)| {
-                    let name = p.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
-                    let folder = p.parent().and_then(|p| p.file_name()).map_or(String::new(), |s| s.to_string_lossy().into_owned());
-                    (i, name, folder)
-                })
-                .collect(),
-        );
-        if enter {
-            if let Some((i, _, _)) = insts.first() {
-                self.add_instrument(registry::instruments()[*i].id);
-            } else if let Some((i, _, _)) = fxs.first() {
-                let track = self.focused_track();
-                self.add_effect(track, registry::effects()[*i].id);
-            } else if let Some((i, _, _)) = wavs.first() {
-                self.add_sample_channel(&files[*i].to_string_lossy());
-            }
+            scored.sort_by_key(|s| (s.1.0, std::cmp::Reverse(s.0)));
+            entries = scored.into_iter().map(|(_, e)| e).collect();
+        } else {
+            entries.retain(|e| e.0 == self.sidebar_tab);
+        }
+        if enter && let Some(e) = entries.first() {
+            self.add_default(e.3.clone());
         }
 
-        if !insts.is_empty() {
-            section(self, c, &mut y, "Instruments");
-        }
-        for (i, name, desc) in &insts {
-            let row = Rect::new(inner_x, y, w, 40.0);
-            if self.browser_row(c, input, wid("br-inst", *i, 0), row, name, desc) {
-                self.add_instrument(registry::instruments()[*i].id);
+        let mut last_cat = usize::MAX;
+        for (k, (cat, name, detail, payload)) in entries.iter().enumerate() {
+            if searching && *cat != last_cat {
+                // Section : son icône et un filet.
+                y += if last_cat == usize::MAX { 4.0 } else { 12.0 };
+                draw_icon(c, CATS[*cat].0, inner_x + 12.0, y + 8.0, 13.0, t.muted);
+                c.fill_rect(Rect::new(inner_x + 26.0, y + 8.0, w - 30.0, 1.0), t.hairline);
+                y += 20.0;
+                last_cat = *cat;
             }
-            y += 42.0;
-        }
-        if !fxs.is_empty() {
-            y += 16.0;
-            section(self, c, &mut y, "Effets");
-        }
-        for (i, name, desc) in &fxs {
-            let row = Rect::new(inner_x, y, w, 40.0);
-            if self.browser_row(c, input, wid("br-fx", *i, 0), row, name, desc) {
-                let track = self.focused_track();
-                self.add_effect(track, registry::effects()[*i].id);
+            let row = Rect::new(inner_x, y, w, 34.0);
+            if row.bottom() > list.y && row.y < list.bottom() && self.browser_row(c, input, wid("br", *cat, k), row, name, detail) {
+                self.begin_dnd(input, payload.clone());
             }
-            y += 42.0;
+            y += 36.0;
         }
-        let plugins = self.plugins.clone();
-        let plugs = rank(plugins.iter().enumerate().map(|(i, p)| (i, p.name.clone(), p.vendor.clone())).collect());
-        if !plugs.is_empty() {
-            y += 16.0;
-            section(self, c, &mut y, "Plugins CLAP");
-        }
-        for (i, name, vendor) in &plugs {
-            let row = Rect::new(inner_x, y, w, 40.0);
-            if self.browser_row(c, input, wid("br-clap", *i, 0), row, name, vendor) {
-                let info = &plugins[*i];
-                let kind = ponzik_clap::kind_for(&info.path, &info.id);
-                if info.is_instrument {
-                    let idx = self.project.add_channel(info.name.clone(), InstrumentDef::new(&kind), 60);
-                    self.focus = Focus::Channel(idx);
-                    self.commit("Ajouter un plugin");
-                } else {
-                    let track = self.focused_track();
-                    match self.project.tracks[track].inserts.iter().position(Option::is_none) {
-                        Some(slot) => {
-                            self.project.tracks[track].inserts[slot] = Some(EffectDef::new(&kind));
-                            self.commit("Ajouter un plugin");
-                        }
-                        None => self.toast("Plus d'emplacement libre sur cette piste"),
-                    }
-                }
-            }
-            y += 42.0;
-        }
-        y += 16.0;
-        section(self, c, &mut y, "Échantillons");
-        if wavs.is_empty() {
-            let msg = if files.is_empty() { "Aucun fichier WAV trouvé" } else { "Aucun résultat" };
-            self.text(c, self.f.sans, 12.0, inner_x + 4.0, y + 10.0, msg, t.muted);
-            y += 28.0;
-        }
-        for (i, name, folder) in &wavs {
-            let row = Rect::new(inner_x, y, w, 40.0);
-            if self.browser_row(c, input, wid("br-wav", *i, 0), row, name, folder) {
-                let path = files[*i].to_string_lossy().into_owned();
-                if self.view == View::Playlist { self.add_audio_clip(&path) } else { self.add_sample_channel(&path) }
-            }
-            y += 42.0;
+        if entries.is_empty() {
+            let (icon, line) = match (searching, self.sidebar_tab) {
+                (true, _) => (Icon::Search, "Rien de trouvé"),
+                (_, 2) => (Icon::Sample, "Aucun fichier WAV"),
+                (_, 3) => (Icon::Plugin, "Aucun plugin CLAP"),
+                _ => (Icon::Info, "Vide"),
+            };
+            self.empty_state(c, Rect::new(inner_x, list.y + 20.0, w, 120.0), icon, line);
         }
         let content_h = y + scroll - list.y + 16.0;
         self.sidebar_scroll = self.sidebar_scroll.min((content_h - list.h).max(0.0));
@@ -1611,17 +1736,22 @@ impl App {
         c.set_clip(Some(prev));
     }
 
+    /// Ligne du navigateur : le nom seul, la description en infobulle. Renvoie
+    /// vrai à la saisie (clic : ajout, glisser : dépôt où l'on veut).
     fn browser_row(&mut self, c: &mut Canvas, input: &Input, id: u64, row: Rect, title: &str, detail: &str) -> bool {
         let t = self.theme;
-        let hov = self.hovered(input, id, row);
+        let hov = self.hovered(input, id, row) && !self.dnd_active();
         let hv = self.hover_anim(id, hov);
         if hv > 0.01 {
             c.fill_rrect(row, 8.0, t.raised.alpha(hv));
         }
-        self.text_fit(c, self.f.sans_med, 13.0, row.x + 10.0, row.y + 13.0, title, row.w - 40.0, t.text);
-        self.text_fit(c, self.f.sans, 11.0, row.x + 10.0, row.y + 28.0, detail, row.w - 40.0, t.muted);
+        self.text_fit(c, self.f.sans_med, 13.0, row.x + 12.0, row.y + row.h * 0.5, title, row.w - 40.0, t.text2.mix(t.text, hv));
         if hv > 0.01 {
-            draw_icon(c, Icon::Plus, row.right() - 16.0, row.y + row.h * 0.5, 14.0, t.accent.alpha(hv));
+            draw_icon(c, Icon::Plus, row.right() - 16.0, row.y + row.h * 0.5, 13.0, t.accent.alpha(hv));
+        }
+        if hov {
+            let tip = if detail.is_empty() { "Clic : ajouter · glisser : déposer".to_string() } else { format!("{detail}\nClic : ajouter · glisser : déposer") };
+            self.set_tip(&tip, "");
         }
         hov && input.pressed
     }
@@ -1634,95 +1764,84 @@ impl App {
         self.anim.set(wid("popup-scroll", 0, 0), 0.0);
     }
 
-    /// Lignes d'un menu : (titre, détail, action).
-    fn menu_items(&self, kind: &Popup) -> (String, Vec<(String, String, Action)>) {
+    /// Lignes d'un menu, sous un titre.
+    fn menu_items(&self, kind: &Popup) -> (String, Vec<MenuItem>) {
         let p = &self.project;
         let track_name = |t: usize| p.tracks[t].name.clone();
+        let bars = |len: u32| format!("{}", len.div_ceil(TICKS_PER_BAR));
         match kind {
             Popup::AddInstrument { replace } => (
-                if replace.is_some() { "Remplacer l'instrument" } else { "Ajouter un instrument" }.into(),
+                if replace.is_some() { "Remplacer par" } else { "Instruments" }.into(),
                 registry::instruments()
                     .iter()
-                    .map(|k| (k.name.to_string(), k.description.to_string(), Action::AddInstrument(k.id, *replace)))
+                    .map(|k| MenuItem::new(Icon::Instrument, k.name, Action::AddInstrument(k.id, *replace)).tip(k.description))
                     .collect(),
             ),
             Popup::AddEffect { track } => (
-                format!("Effet sur {}", track_name(*track)),
-                registry::effects()
-                    .iter()
-                    .map(|k| (k.name.to_string(), k.category.to_string(), Action::AddEffect(*track, k.id)))
-                    .collect(),
+                track_name(*track),
+                registry::effects().iter().map(|k| MenuItem::new(Icon::Effect, k.name, Action::AddEffect(*track, k.id)).tip(k.description)).collect(),
             ),
             Popup::Patterns => {
-                let mut v: Vec<(String, String, Action)> = p
+                let mut v: Vec<MenuItem> = p
                     .patterns
                     .iter()
                     .enumerate()
                     .map(|(i, pat)| {
-                        (pat.name.clone(), format!("{} mesure(s)", pat.len.div_ceil(TICKS_PER_BAR)), Action::SelectPattern(i))
+                        let mut it = MenuItem::plain(&pat.name, Action::SelectPattern(i)).detail(bars(pat.len));
+                        it.color = Some(super::playlist::pattern_color(i));
+                        it
                     })
                     .collect();
-                v.push(("Nouveau pattern".into(), String::new(), Action::NewPattern));
-                v.push(("Dupliquer ce pattern".into(), String::new(), Action::DuplicatePattern));
+                v.push(MenuItem::new(Icon::Plus, "Nouveau", Action::NewPattern).sep());
+                v.push(MenuItem::new(Icon::Duplicate, "Dupliquer", Action::DuplicatePattern));
                 let cur = p.current_pattern;
-                v.push((
-                    "Renommer ce pattern".into(),
-                    String::new(),
-                    Action::Popup(Popup::Rename { target: Rename::Pattern(cur), text: p.patterns[cur].name.clone() }),
-                ));
+                let rename = Popup::Rename { target: Rename::Pattern(cur), text: p.patterns[cur].name.clone() };
+                v.push(MenuItem::new(Icon::Pencil, "Renommer", Action::Popup(rename)));
                 if p.patterns.len() > 1 {
-                    v.push(("Supprimer ce pattern".into(), "Retire aussi ses clips".into(), Action::DeletePattern));
+                    v.push(MenuItem::new(Icon::Trash, "Supprimer", Action::DeletePattern).tip("Retire aussi ses clips"));
                 }
                 ("Patterns".into(), v)
             }
             Popup::OpenProject(files) => {
                 let items = if files.is_empty() {
-                    vec![("Aucun projet enregistré".into(), compat::projects_dir().display().to_string(), Action::None)]
+                    vec![MenuItem::new(Icon::Folder, "Aucun projet", Action::None).tip(&compat::projects_dir().display().to_string())]
                 } else {
                     files
                         .iter()
                         .map(|f| {
-                            (
-                                f.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned()),
-                                f.parent().map_or(String::new(), |d| d.display().to_string()),
-                                Action::Open(f.clone()),
-                            )
+                            let name = f.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
+                            let dir = f.parent().map_or(String::new(), |d| d.display().to_string());
+                            MenuItem::plain(&name, Action::Open(f.clone())).tip(&dir)
                         })
                         .collect()
                 };
-                ("Ouvrir un projet".into(), items)
+                ("Projets".into(), items)
             }
             Popup::ChannelMenu(ch) => {
                 let ch = *ch;
                 let c = &p.channels[ch];
+                let rename = Popup::Rename { target: Rename::Channel(ch), text: c.name.clone() };
                 (
                     c.name.clone(),
                     vec![
-                        ("Ouvrir dans le piano roll".into(), String::new(), Action::ChannelPianoRoll(ch)),
-                        (
-                            "Renommer".into(),
-                            String::new(),
-                            Action::Popup(Popup::Rename { target: Rename::Channel(ch), text: c.name.clone() }),
-                        ),
-                        ("Remplacer l'instrument…".into(), String::new(), Action::Popup(Popup::AddInstrument { replace: Some(ch) })),
-                        ("Dupliquer".into(), "Mêmes réglages, sans les notes".into(), Action::DuplicateChannel(ch)),
-                        ("Supprimer".into(), "Retire aussi ses notes".into(), Action::DeleteChannel(ch)),
+                        MenuItem::new(Icon::Piano, "Piano roll", Action::ChannelPianoRoll(ch)),
+                        MenuItem::new(Icon::Pencil, "Renommer", Action::Popup(rename)),
+                        MenuItem::new(Icon::Swap, "Remplacer", Action::Popup(Popup::AddInstrument { replace: Some(ch) })),
+                        MenuItem::new(Icon::Duplicate, "Dupliquer", Action::DuplicateChannel(ch)).tip("Mêmes réglages, sans les notes"),
+                        MenuItem::new(Icon::Trash, "Supprimer", Action::DeleteChannel(ch)).tip("Retire aussi ses notes"),
                     ],
                 )
             }
             Popup::TrackMenu(t) => {
                 let t = *t;
-                let mut v = vec![(
-                    "Renommer".into(),
-                    String::new(),
-                    Action::Popup(Popup::Rename { target: Rename::Track(t), text: p.tracks[t].name.clone() }),
-                )];
+                let rename = Popup::Rename { target: Rename::Track(t), text: p.tracks[t].name.clone() };
+                let mut v = vec![MenuItem::new(Icon::Pencil, "Renommer", Action::Popup(rename))];
                 if t != MASTER {
-                    v.push(("Sortie vers…".into(), format!("Actuellement : {}", track_name(p.tracks[t].output)), Action::Popup(Popup::Output(t))));
-                    v.push(("Ajouter un envoi…".into(), String::new(), Action::Popup(Popup::Send(t))));
+                    v.push(MenuItem::new(Icon::Route, "Sortie", Action::Popup(Popup::Output(t))).detail(track_name(p.tracks[t].output)));
+                    v.push(MenuItem::new(Icon::Send, "Envoi", Action::Popup(Popup::Send(t))));
                 }
-                v.push(("Ajouter un effet…".into(), String::new(), Action::Popup(Popup::AddEffect { track: t })));
-                v.push(("Réinitialiser volume et pan".into(), String::new(), Action::ResetTrack(t)));
+                v.push(MenuItem::new(Icon::Effect, "Effet", Action::Popup(Popup::AddEffect { track: t })));
+                v.push(MenuItem::new(Icon::Reset, "Réinitialiser", Action::ResetTrack(t)).tip("Volume 0 dB, pan au centre"));
                 (p.tracks[t].name.clone(), v)
             }
             Popup::Output(t) | Popup::Send(t) => {
@@ -1733,46 +1852,42 @@ impl App {
                     .filter(|&d| d == MASTER || self.track_in_use(d))
                     .map(|d| {
                         let action = if send { Action::AddSend(t, d) } else { Action::SetOutput(t, d) };
-                        (track_name(d), if d == MASTER { "Master".into() } else { format!("Piste {d}") }, action)
+                        MenuItem::plain(&track_name(d), action).detail(if d == MASTER { "M".into() } else { d.to_string() })
                     })
                     .collect();
                 (if send { "Envoyer vers" } else { "Sortie vers" }.into(), v)
             }
             Popup::Param { target, value, default } => {
                 let label = self.target_info(*target).map_or(String::new(), |(l, _)| l);
-                let mut v = vec![("Automatiser dans la playlist".into(), "Une courbe sur toute la durée du morceau".into(), Action::Automate(*target, *value))];
+                let mut v = vec![MenuItem::new(Icon::Automation, "Automatiser", Action::Automate(*target, *value)).tip("Une courbe dans la playlist")];
                 if self.is_automated(*target) {
-                    v.push(("Supprimer l'automation".into(), String::new(), Action::RemoveAutomation(*target)));
+                    v.push(MenuItem::new(Icon::Trash, "Supprimer l'automation", Action::RemoveAutomation(*target)));
                 }
-                v.push(("Valeur par défaut".into(), String::new(), Action::SetParamValue(*target, *default)));
+                v.push(MenuItem::new(Icon::Reset, "Valeur par défaut", Action::SetParamValue(*target, *default)));
                 (label, v)
             }
             Popup::ImportMidi(files) => {
                 let items = if files.is_empty() {
-                    vec![("Aucun fichier MIDI trouvé".into(), compat::projects_dir().display().to_string(), Action::None)]
+                    vec![MenuItem::new(Icon::Piano, "Aucun fichier MIDI", Action::None).tip(&compat::projects_dir().display().to_string())]
                 } else {
                     files
                         .iter()
                         .map(|f| {
-                            (
-                                f.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned()),
-                                f.parent().map_or(String::new(), |d| d.display().to_string()),
-                                Action::ImportMidi(f.clone()),
-                            )
+                            let name = f.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
+                            let dir = f.parent().map_or(String::new(), |d| d.display().to_string());
+                            MenuItem::new(Icon::Piano, &name, Action::ImportMidi(f.clone())).tip(&dir)
                         })
                         .collect()
                 };
-                ("Importer un fichier MIDI".into(), items)
+                ("Importer du MIDI".into(), items)
             }
             Popup::Presets { device, kind } => {
-                let mut v = vec![(
-                    "Enregistrer le preset…".into(),
-                    "Les réglages actuels, sous un nom".into(),
-                    Action::Popup(Popup::Rename { target: Rename::Preset(*device), text: String::new() }),
-                )];
-                for path in compat::list_presets(kind) {
+                let save = Popup::Rename { target: Rename::Preset(*device), text: String::new() };
+                let mut v = vec![MenuItem::new(Icon::Save, "Enregistrer…", Action::Popup(save)).tip("Les réglages actuels, sous un nom")];
+                for (i, path) in compat::list_presets(kind).into_iter().enumerate() {
                     let name = path.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
-                    v.push((name, String::new(), Action::LoadPreset(*device, path)));
+                    let it = MenuItem::new(Icon::Preset, &name, Action::LoadPreset(*device, path));
+                    v.push(if i == 0 { it.sep() } else { it });
                 }
                 ("Presets".into(), v)
             }
@@ -1781,7 +1896,11 @@ impl App {
                 p.patterns
                     .iter()
                     .enumerate()
-                    .map(|(i, pat)| (pat.name.clone(), format!("{} mesure(s)", pat.len.div_ceil(TICKS_PER_BAR)), Action::AssignSession(*col, *row, i)))
+                    .map(|(i, pat)| {
+                        let mut it = MenuItem::plain(&pat.name, Action::AssignSession(*col, *row, i)).detail(bars(pat.len));
+                        it.color = Some(super::playlist::pattern_color(i));
+                        it
+                    })
                     .collect(),
             ),
             Popup::Rename { .. } | Popup::Palette { .. } => (String::new(), Vec::new()),
@@ -2036,7 +2155,7 @@ impl App {
         }
         let open = self.anim.to(wid("popup", 0, 0), 1.0, T_HOVER);
 
-        // Fenêtre de renommage : un champ texte.
+        // Renommage : un champ texte posé sur le nom (ou au centre, sans ancre).
         if let Popup::Rename { target, text } = &mut state.kind {
             text.push_str(&input.text);
             let mut done = None;
@@ -2050,30 +2169,40 @@ impl App {
                     _ => {}
                 }
             }
-            let w = 360.0;
-            let r = Rect::new((screen.w - w) * 0.5, screen.h * 0.32 + (1.0 - open) * 8.0, w, 132.0);
-            c.fill_rect(screen, Color::rgba(0, 0, 0, (110.0 * open) as u8));
-            c.fill_rrect(r, 16.0, t.panel);
-            c.stroke_rrect(r, 16.0, 1.0, t.hairline.alpha(1.6));
-            let title = match target {
-                Rename::SaveAs => "Enregistrer sous",
-                Rename::Preset(_) => "Nom du preset",
-                _ => "Renommer",
+            let a = state.anchor;
+            let inline = a.w > 1.0 && a.h > 1.0 && !matches!(target, Rename::SaveAs | Rename::Preset(_));
+            let field = if inline {
+                let w = a.w.max(200.0);
+                let x = a.x.min(screen.right() - w - 8.0).max(8.0);
+                Rect::new(x, a.y + a.h * 0.5 - 18.0, w, 36.0)
+            } else {
+                let w = 360.0;
+                let r = Rect::new((screen.w - w) * 0.5, screen.h * 0.32 + (1.0 - open) * 8.0, w, 92.0);
+                c.fill_rect(screen, Color::rgba(0, 0, 0, (110.0 * open) as u8));
+                c.fill_rrect(r, 16.0, t.panel);
+                c.stroke_rrect(r, 16.0, 1.0, t.hairline.alpha(1.6));
+                let title = match target {
+                    Rename::SaveAs => "Enregistrer sous",
+                    Rename::Preset(_) => "Nom du preset",
+                    _ => "Renommer",
+                };
+                self.text(c, self.f.sans_med, 14.0, r.x + 20.0, r.y + 24.0, title, t.text2);
+                Rect::new(r.x + 16.0, r.y + 40.0, r.w - 32.0, 38.0)
             };
-            self.text(c, self.f.sans_med, 14.0, r.x + 20.0, r.y + 26.0, title, t.text);
-            let field = Rect::new(r.x + 16.0, r.y + 46.0, r.w - 32.0, 40.0);
+            c.fill_rrect(field.translate(0.0, 4.0).inset(-2.0), 12.0, Color::rgba(0, 0, 0, (70.0 * open) as u8));
             c.fill_rrect(field, 10.0, t.well);
-            c.stroke_rrect(field, 10.0, 1.5, t.select.alpha(0.8));
-            let shown = self.fit(self.f.sans, 15.0, text, field.w - 30.0);
-            let tw = self.text(c, self.f.sans, 15.0, field.x + 12.0, field.y + 20.0, &shown, t.text);
+            c.stroke_rrect(field, 10.0, 1.5, t.select.alpha(0.9 * open));
+            let ok_x = self.keycap(c, field.right() - 8.0, field.y + field.h * 0.5, "Entrée", 0.8);
+            let shown = self.fit(self.f.sans_med, 14.0, text, ok_x - field.x - 24.0);
+            let tw = self.text(c, self.f.sans_med, 14.0, field.x + 12.0, field.y + field.h * 0.5, &shown, t.text);
             if (self.time * 2.0).fract() < 0.6 {
-                c.fill_rect(Rect::new(field.x + 13.0 + tw, field.y + 10.0, 1.5, 20.0), t.select);
+                c.fill_rect(Rect::new(field.x + 13.0 + tw, field.y + 9.0, 1.5, field.h - 18.0), t.select);
             }
             // Tient l'animation éveillée pour faire clignoter le curseur.
             self.anim.set(wid("caret", 0, 0), self.time);
-            self.text(c, self.f.sans, 12.0, r.x + 20.0, r.y + 108.0, "Entrée pour valider · Échap pour annuler", t.muted);
-            if input.pressed && !r.contains(input.x, input.y) {
-                done = Some(false);
+            if input.pressed && !field.inset(-16.0).contains(input.x, input.y) {
+                // Un clic ailleurs valide, comme dans un champ en place.
+                done = Some(inline);
             }
             match done {
                 Some(true) => {
@@ -2087,9 +2216,10 @@ impl App {
         }
 
         let (title, items) = self.menu_items(&state.kind);
-        let w = 300.0;
-        let row_h = 44.0;
-        let h = (52.0 + items.len() as f32 * row_h + 8.0).min(screen.h - 80.0);
+        let w = 260.0;
+        let row_h = 38.0;
+        let seps = items.iter().filter(|i| i.sep).count() as f32 * 9.0;
+        let h = (44.0 + items.len() as f32 * row_h + seps + 6.0).min(screen.h - 80.0);
         let mut x = state.anchor.x;
         let mut y = state.anchor.bottom() + 8.0;
         if x + w > screen.right() - 12.0 {
@@ -2102,11 +2232,11 @@ impl App {
         c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, Color::rgba(0, 0, 0, (90.0 * open) as u8));
         c.fill_rrect(r, 14.0, t.panel);
         c.stroke_rrect(r, 14.0, 1.0, t.hairline.alpha(1.6));
-        self.text_fit(c, self.f.sans_med, 13.0, r.x + 16.0, r.y + 24.0, &title, r.w - 32.0, t.text2);
+        self.text_fit(c, self.f.sans_med, 12.0, r.x + 16.0, r.y + 20.0, &title, r.w - 32.0, t.muted);
 
         // Défilement si le menu est plus long que l'écran.
-        let list_h = r.h - 52.0;
-        let content = items.len() as f32 * row_h;
+        let list_h = r.h - 40.0;
+        let content = items.len() as f32 * row_h + seps;
         let key = wid("popup-scroll", 0, 0);
         let mut scroll = self.anim.get(key).unwrap_or(0.0);
         if input.inside && r.contains(input.x, input.y) && input.wheel != 0.0 {
@@ -2116,35 +2246,60 @@ impl App {
         self.anim.set(key, scroll);
 
         let mut chosen = None;
-        let prev = c.push_clip(Rect::new(r.x, r.y + 44.0, r.w, r.h - 48.0));
-        for (i, (name, detail, _)) in items.iter().enumerate() {
-            let row = Rect::new(r.x + 6.0, r.y + 44.0 + i as f32 * row_h - scroll, r.w - 12.0, row_h - 4.0);
+        let mut hover_tip = None;
+        let prev = c.push_clip(Rect::new(r.x, r.y + 36.0, r.w, r.h - 40.0));
+        let mut ry = r.y + 38.0 - scroll;
+        for (i, it) in items.iter().enumerate() {
+            if it.sep {
+                c.fill_rect(Rect::new(r.x + 12.0, ry + 4.0, r.w - 24.0, 1.0), t.hairline);
+                ry += 9.0;
+            }
+            let row = Rect::new(r.x + 6.0, ry, r.w - 12.0, row_h - 4.0);
+            ry += row_h;
             let id = wid("popup-row", i, 0);
             let hov = input.inside && row.contains(input.x, input.y) && r.contains(input.x, input.y);
             let hv = self.hover_anim(id, hov);
             let current = matches!(state.kind, Popup::Patterns) && i == self.project.current_pattern;
             if hv > 0.01 || current {
-                c.fill_rrect(row, 10.0, t.raised.mix(t.raised_hi, hv * 0.6).alpha(hv.max(current as u8 as f32 * 0.7)));
+                c.fill_rrect(row, 9.0, t.raised.mix(t.raised_hi, hv * 0.6).alpha(hv.max(current as u8 as f32 * 0.7)));
             }
-            if current {
-                c.fill_rrect(Rect::new(row.x + 4.0, row.y + 12.0, 3.0, row.h - 24.0), 1.5, t.accent);
+            let danger = it.icon == Some(Icon::Trash);
+            let ink = if danger { t.negative } else { t.text2.mix(t.text, hv.max(current as u8 as f32)) };
+            let cy = row.y + row.h * 0.5;
+            let mut tx = row.x + 12.0;
+            if let Some(icon) = it.icon {
+                draw_icon(c, icon, row.x + 20.0, cy, 15.0, if danger { t.negative } else { t.muted.mix(t.accent, hv) });
+                tx = row.x + 38.0;
+            } else if let Some(col) = it.color {
+                c.fill_rrect(Rect::new(row.x + 12.0, cy - 7.0, 4.0, 14.0), 2.0, col);
+                tx = row.x + 26.0;
             }
-            let cy = if detail.is_empty() { row.y + row.h * 0.5 } else { row.y + 13.0 };
-            let danger = name.starts_with("Supprimer");
-            self.text_fit(c, self.f.sans_med, 13.0, row.x + 14.0, cy, name, row.w - 28.0, if danger { t.negative } else { t.text });
-            if !detail.is_empty() {
-                self.text_fit(c, self.f.sans, 11.0, row.x + 14.0, row.y + 28.0, detail, row.w - 28.0, t.muted);
+            let mut right = row.right() - 12.0;
+            if !it.detail.is_empty() {
+                right = self.text_right(c, self.f.mono, 11.0, right, cy, &it.detail, t.muted) - 10.0;
+            }
+            self.text_fit(c, self.f.sans_med, 13.0, tx, cy, &it.name, right - tx, ink);
+            if hov && !it.tip.is_empty() {
+                hover_tip = Some(it.tip.clone());
             }
             if hov && input.pressed {
                 chosen = Some((i, row));
             }
         }
         c.set_clip(Some(prev));
+        // Les menus gardent leurs infobulles : la description d'un instrument, un chemin.
+        if let Some(tip) = hover_tip {
+            let tw = self.fonts.measure(self.f.sans, 12.0, &tip).min(screen.w * 0.4);
+            let tr = Rect::new((r.right() + 8.0).min(screen.right() - tw - 28.0), input.y - 14.0, tw + 20.0, 28.0);
+            c.fill_rrect(tr, 8.0, t.raised_hi);
+            c.stroke_rrect(tr, 8.0, 1.0, t.hairline.alpha(1.6));
+            self.text_fit(c, self.f.sans, 12.0, tr.x + 10.0, tr.y + 14.0, &tip, tw, t.text2);
+        }
 
         let clicked_outside = (input.pressed || input.right_pressed) && !r.contains(input.x, input.y);
         if let Some((i, row)) = chosen {
             self.anim.set(key, 0.0);
-            let action = items[i].2.clone();
+            let action = items[i].action.clone();
             self.run_action(action, Rect::new(r.x, row.y, r.w, row.h));
         } else if !clicked_outside {
             self.popup = Some(state);

@@ -334,14 +334,13 @@ impl App {
         c.stroke_polyline(&pts, 2.2, t.accent);
         c.set_clip(Some(prev));
         let label = match kind {
-            "saturator" => "Glisser : drive",
-            "compressor" => "Glisser : seuil · molette : ratio",
-            "limiter" => "Glisser : gain d'entrée",
-            _ => "Glisser : seuil",
+            "saturator" => "Transfert\nGlisser : drive",
+            "compressor" => "Transfert\nGlisser : seuil · molette : ratio",
+            "limiter" => "Transfert\nGlisser : gain d'entrée",
+            _ => "Transfert\nGlisser : seuil",
         };
-        let hv = self.hover_anim(id, hov || self.is_dragging(id));
-        if hv > 0.01 {
-            self.text(c, self.f.sans, 10.0, g.x, g.bottom() - 4.0, label, t.muted.alpha(hv));
+        if hov {
+            self.set_tip(label, "");
         }
     }
 
@@ -459,9 +458,8 @@ impl App {
         c.fill_rrect(r, 10.0, t.well);
         let Device::Instrument(ch) = device else { return };
         let Some(path) = self.project.channels.get(ch).and_then(|c| c.instrument.sample.clone()) else {
-            let (cx, cy) = r.center();
-            self.text_center(c, self.f.sans, 12.0, cx, cy - 8.0, "Aucun échantillon", t.muted);
-            self.text_center(c, self.f.sans, 11.0, cx, cy + 10.0, "Choisis un fichier WAV dans le navigateur", t.muted);
+            c.stroke_rrect(r.inset(6.0), 8.0, 1.0, t.hairline.alpha(1.5));
+            self.empty_state(c, r, super::widgets::Icon::Sample, "Glisse un WAV ici");
             return;
         };
         let g = r.inset_xy(8.0, 10.0);
@@ -594,11 +592,6 @@ impl App {
         };
         let pts: Vec<(f32, f32)> = env.iter().enumerate().map(|(i, &v)| (g.x + i as f32 * 2.0, y_of(v))).collect();
         filled_curve(c, &pts, g.bottom(), t.accent.alpha(0.14), t.accent);
-        let label = match probe {
-            Probe::Impulse => "Réponse à une impulsion (dB)",
-            Probe::Constant => "Gain sur une mesure",
-        };
-        self.text(c, self.f.sans, 10.0, g.x, r.y + 9.0, label, t.muted);
     }
 }
 

@@ -8,6 +8,7 @@ mod app;
 mod automation;
 mod compat;
 mod devices;
+mod dnd;
 mod keys;
 mod mixer;
 mod palette;
@@ -44,6 +45,9 @@ pub struct Input {
     pub right_pressed: bool,
     /// Bouton droit maintenu : efface ce que l'on balaie, comme dans FL Studio.
     pub right_down: bool,
+    /// Bouton du milieu : glisser pour faire défiler.
+    pub middle_pressed: bool,
+    pub middle_down: bool,
     /// Le clic de cette image est un double-clic.
     pub double: bool,
     pub wheel: f32,
@@ -62,6 +66,7 @@ impl Input {
         self.pressed = false;
         self.released = false;
         self.right_pressed = false;
+        self.middle_pressed = false;
         self.double = false;
         self.wheel = 0.0;
         self.keys.clear();
@@ -87,7 +92,10 @@ impl Input {
                         self.right_pressed = true;
                         self.right_down = true;
                     }
-                    MouseButton::Middle => {}
+                    MouseButton::Middle => {
+                        self.middle_pressed = true;
+                        self.middle_down = true;
+                    }
                 }
             }
             Event::MouseUp { button: MouseButton::Left, .. } => {
@@ -95,7 +103,7 @@ impl Input {
                 self.released = true;
             }
             Event::MouseUp { button: MouseButton::Right, .. } => self.right_down = false,
-            Event::MouseUp { .. } => {}
+            Event::MouseUp { button: MouseButton::Middle, .. } => self.middle_down = false,
             Event::Wheel { x, y, delta, mods } => {
                 (self.x, self.y, self.mods) = (x, y, mods);
                 self.wheel += delta;
@@ -107,6 +115,7 @@ impl Input {
             Event::FocusLost => {
                 self.focus_lost = true;
                 self.right_down = false;
+                self.middle_down = false;
                 if self.down {
                     self.down = false;
                     self.released = true;
@@ -244,7 +253,7 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     }
     // Fichier de test : posé dans la playlist et chargé dans un sampler.
     if let Ok(path) = std::env::var("PONZIK_TEST_WAV") {
-        app.add_audio_clip(&path);
+        app.add_audio_clip(&path, None);
         app.add_sample_channel(&path);
     }
     if view == View::Session {
@@ -255,7 +264,14 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     let _ = Command::Play;
 
     let mut canvas = Canvas::new(width, height);
-    let input = Input::default();
+    // PONZIK_HOVER=x,y : souris immobile à cet endroit (survols, infobulles).
+    let mut input = Input::default();
+    if let Some((x, y)) = std::env::var("PONZIK_HOVER").ok().and_then(|v| {
+        let (x, y) = v.split_once(',')?;
+        Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
+    }) {
+        (input.x, input.y, input.inside) = (x, y, true);
+    }
     let mut audio = vec![0.0f32; 800 * 2];
     // ~1,6 s : la tête de lecture tombe sur un temps fort, les VU-mètres sont lancés.
     for _ in 0..96 {

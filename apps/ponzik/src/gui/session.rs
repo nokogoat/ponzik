@@ -9,9 +9,13 @@ use super::Input;
 use super::app::{App, Popup};
 use super::playlist::pattern_color;
 use super::theme::*;
-use super::widgets::{Btn, Icon, draw_icon, wid};
+use super::widgets::{Icon, draw_icon, wid};
 
-const SCENE_W: f32 = 132.0;
+const SCENE_W: f32 = 72.0;
+const SESSION_HELP: &str = "Session
+Clic : lancer le clip à la prochaine mesure
+Case vide : choisir un pattern
+Clic droit maintenu : vider les cases balayées";
 const HEAD_H: f32 = 30.0;
 const STOP_H: f32 = 34.0;
 
@@ -113,15 +117,15 @@ impl App {
         let t = self.theme;
         self.advance_session();
 
-        let stop_all = Rect::new(header.right() - 150.0, header.y, 150.0, header.h);
-        if self.button(c, input, wid("ses-stop-all", 0, 0), stop_all, "Tout arrêter", Btn::Secondary) {
+        let stop_all = Rect::new(header.right() - 36.0, header.y, 36.0, header.h);
+        if self.icon_button(c, input, wid("ses-stop-all", 0, 0), stop_all, Icon::Stop, false, ("Tout arrêter", "")) {
             for col in 0..SESSION_COLUMNS {
                 self.session_cols[col] = ColumnState::default();
             }
             self.push_session();
         }
-        let hint = "Clic : lancer à la mesure · Case vide : choisir un pattern · Clic droit maintenu : vider";
-        self.text_fit(c, self.f.sans, 12.0, header.x, header.y + header.h * 0.5, hint, stop_all.x - header.x - 16.0, t.muted);
+        let help = Rect::new(stop_all.x - 44.0, header.y, 36.0, header.h);
+        self.icon_button(c, input, wid("ses-help", 0, 0), help, Icon::Info, false, (SESSION_HELP, ""));
 
         c.fill_rrect(body, 16.0, t.panel);
         c.stroke_rrect(body, 16.0, 1.0, t.hairline);
@@ -136,8 +140,9 @@ impl App {
 
         // En-têtes de colonnes.
         for k in 0..SESSION_COLUMNS {
-            let label = format!("Piste {}", k + 1);
-            self.text(c, self.f.sans_med, 12.0, col_x(k) + 6.0, grid.y + 12.0, &label, t.text2);
+            let label = (k + 1).to_string();
+            let active = self.session_cols[k].playing.is_some();
+            self.text_center(c, self.f.mono_med, 12.0, col_x(k) + col_w * 0.5, grid.y + 12.0, &label, if active { t.text } else { t.muted });
         }
 
         // Lanceurs de scène.
@@ -147,8 +152,11 @@ impl App {
             let hov = self.hovered(input, id, cell);
             let hv = self.hover_anim(id, hov);
             c.fill_rrect(cell, 10.0, t.raised.mix(t.raised_hi, hv));
-            draw_icon(c, Icon::Play, cell.x + 18.0, cell.y + cell.h * 0.5, 12.0, t.text2.mix(t.accent, hv));
-            self.text(c, self.f.sans_med, 12.0, cell.x + 34.0, cell.y + cell.h * 0.5, &format!("Scène {}", r + 1), t.text2);
+            draw_icon(c, Icon::Play, cell.x + 20.0, cell.y + cell.h * 0.5, 12.0, t.text2.mix(t.accent, hv));
+            self.text_right(c, self.f.mono_med, 12.0, cell.right() - 14.0, cell.y + cell.h * 0.5, &(r + 1).to_string(), t.muted.mix(t.text2, hv));
+            if hov {
+                self.set_tip(&format!("Lancer la scène {}", r + 1), "");
+            }
             if hov && input.pressed {
                 self.launch_scene(r);
             }
@@ -170,6 +178,9 @@ impl App {
                         c.stroke_rrect(cell, 10.0, 1.0, t.hairline.alpha(0.8 + hv * 2.0));
                         if hv > 0.01 {
                             draw_icon(c, Icon::Plus, cell.x + cell.w * 0.5, cell.y + cell.h * 0.5, 14.0, t.muted.alpha(hv));
+                        }
+                        if hov {
+                            self.set_tip("Choisir un pattern", "");
                         }
                         if hov && input.pressed {
                             self.open_popup(Popup::SessionAssign { col: k, row: r }, cell);
@@ -216,6 +227,9 @@ impl App {
             let active = self.session_cols[k].playing.is_some() || self.session_cols[k].queued.is_some();
             c.fill_rrect(stop, 8.0, t.raised.alpha(0.5 + hv * 0.5));
             draw_icon(c, Icon::Stop, stop.x + stop.w * 0.5, stop.y + stop.h * 0.5, 11.0, if active { t.text } else { t.muted });
+            if hov {
+                self.set_tip("Arrêter la colonne", "");
+            }
             if hov && input.pressed {
                 self.stop_column(k);
             }
