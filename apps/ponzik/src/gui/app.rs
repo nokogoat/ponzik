@@ -102,6 +102,8 @@ pub enum Popup {
     SessionAssign { col: usize, row: usize },
     /// Menu d'un paramètre (clic droit sur un potard).
     Param { target: ponzik_engine::AutoTarget, value: f32, default: f32 },
+    /// Nouveau projet : choix d'un modèle.
+    Templates,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -158,6 +160,8 @@ pub enum Action {
     Save,
     OpenMenu,
     NewProject,
+    /// Nouveau projet à partir du modèle n.
+    NewFromTemplate(usize),
     Export,
     Undo,
     Redo,
@@ -480,6 +484,15 @@ impl App {
             autosaver: None,
             recovery: None,
         }
+    }
+
+    /// Ouvre un menu par son nom (captures d'écran).
+    pub fn screenshot_popup(&mut self, name: &str) {
+        let kind = match name {
+            "templates" => Popup::Templates,
+            _ => return,
+        };
+        self.open_popup(kind, Rect::new(60.0, 8.0, 0.0, TOP_BAR - 12.0));
     }
 
     // --- Sauvegarde automatique ---
@@ -1233,10 +1246,7 @@ impl App {
                 Key::Char('o') if mods.ctrl => {
                     self.open_popup(Popup::OpenProject(compat::list_projects()), Rect::new(12.0, TOP_BAR, 0.0, 0.0))
                 }
-                Key::Char('n') if mods.ctrl => {
-                    self.replace_project(Project::empty(), None);
-                    self.toast("Nouveau projet");
-                }
+                Key::Char('n') if mods.ctrl => self.open_popup(Popup::Templates, Rect::new(60.0, 8.0, 0.0, TOP_BAR - 12.0)),
                 Key::Char('r') if mods.ctrl => self.export(),
                 Key::Char('k') if mods.ctrl => self.open_palette(),
                 Key::Char('f') if mods.ctrl => {
@@ -2001,6 +2011,19 @@ impl App {
                     })
                     .collect(),
             ),
+            Popup::Templates => (
+                "Nouveau projet".into(),
+                ponzik_project::templates()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (name, make))| {
+                        let p = make();
+                        let bpm = format!("{:.0}", p.bpm);
+                        let it = MenuItem::new(template_icon(i), name, Action::NewFromTemplate(i)).detail(bpm);
+                        if i == 1 { it.sep() } else { it }
+                    })
+                    .collect(),
+            ),
             Popup::Rename { .. } | Popup::Palette { .. } => (String::new(), Vec::new()),
         }
     }
@@ -2117,9 +2140,13 @@ impl App {
             }
             Action::Save => self.save(),
             Action::OpenMenu => self.open_popup(Popup::OpenProject(compat::list_projects()), anchor),
-            Action::NewProject => {
-                self.replace_project(Project::empty(), None);
-                self.toast("Nouveau projet");
+            Action::NewProject => self.open_popup(Popup::Templates, anchor),
+            Action::NewFromTemplate(i) => {
+                if let Some((name, make)) = ponzik_project::templates().get(i).copied() {
+                    self.replace_project(make(), None);
+                    self.set_view(View::Rack);
+                    self.toast(&format!("Nouveau projet · {name}"));
+                }
             }
             Action::Export => self.export(),
             Action::Undo => self.undo(),
@@ -2443,4 +2470,16 @@ fn recovery_detail(path: &std::path::Path) -> String {
         Some(s) => format!("il y a {} j", s / 86_400),
     };
     if age.is_empty() { name } else { format!("{name} · {age}") }
+}
+
+/// Icône d'un modèle de projet, dans l'ordre de [`ponzik_project::templates`].
+fn template_icon(i: usize) -> Icon {
+    match i {
+        0 => Icon::Plus,
+        1 => Icon::Rack,
+        2 => Icon::Session,
+        3 => Icon::Sample,
+        4 => Icon::Metronome,
+        _ => Icon::Effect,
+    }
 }

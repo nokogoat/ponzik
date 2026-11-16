@@ -277,6 +277,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     if std::env::var_os("PONZIK_RECOVER").is_some() {
         app.recovery = Some((std::path::PathBuf::new(), "Démo · il y a 3 min".into()));
     }
+    // PONZIK_POPUP : ouvre un menu pour la capture.
+    if let Ok(name) = std::env::var("PONZIK_POPUP") {
+        app.screenshot_popup(&name);
+    }
     let mut canvas = Canvas::new(width, height);
     // PONZIK_HOVER=x,y : souris immobile à cet endroit (survols, infobulles).
     let mut input = Input::default();

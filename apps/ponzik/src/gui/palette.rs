@@ -108,6 +108,9 @@ impl App {
             add(format!("Ouvrir : {name}"), "Récent", "", Action::Open(path));
         }
         add("Nouveau projet".into(), "Fichier", "Ctrl N", Action::NewProject);
+        for (i, (name, _)) in ponzik_project::templates().into_iter().enumerate() {
+            add(format!("Nouveau projet : {name}"), "Modèle", "", Action::NewFromTemplate(i));
+        }
         add("Exporter en WAV".into(), "Fichier", "Ctrl R", Action::Export);
         add("Exporter les pistes séparées (stems)".into(), "Fichier", "", Action::ExportStems);
         add("Importer un fichier MIDI".into(), "Fichier", "", Action::ImportMidiMenu);
