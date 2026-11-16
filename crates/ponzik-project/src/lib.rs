@@ -36,6 +36,8 @@ pub use render::{BitDepth, RenderMode, render_song, render_stems, write_wav};
 /// Un instrument et l'état de ses paramètres.
 #[derive(Clone, Debug, PartialEq)]
 pub struct InstrumentDef {
+    /// Identifiant du registre natif, ou `clap:<chemin>#<id>` pour un plugin CLAP
+    /// (voir [`ponzik_clap::kind_for`]).
     pub kind: String,
     /// Valeurs qui diffèrent des défauts : (identifiant, valeur).
     pub params: Vec<(u32, f32)>,
@@ -67,6 +69,7 @@ impl InstrumentDef {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct EffectDef {
+    /// Comme [`InstrumentDef::kind`] : natif ou `clap:<chemin>#<id>`.
     pub kind: String,
     pub params: Vec<(u32, f32)>,
     pub bypass: bool,
@@ -361,10 +364,16 @@ impl Project {
     }
 
     /// Crée l'instrument d'un canal, réglé et prêt à envoyer au moteur.
+    ///
+    /// Un plugin CLAP introuvable ou défaillant est remplacé par Pulse (le projet
+    /// garde son identifiant d'origine).
     pub fn make_instrument(def: &InstrumentDef, sample_rate: f32, loader: SampleLoader) -> Box<dyn Instrument> {
-        let mut inst = registry::create_instrument(&def.kind)
-            .or_else(|| registry::create_instrument("pulse"))
-            .expect("le registre contient Pulse");
+        let created = if def.kind.starts_with(ponzik_clap::KIND_PREFIX) {
+            ponzik_clap::instrument_from_kind(&def.kind).map_err(|e| eprintln!("CLAP : {e}")).ok()
+        } else {
+            registry::create_instrument(&def.kind)
+        };
+        let mut inst = created.or_else(|| registry::create_instrument("pulse")).expect("le registre contient Pulse");
         inst.set_sample_rate(sample_rate);
         for &(id, v) in &def.params {
             inst.set_param(id, v);
@@ -377,8 +386,13 @@ impl Project {
         inst
     }
 
+    /// `None` si l'identifiant est inconnu ou si le plugin CLAP ne se charge pas.
     pub fn make_effect(def: &EffectDef, sample_rate: f32, bpm: f32) -> Option<Box<dyn Effect>> {
-        let mut fx = registry::create_effect(&def.kind)?;
+        let mut fx = if def.kind.starts_with(ponzik_clap::KIND_PREFIX) {
+            ponzik_clap::effect_from_kind(&def.kind).map_err(|e| eprintln!("CLAP : {e}")).ok()?
+        } else {
+            registry::create_effect(&def.kind)?
+        };
         fx.set_sample_rate(sample_rate);
         fx.set_tempo(bpm);
         for &(id, v) in &def.params {
@@ -556,6 +570,14 @@ mod tests {
         }
         let peak = buf.iter().fold(0.0f32, |m, s| m.max(s.abs()));
         assert!(peak > 0.05 && peak <= 1.0, "{peak}");
+    }
+
+    #[test]
+    fn missing_clap_plugin_falls_back() {
+        let kind = "clap:/introuvable/x.clap#com.exemple.synth";
+        let inst = Project::make_instrument(&InstrumentDef::new(kind), 48_000.0, &no_samples);
+        assert_eq!(inst.kind(), "pulse");
+        assert!(Project::make_effect(&EffectDef::new(kind), 48_000.0, 120.0).is_none());
     }
 
     #[test]

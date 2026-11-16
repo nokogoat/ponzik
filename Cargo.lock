@@ -20,6 +20,20 @@ name = "ponzik-audio"
 version = "0.1.0"
 
 [[package]]
+name = "ponzik-clap"
+version = "0.1.0"
+dependencies = [
+ "ponzik-engine",
+]
+
+[[package]]
+name = "ponzik-clap-test-plugin"
+version = "0.1.0"
+dependencies = [
+ "ponzik-clap",
+]
+
+[[package]]
 name = "ponzik-dsp"
 version = "0.1.0"
 
@@ -38,6 +52,7 @@ version = "0.1.0"
 name = "ponzik-project"
 version = "0.1.0"
 dependencies = [
+ "ponzik-clap",
  "ponzik-dsp",
  "ponzik-engine",
 ]

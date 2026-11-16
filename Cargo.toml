@@ -16,6 +16,7 @@ ponzik-window = { path = "crates/ponzik-window" }
 ponzik-ui = { path = "crates/ponzik-ui" }
 ponzik-project = { path = "crates/ponzik-project" }
 ponzik-midi = { path = "crates/ponzik-midi" }
+ponzik-clap = { path = "crates/ponzik-clap" }
 
 [profile.dev]
 # L'audio temps réel a besoin d'un minimum d'optimisation même en debug.

@@ -1,0 +1,10 @@
+[package]
+name = "ponzik-clap"
+description = "Hôte de plugins CLAP pour Ponzik : ABI C écrite à la main, chargement dynamique"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ponzik-engine.workspace = true

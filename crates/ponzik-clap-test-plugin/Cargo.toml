@@ -1,0 +1,14 @@
+[package]
+name = "ponzik-clap-test-plugin"
+description = "Plugin CLAP minimal servant de banc d'essai à ponzik-clap (gain et sinus)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ponzik-clap.workspace = true
