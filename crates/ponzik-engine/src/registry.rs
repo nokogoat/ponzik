@@ -14,6 +14,7 @@ use crate::effects::CharSaturation;
 use crate::effects::Lofi;
 use crate::effects::VintageVerb;
 use crate::instruments::DrumMachine;
+use crate::instruments::DrumPads;
 use crate::instrument::Instrument;
 use crate::instruments::{
     Bass303, DrumKind, DrumSynth, EPiano, ExternalMidi, FmSynth, Granular, Kick, Pluck, Pulse, Sampler, Slicer, WaveSynth,
@@ -128,6 +129,13 @@ pub fn instruments() -> &'static [InstrumentKind] {
             category: "Drums",
             description: "Eight layered synthesized pads (transient, body, noise), tune, decay and level per pad",
             create: || Box::new(DrumMachine::new()),
+        },
+        InstrumentKind {
+            id: "drum_pads",
+            name: "Drum Pads",
+            category: "Batterie",
+            description: "Sixteen sample pads: drop a WAV on a pad, tune, trim, filter, choke groups, velocity layers",
+            create: || Box::new(DrumPads::new()),
         },
         InstrumentKind {
             id: "midi_out",

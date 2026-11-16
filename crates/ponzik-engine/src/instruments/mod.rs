@@ -3,6 +3,7 @@
 mod bass303;
 pub(crate) mod common;
 mod drum_machine;
+pub mod drum_pads;
 mod drums;
 mod epiano;
 mod external_midi;
@@ -17,6 +18,7 @@ mod wavetable;
 
 pub use bass303::Bass303;
 pub use drum_machine::DrumMachine;
+pub use drum_pads::DrumPads;
 pub use drums::{DrumKind, DrumSynth};
 pub use epiano::EPiano;
 pub use external_midi::ExternalMidi;

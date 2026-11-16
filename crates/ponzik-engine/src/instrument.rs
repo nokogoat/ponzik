@@ -23,6 +23,11 @@ pub trait Instrument: Params + Send {
     /// Échantillon à jouer, pour les instruments qui en utilisent un.
     fn set_sample(&mut self, _sample: Arc<Sample>) {}
 
+    /// Sample of velocity layer `layer` of pad `pad` (`None`: empty), for
+    /// instruments made of pads (Drum Pads). Called from the UI thread, like
+    /// `set_sample`.
+    fn set_pad_sample(&mut self, _pad: usize, _layer: usize, _sample: Option<Arc<Sample>>) {}
+
     /// `velocity` dans [0, 1].
     fn note_on(&mut self, note: u8, velocity: f32);
 
