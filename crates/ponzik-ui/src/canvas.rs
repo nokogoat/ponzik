@@ -92,8 +92,9 @@ impl Path {
         b
     }
 
-    pub(crate) fn rasterize(&self, r: &mut Rasterizer, dx: f32, dy: f32) {
-        let t = |p: Pt| (p.0 + dx, p.1 + dy);
+    /// Rastérise le chemin mis à l'échelle `k` puis décalé de (`dx`, `dy`).
+    pub(crate) fn rasterize(&self, r: &mut Rasterizer, k: f32, dx: f32, dy: f32) {
+        let t = |p: Pt| (p.0 * k + dx, p.1 * k + dy);
         for s in &self.segs {
             match *s {
                 Seg::Line(a, b) => r.line(t(a), t(b)),
@@ -140,34 +141,54 @@ fn rrect_cov(r: &Rect, radius: f32, cx: f32, cy: f32) -> f32 {
 }
 
 /// Tampon de pixels `0x00RRGGBB` et primitives de dessin anti-aliasées.
+///
+/// Les primitives prennent des coordonnées logiques ; l'échelle ([`Canvas::set_scale`])
+/// les convertit en pixels physiques avant la rastérisation, si bien qu'un écran
+/// HiDPI reçoit des bords et du texte nets plutôt qu'une image agrandie.
 pub struct Canvas {
+    /// Taille du tampon, en pixels physiques.
     width: usize,
     height: usize,
     pixels: Vec<u32>,
-    /// Zone de découpe en pixels entiers : x0, y0, x1, y1.
+    /// Pixels physiques par pixel logique.
+    scale: f32,
+    /// Zone de découpe en pixels physiques entiers : x0, y0, x1, y1.
     clip: (usize, usize, usize, usize),
+    /// La même zone telle que demandée, en logique (`None` : tout le canvas). La
+    /// rendre telle quelle garde `push_clip` / `set_clip` exactement réversibles.
+    clip_logical: Option<Rect>,
     raster: Rasterizer,
 }
 
 impl Canvas {
     pub fn new(width: usize, height: usize) -> Self {
-        let mut c =
-            Self { width: 0, height: 0, pixels: Vec::new(), clip: (0, 0, 0, 0), raster: Rasterizer::new() };
+        let mut c = Self {
+            width: 0,
+            height: 0,
+            pixels: Vec::new(),
+            scale: 1.0,
+            clip: (0, 0, 0, 0),
+            clip_logical: None,
+            raster: Rasterizer::new(),
+        };
         c.resize(width, height);
         c
     }
 
+    /// Change la taille du tampon, en pixels physiques.
     pub fn resize(&mut self, width: usize, height: usize) {
         self.width = width;
         self.height = height;
         self.pixels.resize(width * height, 0);
-        self.clip = (0, 0, width, height);
+        self.set_clip(None);
     }
 
+    /// Largeur du tampon, en pixels physiques.
     pub fn width(&self) -> usize {
         self.width
     }
 
+    /// Hauteur du tampon, en pixels physiques.
     pub fn height(&self) -> usize {
         self.height
     }
@@ -176,11 +197,39 @@ impl Canvas {
         &self.pixels
     }
 
-    /// Restreint le dessin à `r` (ou à tout le canvas avec `None`).
+    /// Pixels physiques par pixel logique (1 par défaut).
+    pub fn scale(&self) -> f32 {
+        self.scale
+    }
+
+    /// Change l'échelle logique → physique ; la découpe revient à tout le canvas.
+    pub fn set_scale(&mut self, scale: f32) {
+        let scale = if scale.is_finite() { scale.clamp(0.25, 8.0) } else { 1.0 };
+        if scale != self.scale {
+            self.scale = scale;
+            self.set_clip(None);
+        }
+    }
+
+    /// Taille du canvas en pixels logiques : l'espace de mise en page.
+    pub fn logical_size(&self) -> (f32, f32) {
+        (self.width as f32 / self.scale, self.height as f32 / self.scale)
+    }
+
+    /// Rectangle logique → physique.
+    #[inline]
+    pub fn to_physical(&self, r: Rect) -> Rect {
+        let k = self.scale;
+        if k == 1.0 { r } else { Rect::new(r.x * k, r.y * k, r.w * k, r.h * k) }
+    }
+
+    /// Restreint le dessin à `r` (ou à tout le canvas avec `None`), en logique.
     pub fn set_clip(&mut self, r: Option<Rect>) {
+        self.clip_logical = r;
         self.clip = match r {
             None => (0, 0, self.width, self.height),
             Some(r) => {
+                let r = self.to_physical(r);
                 let x0 = (r.x.floor().max(0.0) as usize).min(self.width);
                 let y0 = (r.y.floor().max(0.0) as usize).min(self.height);
                 let x1 = (r.right().ceil().max(0.0) as usize).clamp(x0, self.width);
@@ -190,10 +239,17 @@ impl Canvas {
         };
     }
 
-    /// Zone de découpe courante.
+    /// Zone de découpe courante, en logique.
     pub fn clip_rect(&self) -> Rect {
-        let (x0, y0, x1, y1) = self.clip;
-        Rect::new(x0 as f32, y0 as f32, (x1 - x0) as f32, (y1 - y0) as f32)
+        self.clip_logical.unwrap_or_else(|| {
+            let (w, h) = self.logical_size();
+            Rect::new(0.0, 0.0, w, h)
+        })
+    }
+
+    /// Zone de découpe courante, en pixels physiques entiers.
+    pub fn clip_pixels(&self) -> (usize, usize, usize, usize) {
+        self.clip
     }
 
     /// Restreint la découpe à son intersection avec `r` ; renvoie l'ancienne.
@@ -233,6 +289,7 @@ impl Canvas {
         if r.w <= 0.0 || r.h <= 0.0 {
             return;
         }
+        let (r, radius) = (self.to_physical(r), radius * self.scale);
         let radius = radius.clamp(0.0, r.w.min(r.h) * 0.5);
         let Some((x0, y0, x1, y1)) = self.bounds(r.x, r.y, r.right(), r.bottom()) else { return };
         for py in y0..y1 {
@@ -265,6 +322,7 @@ impl Canvas {
         if r.w <= 0.0 || r.h <= 0.0 || c.a == 0 {
             return;
         }
+        let (r, radius, width) = (self.to_physical(r), radius * self.scale, width * self.scale);
         let radius = radius.clamp(0.0, r.w.min(r.h) * 0.5);
         let inner = r.inset(width);
         let inner_radius = (radius - width).max(0.0);
@@ -303,10 +361,11 @@ impl Canvas {
 
     pub fn fill_path(&mut self, path: &Path, c: Color) {
         let Some((bx0, by0, bx1, by1)) = path.bounds() else { return };
-        let Some((x0, y0, x1, y1)) = self.bounds(bx0, by0, bx1, by1) else { return };
+        let k = self.scale;
+        let Some((x0, y0, x1, y1)) = self.bounds(bx0 * k, by0 * k, bx1 * k, by1 * k) else { return };
         let Canvas { raster, pixels, width, .. } = self;
         raster.reset(x1 - x0, y1 - y0);
-        path.rasterize(raster, -(x0 as f32), -(y0 as f32));
+        path.rasterize(raster, k, -(x0 as f32), -(y0 as f32));
         raster.for_each_coverage(|x, y, cov| blend(&mut pixels[(y0 + y) * *width + x0 + x], c, cov));
     }
 
@@ -339,7 +398,7 @@ impl Canvas {
         if sweep <= 1e-4 {
             return;
         }
-        let n = ((sweep * radius / 2.0).ceil() as usize).clamp(4, 256);
+        let n = ((sweep * radius * self.scale / 2.0).ceil() as usize).clamp(4, 256);
         let (ro, ri) = (radius + width * 0.5, radius - width * 0.5);
         let mut pts = Vec::with_capacity(2 * n + 2);
         for i in 0..=n {
@@ -358,7 +417,8 @@ impl Canvas {
         self.fill_path(&path, c);
     }
 
-    /// Masque d'opacité 8 bits (glyphes), coin haut-gauche en (`x`, `y`).
+    /// Masque d'opacité 8 bits (glyphes), coin haut-gauche en (`x`, `y`), en
+    /// pixels physiques : le masque est déjà rastérisé à la bonne échelle.
     pub fn draw_mask(&mut self, x: i32, y: i32, w: usize, h: usize, mask: &[u8], c: Color) {
         let (cx0, cy0, cx1, cy1) = self.clip;
         for my in 0..h {
@@ -446,5 +506,52 @@ mod tests {
         let mut c = Canvas::new(20, 20);
         c.stroke_polyline(&[(2.0, 10.0), (18.0, 10.0), (2.0, 10.0)], 4.0, Color::hex(0xffffff));
         assert_eq!(c.pixels()[10 * 20 + 10] & 0xff, 0xff);
+    }
+
+    #[test]
+    fn scale_multiplies_covered_area() {
+        let mut c = Canvas::new(80, 80);
+        c.set_scale(2.0);
+        assert_eq!(c.logical_size(), (40.0, 40.0));
+        c.fill_rect(Rect::new(5.25, 5.5, 10.5, 20.0), Color::hex(0xffffff));
+        assert!((coverage_sum(&c) - 210.0 * 4.0).abs() < 2.0, "{}", coverage_sum(&c));
+        c.clear(Color::hex(0));
+        c.stroke_rrect(Rect::new(0.0, 0.0, 40.0, 40.0), 0.0, 1.0, Color::hex(0xffffff));
+        assert!((coverage_sum(&c) - 4.0 * 156.0).abs() < 2.0, "{}", coverage_sum(&c));
+    }
+
+    #[test]
+    fn clip_rect_is_scaled_to_whole_physical_pixels() {
+        let mut c = Canvas::new(100, 60);
+        c.set_scale(1.5);
+        assert_eq!(c.clip_pixels(), (0, 0, 100, 60));
+        let r = Rect::new(1.25, 2.0, 3.0, 4.0);
+        c.set_clip(Some(r));
+        // 1.875 → 1 ; 6.375 → 7 ; 3 → 3 ; 9 → 9.
+        assert_eq!(c.clip_pixels(), (1, 3, 7, 9));
+        assert_eq!(c.clip_rect(), r);
+        // Une découpe imbriquée puis restaurée retrouve exactement les mêmes pixels.
+        let prev = c.push_clip(Rect::new(2.0, 0.0, 50.0, 50.0));
+        assert_eq!(c.clip_pixels(), (3, 3, 7, 9));
+        c.set_clip(Some(prev));
+        assert_eq!(c.clip_pixels(), (1, 3, 7, 9));
+        // Hors du canvas : bornée au tampon physique.
+        c.set_clip(Some(Rect::new(-10.0, -10.0, 1000.0, 1000.0)));
+        assert_eq!(c.clip_pixels(), (0, 0, 100, 60));
+        // Changer d'échelle remet la découpe à tout le canvas, en logique.
+        c.set_scale(2.0);
+        assert_eq!(c.clip_rect(), Rect::new(0.0, 0.0, 50.0, 30.0));
+    }
+
+    #[test]
+    fn scaled_drawing_matches_drawing_at_physical_coordinates() {
+        let white = Color::hex(0xffffff);
+        let (mut a, mut b) = (Canvas::new(64, 64), Canvas::new(64, 64));
+        a.set_scale(2.0);
+        a.fill_rrect(Rect::new(3.0, 4.0, 20.0, 12.0), 4.0, white);
+        a.stroke_polyline(&[(2.0, 28.0), (30.0, 20.0)], 1.5, white);
+        b.fill_rrect(Rect::new(6.0, 8.0, 40.0, 24.0), 8.0, white);
+        b.stroke_polyline(&[(4.0, 56.0), (60.0, 40.0)], 3.0, white);
+        assert_eq!(a.pixels(), b.pixels());
     }
 }

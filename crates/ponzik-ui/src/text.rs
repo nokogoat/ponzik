@@ -81,6 +81,8 @@ impl Fonts {
     }
 
     /// Dessine `text` sur la ligne de base `baseline` ; renvoie la largeur avancée.
+    /// Tout est logique : les glyphes sont rastérisés à la taille physique
+    /// (`size` × l'échelle du canvas), jamais agrandis après coup.
     pub fn draw(
         &mut self,
         canvas: &mut Canvas,
@@ -91,9 +93,12 @@ impl Fonts {
         text: &str,
         color: Color,
     ) -> f32 {
+        let k = canvas.scale();
+        let size = size * k;
         let s = self.scale(f, size);
-        let baseline = baseline.round() as i32;
+        let baseline = (baseline * k).round() as i32;
         let size_key = (size * 4.0).round() as u32;
+        let x = x * k;
         let mut pen = x;
         let mut prev = None;
         for c in text.chars() {
@@ -123,7 +128,7 @@ impl Fonts {
             }
             pen += advance;
         }
-        pen - x
+        (pen - x) / k
     }
 }
 
@@ -150,7 +155,7 @@ fn rasterize(raster: &mut Rasterizer, contours: &[Contour], scale: f32, dx: f32)
         add_contour(&mut path, contour, |x, y| (x * scale + dx - left as f32, -y * scale - top as f32));
     }
     raster.reset(w, h);
-    path.rasterize(raster, 0.0, 0.0);
+    path.rasterize(raster, 1.0, 0.0, 0.0);
     let mut mask = vec![0u8; w * h];
     // Légère correction gamma : le texte clair sur fond sombre garde son corps.
     raster.for_each_coverage(|x, y, c| mask[y * w + x] = (c.powf(0.85) * 255.0).round() as u8);
@@ -208,5 +213,22 @@ mod tests {
         assert!(w > 50.0 && w < 90.0, "{w}");
         let lit = canvas.pixels().iter().filter(|&&p| p != 0).count();
         assert!(lit > 150, "{lit} pixels allumés");
+    }
+
+    #[test]
+    fn scaled_text_is_rasterized_at_physical_size() {
+        let mut fonts = Fonts::new();
+        let sans = fonts.add(embedded::SANS_REGULAR).unwrap();
+        let white = Color::hex(0xffffff);
+        let mut scaled = Canvas::new(400, 80);
+        scaled.set_scale(2.0);
+        let w = fonts.draw(&mut scaled, sans, 10.0, 2.0, 14.0, "Ponzik", white);
+        // La largeur rendue reste logique, comme la mesure.
+        assert!((w - fonts.measure(sans, 10.0, "Ponzik")).abs() < 1e-3, "{w}");
+        // Mêmes pixels qu'un texte deux fois plus grand dessiné à l'échelle 1 :
+        // les glyphes sont rastérisés en physique, pas agrandis.
+        let mut direct = Canvas::new(400, 80);
+        fonts.draw(&mut direct, sans, 20.0, 4.0, 28.0, "Ponzik", white);
+        assert_eq!(scaled.pixels(), direct.pixels());
     }
 }
