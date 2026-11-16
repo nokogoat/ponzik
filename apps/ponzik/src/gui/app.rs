@@ -485,6 +485,9 @@ pub struct App {
     scale_anchor: Rect,
     /// Tailles des zones et fenêtres d'appareil flottantes (non enregistrées).
     pub layout: super::float::Layout,
+    /// Forme du curseur voulue par l'image en cours (flèche par défaut) ;
+    /// la boucle principale l'applique à la fenêtre.
+    pub cursor: ponzik_window::Cursor,
 }
 
 impl App {
@@ -589,6 +592,7 @@ impl App {
             recovery: None,
             scale_anchor: Rect::new(0.0, 0.0, 0.0, 0.0),
             layout: Default::default(),
+            cursor: Default::default(),
         }
     }
 
@@ -1558,6 +1562,7 @@ impl App {
     pub fn frame(&mut self, c: &mut Canvas, input: &Input, dt: f32) {
         self.anim.begin_frame(dt);
         self.time += dt;
+        self.cursor = ponzik_window::Cursor::Arrow;
         self.poll_engine(dt);
         if self.popup.is_none() && !self.sidebar_focus {
             self.shortcuts(input);
@@ -2152,6 +2157,9 @@ impl App {
         let field = Rect::new(inner_x, r.y + 12.0, w, 36.0);
         let fid = wid("sb-search", 0, 0);
         let fhov = self.hovered(input, fid, field);
+        if fhov {
+            self.set_cursor(ponzik_window::Cursor::Text);
+        }
         if fhov && input.pressed {
             self.sidebar_focus = true;
         } else if input.pressed && !field.contains(input.x, input.y) {
@@ -2951,6 +2959,9 @@ impl App {
             }
             // Tient l'animation éveillée pour faire clignoter le curseur.
             self.anim.set(wid("caret", 0, 0), self.time);
+            if input.inside && field.contains(input.x, input.y) {
+                self.set_cursor(ponzik_window::Cursor::Text);
+            }
             if input.pressed && !field.inset(-16.0).contains(input.x, input.y) {
                 // Un clic ailleurs valide, comme dans un champ en place.
                 done = Some(inline);
@@ -3046,6 +3057,9 @@ impl App {
             self.text_fit(c, self.f.sans_med, 13.0, tx, cy, &it.name, right - tx, ink);
             if hov && !it.tip.is_empty() {
                 hover_tip = Some(it.tip.clone());
+            }
+            if hov {
+                self.set_cursor(ponzik_window::Cursor::Hand);
             }
             if hov && input.pressed {
                 chosen = Some((i, row));

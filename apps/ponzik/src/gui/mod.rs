@@ -243,6 +243,7 @@ fn event_loop(window: &mut Window, app: &mut App, stream: &ponzik_audio::OutputS
             let dt = now.duration_since(last_frame).as_secs_f32();
             last_frame = now;
             app.frame(&mut canvas, &input, dt);
+            window.set_cursor(app.cursor);
             window.present(canvas.pixels(), w, h).map_err(|e| e.to_string())?;
             dirty = false;
         }

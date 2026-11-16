@@ -4,6 +4,7 @@ use std::f32::consts::PI;
 
 use ponzik_engine::{ParamInfo, Unit};
 use ponzik_ui::{Canvas, Color, FontId, Path, Rect};
+use ponzik_window::Cursor;
 
 use super::Input;
 use super::app::{App, Drag};
@@ -463,6 +464,11 @@ impl App {
         self.drag = Some(Drag { id, y0: input.y, v0, fine: input.mods.shift });
     }
 
+    /// Forme du curseur pour cette image (le dernier qui la demande gagne).
+    pub(super) fn set_cursor(&mut self, cursor: Cursor) {
+        self.cursor = cursor;
+    }
+
     /// Valeur 0..1 animée de survol pour `id`.
     pub(super) fn hover_anim(&mut self, id: u64, on: bool) -> f32 {
         self.anim.to(id ^ 0x5157_4552, on as u8 as f32, T_HOVER)
@@ -484,6 +490,7 @@ impl App {
         draw_icon(c, icon, cx, cy, size * press, col);
         if hov {
             self.set_tip(tip.0, tip.1);
+            self.set_cursor(Cursor::Hand);
         }
         hov && input.pressed
     }
@@ -516,6 +523,9 @@ impl App {
             let hov = self.hovered(input, id ^ (i as u64 + 1), seg);
             if hov && input.pressed && i != sel {
                 picked = Some(i);
+            }
+            if hov && i != sel {
+                self.set_cursor(Cursor::Hand);
             }
             if hov && let Some(tip) = tips.get(i) {
                 self.set_tip(tip.0, tip.1);
@@ -688,6 +698,9 @@ impl App {
             changed = Some(info.from_norm(norm + input.wheel * step));
         }
         let active = hov || self.is_dragging(id);
+        if active {
+            self.set_cursor(Cursor::ResizeV);
+        }
         let hv = self.hover_anim(id, active);
 
         let name = self.short_label(self.f.sans, 12.0, info.name, cell.w - 4.0);
@@ -732,6 +745,9 @@ impl App {
         if hov && name != info.name {
             self.set_tip(info.name, "");
         }
+        if hov {
+            self.set_cursor(Cursor::Hand);
+        }
         if hov && input.pressed {
             let dir = if input.x < field.x + field.w * 0.3 { -1 } else { 1 };
             changed = Some(((cur + dir).rem_euclid(count.max(1))) as f32);
@@ -774,6 +790,9 @@ impl App {
         }
         if hov && input.wheel != 0.0 {
             changed = Some(value + input.wheel * wheel_step * if input.mods.shift { 0.1 } else { 1.0 });
+        }
+        if hov || self.is_dragging(id) {
+            self.set_cursor(Cursor::ResizeV);
         }
         let hv = self.hover_anim(id, hov || self.is_dragging(id));
         c.fill_rrect(r, 10.0, t.raised.mix(t.raised_hi, hv));
