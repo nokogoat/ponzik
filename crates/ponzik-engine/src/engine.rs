@@ -12,6 +12,7 @@ use crate::meter::{PeakMeter, peak};
 use crate::midi_out::{MidiClock, MidiLink, MidiOut};
 use crate::mixer::{INSERT_SLOTS, MASTER, Mixer, SEND_SLOTS, TRACKS};
 use crate::note_fx::NoteFx;
+use crate::pool::WorkerPool;
 use crate::rack::{Channel, NOTE_FX_SLOTS};
 use crate::ring::{self, Consumer, Producer};
 use crate::sequence::{AutoTarget, PPQ, PlayMode, SeqEvent, Sequence};
@@ -34,6 +35,10 @@ const SCOPE_QUEUE: usize = 16_384;
 const SCOPE_DECIMATION: u32 = 2;
 /// Plus grande latence compensée par le mixer, en secondes.
 const MAX_LATENCY_SECONDS: f32 = 1.0;
+/// Constante de temps du lissage des mesures de charge par piste et par appareil.
+const CPU_SMOOTHING_SECONDS: f32 = 0.3;
+/// Sous-bloc le plus court dont les canaux sont répartis entre les threads.
+const MIN_PARALLEL_FRAMES: usize = 32;
 
 /// Ordres de l'interface au moteur. Les objets lourds (instruments, effets,
 /// séquences) sont préparés par l'interface ; ceux qu'ils remplacent repartent
@@ -198,6 +203,41 @@ struct SharedState {
     latency: AtomicU32,
     /// Position de la pré-écoute en images de l'échantillon (bits d'un `f64`, −1 : rien).
     audition: AtomicU64,
+    /// Charge lissée (bits d'un `f32`, part du temps réel) de chaque piste,
+    /// de chaque insert (`piste × INSERT_SLOTS + emplacement`) et de chaque canal.
+    track_cpu: Vec<AtomicU32>,
+    insert_cpu: Vec<AtomicU32>,
+    channel_cpu: Vec<AtomicU32>,
+    /// Threads de calcul en plus du thread audio.
+    workers: AtomicU32,
+}
+
+/// Lit une charge publiée (bits d'un `f32`).
+fn load_of(cell: Option<&AtomicU32>) -> f32 {
+    cell.map_or(0.0, |c| f32::from_bits(c.load(Ordering::Relaxed)))
+}
+
+/// Pointeur partagé avec les threads de calcul ; chaque tâche n'en touche
+/// qu'une partie distincte.
+struct SyncPtr<T>(*mut T);
+
+impl<T> Clone for SyncPtr<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for SyncPtr<T> {}
+
+// SAFETY: les tâches d'un même travail accèdent à des éléments distincts.
+unsafe impl<T> Send for SyncPtr<T> {}
+unsafe impl<T> Sync for SyncPtr<T> {}
+
+impl<T> SyncPtr<T> {
+    /// Élément `i` (méthode : la fermeture capture le pointeur entier, partageable).
+    fn at(self, i: usize) -> *mut T {
+        self.0.wrapping_add(i)
+    }
 }
 
 /// Côté interface : envoie des commandes, lit l'état publié.
@@ -282,6 +322,30 @@ impl EngineHandle {
     /// Position de la pré-écoute en images de l'échantillon, si elle joue.
     pub fn audition_position(&self) -> Option<f64> {
         Some(f64::from_bits(self.state.audition.load(Ordering::Relaxed))).filter(|p| *p >= 0.0)
+    }
+
+    /// Charge de calcul d'une piste de mixer (inserts et fader), en part du
+    /// temps réel (1.0 : un cœur entier), lissée sur ≈ 0,3 s.
+    pub fn track_cpu(&self, track: usize) -> f32 {
+        load_of(self.state.track_cpu.get(track))
+    }
+
+    /// Charge de calcul d'un insert, en part du temps réel, lissée.
+    pub fn insert_cpu(&self, track: usize, slot: usize) -> f32 {
+        if slot >= INSERT_SLOTS {
+            return 0.0;
+        }
+        load_of(self.state.insert_cpu.get(track * INSERT_SLOTS + slot))
+    }
+
+    /// Charge de calcul de l'instrument d'un canal, en part du temps réel, lissée.
+    pub fn channel_cpu(&self, channel: usize) -> f32 {
+        load_of(self.state.channel_cpu.get(channel))
+    }
+
+    /// Threads de calcul du moteur en plus du thread audio (0 : un seul cœur).
+    pub fn worker_threads(&self) -> usize {
+        self.state.workers.load(Ordering::Relaxed) as usize
     }
 
     /// Latence totale au master, en secondes.
@@ -378,6 +442,12 @@ pub struct Engine {
     /// Sortie MIDI (instruments externes) et horloge MIDI.
     midi: MidiLink,
     midi_clock: MidiClock,
+    /// Threads de calcul (aucun : tout sur le thread audio, chemin de référence).
+    pool: Option<WorkerPool>,
+    /// Rendu de chaque canal sur le bloc, `MAX_BLOCK` images par canal, quand
+    /// les canaux sont rendus en parallèle ; additionné ensuite dans l'ordre.
+    lanes_l: Vec<f32>,
+    lanes_r: Vec<f32>,
 }
 
 /// État de lecture d'un clip audio entre deux blocs.
@@ -415,6 +485,10 @@ impl Engine {
             load: AtomicU32::new(0),
             latency: AtomicU32::new(0),
             audition: AtomicU64::new((-1f64).to_bits()),
+            track_cpu: (0..TRACKS).map(|_| AtomicU32::new(0)).collect(),
+            insert_cpu: (0..TRACKS * INSERT_SLOTS).map(|_| AtomicU32::new(0)).collect(),
+            channel_cpu: (0..MAX_CHANNELS).map(|_| AtomicU32::new(0)).collect(),
+            workers: AtomicU32::new(0),
         });
         let mut voices = Vec::with_capacity(MAX_AUDIO_VOICES);
         voices.resize(sequence.audio_clips.len().min(MAX_AUDIO_VOICES), AudioVoice::default());
@@ -458,6 +532,9 @@ impl Engine {
             audition: None,
             midi: MidiLink::new(sample_rate),
             midi_clock: MidiClock::default(),
+            pool: None,
+            lanes_l: Vec::new(),
+            lanes_r: Vec::new(),
         };
         let handle = EngineHandle {
             commands: tx,
@@ -473,6 +550,25 @@ impl Engine {
 
     pub fn sample_rate(&self) -> f32 {
         self.sample_rate
+    }
+
+    /// Répartit le calcul sur `workers` threads en plus du thread audio (0 :
+    /// tout sur le thread audio). Crée ou arrête des threads : à appeler avant
+    /// de confier le moteur au thread audio, jamais depuis celui-ci. Le rendu
+    /// est identique au bit près quel que soit le nombre de threads.
+    pub fn set_worker_threads(&mut self, workers: usize) {
+        self.pool = None;
+        let pool = (workers > 0).then(|| WorkerPool::new(workers)).filter(|p| p.workers() > 0);
+        let lanes = if pool.is_some() { MAX_CHANNELS * MAX_BLOCK } else { 0 };
+        self.lanes_l = vec![0.0; lanes];
+        self.lanes_r = vec![0.0; lanes];
+        self.state.workers.store(pool.as_ref().map_or(0, |p| p.workers() as u32), Ordering::Relaxed);
+        self.pool = pool;
+    }
+
+    /// Threads de calcul en plus du thread audio.
+    pub fn worker_threads(&self) -> usize {
+        self.pool.as_ref().map_or(0, WorkerPool::workers)
     }
 
     /// Accès direct au mixer, pour préparer l'état avant le premier bloc.
@@ -609,7 +705,35 @@ impl Engine {
             let load = started.elapsed().as_secs_f32() / budget;
             self.state.load.fetch_max(load.to_bits(), Ordering::Relaxed);
         }
+        self.publish_cpu(done);
         done
+    }
+
+    /// Charge lissée de chaque piste, insert et canal sur les `frames` images
+    /// rendues : temps mesuré / durée réelle de ces images.
+    fn publish_cpu(&mut self, frames: usize) {
+        if frames == 0 {
+            return;
+        }
+        let secs = frames as f32 / self.sample_rate.max(1.0);
+        let alpha = (secs / CPU_SMOOTHING_SECONDS).min(1.0);
+        let per_ns = 1e-9 / secs;
+        let smooth = |cell: &AtomicU32, ns: u64| {
+            let old = f32::from_bits(cell.load(Ordering::Relaxed));
+            let new = old + (ns as f32 * per_ns - old) * alpha;
+            cell.store(new.to_bits(), Ordering::Relaxed);
+        };
+        let state = &*self.state;
+        self.mixer.take_cpu(|idx, track, inserts| {
+            smooth(&state.track_cpu[idx], track);
+            for (slot, &ns) in inserts.iter().enumerate() {
+                smooth(&state.insert_cpu[idx * INSERT_SLOTS + slot], ns);
+            }
+        });
+        for (idx, cell) in state.channel_cpu.iter().enumerate() {
+            let ns = self.channels.get_mut(idx).map_or(0, |ch| std::mem::take(&mut ch.cpu_ns));
+            smooth(cell, ns);
+        }
     }
 
     /// Applique les courbes actives à la position courante (début de bloc).
@@ -695,6 +819,9 @@ impl Engine {
         self.midi_clock.process(&mut self.midi, self.playing, pos_start, contiguous, n, spt, self.clock);
 
         self.mixer.clear(n);
+        // Threads de calcul : rendus à la fin du bloc (déplacer le pool n'alloue rien).
+        let pool = self.pool.take();
+        let parallel = pool.as_ref().filter(|_| self.channels.len() >= 2);
         let mut i = 0;
         let mut next_event = 0;
         while i < n {
@@ -728,17 +855,27 @@ impl Engine {
             if let Some(at) = next_off.into_iter().chain(next_fx).min() {
                 end = end.min((at.saturating_sub(self.clock) as usize).clamp(i + 1, n));
             }
-            self.render_channels(i, end - i);
+            match parallel {
+                Some(pool) => self.render_channels_parallel(pool, i, end - i),
+                None => self.render_channels(i, end - i),
+            }
             for ch in &mut self.channels {
                 drain_midi(&mut self.midi, &mut *ch.instrument, now);
             }
             i = end;
         }
+        if parallel.is_some() {
+            self.sum_lanes(n);
+        }
 
         self.render_audio_clips(pos_start, n, spt);
         self.capture_input(input, in_channels, pos_start, n, spt);
         self.metronome_click(pos_start, n, spt);
-        self.mixer.process(n, &self.state.track_peaks);
+        match pool.as_ref() {
+            Some(pool) => self.mixer.process_parallel(n, &self.state.track_peaks, pool),
+            None => self.mixer.process(n, &self.state.track_peaks),
+        }
+        self.pool = pool;
         self.calibration_clicks(n);
         self.feed_scope(n);
         self.clock += n as u64;
@@ -903,15 +1040,14 @@ impl Engine {
         self.cal_clock += n;
     }
 
-    fn render_channels(&mut self, offset: usize, len: usize) {
-        for (idx, ch) in self.channels.iter_mut().enumerate() {
-            let (l, r) = (&mut self.scratch_l[..len], &mut self.scratch_r[..len]);
-            l.fill(0.0);
-            r.fill(0.0);
-            ch.instrument.render(l, r);
-            if ch.muted {
-                continue;
-            }
+    /// Rend le canal sur `l` et `r` (remis à zéro), gain, pan et crête compris
+    /// (rien de plus qu'avancer l'instrument s'il est coupé).
+    fn render_channel(ch: &mut Channel, l: &mut [f32], r: &mut [f32], meter: Option<&PeakMeter>) {
+        let started = Instant::now();
+        l.fill(0.0);
+        r.fill(0.0);
+        ch.instrument.render(l, r);
+        if !ch.muted {
             let (gl, gr) = balance_gains(ch.pan);
             let (gl, gr) = (gl * ch.gain, gr * ch.gain);
             for s in l.iter_mut() {
@@ -920,8 +1056,64 @@ impl Engine {
             for s in r.iter_mut() {
                 *s *= gr;
             }
-            if let Some(m) = self.state.channel_peaks.get(idx) {
+            if let Some(m) = meter {
                 m.record(peak(l), peak(r));
+            }
+        }
+        ch.cpu_ns += started.elapsed().as_nanos() as u64;
+    }
+
+    /// Chaque canal rendu dans sa voie, sur les threads de calcul.
+    fn render_channels_parallel(&mut self, pool: &WorkerPool, offset: usize, len: usize) {
+        let channels = SyncPtr(self.channels.as_mut_ptr());
+        let (lanes_l, lanes_r) = (SyncPtr(self.lanes_l.as_mut_ptr()), SyncPtr(self.lanes_r.as_mut_ptr()));
+        let meters = &self.state.channel_peaks;
+        debug_assert!(self.channels.len() * MAX_BLOCK <= self.lanes_l.len() && offset + len <= MAX_BLOCK);
+        let task = |idx: usize| {
+            let at = idx * MAX_BLOCK + offset;
+            // SAFETY: la tâche `idx` est seule à toucher le canal `idx` et sa
+            // voie, qui tient dans les tampons (capacité de MAX_CHANNELS canaux).
+            let (ch, l, r) = unsafe {
+                (
+                    &mut *channels.at(idx),
+                    std::slice::from_raw_parts_mut(lanes_l.at(at), len),
+                    std::slice::from_raw_parts_mut(lanes_r.at(at), len),
+                )
+            };
+            Self::render_channel(ch, l, r, meters.get(idx));
+        };
+        // Sous-bloc trop court pour amortir la répartition : rendu ici, dans
+        // les mêmes voies (le résultat ne dépend pas de ce choix).
+        if len < MIN_PARALLEL_FRAMES {
+            (0..self.channels.len()).for_each(task);
+        } else {
+            pool.run(self.channels.len(), &task);
+        }
+    }
+
+    /// Additionne les voies des canaux dans leurs pistes, dans l'ordre des
+    /// canaux : les mêmes additions, dans le même ordre, que [`Engine::render_channels`].
+    fn sum_lanes(&mut self, n: usize) {
+        for (idx, ch) in self.channels.iter().enumerate() {
+            if ch.muted {
+                continue;
+            }
+            let at = idx * MAX_BLOCK;
+            let (l, r) = (&self.lanes_l[at..at + n], &self.lanes_r[at..at + n]);
+            let (tl, tr) = self.mixer.input(ch.track, n);
+            for k in 0..n {
+                tl[k] += l[k];
+                tr[k] += r[k];
+            }
+        }
+    }
+
+    fn render_channels(&mut self, offset: usize, len: usize) {
+        for (idx, ch) in self.channels.iter_mut().enumerate() {
+            let (l, r) = (&mut self.scratch_l[..len], &mut self.scratch_r[..len]);
+            Self::render_channel(ch, l, r, self.state.channel_peaks.get(idx));
+            if ch.muted {
+                continue;
             }
             let (tl, tr) = self.mixer.input(ch.track, offset + len);
             for k in 0..len {
@@ -2198,5 +2390,51 @@ mod tests {
         engine.process(&mut [], 2);
         let recs = handle.take_recordings();
         assert_eq!(recs.iter().map(|r| (r.track, r.len)).collect::<Vec<_>>(), [(2, 512)]);
+    }
+
+    #[test]
+    fn cpu_meters_follow_tracks_inserts_and_channels() {
+        for workers in [0, 2] {
+            let (mut engine, mut handle, _) = setup(&[0, 1, 2, 3]);
+            handle.send(Command::AddChannel(Box::new(Channel::new("p2", Box::new(Probe::default())).with_track(2)))).unwrap();
+            engine.set_worker_threads(workers);
+            assert_eq!(handle.worker_threads(), workers);
+            let mut reverb = crate::registry::create_effect("reverb").unwrap();
+            reverb.set_sample_rate(SR);
+            handle.send(Command::SetInsert { track: 1, slot: 0, effect: Some(reverb) }).unwrap();
+            handle.send(Command::Play).unwrap();
+            run(&mut engine, 48_000, 256);
+            assert!(handle.track_cpu(1) > 0.0 && handle.insert_cpu(1, 0) > 0.0, "{workers} threads");
+            assert!(handle.insert_cpu(1, 0) <= handle.track_cpu(1));
+            assert_eq!(handle.insert_cpu(1, 1), 0.0, "emplacement vide");
+            assert_eq!(handle.insert_cpu(2, 0), 0.0);
+            assert!(handle.channel_cpu(0) > 0.0 && handle.channel_cpu(1) > 0.0);
+            assert_eq!(handle.channel_cpu(2), 0.0, "pas de canal");
+            assert_eq!(handle.insert_cpu(1, INSERT_SLOTS), 0.0);
+        }
+    }
+
+    #[test]
+    fn rapid_routing_changes_while_running_never_block() {
+        // Ordres de routage et sorties qui changent à chaque bloc, sur plusieurs threads.
+        let (mut engine, mut handle, _) = setup(&[0, 2, 4, 6, 8, 10, 12, 14]);
+        handle.send(Command::AddChannel(Box::new(Channel::new("p2", Box::new(Probe::default())).with_track(2)))).unwrap();
+        engine.set_worker_threads(3);
+        handle.send(Command::Play).unwrap();
+        for block in 0..2_000usize {
+            let order: Box<[usize]> = match block % 4 {
+                0 => crate::mixer::default_order(),
+                1 => (1..TRACKS).collect(),
+                2 => [3, 1, 2, 1, 40].into(),
+                _ => Box::new([]),
+            };
+            handle.send(Command::SetRoutingOrder(order)).unwrap();
+            let track = 1 + block % 5;
+            handle.send(Command::SetTrackOutput { track, output: (block * 7) % TRACKS }).unwrap();
+            handle.send(Command::SetTrackSend { track, slot: 0, target: (block * 3) % TRACKS, amount: 0.5 }).unwrap();
+            handle.send(Command::SetInsertSidechain { track: 2, slot: 0, key: Some(1 + block % 4) }).unwrap();
+            run(&mut engine, 1 + block % 300, 256);
+            handle.collect_garbage();
+        }
     }
 }

@@ -30,6 +30,8 @@ pub struct Channel {
     inputs: NoteBuffer,
     /// Tampons de travail entre deux maillons.
     stages: [NoteBuffer; 2],
+    /// Temps de rendu de l'instrument accumulé (ns), relevé par le moteur.
+    pub(crate) cpu_ns: u64,
 }
 
 impl Channel {
@@ -46,6 +48,7 @@ impl Channel {
             fx_clock: 0,
             inputs: NoteBuffer::default(),
             stages: Default::default(),
+            cpu_ns: 0,
         }
     }
 
