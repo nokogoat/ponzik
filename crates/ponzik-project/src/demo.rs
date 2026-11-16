@@ -42,6 +42,8 @@ pub fn demo_project() -> Project {
     p.tracks[bass_track].inserts[0] = fx("saturator", &[(0, 2.0), (1, 9.0), (4, 0.7)]);
     let reverb_bus = 10;
     p.tracks[reverb_bus].name = "Réverbe".into();
+    p.tracks[reverb_bus].kind = crate::TrackKind::Bus;
+    p.tracks[reverb_bus].color = crate::BUS_COLORS[1];
     p.tracks[reverb_bus].inserts[0] = fx("reverb", &[(2, 2.4), (5, 1.0)]);
     p.tracks[reverb_bus].gain = 0.7;
     for ch in [clap, hat, open] {

@@ -231,8 +231,11 @@ impl TrackKind {
 /// Couleurs données tour à tour aux nouveaux bus et VCA.
 pub const BUS_COLORS: [u32; 6] = [0xf0b44a, 0xa98cf0, 0x2fb6e0, 0xe878b4, 0x3ccfc4, 0xf08a5d];
 
-/// Effets proposés pour un bus de retour : type, nom du bus, réglages (100 % mouillé).
-pub const RETURN_EFFECTS: [(&str, &str, &[(u32, f32)]); 2] = [
+/// Effet d'un bus de retour : type, nom du bus, réglages (100 % mouillé).
+pub type ReturnEffect = (&'static str, &'static str, &'static [(u32, f32)]);
+
+/// Effets proposés pour un bus de retour.
+pub const RETURN_EFFECTS: [ReturnEffect; 2] = [
     // Réverbe : salle moyenne, pré-délai qui détache la voix, aigus adoucis.
     ("reverb", "Réverbe", &[(0, 0.03), (1, 0.7), (2, 2.2), (3, 0.55), (5, 1.0)]),
     // Délai : croche pointée en ping-pong, répétitions filtrées.
@@ -845,11 +848,17 @@ impl Project {
 
     fn claim_track(&mut self, kind: TrackKind, name: String) -> Option<usize> {
         let t = self.free_track()?;
+        // Première couleur pas encore prise, sinon chacune à son tour.
         let others = self.tracks.iter().filter(|t| t.kind != TrackKind::Normal).count();
+        let color = BUS_COLORS
+            .iter()
+            .copied()
+            .find(|&c| self.tracks.iter().all(|t| t.color != c))
+            .unwrap_or(BUS_COLORS[others % BUS_COLORS.len()]);
         let tr = &mut self.tracks[t];
         *tr = TrackDef::new(name);
         tr.kind = kind;
-        tr.color = BUS_COLORS[others % BUS_COLORS.len()];
+        tr.color = color;
         Some(t)
     }
 
