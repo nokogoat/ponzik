@@ -225,7 +225,7 @@ impl SpectrumAnalyzer {
     }
 
     fn bands(&self, src: &[f32], n_bins: usize, f_min: f32, f_max: f32, out: &mut [f32]) {
-        assert!(out.len() >= n_bins, "tampon de sortie trop court");
+        assert!(out.len() >= n_bins, "output buffer too short");
         let f_min = f_min.max(1e-3);
         let f_max = f_max.max(f_min * 1.0001);
         let ratio = (f_max / f_min).powf(1.0 / n_bins.max(1) as f32);

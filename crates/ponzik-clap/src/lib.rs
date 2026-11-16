@@ -115,7 +115,7 @@ fn collect(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
 /// Descripteurs de tous les plugins d'un fichier `.clap`.
 pub fn scan_file(path: &Path) -> Result<Vec<PluginInfo>, String> {
     let lib = Library::load(path)?;
-    let factory = lib.factory().ok_or_else(|| format!("{} : pas de fabrique de plugins", path.display()))?;
+    let factory = lib.factory().ok_or_else(|| format!("{}: no plugin factory", path.display()))?;
     let mut out = Vec::new();
     // SAFETY : fabrique valide tant que `lib` est chargée ; descripteurs vérifiés.
     for i in 0..unsafe { (factory.get_plugin_count)(factory) } {

@@ -454,7 +454,7 @@ impl Window {
                 null_mut(),
             );
             if hwnd.is_null() {
-                return Err(WindowError::System("CreateWindowExW a échoué".into()));
+                return Err(WindowError::System("CreateWindowExW failed".into()));
             }
             let dark: i32 = 1;
             DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, (&dark as *const i32).cast(), 4);

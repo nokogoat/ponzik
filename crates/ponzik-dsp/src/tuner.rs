@@ -60,7 +60,7 @@ impl Tuner {
     /// `window` : taille d'analyse (au moins 64) ; la plus basse fréquence détectable vaut
     /// `sample_rate / (window / 2)` (2048 à 48 kHz : environ 47 Hz).
     pub fn new(sample_rate: f32, window: usize) -> Self {
-        assert!(window >= 64, "fenêtre d'accordeur trop courte : {window}");
+        assert!(window >= 64, "tuner window too short: {window}");
         let half = window / 2;
         Self {
             sample_rate,

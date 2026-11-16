@@ -34,7 +34,7 @@ pub(crate) fn binary_path(bundle: &Path) -> Result<PathBuf, String> {
         return Ok(bundle.to_path_buf());
     }
     if !bundle.is_dir() {
-        return Err(format!("{} : paquet VST 3 introuvable", bundle.display()));
+        return Err(format!("{}: VST 3 bundle not found", bundle.display()));
     }
     let contents = bundle.join("Contents");
     let candidates: Vec<PathBuf> = if cfg!(windows) {
@@ -59,7 +59,7 @@ pub(crate) fn binary_path(bundle: &Path) -> Result<PathBuf, String> {
         .iter()
         .find(|c| c.is_file())
         .cloned()
-        .ok_or_else(|| format!("{} : aucun binaire pour cette plateforme dans le paquet", bundle.display()))
+        .ok_or_else(|| format!("{}: no binary for this platform in the bundle", bundle.display()))
 }
 
 impl Module {
@@ -84,10 +84,10 @@ impl Module {
         };
         let get_factory = os::symbol(handle, c"GetPluginFactory");
         if get_factory.is_null() {
-            return fail("symbole GetPluginFactory introuvable");
+            return fail("GetPluginFactory symbol not found");
         }
         if !os::enter(handle) {
-            return fail("échec de l'initialisation du module");
+            return fail("module initialization failed");
         }
         // SAFETY : signature documentée de `GetPluginFactory` ; la référence renvoyée nous revient.
         let factory = unsafe {
@@ -96,7 +96,7 @@ impl Module {
         };
         let Some(factory) = factory else {
             os::exit(handle);
-            return fail("GetPluginFactory a renvoyé un pointeur nul");
+            return fail("GetPluginFactory returned a null pointer");
         };
         let factory2 = factory.query::<IPluginFactory2>();
         let factory3 = factory.query::<IPluginFactory3>();
@@ -165,7 +165,7 @@ mod os {
             let msg = unsafe { dlerror() };
             let msg =
                 if msg.is_null() { String::new() } else { unsafe { CStr::from_ptr(msg) }.to_string_lossy().into() };
-            return Err(format!("{} : chargement impossible ({msg})", path.display()));
+            return Err(format!("{}: can't load ({msg})", path.display()));
         }
         Ok(h)
     }
@@ -227,7 +227,7 @@ mod os {
         if h.is_null() {
             // SAFETY : aucun prérequis.
             let code = unsafe { GetLastError() };
-            return Err(format!("{} : chargement impossible (erreur {code})", path.display()));
+            return Err(format!("{}: can't load (error {code})", path.display()));
         }
         Ok(h)
     }

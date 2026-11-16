@@ -223,18 +223,18 @@ impl Core {
         let module = Module::load(bundle)?;
         let host = Owned::new(HostApplication);
         let component = create::<IComponent>(&module, &cid)
-            .ok_or_else(|| format!("classe « {class_id} » introuvable dans {}", bundle.display()))?;
+            .ok_or_else(|| format!("class \"{class_id}\" not found in {}", bundle.display()))?;
         if !initialize(&component, &host) {
-            return Err(format!("échec de l'initialisation de « {class_id} »"));
+            return Err(format!("initialization of \"{class_id}\" failed"));
         }
         let Some(processor) = component.query::<IAudioProcessor>() else {
             terminate(&component);
-            return Err(format!("« {class_id} » n'est pas un processeur audio"));
+            return Err(format!("\"{class_id}\" is not an audio processor"));
         };
         if call!(processor, IAudioProcessorVtbl, can_process_sample_size, K_SAMPLE32) != K_RESULT_OK {
             drop(processor);
             terminate(&component);
-            return Err(format!("« {class_id} » ne traite pas l'audio 32 bits"));
+            return Err(format!("\"{class_id}\" does not process 32-bit audio"));
         }
 
         // Contrôleur : intégré au composant, ou classe séparée à connecter.
@@ -280,7 +280,7 @@ impl Core {
         }
         if effect && ins.is_empty() {
             // Un effet sans entrée ne peut rien traiter : on le signale tôt.
-            eprintln!("VST 3 : « {class_id} » n'a pas d'entrée audio");
+            eprintln!("VST 3: \"{class_id}\" has no audio input");
         }
 
         let kind = crate::kind_for(bundle, class_id);

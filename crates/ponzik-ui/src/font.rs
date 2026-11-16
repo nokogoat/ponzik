@@ -69,7 +69,7 @@ impl Font {
         f.num_hmetrics = f.u16(hhea + 34);
         f.num_glyphs = f.u16(maxp + 4);
         if f.units_per_em <= 0.0 || f.num_hmetrics == 0 {
-            return Err("en-têtes de police invalides".into());
+            return Err("invalid font headers".into());
         }
 
         // Sous-table cmap : Unicode complet (format 12) de préférence, sinon BMP (format 4).
@@ -84,7 +84,7 @@ impl Font {
                 best = Some((format, sub));
             }
         }
-        let (format, sub) = best.ok_or("aucune table cmap Unicode")?;
+        let (format, sub) = best.ok_or("no Unicode cmap table")?;
         f.cmap_format = format;
         f.cmap = sub;
 

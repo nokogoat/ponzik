@@ -49,7 +49,7 @@ impl Fft {
 
     /// Transformée directe non normalisée : `X[k] = Σ x[j] e^(-2iπ jk / n)`.
     pub fn forward(&self, re: &mut [f32], im: &mut [f32]) {
-        assert!(re.len() == self.n && im.len() == self.n, "tampons de taille différente de la FFT");
+        assert!(re.len() == self.n && im.len() == self.n, "buffer sizes differ from the FFT size");
         for &(i, j) in &self.swaps {
             re.swap(i as usize, j as usize);
             im.swap(i as usize, j as usize);
@@ -100,7 +100,7 @@ pub struct RealFft {
 impl RealFft {
     /// `n` doit être une puissance de deux entre 2 et [`MAX_SIZE`].
     pub fn new(n: usize) -> Self {
-        assert!(n >= 2 && n.is_power_of_two() && n <= MAX_SIZE, "taille de FFT réelle invalide : {n}");
+        assert!(n >= 2 && n.is_power_of_two() && n <= MAX_SIZE, "invalid real FFT size: {n}");
         let (cos, sin) = (0..=n / 2)
             .map(|k| {
                 let (s, c) = (-TAU * k as f64 / n as f64).sin_cos();
@@ -126,8 +126,8 @@ impl RealFft {
     /// `input` : `n` échantillons ; `out_re`, `out_im` : `n / 2 + 1` coefficients non normalisés.
     pub fn forward(&mut self, input: &[f32], out_re: &mut [f32], out_im: &mut [f32]) {
         let h = self.n / 2;
-        assert!(input.len() == self.n, "entrée de taille différente de la FFT");
-        assert!(out_re.len() == h + 1 && out_im.len() == h + 1, "sortie de taille différente de n / 2 + 1");
+        assert!(input.len() == self.n, "input size differs from the FFT size");
+        assert!(out_re.len() == h + 1 && out_im.len() == h + 1, "output size differs from n / 2 + 1");
         // Échantillons pairs en partie réelle, impairs en partie imaginaire.
         for (k, pair) in input.chunks_exact(2).enumerate() {
             self.re[k] = pair[0];

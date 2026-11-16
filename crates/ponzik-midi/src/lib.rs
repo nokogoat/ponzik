@@ -70,9 +70,9 @@ pub enum MidiError {
 impl fmt::Display for MidiError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MidiError::PortNotFound(id) => write!(f, "port MIDI introuvable : {id}"),
-            MidiError::UnsupportedPlatform => write!(f, "MIDI non supporté sur cette plateforme (Linux, Windows et macOS uniquement)"),
-            MidiError::System(msg) => write!(f, "erreur MIDI système : {msg}"),
+            MidiError::PortNotFound(id) => write!(f, "MIDI port not found: {id}"),
+            MidiError::UnsupportedPlatform => write!(f, "MIDI not supported on this platform (Linux, Windows and macOS only)"),
+            MidiError::System(msg) => write!(f, "system MIDI error: {msg}"),
         }
     }
 }

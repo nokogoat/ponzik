@@ -21,6 +21,6 @@ impl Window {
     }
     pub(crate) fn set_cursor(&mut self, _: Cursor) {}
     pub(crate) fn backend_name(&self) -> &'static str {
-        "aucun"
+        "none"
     }
 }

@@ -131,10 +131,10 @@ pub enum WindowError {
 impl fmt::Display for WindowError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            WindowError::NoDisplay(msg) => write!(f, "aucun affichage disponible : {msg}"),
-            WindowError::Protocol(msg) => write!(f, "erreur du serveur graphique : {msg}"),
-            WindowError::UnsupportedPlatform => write!(f, "plateforme non supportée (Linux, Windows et macOS uniquement)"),
-            WindowError::System(msg) => write!(f, "erreur système : {msg}"),
+            WindowError::NoDisplay(msg) => write!(f, "no display available: {msg}"),
+            WindowError::Protocol(msg) => write!(f, "display server error: {msg}"),
+            WindowError::UnsupportedPlatform => write!(f, "unsupported platform (Linux, Windows and macOS only)"),
+            WindowError::System(msg) => write!(f, "system error: {msg}"),
         }
     }
 }
@@ -174,7 +174,7 @@ impl Window {
 
     /// Affiche `pixels` (`0x00RRGGBB`, lignes de `width` pixels).
     pub fn present(&mut self, pixels: &[u32], width: u32, height: u32) -> Result<(), WindowError> {
-        assert!(pixels.len() >= (width * height) as usize, "tampon trop petit");
+        assert!(pixels.len() >= (width * height) as usize, "buffer too small");
         self.inner.present(pixels, width, height)
     }
 

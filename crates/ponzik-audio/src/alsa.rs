@@ -139,7 +139,7 @@ fn open_pcm(name: &str, stream: c_int, channels: u16, rate: u32) -> Result<(Pcm,
 pub(crate) fn open_default(preferred: OutputConfig) -> Result<(OutputConfig, String, PendingOutput), AudioError> {
     let (pcm, period, buffer) = open_pcm("default", SND_PCM_STREAM_PLAYBACK, preferred.channels, preferred.sample_rate)?;
     let pending = PendingOutput { pcm, channels: preferred.channels as usize, period };
-    let name = format!("ALSA default · période {period} / tampon {buffer} trames");
+    let name = format!("ALSA default · period {period} / buffer {buffer} frames");
     Ok((preferred, name, pending))
 }
 
@@ -206,7 +206,7 @@ pub(crate) fn open_input(preferred: OutputConfig, id: Option<&str>) -> Result<(O
         },
     };
     let mono = if device_channels == 1 { " · mono" } else { "" };
-    let name = format!("ALSA {device} (capture) · période {period} / tampon {buffer} trames{mono}");
+    let name = format!("ALSA {device} (capture) · period {period} / buffer {buffer} frames{mono}");
     let config = OutputConfig { sample_rate: rate, channels: device_channels as u16 };
     Ok((config, name, PendingInput { pcm, device_channels, period }))
 }
@@ -319,7 +319,7 @@ unsafe fn hint_field(hint: *const c_void, id: &CStr) -> Option<String> {
 /// Périphériques de capture utiles : le défaut, les serveurs de son, et une
 /// entrée convertie (`plughw`, `sysdefault`, `dsnoop`) par carte.
 pub(crate) fn input_devices() -> Vec<DeviceInfo> {
-    let mut out = vec![DeviceInfo { id: "default".into(), name: "Entrée par défaut du système".into() }];
+    let mut out = vec![DeviceInfo { id: "default".into(), name: "System default input".into() }];
     let mut hints = null_mut();
     // SAFETY: liste rendue par ALSA, terminée par un pointeur nul, libérée une fois.
     unsafe {

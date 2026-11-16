@@ -254,18 +254,18 @@ fn prefers_midi(plugin: *const ClapPlugin) -> bool {
 impl Core {
     fn new(path: &Path, id: &str, effect: bool) -> Result<Core, String> {
         let lib = Library::load(path)?;
-        let factory = lib.factory().ok_or_else(|| format!("{} : pas de fabrique de plugins", path.display()))?;
+        let factory = lib.factory().ok_or_else(|| format!("{}: no plugin factory", path.display()))?;
         let cid = std::ffi::CString::new(id).map_err(|_| "identifiant invalide".to_string())?;
         let host = new_host();
         // SAFETY : fabrique valide ; l'hôte vit plus longtemps que le plugin.
         let plugin = unsafe { (factory.create_plugin)(factory, &*host, cid.as_ptr()) };
         if plugin.is_null() {
-            return Err(format!("plugin « {id} » introuvable dans {}", path.display()));
+            return Err(format!("plugin \"{id}\" not found in {}", path.display()));
         }
         // SAFETY : plugin fraîchement créé.
         if !unsafe { ((*plugin).init)(plugin) } {
             unsafe { ((*plugin).destroy)(plugin) };
-            return Err(format!("échec de l'initialisation de « {id} »"));
+            return Err(format!("initialization of \"{id}\" failed"));
         }
         let params_ext = ext::<ClapPluginParams>(plugin, CLAP_EXT_PARAMS);
         let kind = crate::kind_for(path, id);

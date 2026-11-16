@@ -743,13 +743,13 @@ fn define_class(name: &CStr, superclass: &CStr, methods: &[(&CStr, *const c_void
     }
     let superclass = class(superclass);
     if superclass.is_null() {
-        return Err(WindowError::System("AppKit introuvable".into()));
+        return Err(WindowError::System("AppKit not found".into()));
     }
     // SAFETY: classe neuve, méthodes ajoutées avant l'enregistrement, signatures conformes aux types.
     unsafe {
         let cls = objc_allocateClassPair(superclass, name.as_ptr(), 0);
         if cls.is_null() {
-            return Err(WindowError::System(format!("impossible de créer la classe {name:?}")));
+            return Err(WindowError::System(format!("can't create the class {name:?}")));
         }
         for &(selector, imp, types) in methods {
             class_addMethod(cls, sel(selector), imp, types.as_ptr());
@@ -860,7 +860,7 @@ impl Window {
         unsafe {
             let main: Bool = msg(class(c"NSThread"), c"isMainThread", ());
             if main == NO {
-                return Err(WindowError::System("Cocoa exige le thread principal pour la fenêtre".into()));
+                return Err(WindowError::System("Cocoa requires the main thread for the window".into()));
             }
             let view_cls = view_class()?;
             let delegate_cls = delegate_class()?;
@@ -897,7 +897,7 @@ impl Window {
                 (rect, style, NSBackingStoreBuffered, NO),
             );
             if window.is_null() {
-                return Err(WindowError::System("création de la NSWindow refusée".into()));
+                return Err(WindowError::System("NSWindow creation refused".into()));
             }
             let () = msg(window, c"setReleasedWhenClosed:", (NO,));
             let () = msg(window, c"setTitle:", (ns_string(title),));
@@ -1028,17 +1028,17 @@ impl Window {
         unsafe {
             let data = CFDataCreate(null(), pixels.as_ptr().cast(), bytes as isize);
             if data.is_null() {
-                return Err(WindowError::System("CFDataCreate a échoué".into()));
+                return Err(WindowError::System("CFDataCreate failed".into()));
             }
             let provider = CGDataProviderCreateWithCFData(data);
             CFRelease(data);
             if provider.is_null() {
-                return Err(WindowError::System("CGDataProviderCreateWithCFData a échoué".into()));
+                return Err(WindowError::System("CGDataProviderCreateWithCFData failed".into()));
             }
             let image = CGImageCreate(w, h, 8, 32, w * 4, self.color_space, BITMAP_INFO, provider, null(), false, 0);
             CGDataProviderRelease(provider);
             if image.is_null() {
-                return Err(WindowError::System("CGImageCreate a échoué".into()));
+                return Err(WindowError::System("CGImageCreate failed".into()));
             }
             let layer: Id = msg(self.view, c"layer", ());
             if !layer.is_null() {

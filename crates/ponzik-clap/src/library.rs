@@ -40,7 +40,7 @@ impl Library {
         let entry = os::symbol(handle, c"clap_entry") as *const ClapPluginEntry;
         if entry.is_null() {
             os::close(handle);
-            return Err(format!("{} : symbole clap_entry introuvable", path.display()));
+            return Err(format!("{}: clap_entry symbol not found", path.display()));
         }
         // SAFETY : `clap_entry` est une structure statique exportée par le plugin.
         let e = unsafe { &*entry };
@@ -52,7 +52,7 @@ impl Library {
         // SAFETY : appel unique par chargement, sous le verrou.
         if !unsafe { (e.init)(cpath.as_ptr()) } {
             os::close(handle);
-            return Err(format!("{} : échec de l'initialisation du plugin", path.display()));
+            return Err(format!("{}: plugin initialization failed", path.display()));
         }
         let lib = Arc::new(Library { handle, entry });
         loaded.push((path, Arc::downgrade(&lib)));
@@ -113,7 +113,7 @@ mod os {
             let msg = unsafe { dlerror() };
             let msg =
                 if msg.is_null() { String::new() } else { unsafe { CStr::from_ptr(msg) }.to_string_lossy().into() };
-            return Err(format!("{} : chargement impossible ({msg})", path.display()));
+            return Err(format!("{}: can't load ({msg})", path.display()));
         }
         Ok(h)
     }
@@ -157,7 +157,7 @@ mod os {
         if h.is_null() {
             // SAFETY : aucun prérequis.
             let code = unsafe { GetLastError() };
-            return Err(format!("{} : chargement impossible (erreur {code})", path.display()));
+            return Err(format!("{}: can't load (error {code})", path.display()));
         }
         Ok(h)
     }

@@ -235,8 +235,8 @@ unsafe extern "system" {
 fn hr(code: HRESULT, call: &str) -> Result<(), AudioError> {
     match code {
         c if c >= 0 => Ok(()),
-        AUDCLNT_E_DEVICE_INVALIDATED => Err(AudioError::System(format!("{call} : périphérique débranché ou changé"))),
-        c => Err(AudioError::System(format!("{call} a échoué (HRESULT 0x{:08X})", c as u32))),
+        AUDCLNT_E_DEVICE_INVALIDATED => Err(AudioError::System(format!("{call}: device unplugged or changed"))),
+        c => Err(AudioError::System(format!("{call} failed (HRESULT 0x{:08X})", c as u32))),
     }
 }
 
@@ -451,7 +451,7 @@ impl Client {
 
             let handle = CreateEventW(null_mut(), 0, 0, null());
             if handle.is_null() {
-                return Err(AudioError::System("CreateEventW a échoué".into()));
+                return Err(AudioError::System("CreateEventW failed".into()));
             }
             let event = Event(handle);
             hr((client.vtbl().SetEventHandle)(client.this(), event.0), "SetEventHandle")?;
@@ -505,8 +505,8 @@ impl Client {
     fn describe(&self, what: &str) -> String {
         let rate = self.config.sample_rate;
         let mode = match self.low_latency_period {
-            Some(p) => format!("faible latence, période {p} trames ({:.1} ms)", p as f32 * 1000.0 / rate.max(1) as f32),
-            None => format!("tampon {} trames", self.buffer_frames),
+            Some(p) => format!("low latency, period {p} frames ({:.1} ms)", p as f32 * 1000.0 / rate.max(1) as f32),
+            None => format!("buffer {} frames", self.buffer_frames),
         };
         format!("WASAPI · {what} · {rate} Hz · {} canaux · {mode}", self.channels)
     }
@@ -560,7 +560,7 @@ impl Stream for Renderer {
     }
 
     fn name(&self) -> String {
-        self.client.describe("sortie par défaut")
+        self.client.describe("default output")
     }
 
     fn begin(&self) -> Result<(), AudioError> {
@@ -623,7 +623,7 @@ impl Stream for Capturer {
     }
 
     fn name(&self) -> String {
-        self.client.describe("entrée")
+        self.client.describe("input")
     }
 
     fn begin(&self) -> Result<(), AudioError> {
@@ -742,7 +742,7 @@ fn spawn<S: Stream>(id: Option<Vec<u16>>) -> Result<(OutputConfig, String, Pendi
     let (config, latency, name) = match ready_rx.recv() {
         Ok(Ok(ready)) => ready,
         Ok(Err(e)) => return Err(e),
-        Err(_) => return Err(AudioError::System("le thread audio s'est arrêté à l'ouverture".into())),
+        Err(_) => return Err(AudioError::System("the audio thread stopped while opening".into())),
     };
     let pending = Pending { start_tx, stop, handle, channels: config.channels as usize, latency };
     Ok((config, name, pending))
@@ -767,11 +767,11 @@ impl<C: Send + 'static> Pending<C> {
         // En cas d'échec, `thread` est détruit : stop + join.
         self.start_tx
             .send((callback, started_tx))
-            .map_err(|_| AudioError::System("le thread audio s'est arrêté".into()))?;
+            .map_err(|_| AudioError::System("the audio thread stopped".into()))?;
         match started_rx.recv() {
             Ok(Ok(())) => Ok(thread),
             Ok(Err(e)) => Err(e),
-            Err(_) => Err(AudioError::System("le thread audio s'est arrêté au démarrage".into())),
+            Err(_) => Err(AudioError::System("the audio thread stopped while starting".into())),
         }
     }
 }

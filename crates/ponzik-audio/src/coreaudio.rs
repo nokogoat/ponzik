@@ -238,7 +238,7 @@ fn default_device(input: bool) -> Result<AudioObjectID, AudioError> {
 fn device_name(device: AudioObjectID) -> String {
     let mut name: CFStringRef = null();
     if get(device, kAudioObjectPropertyName, kAudioObjectPropertyScopeGlobal, &mut name).is_err() || name.is_null() {
-        return format!("périphérique {device}");
+        return format!("device {device}");
     }
     let mut buf = [0 as c_char; 256];
     // SAFETY: `name` est une CFString possédée (règle « Copy ») ; libérée une seule fois.
@@ -248,7 +248,7 @@ fn device_name(device: AudioObjectID) -> String {
         ok != 0
     };
     if !ok {
-        return format!("périphérique {device}");
+        return format!("device {device}");
     }
     // SAFETY: CFStringGetCString a écrit une chaîne terminée par zéro.
     unsafe { std::ffi::CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().into_owned()
@@ -313,7 +313,7 @@ impl Unit {
         unsafe {
             let component = AudioComponentFindNext(null_mut(), &desc);
             if component.is_null() {
-                return Err(AudioError::System("composant AUHAL introuvable".into()));
+                return Err(AudioError::System("AUHAL component not found".into()));
             }
             let mut raw = null_mut();
             check(AudioComponentInstanceNew(component, &mut raw), "AudioComponentInstanceNew")?;
@@ -377,11 +377,11 @@ fn watch<S: Send + 'static>(
         .spawn(move || {
             while !flag.load(Ordering::Acquire) {
                 if failed.load(Ordering::Acquire) {
-                    eprintln!("ponzik-audio : le rappel audio a paniqué");
+                    eprintln!("ponzik-audio: the audio callback panicked");
                     break;
                 }
                 if !alive(device) {
-                    eprintln!("ponzik-audio : périphérique {device} débranché");
+                    eprintln!("ponzik-audio: device {device} unplugged");
                     break;
                 }
                 thread::sleep(Duration::from_millis(20));
@@ -492,7 +492,7 @@ pub(crate) fn open_default(preferred: OutputConfig) -> Result<(OutputConfig, Str
     let _ = unit.set(kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &max, "MaximumFramesPerSlice");
 
     let config = OutputConfig { sample_rate: rate.round() as u32, channels: channels as u16 };
-    let name = format!("CoreAudio · {} · tampon {frames} trames", device_name(device));
+    let name = format!("CoreAudio · {} · buffer {frames} frames", device_name(device));
     Ok((config, name, PendingOutput { unit, device, channels: channels as usize }))
 }
 
@@ -589,13 +589,13 @@ pub(crate) fn open_default_input(preferred: OutputConfig) -> Result<(OutputConfi
     let on: u32 = 1;
     let off: u32 = 0;
     // L'ordre compte : activer l'entrée et couper la sortie avant de choisir le périphérique.
-    unit.set(kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, INPUT_BUS, &on, "EnableIO (entrée)")?;
+    unit.set(kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, INPUT_BUS, &on, "EnableIO (input)")?;
     unit.set(kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Output, OUTPUT_BUS, &off, "EnableIO (sortie)")?;
     unit.set(kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &device, "CurrentDevice")?;
 
     // Format côté matériel : AUHAL ne rééchantillonne pas la capture, on garde sa fréquence.
     let mut hw = AudioStreamBasicDescription::default();
-    unit.get(kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, INPUT_BUS, &mut hw, "StreamFormat (matériel)")?;
+    unit.get(kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, INPUT_BUS, &mut hw, "StreamFormat (hardware)")?;
     if hw.mChannelsPerFrame == 0 {
         return Err(AudioError::NoInputDevice);
     }
@@ -608,8 +608,8 @@ pub(crate) fn open_default_input(preferred: OutputConfig) -> Result<(OutputConfi
     let _ = unit.set(kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &max, "MaximumFramesPerSlice");
     let frames = set_buffer_frames(device, rate, kAudioObjectPropertyScopeInput);
 
-    let mono = if device_channels == 1 { " · mono dupliqué" } else { "" };
-    let name = format!("CoreAudio · {} (capture) · tampon {frames} trames{mono}", device_name(device));
+    let mono = if device_channels == 1 { " · mono duplicated" } else { "" };
+    let name = format!("CoreAudio · {} (capture) · buffer {frames} frames{mono}", device_name(device));
     let config = OutputConfig { sample_rate: rate.round() as u32, channels: device_channels.max(2) as u16 };
     Ok((config, name, PendingInput { unit, device, device_channels: device_channels as usize }))
 }

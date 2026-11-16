@@ -91,7 +91,7 @@ const MIDIERR_STILLPLAYING: MMRESULT = 65;
 
 fn error(code: MMRESULT, call: &str) -> MidiError {
     match code {
-        MMSYSERR_ALLOCATED => MidiError::System(format!("{call} : port déjà utilisé par une autre application")),
+        MMSYSERR_ALLOCATED => MidiError::System(format!("{call}: port already used by another application")),
         _ => MidiError::System(format!("{call} : code MMRESULT {code}")),
     }
 }

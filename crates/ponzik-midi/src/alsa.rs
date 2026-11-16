@@ -286,7 +286,7 @@ impl OutPort {
                 return Err(MidiError::System(format!("snd_rawmidi_write : {}", strerror(n as c_int))));
             }
             if n == 0 {
-                return Err(MidiError::System("snd_rawmidi_write : aucun octet écrit".into()));
+                return Err(MidiError::System("snd_rawmidi_write: no byte written".into()));
             }
             rest = &rest[(n as usize).min(rest.len())..];
         }

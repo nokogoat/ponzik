@@ -86,11 +86,11 @@ pub enum AudioError {
 impl fmt::Display for AudioError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AudioError::NoOutputDevice => write!(f, "aucune sortie audio trouvée"),
-            AudioError::NoInputDevice => write!(f, "aucune entrée audio trouvée"),
-            AudioError::UnsupportedFormat(fmt) => write!(f, "format audio non géré : {fmt}"),
-            AudioError::UnsupportedPlatform => write!(f, "plateforme non supportée (Linux, Windows et macOS uniquement)"),
-            AudioError::System(msg) => write!(f, "erreur audio système : {msg}"),
+            AudioError::NoOutputDevice => write!(f, "no audio output found"),
+            AudioError::NoInputDevice => write!(f, "no audio input found"),
+            AudioError::UnsupportedFormat(fmt) => write!(f, "unsupported audio format: {fmt}"),
+            AudioError::UnsupportedPlatform => write!(f, "unsupported platform (Linux, Windows and macOS only)"),
+            AudioError::System(msg) => write!(f, "system audio error: {msg}"),
         }
     }
 }
@@ -284,7 +284,7 @@ impl OutputStream {
                 None
             }
         };
-        self.control.send(attached).map_err(|_| AudioError::System("le thread audio s'est arrêté".into()))?;
+        self.control.send(attached).map_err(|_| AudioError::System("the audio thread stopped".into()))?;
         drop(old_thread);
         Ok(())
     }

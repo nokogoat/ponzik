@@ -455,7 +455,7 @@ fn read_xauth(display: &str) -> Option<Vec<u8>> {
 }
 
 fn connect() -> Result<(UnixStream, Setup), WindowError> {
-    let display = std::env::var("DISPLAY").map_err(|_| WindowError::NoDisplay("DISPLAY non défini".into()))?;
+    let display = std::env::var("DISPLAY").map_err(|_| WindowError::NoDisplay("DISPLAY not set".into()))?;
     let number = display
         .rsplit(':')
         .next()
@@ -490,15 +490,15 @@ fn connect() -> Result<(UnixStream, Setup), WindowError> {
         1 => {}
         0 => {
             let reason = String::from_utf8_lossy(&d[..(head[1] as usize).min(d.len())]).into_owned();
-            return Err(proto(format!("connexion refusée : {reason}")));
+            return Err(proto(format!("connection refused: {reason}")));
         }
-        _ => return Err(proto("le serveur demande une authentification non gérée")),
+        _ => return Err(proto("the server asks for an unsupported authentication")),
     }
 
     let vendor_len = u16_at(&d, 16) as usize;
     let num_formats = d[21] as usize;
     if d[22] != 0 {
-        return Err(proto("ordre des octets d'image non géré (MSB)"));
+        return Err(proto("unsupported image byte order (MSB)"));
     }
     let formats_at = 32 + pad4(vendor_len);
     let screen = formats_at + 8 * num_formats;
@@ -508,7 +508,7 @@ fn connect() -> Result<(UnixStream, Setup), WindowError> {
 
     let bpp = (0..num_formats).map(|i| &d[formats_at + 8 * i..]).find(|f| f[0] == depth).map(|f| f[1]);
     if bpp != Some(32) {
-        return Err(proto(format!("profondeur {depth} bits non gérée (il faut 24/32 bits)")));
+        return Err(proto(format!("unsupported {depth}-bit depth (24/32 bits needed)")));
     }
     // Vérifie que le visuel racine est un TrueColor 0xRRGGBB.
     let mut at = screen + 40;
@@ -525,7 +525,7 @@ fn connect() -> Result<(UnixStream, Setup), WindowError> {
         at += 24 * visuals;
     }
     if masks != Some((0xff0000, 0xff00, 0xff)) {
-        return Err(proto("visuel non géré (il faut du TrueColor RGB 8 bits)"));
+        return Err(proto("unsupported visual (8-bit RGB TrueColor needed)"));
     }
 
     let setup = Setup {
@@ -549,7 +549,7 @@ fn roundtrip(stream: &mut UnixStream, req: &[u8]) -> Result<Vec<u8>, WindowError
     loop {
         stream.read_exact(&mut b).map_err(io_err)?;
         match b[0] {
-            0 => return Err(proto(format!("erreur {} sur la requête {}", b[1], b[10]))),
+            0 => return Err(proto(format!("error {} on request {}", b[1], b[10]))),
             1 => {
                 let mut reply = b.to_vec();
                 reply.resize(32 + u32_at(&b, 4) as usize * 4, 0);
@@ -749,7 +749,7 @@ impl Window {
                     self.shm_failed = true;
                     self.shm_busy = false;
                 } else {
-                    eprintln!("ponzik-window : erreur X11 {code} (requête {major})");
+                    eprintln!("ponzik-window: X11 error {code} (request {major})");
                 }
             }
             Incoming::Closed => self.pending.push_back(Event::CloseRequested),
@@ -769,7 +769,7 @@ impl Window {
                         return Ok(reply);
                     }
                 }
-                Err(_) => return Err(proto("le serveur ne répond plus")),
+                Err(_) => return Err(proto("the server stopped responding")),
             }
         }
     }
