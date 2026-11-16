@@ -7,6 +7,7 @@ use crate::effects::{
     Pompe, Reverb, Saturator, Shimmer, Tranche, Transient, Utility,
 };
 use crate::effects::BusComp;
+use crate::effects::MasterLimiter;
 use crate::instrument::Instrument;
 use crate::instruments::{
     Bass303, DrumKind, DrumSynth, EPiano, FmSynth, Granular, Kick, Pluck, Pulse, Sampler, Slicer, WaveSynth,
@@ -266,6 +267,13 @@ pub fn effects() -> &'static [EffectKind] {
             category: "Dynamique",
             description: "Colle de bus : modes propre, opto et VCA, relâche automatique, mesure de réduction",
             create: || Box::new(BusComp::default()),
+        },
+        EffectKind {
+            id: "master_limiter",
+            name: "Limiteur de mastering",
+            category: "Dynamique",
+            description: "Limiteur à crête vraie et anticipation : transparent, punchy ou agressif",
+            create: || Box::new(MasterLimiter::default()),
         },
     ]
 }
