@@ -68,6 +68,20 @@ impl<T> Producer<T> {
 }
 
 impl<T> Consumer<T> {
+    /// Éléments en attente (au moins, le producteur peut en ajouter entre-temps).
+    pub fn len(&self) -> usize {
+        let s = &*self.shared;
+        s.tail.load(Ordering::Acquire).wrapping_sub(s.head.load(Ordering::Relaxed))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.shared.slots.len()
+    }
+
     pub fn pop(&mut self) -> Option<T> {
         let s = &*self.shared;
         let head = s.head.load(Ordering::Relaxed);

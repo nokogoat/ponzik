@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::thread;
 
-use crate::{AudioError, AudioThread, OutputConfig, RenderFn, SampleKind};
+use crate::{AudioError, AudioThread, CaptureFn, OutputConfig, RenderFn, SampleKind};
 
 type HRESULT = i32;
 type HANDLE = *mut c_void;
@@ -36,6 +36,8 @@ const IID_IAUDIO_CLIENT: GUID =
     GUID { data1: 0x1CB9_AD4C, data2: 0xDBFA, data3: 0x4C32, data4: [0xB1, 0x78, 0xC2, 0xF5, 0x68, 0xA7, 0x03, 0xB2] };
 const IID_IAUDIO_RENDER_CLIENT: GUID =
     GUID { data1: 0xF294_ACFC, data2: 0x3146, data3: 0x4483, data4: [0xA7, 0xBF, 0xAD, 0xDC, 0xA7, 0xC2, 0x60, 0xE2] };
+const IID_IAUDIO_CAPTURE_CLIENT: GUID =
+    GUID { data1: 0xC8AD_BD64, data2: 0xE71E, data3: 0x48A0, data4: [0xA4, 0xDE, 0x18, 0x5C, 0x39, 0x5C, 0xD3, 0x17] };
 const SUBTYPE_PCM: GUID =
     GUID { data1: 0x0000_0001, data2: 0x0000, data3: 0x0010, data4: [0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71] };
 const SUBTYPE_IEEE_FLOAT: GUID =
@@ -44,10 +46,12 @@ const SUBTYPE_IEEE_FLOAT: GUID =
 const COINIT_MULTITHREADED: u32 = 0;
 const CLSCTX_ALL: u32 = 0x17;
 const E_RENDER: i32 = 0;
+const E_CAPTURE: i32 = 1;
 const E_CONSOLE: i32 = 0;
 const AUDCLNT_SHAREMODE_SHARED: i32 = 0;
 const AUDCLNT_STREAMFLAGS_EVENTCALLBACK: u32 = 0x0004_0000;
 const AUDCLNT_BUFFERFLAGS_SILENT: u32 = 0x2;
+const AUDCLNT_S_BUFFER_EMPTY: HRESULT = 0x0889_0001;
 const E_NOTFOUND: HRESULT = 0x8007_0490_u32 as i32;
 const AUDCLNT_E_DEVICE_INVALIDATED: HRESULT = 0x8889_0004_u32 as i32;
 const WAIT_OBJECT_0: u32 = 0;
@@ -125,6 +129,14 @@ struct IAudioRenderClientVtbl {
     base: IUnknownVtbl,
     GetBuffer: unsafe extern "system" fn(*mut c_void, u32, *mut *mut u8) -> HRESULT,
     ReleaseBuffer: unsafe extern "system" fn(*mut c_void, u32, u32) -> HRESULT,
+}
+
+#[repr(C)]
+struct IAudioCaptureClientVtbl {
+    base: IUnknownVtbl,
+    GetBuffer: unsafe extern "system" fn(*mut c_void, *mut *mut u8, *mut u32, *mut u32, *mut u64, *mut u64) -> HRESULT,
+    ReleaseBuffer: unsafe extern "system" fn(*mut c_void, u32) -> HRESULT,
+    GetNextPacketSize: unsafe extern "system" fn(*mut c_void, *mut u32) -> HRESULT,
 }
 
 #[link(name = "ole32")]
@@ -219,15 +231,25 @@ impl Drop for Event {
     }
 }
 
-struct Device {
-    // Ordre des champs = ordre de destruction : les clients COM avant l'événement.
-    render_client: Com<IAudioRenderClientVtbl>,
-    client: Com<IAudioClientVtbl>,
-    event: Event,
-    buffer_frames: u32,
-    channels: usize,
-    kind: SampleKind,
-    config: OutputConfig,
+/// Priorité MMCSS « Pro Audio » du thread courant, rendue à la destruction.
+struct Mmcss(HANDLE);
+
+impl Mmcss {
+    fn enter() -> Self {
+        let task: Vec<u16> = "Pro Audio\0".encode_utf16().collect();
+        let mut task_index = 0;
+        // SAFETY: chaîne UTF-16 terminée par zéro ; échec sans conséquence (priorité normale).
+        Mmcss(unsafe { AvSetMmThreadCharacteristicsW(task.as_ptr(), &mut task_index) })
+    }
+}
+
+impl Drop for Mmcss {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            // SAFETY: handle renvoyé par AvSetMmThreadCharacteristicsW.
+            unsafe { AvRevertMmThreadCharacteristics(self.0) };
+        }
+    }
 }
 
 /// Lit le format de mixage du système.
@@ -261,8 +283,20 @@ unsafe fn parse_format(fmt: *const WaveFormatEx) -> Result<(OutputConfig, Sample
     Ok((OutputConfig { sample_rate: rate, channels }, kind))
 }
 
-impl Device {
-    fn open_default() -> Result<Self, AudioError> {
+/// Client audio partagé piloté par événement, commun au rendu et à la capture.
+struct Client {
+    // Ordre des champs = ordre de destruction : le client COM avant l'événement.
+    client: Com<IAudioClientVtbl>,
+    event: Event,
+    buffer_frames: u32,
+    channels: usize,
+    kind: SampleKind,
+    config: OutputConfig,
+}
+
+impl Client {
+    /// Ouvre le périphérique par défaut dans le sens `flow` (`E_RENDER` ou `E_CAPTURE`).
+    fn open_default(flow: i32) -> Result<Self, AudioError> {
         // SAFETY: séquence d'initialisation WASAPI standard ; chaque pointeur
         // renvoyé est enveloppé dans `Com` dès qu'il est valide.
         unsafe {
@@ -274,9 +308,9 @@ impl Device {
             let enumerator = Com::<IMMDeviceEnumeratorVtbl>::from_raw(raw);
 
             let mut raw = null_mut();
-            let code = (enumerator.vtbl().GetDefaultAudioEndpoint)(enumerator.this(), E_RENDER, E_CONSOLE, &mut raw);
+            let code = (enumerator.vtbl().GetDefaultAudioEndpoint)(enumerator.this(), flow, E_CONSOLE, &mut raw);
             if code == E_NOTFOUND {
-                return Err(AudioError::NoOutputDevice);
+                return Err(if flow == E_CAPTURE { AudioError::NoInputDevice } else { AudioError::NoOutputDevice });
             }
             hr(code, "GetDefaultAudioEndpoint")?;
             let device = Com::<IMMDeviceVtbl>::from_raw(raw);
@@ -311,111 +345,212 @@ impl Device {
             let event = Event(handle);
             hr((client.vtbl().SetEventHandle)(client.this(), event.0), "SetEventHandle")?;
 
-            let mut raw = null_mut();
-            hr((client.vtbl().GetService)(client.this(), &IID_IAUDIO_RENDER_CLIENT, &mut raw), "GetService")?;
-            let render_client = Com::<IAudioRenderClientVtbl>::from_raw(raw);
-
-            Ok(Device { render_client, client, event, buffer_frames, channels: config.channels as usize, kind, config })
+            Ok(Client { client, event, buffer_frames, channels: config.channels as usize, kind, config })
         }
     }
 
-    /// Démarre le flux et confirme via `started`, puis tourne jusqu'à `stop`.
-    fn run(
-        &self,
-        mut render: RenderFn,
-        stop: &AtomicBool,
-        started: mpsc::Sender<Result<(), AudioError>>,
-    ) -> Result<(), AudioError> {
-        let task: Vec<u16> = "Pro Audio\0".encode_utf16().collect();
-        let mut task_index = 0;
-        // SAFETY: chaîne UTF-16 terminée par zéro ; échec sans conséquence (priorité normale).
-        let mmcss = unsafe { AvSetMmThreadCharacteristicsW(task.as_ptr(), &mut task_index) };
-
-        let mut scratch = vec![0.0f32; self.buffer_frames as usize * self.channels];
-        let bytes_per_frame = self.channels * self.kind.bytes();
-        let client = self.client.vtbl();
-        let rc = self.render_client.vtbl();
-
-        // SAFETY: protocole WASAPI GetBuffer/ReleaseBuffer ; le tampon système fait
-        // exactement `frames * bytes_per_frame` octets entre les deux appels.
-        let result = unsafe {
-            (|| {
-                // Préremplissage en silence pour éviter un glitch au démarrage.
-                let mut data = null_mut();
-                hr((rc.GetBuffer)(self.render_client.this(), self.buffer_frames, &mut data), "GetBuffer")?;
-                hr(
-                    (rc.ReleaseBuffer)(self.render_client.this(), self.buffer_frames, AUDCLNT_BUFFERFLAGS_SILENT),
-                    "ReleaseBuffer",
-                )?;
-                hr((client.Start)(self.client.this()), "IAudioClient::Start")?;
-                Ok(())
-            })()
-        };
-        let ok = result.is_ok();
-        let _ = started.send(result);
-
-        let looped = if ok {
-            unsafe {
-                (|| {
-                    while !stop.load(Ordering::Acquire) {
-                        match WaitForSingleObject(self.event.0, 100) {
-                            WAIT_OBJECT_0 | WAIT_TIMEOUT => {}
-                            other => return Err(AudioError::System(format!("WaitForSingleObject : {other}"))),
-                        }
-                        let mut padding = 0;
-                        hr((client.GetCurrentPadding)(self.client.this(), &mut padding), "GetCurrentPadding")?;
-                        let frames = self.buffer_frames.saturating_sub(padding);
-                        if frames == 0 {
-                            continue;
-                        }
-                        let mut data = null_mut();
-                        hr((rc.GetBuffer)(self.render_client.this(), frames, &mut data), "GetBuffer")?;
-                        let samples = &mut scratch[..frames as usize * self.channels];
-                        render(samples, self.channels);
-                        let out = std::slice::from_raw_parts_mut(data, frames as usize * bytes_per_frame);
-                        self.kind.encode(samples, out);
-                        hr((rc.ReleaseBuffer)(self.render_client.this(), frames, 0), "ReleaseBuffer")?;
-                    }
-                    Ok(())
-                })()
-            }
-        } else {
-            Ok(())
-        };
-
-        // SAFETY: arrêt du flux et restauration de la priorité du thread.
+    /// SAFETY: la vtable de l'interface `iid` doit commencer par `V`.
+    unsafe fn service<V>(&self, iid: &GUID) -> Result<Com<V>, AudioError> {
+        let mut raw = null_mut();
+        // SAFETY: client initialisé ; `raw` est enveloppé dès qu'il est valide.
         unsafe {
-            if ok {
-                (client.Stop)(self.client.this());
-            }
-            if !mmcss.is_null() {
-                AvRevertMmThreadCharacteristics(mmcss);
-            }
+            hr((self.client.vtbl().GetService)(self.client.this(), iid, &mut raw), "GetService")?;
+            Ok(Com::from_raw(raw))
         }
-        looped
     }
 }
 
-type StartMessage = (RenderFn, mpsc::Sender<Result<(), AudioError>>);
+/// Un sens de flux WASAPI : ouverture, démarrage et traitement d'un réveil.
+trait Stream: Sized {
+    type Callback: Send + 'static;
+    const THREAD: &'static str;
+    fn open() -> Result<Self, AudioError>;
+    fn client(&self) -> &Client;
+    fn name(config: OutputConfig) -> String;
+    /// Prépare et lance le flux.
+    fn begin(&self) -> Result<(), AudioError>;
+    /// Traite ce que le système a rendu disponible depuis le dernier réveil.
+    fn service(&self, callback: &mut Self::Callback, scratch: &mut [f32]) -> Result<(), AudioError>;
+}
 
-pub(crate) struct PendingOutput {
-    start_tx: mpsc::Sender<StartMessage>,
+struct Renderer {
+    // Détruit avant le client.
+    render_client: Com<IAudioRenderClientVtbl>,
+    client: Client,
+}
+
+impl Stream for Renderer {
+    type Callback = RenderFn;
+    const THREAD: &'static str = "ponzik-audio";
+
+    fn open() -> Result<Self, AudioError> {
+        let client = Client::open_default(E_RENDER)?;
+        // SAFETY: IID_IAUDIO_RENDER_CLIENT correspond à IAudioRenderClientVtbl.
+        let render_client = unsafe { client.service(&IID_IAUDIO_RENDER_CLIENT)? };
+        Ok(Renderer { render_client, client })
+    }
+
+    fn client(&self) -> &Client {
+        &self.client
+    }
+
+    fn name(config: OutputConfig) -> String {
+        format!("WASAPI · sortie par défaut · {} Hz", config.sample_rate)
+    }
+
+    fn begin(&self) -> Result<(), AudioError> {
+        let (rc, c) = (self.render_client.vtbl(), &self.client);
+        // SAFETY: protocole WASAPI GetBuffer/ReleaseBuffer ; préremplissage en
+        // silence pour éviter un glitch au démarrage.
+        unsafe {
+            let mut data = null_mut();
+            hr((rc.GetBuffer)(self.render_client.this(), c.buffer_frames, &mut data), "GetBuffer")?;
+            hr(
+                (rc.ReleaseBuffer)(self.render_client.this(), c.buffer_frames, AUDCLNT_BUFFERFLAGS_SILENT),
+                "ReleaseBuffer",
+            )?;
+            hr((c.client.vtbl().Start)(c.client.this()), "IAudioClient::Start")
+        }
+    }
+
+    fn service(&self, render: &mut RenderFn, scratch: &mut [f32]) -> Result<(), AudioError> {
+        let (rc, c) = (self.render_client.vtbl(), &self.client);
+        // SAFETY: le tampon système fait exactement `frames * bytes_per_frame`
+        // octets entre GetBuffer et ReleaseBuffer.
+        unsafe {
+            let mut padding = 0;
+            hr((c.client.vtbl().GetCurrentPadding)(c.client.this(), &mut padding), "GetCurrentPadding")?;
+            let frames = c.buffer_frames.saturating_sub(padding);
+            if frames == 0 {
+                return Ok(());
+            }
+            let mut data = null_mut();
+            hr((rc.GetBuffer)(self.render_client.this(), frames, &mut data), "GetBuffer")?;
+            let samples = &mut scratch[..frames as usize * c.channels];
+            render(samples, c.channels);
+            let out = std::slice::from_raw_parts_mut(data, frames as usize * c.channels * c.kind.bytes());
+            c.kind.encode(samples, out);
+            hr((rc.ReleaseBuffer)(self.render_client.this(), frames, 0), "ReleaseBuffer")
+        }
+    }
+}
+
+struct Capturer {
+    // Détruit avant le client.
+    capture_client: Com<IAudioCaptureClientVtbl>,
+    client: Client,
+}
+
+impl Stream for Capturer {
+    type Callback = CaptureFn;
+    const THREAD: &'static str = "ponzik-capture";
+
+    fn open() -> Result<Self, AudioError> {
+        let client = Client::open_default(E_CAPTURE)?;
+        // SAFETY: IID_IAUDIO_CAPTURE_CLIENT correspond à IAudioCaptureClientVtbl.
+        let capture_client = unsafe { client.service(&IID_IAUDIO_CAPTURE_CLIENT)? };
+        Ok(Capturer { capture_client, client })
+    }
+
+    fn client(&self) -> &Client {
+        &self.client
+    }
+
+    fn name(config: OutputConfig) -> String {
+        format!("WASAPI · entrée par défaut · {} Hz · {} canaux", config.sample_rate, config.channels)
+    }
+
+    fn begin(&self) -> Result<(), AudioError> {
+        let c = &self.client;
+        // SAFETY: client initialisé.
+        hr(unsafe { (c.client.vtbl().Start)(c.client.this()) }, "IAudioClient::Start")
+    }
+
+    fn service(&self, capture: &mut CaptureFn, scratch: &mut [f32]) -> Result<(), AudioError> {
+        let (cc, c) = (self.capture_client.vtbl(), &self.client);
+        let this = self.capture_client.this();
+        let bytes_per_frame = c.channels * c.kind.bytes();
+        // SAFETY: protocole WASAPI GetBuffer/ReleaseBuffer ; le paquet système fait
+        // `frames * bytes_per_frame` octets entre les deux appels.
+        unsafe {
+            loop {
+                let mut packet = 0;
+                hr((cc.GetNextPacketSize)(this, &mut packet), "GetNextPacketSize")?;
+                if packet == 0 {
+                    return Ok(());
+                }
+                let (mut data, mut frames, mut flags) = (null_mut(), 0u32, 0u32);
+                let code = (cc.GetBuffer)(this, &mut data, &mut frames, &mut flags, null_mut(), null_mut());
+                if code == AUDCLNT_S_BUFFER_EMPTY {
+                    return Ok(());
+                }
+                hr(code, "IAudioCaptureClient::GetBuffer")?;
+                // Un paquet ne dépasse jamais le tampon ; on borne par prudence.
+                let n = (frames as usize).min(scratch.len() / c.channels.max(1));
+                let samples = &mut scratch[..n * c.channels];
+                if flags & AUDCLNT_BUFFERFLAGS_SILENT != 0 || data.is_null() {
+                    samples.fill(0.0);
+                } else {
+                    c.kind.decode(std::slice::from_raw_parts(data, n * bytes_per_frame), samples);
+                }
+                hr((cc.ReleaseBuffer)(this, frames), "IAudioCaptureClient::ReleaseBuffer")?;
+                if n > 0 {
+                    capture(samples, c.channels);
+                }
+            }
+        }
+    }
+}
+
+type Started = mpsc::Sender<Result<(), AudioError>>;
+
+/// Lance le flux, confirme via `started`, puis le sert jusqu'à `stop`.
+fn run<S: Stream>(dev: &S, mut callback: S::Callback, stop: &AtomicBool, started: Started) -> Result<(), AudioError> {
+    let _mmcss = Mmcss::enter();
+    let c = dev.client();
+    let mut scratch = vec![0.0f32; c.buffer_frames as usize * c.channels];
+    let begun = dev.begin();
+    let ok = begun.is_ok();
+    let _ = started.send(begun);
+    if !ok {
+        return Ok(());
+    }
+    let looped = (|| {
+        while !stop.load(Ordering::Acquire) {
+            // SAFETY: événement valide tant que `c` vit.
+            match unsafe { WaitForSingleObject(c.event.0, 100) } {
+                WAIT_OBJECT_0 | WAIT_TIMEOUT => {}
+                other => return Err(AudioError::System(format!("WaitForSingleObject : {other}"))),
+            }
+            dev.service(&mut callback, &mut scratch)?;
+        }
+        Ok(())
+    })();
+    // SAFETY: le flux a démarré.
+    unsafe { (c.client.vtbl().Stop)(c.client.this()) };
+    looped
+}
+
+pub(crate) struct Pending<C> {
+    start_tx: mpsc::Sender<(C, Started)>,
     stop: Arc<AtomicBool>,
     handle: thread::JoinHandle<()>,
 }
 
-pub(crate) fn open_default(_preferred: OutputConfig) -> Result<(OutputConfig, String, PendingOutput), AudioError> {
-    // En mode partagé, on suit le format de mixage du système (rééchantillonnage
-    // natif à venir côté moteur) : la préférence est ignorée.
+pub(crate) type PendingOutput = Pending<RenderFn>;
+pub(crate) type PendingInput = Pending<CaptureFn>;
+
+/// Ouvre le flux sur son propre thread (qui garde tout l'état COM) et attend sa configuration.
+fn spawn<S: Stream>() -> Result<(OutputConfig, String, Pending<S::Callback>), AudioError> {
     let (ready_tx, ready_rx) = mpsc::channel();
-    let (start_tx, start_rx) = mpsc::channel::<StartMessage>();
+    let (start_tx, start_rx) = mpsc::channel::<(S::Callback, Started)>();
     let stop = Arc::new(AtomicBool::new(false));
     let flag = stop.clone();
 
     let handle = thread::Builder::new()
-        .name("ponzik-audio".into())
+        .name(S::THREAD.into())
         .spawn(move || {
-            let opened = Apartment::enter().and_then(|apt| Device::open_default().map(|dev| (apt, dev)));
+            let opened = Apartment::enter().and_then(|apt| S::open().map(|dev| (apt, dev)));
             let (_apartment, device) = match opened {
                 Ok(v) => v,
                 Err(e) => {
@@ -423,10 +558,10 @@ pub(crate) fn open_default(_preferred: OutputConfig) -> Result<(OutputConfig, St
                     return;
                 }
             };
-            let _ = ready_tx.send(Ok(device.config));
-            // Si l'`Output` est détruit sans être lancé, le canal se ferme et on libère tout.
-            let Ok((render, started)) = start_rx.recv() else { return };
-            if let Err(e) = device.run(render, &flag, started) {
+            let _ = ready_tx.send(Ok(device.client().config));
+            // Si le flux est détruit sans être lancé, le canal se ferme et on libère tout.
+            let Ok((callback, started)) = start_rx.recv() else { return };
+            if let Err(e) = run(&device, callback, &flag, started) {
                 eprintln!("ponzik-audio : {e}");
             }
         })
@@ -437,17 +572,27 @@ pub(crate) fn open_default(_preferred: OutputConfig) -> Result<(OutputConfig, St
         Ok(Err(e)) => return Err(e),
         Err(_) => return Err(AudioError::System("le thread audio s'est arrêté à l'ouverture".into())),
     };
-    let name = format!("WASAPI · sortie par défaut · {} Hz", config.sample_rate);
-    Ok((config, name, PendingOutput { start_tx, stop, handle }))
+    Ok((config, S::name(config), Pending { start_tx, stop, handle }))
 }
 
-impl PendingOutput {
-    pub(crate) fn start(self, render: RenderFn) -> Result<AudioThread, AudioError> {
+pub(crate) fn open_default(_preferred: OutputConfig) -> Result<(OutputConfig, String, PendingOutput), AudioError> {
+    // En mode partagé, on suit le format de mixage du système (rééchantillonnage
+    // natif à venir côté moteur) : la préférence est ignorée.
+    spawn::<Renderer>()
+}
+
+/// Capture au format de mixage de l'entrée, convertie en `f32` ; canaux natifs.
+pub(crate) fn open_default_input(_preferred: OutputConfig) -> Result<(OutputConfig, String, PendingInput), AudioError> {
+    spawn::<Capturer>()
+}
+
+impl<C: Send + 'static> Pending<C> {
+    pub(crate) fn start(self, callback: C) -> Result<AudioThread, AudioError> {
         let (started_tx, started_rx) = mpsc::channel();
         let thread = AudioThread { stop: self.stop, handle: Some(self.handle) };
         // En cas d'échec, `thread` est détruit : stop + join.
         self.start_tx
-            .send((render, started_tx))
+            .send((callback, started_tx))
             .map_err(|_| AudioError::System("le thread audio s'est arrêté".into()))?;
         match started_rx.recv() {
             Ok(Ok(())) => Ok(thread),

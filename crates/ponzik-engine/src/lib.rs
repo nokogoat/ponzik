@@ -7,6 +7,7 @@
 
 pub mod effect;
 pub mod effects;
+pub mod input;
 pub mod engine;
 pub mod instrument;
 pub mod instruments;
@@ -22,6 +23,7 @@ pub mod wav;
 
 pub use effect::Effect;
 pub use engine::{Command, Engine, EngineHandle, Garbage, MAX_CHANNELS};
+pub use input::{InputConsumer, InputProducer, RecordBuffer, input_channel};
 pub use instrument::Instrument;
 pub use param::{ParamInfo, Params, Unit};
 pub use rack::Channel;

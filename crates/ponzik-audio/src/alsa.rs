@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
-use crate::{AudioError, AudioThread, OutputConfig, RenderFn};
+use crate::{AudioError, AudioThread, CaptureFn, OutputConfig, RenderFn};
 
 #[repr(C)]
 struct SndPcm {
@@ -30,12 +30,14 @@ unsafe extern "C" {
     ) -> c_int;
     fn snd_pcm_get_params(pcm: *mut SndPcm, buffer_size: *mut c_ulong, period_size: *mut c_ulong) -> c_int;
     fn snd_pcm_writei(pcm: *mut SndPcm, buffer: *const c_void, frames: c_ulong) -> c_long;
+    fn snd_pcm_readi(pcm: *mut SndPcm, buffer: *mut c_void, frames: c_ulong) -> c_long;
     fn snd_pcm_recover(pcm: *mut SndPcm, err: c_int, silent: c_int) -> c_int;
     fn snd_pcm_close(pcm: *mut SndPcm) -> c_int;
     fn snd_strerror(errnum: c_int) -> *const c_char;
 }
 
 const SND_PCM_STREAM_PLAYBACK: c_int = 0;
+const SND_PCM_STREAM_CAPTURE: c_int = 1;
 const SND_PCM_ACCESS_RW_INTERLEAVED: c_int = 3;
 #[cfg(target_endian = "little")]
 const SND_PCM_FORMAT_FLOAT: c_int = 14;
@@ -71,13 +73,15 @@ fn check(code: c_int, call: &str) -> Result<(), AudioError> {
     Err(AudioError::System(format!("{call} : {msg}")))
 }
 
-pub(crate) fn open_default(preferred: OutputConfig) -> Result<(OutputConfig, String, PendingOutput), AudioError> {
+/// Ouvre `default` dans le sens `stream` ; renvoie le handle, la période et la taille du tampon.
+fn open_pcm(stream: c_int, channels: u16, rate: u32) -> Result<(Pcm, usize, c_ulong), AudioError> {
     let mut raw = null_mut();
     // SAFETY: appels FFI avec des pointeurs valides ; `pcm` possède le handle dès l'ouverture.
     unsafe {
-        let code = snd_pcm_open(&mut raw, c"default".as_ptr(), SND_PCM_STREAM_PLAYBACK, 0);
+        let code = snd_pcm_open(&mut raw, c"default".as_ptr(), stream, 0);
         if code == -2 {
-            return Err(AudioError::NoOutputDevice);
+            let capture = stream == SND_PCM_STREAM_CAPTURE;
+            return Err(if capture { AudioError::NoInputDevice } else { AudioError::NoOutputDevice });
         }
         check(code, "snd_pcm_open")?;
     }
@@ -90,8 +94,8 @@ pub(crate) fn open_default(preferred: OutputConfig) -> Result<(OutputConfig, Str
                 pcm.0,
                 SND_PCM_FORMAT_FLOAT,
                 SND_PCM_ACCESS_RW_INTERLEAVED,
-                preferred.channels as c_uint,
-                preferred.sample_rate,
+                channels as c_uint,
+                rate,
                 1, // ALSA rééchantillonne si la carte ne suit pas
                 LATENCY_US,
             ),
@@ -99,8 +103,13 @@ pub(crate) fn open_default(preferred: OutputConfig) -> Result<(OutputConfig, Str
         )?;
         check(snd_pcm_get_params(pcm.0, &mut buffer, &mut period), "snd_pcm_get_params")?;
     }
-    let pending = PendingOutput { pcm, channels: preferred.channels as usize, period: (period as usize).max(64) };
-    let name = format!("ALSA default · période {} / tampon {} trames", pending.period, buffer);
+    Ok((pcm, (period as usize).max(64), buffer))
+}
+
+pub(crate) fn open_default(preferred: OutputConfig) -> Result<(OutputConfig, String, PendingOutput), AudioError> {
+    let (pcm, period, buffer) = open_pcm(SND_PCM_STREAM_PLAYBACK, preferred.channels, preferred.sample_rate)?;
+    let pending = PendingOutput { pcm, channels: preferred.channels as usize, period };
+    let name = format!("ALSA default · période {period} / tampon {buffer} trames");
     Ok((preferred, name, pending))
 }
 
@@ -140,6 +149,72 @@ impl PendingOutput {
                 }
             })
             .map_err(|e| AudioError::System(format!("thread audio : {e}")))?;
+        Ok(AudioThread { stop, handle: Some(handle) })
+    }
+}
+
+pub(crate) struct PendingInput {
+    pcm: Pcm,
+    /// Canaux ouverts côté ALSA (1 si l'entrée n'accepte que le mono).
+    device_channels: usize,
+    period: usize,
+}
+
+/// Capture : stéréo de préférence, sinon mono dupliqué sur les deux canaux.
+pub(crate) fn open_default_input(preferred: OutputConfig) -> Result<(OutputConfig, String, PendingInput), AudioError> {
+    let rate = preferred.sample_rate;
+    let (pcm, period, buffer, device_channels) = match open_pcm(SND_PCM_STREAM_CAPTURE, preferred.channels, rate) {
+        Ok((pcm, period, buffer)) => (pcm, period, buffer, preferred.channels as usize),
+        Err(AudioError::NoInputDevice) => return Err(AudioError::NoInputDevice),
+        Err(stereo) => match open_pcm(SND_PCM_STREAM_CAPTURE, 1, rate) {
+            Ok((pcm, period, buffer)) => (pcm, period, buffer, 1),
+            Err(_) => return Err(stereo),
+        },
+    };
+    let mono = if device_channels == 1 { " · mono dupliqué" } else { "" };
+    let name = format!("ALSA default (capture) · période {period} / tampon {buffer} trames{mono}");
+    let config = OutputConfig { sample_rate: rate, channels: device_channels.max(2) as u16 };
+    Ok((config, name, PendingInput { pcm, device_channels, period }))
+}
+
+impl PendingInput {
+    pub(crate) fn start(self, mut capture: CaptureFn) -> Result<AudioThread, AudioError> {
+        let stop = Arc::new(AtomicBool::new(false));
+        let flag = stop.clone();
+        let handle = thread::Builder::new()
+            .name("ponzik-capture".into())
+            .spawn(move || {
+                let Self { pcm, device_channels, period } = self;
+                let mut raw = vec![0.0f32; period * device_channels];
+                let mut stereo = vec![0.0f32; if device_channels == 1 { period * 2 } else { 0 }];
+                while !flag.load(Ordering::Acquire) {
+                    // SAFETY: `raw` peut recevoir `period` trames de `device_channels` échantillons.
+                    let n = unsafe { snd_pcm_readi(pcm.0, raw.as_mut_ptr().cast(), period as c_ulong) };
+                    if n < 0 {
+                        // Débordement (xrun) ou suspension : on relance le flux.
+                        // SAFETY: handle ouvert.
+                        let recovered = unsafe { snd_pcm_recover(pcm.0, n as c_int, 1) };
+                        if let Err(e) = check(recovered, "snd_pcm_readi") {
+                            eprintln!("ponzik-audio : {e}");
+                            return;
+                        }
+                        continue;
+                    }
+                    let frames = (n as usize).min(period);
+                    if frames == 0 {
+                        continue;
+                    }
+                    if device_channels == 1 {
+                        for (d, &s) in stereo.chunks_exact_mut(2).zip(&raw[..frames]) {
+                            d.fill(s);
+                        }
+                        capture(&stereo[..frames * 2], 2);
+                    } else {
+                        capture(&raw[..frames * device_channels], device_channels);
+                    }
+                }
+            })
+            .map_err(|e| AudioError::System(format!("thread de capture : {e}")))?;
         Ok(AudioThread { stop, handle: Some(handle) })
     }
 }
