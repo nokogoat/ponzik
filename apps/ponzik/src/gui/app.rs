@@ -178,6 +178,10 @@ pub enum Action {
     ToggleMode,
     ToggleMetronome,
     ToggleRecord,
+    /// Pré-compte d'une mesure avant l'enregistrement.
+    ToggleCountIn,
+    /// Un appui de tap tempo.
+    TapTempo,
     ToggleTyping,
     SetView(View),
     ToggleSidebar,
@@ -421,6 +425,12 @@ pub struct App {
     pub keyboard_octave: i32,
     /// Enregistrement armé : les notes jouées pendant la lecture sont écrites.
     pub record: bool,
+    /// Pré-compte d'une mesure au métronome quand la lecture part enregistrement armé.
+    pub count_in: bool,
+    /// Pré-compte restant, en ticks, lu dans le moteur (0 hors pré-compte).
+    pub counting: f64,
+    /// Instants (s) des derniers appuis de tap tempo.
+    taps: Vec<f32>,
     /// Entrée audio ouverte au premier armement, piste armée, nombre de prises.
     pub input_stream: Option<ponzik_audio::InputStream>,
     pub rec_track: Option<usize>,
@@ -533,6 +543,9 @@ impl App {
             held: Vec::new(),
             keyboard_octave: 4,
             record: false,
+            count_in: true,
+            counting: 0.0,
+            taps: Vec::new(),
             typing_keyboard: false,
             session_cols: Default::default(),
             solo: None,
@@ -580,6 +593,14 @@ impl App {
                 Popup::Sidechain { track, slot }
             }
             "notefx" => Popup::AddNoteFx { channel: self.selected_channel().unwrap_or(0), slot: 0 },
+            "countin" => {
+                self.stop();
+                self.record = true;
+                self.tap_tempo();
+                self.tap_tempo();
+                self.start_transport();
+                return;
+            }
             "history" => {
                 for label in ["Poser une note", "Déplacer des notes", "Tempo", "Gamme", "Ajouter un effet"] {
                     self.project.bpm += 1.0;
@@ -1123,8 +1144,49 @@ impl App {
 
     /// Lecture / pause : la pause garde la position.
     pub fn toggle_play(&mut self) {
-        self.playing = !self.playing;
-        self.send(if self.playing { Command::Play } else { Command::Stop });
+        if self.playing {
+            self.playing = false;
+            self.send(Command::Stop);
+        } else {
+            self.start_transport();
+        }
+    }
+
+    /// Lance le transport : enregistrement armé, une mesure de pré-compte d'abord.
+    fn start_transport(&mut self) {
+        self.playing = true;
+        if self.record && self.count_in {
+            self.counting = TICKS_PER_BAR as f64;
+            self.send(Command::CountIn(TICKS_PER_BAR));
+        } else {
+            self.send(Command::Play);
+        }
+    }
+
+    /// Tap tempo : le tempo suit la moyenne des intervalles entre les 4 derniers
+    /// appuis ; une pause de plus de 2 s repart de zéro.
+    pub fn tap_tempo(&mut self) {
+        let now = self.time;
+        if self.taps.last().is_some_and(|&last| now - last > 2.0) {
+            self.taps.clear();
+        }
+        self.taps.push(now);
+        if self.taps.len() > 4 {
+            self.taps.remove(0);
+        }
+        self.anim.set(wid("tb-tap-flash", 0, 0), 1.0);
+        if let Some(bpm) = tap_bpm(&self.taps) {
+            let bpm = ((bpm * 10.0).round() / 10.0).clamp(40.0, 300.0);
+            if bpm != self.project.bpm {
+                self.project.bpm = bpm;
+                self.commit("Tempo");
+            }
+        }
+    }
+
+    pub fn toggle_count_in(&mut self) {
+        self.count_in = !self.count_in;
+        self.toast(if self.count_in { "Pré-compte d'une mesure activé" } else { "Pré-compte désactivé" });
     }
 
     /// Lecture / arrêt façon FL Studio (Espace) : l'arrêt revient au marqueur de départ.
@@ -1133,8 +1195,7 @@ impl App {
             self.stop();
         } else {
             self.send(Command::Locate(self.start_marker));
-            self.playing = true;
-            self.send(Command::Play);
+            self.start_transport();
             // Nouvelle écoute : la sonie intégrée repart de zéro.
             self.loudness.reset();
         }
@@ -1300,6 +1361,13 @@ impl App {
         self.engine.collect_garbage();
         self.collect_takes();
         self.position = self.engine.position();
+        // Tant que le moteur n'a pas reçu l'ordre de lecture, le pré-compte demandé reste affiché.
+        let counting = self.engine.count_in();
+        if !self.playing {
+            self.counting = 0.0;
+        } else if counting > 0.0 || self.engine.is_playing() {
+            self.counting = counting;
+        }
         for (i, m) in self.channel_meters.iter_mut().enumerate() {
             m.feed(self.engine.take_channel_peak(i), dt);
         }
@@ -1411,6 +1479,7 @@ impl App {
                     self.record = !self.record;
                     self.toast(if self.record { "Enregistrement armé" } else { "Enregistrement désarmé" });
                 }
+                Key::Char('t') => self.tap_tempo(),
                 _ => {}
             }
         }
@@ -1524,7 +1593,7 @@ impl App {
         let wordmark = self.text(c, self.f.sans_med, 18.0, 70.0, cy, "Ponzik", t.text);
 
         // Transport, centré.
-        let cluster = 40.0 + 6.0 + 40.0 + 14.0 + 132.0 + 10.0 + 188.0 + 10.0 + 116.0 + 10.0 + 132.0 + 6.0 + 128.0 + 6.0 + 36.0 + 4.0 + 36.0 + 4.0 + 36.0;
+        let cluster = 40.0 + 6.0 + 40.0 + 14.0 + 132.0 + 10.0 + 188.0 + 10.0 + 116.0 + 4.0 + 40.0 + 10.0 + 132.0 + 6.0 + 128.0 + 6.0 + 36.0 + 4.0 + 36.0 + 4.0 + 36.0;
         let mut x = ((r.w - cluster) * 0.5).round().max(70.0 + wordmark + 24.0);
         let start = x;
 
@@ -1581,7 +1650,9 @@ impl App {
             }
         }
         self.tip_zone(input, bpm_r, "Tempo\nGlisser ou molette · Maj : fin", "");
-        x += 126.0;
+        x += 120.0;
+        self.tap_button(c, input, Rect::new(x, cy - 18.0, 40.0, 36.0));
+        x += 50.0;
         let pos_r = Rect::new(x, cy - 18.0, 132.0, 36.0);
         self.position_field(c, pos_r);
         self.tip_zone(input, pos_r, "Position\nmesure . temps . pas", "");
@@ -1603,12 +1674,35 @@ impl App {
         let (rx0, ry0) = rec.center();
         let pulse = if self.record && self.playing { 0.75 + 0.25 * (self.time * 6.0).sin().abs() } else { 1.0 };
         c.fill_circle(rx0, ry0, 6.0, t.muted.mix(t.text2, rhv).mix(t.negative, on).alpha(pulse));
+        // Anneau : pré-compte d'une mesure ; il se remplit pendant le décompte.
+        let ci = self.anim.to(wid("tb-rec-ci", 0, 0), self.count_in as u8 as f32, T_HOVER);
+        if ci > 0.01 {
+            let ring = t.muted.mix(t.negative, on).alpha(0.55 * ci);
+            c.stroke_circle(rx0, ry0, 10.5, 1.2, ring);
+            if self.counting > 0.0 {
+                let done = (1.0 - self.counting / TICKS_PER_BAR as f64).clamp(0.0, 1.0) as f32;
+                let a0 = -std::f32::consts::FRAC_PI_2;
+                let pts: Vec<(f32, f32)> = (0..=32)
+                    .map(|k| a0 + done * std::f32::consts::TAU * k as f32 / 32.0)
+                    .map(|a| (rx0 + 10.5 * a.cos(), ry0 + 10.5 * a.sin()))
+                    .collect();
+                c.stroke_polyline(&pts, 2.0, t.negative);
+            }
+        }
         if rhov {
-            self.set_tip("Enregistrer les notes\njouées pendant la lecture", "R");
+            let tip = if self.count_in {
+                "Enregistrer les notes et l'audio\nPré-compte d'une mesure · clic droit : couper"
+            } else {
+                "Enregistrer les notes et l'audio\nSans pré-compte · clic droit : l'activer"
+            };
+            self.set_tip(tip, "R");
         }
         if rhov && input.pressed {
             self.record = !self.record;
             self.toast(if self.record { "Enregistrement armé" } else { "Enregistrement désarmé" });
+        }
+        if rhov && input.right_pressed {
+            self.toggle_count_in();
         }
         x += 40.0;
         if self.icon_button(c, input, wid("tb-keys", 0, 0), Rect::new(x, cy - 18.0, 36.0, 36.0), Icon::Keyboard, self.typing_keyboard, ("Clavier musical", "Ctrl T")) {
@@ -1851,18 +1945,50 @@ impl App {
         c.fill_rrect(r, 10.0, t.raised);
         c.stroke_rrect(r, 10.0, 1.0, t.hairline);
         let (_, cy) = r.center();
-        let pos = self.cycle_position();
+        // Pendant le pré-compte : la mesure « -1 », comptée en rouge comme l'enregistrement.
+        let counting = self.counting > 0.0;
+        let pos = if counting { (TICKS_PER_BAR as f64 - self.counting).max(0.0) } else { self.cycle_position() };
+        let lit_col = if counting { t.negative } else { t.accent };
         let beat_in_bar = ((pos % TICKS_PER_BAR as f64) / 96.0).floor() as usize;
         for b in 0..4 {
             let lit = self.playing && b == beat_in_bar;
             let v = self.anim.to(wid("beat-led", b, 0), lit as u8 as f32, T_HEAD);
-            c.fill_circle(r.x + 14.0 + b as f32 * 11.0, cy, 3.0, t.raised_hi.mix(t.accent, v));
+            c.fill_circle(r.x + 14.0 + b as f32 * 11.0, cy, 3.0, t.raised_hi.mix(lit_col, v));
         }
-        let bar = (pos / TICKS_PER_BAR as f64).floor() as u32 + 1;
+        let bar = if counting { "-1".to_string() } else { ((pos / TICKS_PER_BAR as f64).floor() as u32 + 1).to_string() };
         let beat = beat_in_bar + 1;
         let step = ((pos % 96.0) / TICKS_PER_STEP as f64).floor() as u32 + 1;
         let text = format!("{bar}.{beat}.{step}");
-        self.text_right(c, self.f.mono_med, 15.0, r.right() - 12.0, cy, &text, if self.playing { t.text } else { t.text2 });
+        let ink = if counting { t.negative } else if self.playing { t.text } else { t.text2 };
+        self.text_right(c, self.f.mono_med, 15.0, r.right() - 12.0, cy, &text, ink);
+    }
+
+    /// Bouton TAP : chaque appui cale le tempo sur la moyenne des 4 derniers ;
+    /// les points dessous comptent les appuis pris en compte.
+    fn tap_button(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
+        let t = self.theme;
+        let id = wid("tb-tap", 0, 0);
+        let hov = self.hovered(input, id, r);
+        let hv = self.hover_anim(id, hov);
+        if hov && input.pressed {
+            self.tap_tempo();
+        }
+        let flash = self.anim.to(wid("tb-tap-flash", 0, 0), 0.0, T_LAYOUT);
+        let press = self.anim.to(id ^ 0x5052, if hov && input.down { 0.92 } else { 1.0 }, T_PRESS);
+        let body = r.scale(press);
+        c.fill_rrect(body, 10.0, t.raised.mix(t.raised_hi, hv).mix(t.accent, flash * 0.35));
+        c.stroke_rrect(body, 10.0, 1.0, t.hairline.mix(t.accent, flash));
+        let (cx, cy) = r.center();
+        self.text_center(c, self.f.mono_med, 11.0, cx, cy - 3.0, "TAP", t.text2.mix(t.text, hv).mix(t.accent, flash));
+        let fresh = self.taps.last().is_some_and(|&last| self.time - last <= 2.0);
+        let n = if fresh { self.taps.len() } else { 0 };
+        for k in 0..4 {
+            let on = self.anim.to(wid("tb-tap-dot", k, 0), (k < n) as u8 as f32, T_HOVER);
+            c.fill_circle(cx - 7.5 + k as f32 * 5.0, cy + 8.0, 1.3, t.raised_hi.mix(t.accent, on));
+        }
+        if hov {
+            self.set_tip("Tap tempo\nTape le temps : moyenne des 4 derniers appuis", "T");
+        }
     }
 
     // --- Zone principale ---
@@ -2474,6 +2600,8 @@ impl App {
                 self.send(Command::SetMetronome(m));
             }
             Action::ToggleRecord => self.record = !self.record,
+            Action::ToggleCountIn => self.toggle_count_in(),
+            Action::TapTempo => self.tap_tempo(),
             Action::ToggleTyping => self.toggle_typing_keyboard(),
             Action::SetView(v) => self.set_view(v),
             Action::ToggleSidebar => self.sidebar = !self.sidebar,
@@ -2895,6 +3023,14 @@ fn scale_label(key: u8, scale: ScaleKind) -> String {
     format!("{} {mode}", key_name(key))
 }
 
+/// Tempo des appuis (instants en secondes) : 60 / intervalle moyen. `None` avant
+/// le deuxième appui ou si l'intervalle est nul.
+fn tap_bpm(taps: &[f32]) -> Option<f32> {
+    let (first, last) = (*taps.first()?, *taps.last()?);
+    let span = (last - first) / (taps.len() - 1).max(1) as f32;
+    (taps.len() >= 2 && span > 1e-3).then(|| 60.0 / span)
+}
+
 /// Sonie-mètre du master, sur le flux mono (moitié de la fréquence d'échantillonnage).
 /// Le flux est la moyenne (G + D) / 2 : pour un signal centré, son énergie est la
 /// moitié de la somme stéréo de BS.1770. Le poids 2 du canal rend la mesure stéréo.
@@ -2920,6 +3056,15 @@ mod tests {
     fn recovery_detail_strips_the_timestamp() {
         let detail = recovery_detail(std::path::Path::new("/nulle/part/Mon-morceau-20261116-143200-123.ponzik"));
         assert_eq!(detail, "Mon-morceau");
+    }
+
+    #[test]
+    fn tap_tempo_averages_the_intervals() {
+        assert_eq!(tap_bpm(&[]), None);
+        assert_eq!(tap_bpm(&[1.0]), None);
+        assert!((tap_bpm(&[0.0, 0.5]).unwrap() - 120.0).abs() < 1e-3);
+        // Intervalles 0,5 · 0,4 · 0,6 : moyenne 0,5 s.
+        assert!((tap_bpm(&[0.0, 0.5, 0.9, 1.5]).unwrap() - 120.0).abs() < 1e-3);
     }
 
     #[test]

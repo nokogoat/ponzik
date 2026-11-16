@@ -75,7 +75,9 @@ impl App {
             return;
         };
         self.send(Command::NoteOn { channel: ch, note: key, velocity: vel });
-        let recording = self.record && self.playing && matches!(self.project.mode, PlayMode::Pattern(_));
+        // Pendant le pré-compte, rien n'est écrit : la position n'avance pas encore.
+        let recording =
+            self.record && self.playing && self.counting <= 0.0 && matches!(self.project.mode, PlayMode::Pattern(_));
         let start = recording.then(|| self.cycle_position());
         self.held.push(HeldNote { code, channel: ch, key, vel, start });
     }

@@ -73,6 +73,9 @@ impl App {
         add("Basculer pattern / morceau".into(), "Transport", "L", Action::ToggleMode);
         add("Métronome".into(), "Transport", "Ctrl M", Action::ToggleMetronome);
         add("Armer l'enregistrement".into(), "Transport", "R", Action::ToggleRecord);
+        add("Tap tempo".into(), "Transport", "T", Action::TapTempo);
+        let count_in = if self.count_in { "Couper le pré-compte" } else { "Pré-compte d'une mesure avant l'enregistrement" };
+        add(count_in.into(), "Transport", "", Action::ToggleCountIn);
         add("Clavier d'ordinateur musical".into(), "Transport", "Ctrl T", Action::ToggleTyping);
         for (view, key) in [(View::Playlist, "F5"), (View::Rack, "F6"), (View::Piano, "F7"), (View::Mixer, "F9")] {
             add(format!("Aller à : {}", view.label()), "Vue", key, Action::SetView(view));
