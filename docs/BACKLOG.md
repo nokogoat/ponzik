@@ -261,7 +261,7 @@ should guide the order.
 
 | # | Item | Why | Size | Area | Depends on | Status |
 |---|---|---|---|---|---|---|
-| V4-1 | **English interface and translation catalog**: every UI string in one table, English and French to start, language picked in the settings | The UI is French only, which blocks most of the world from trying Ponzik | M | ui | – | ⬜ |
+| V4-1 | **English interface and translation catalog**: every UI string in one table, English and French to start, language picked in the settings | The UI is French only, which blocks most of the world from trying Ponzik | M | ui | – | ✅ English source strings, `ponzik-i18n` with embedded `.po` catalogs (one file per language), complete French, picker in the settings and the palette, `PONZIK_LANG` |
 | V4-2 | **macOS port**: Cocoa window, CoreAudio playback and capture, CoreMIDI, then AU hosting | "The same Ponzik on every OS"; a large share of producers are on Macs | L | window, audio, midi, ui | – | ⬜ |
 | V4-3 | **Low-latency Windows audio**: WASAPI exclusive mode and small shared buffers (`IAudioClient3`), optional in-house ASIO host (the ASIO SDK is now GPLv3) | Vocals and guitar need about 5 ms round-trip without ASIO4ALL, FL's top beginner pain | M | audio | – | ⬜ |
 | V4-4 | **Native PipeWire and JACK backends** on Linux, with transport sync | Linux pros route audio between applications (Bitwig, Ardour, Qtractor do it) | L | audio, engine | – | ⬜ |
