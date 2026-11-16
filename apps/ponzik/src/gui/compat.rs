@@ -103,6 +103,7 @@ pub fn scan_samples() -> Vec<PathBuf> {
     let h = home();
     let roots = [
         projects_dir().join("Samples"),
+        projects_dir().join("Échantillons"),
         music_dir(),
         h.join("Téléchargements"),
         h.join("Downloads"),

@@ -311,6 +311,11 @@ impl App {
                     ClipDrag::AudioMove { clip: i, start: cl.start, lane: cl.lane, tick0, lane0: lane_at(input.y) }
                 });
                 self.focus = super::app::Focus::Track(cl.track);
+                if input.double {
+                    let path = cl.path.clone();
+                    self.clip_drag = None;
+                    self.open_in_lab(&path, super::samplelab::Source::Clip(i));
+                }
             }
             if input.right_down && self.drag.is_none() {
                 self.project.audio_clips.remove(i);
