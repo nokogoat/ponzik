@@ -93,6 +93,14 @@ pub enum Rename {
     Track(usize),
 }
 
+/// Nom lisible d'un type d'appareil hors registre (plugin CLAP : son identifiant).
+pub fn display_kind(kind: &str) -> String {
+    match ponzik_clap::parse_kind(kind) {
+        Some((_, id)) => id.rsplit('.').next().unwrap_or(id).to_string(),
+        None => kind.to_string(),
+    }
+}
+
 /// Ce que fait une ligne de menu ou de palette.
 #[derive(Clone, Debug)]
 pub enum Action {
@@ -253,6 +261,8 @@ pub struct App {
     /// Réponses d'effets déjà calculées, par réglages.
     pub responses: HashMap<String, Arc<Vec<f32>>>,
     pub sample_files: Vec<PathBuf>,
+    /// Plugins CLAP trouvés au démarrage.
+    pub plugins: Vec<ponzik_clap::PluginInfo>,
 
     pub playing: bool,
     pub metronome: bool,
@@ -347,6 +357,7 @@ impl App {
             waveforms: HashMap::new(),
             responses: HashMap::new(),
             sample_files: compat::scan_samples(),
+            plugins: ponzik_clap::scan(),
             playing: false,
             metronome: false,
             position: 0.0,
@@ -1548,6 +1559,34 @@ impl App {
             if self.browser_row(c, input, wid("br-fx", *i, 0), row, name, desc) {
                 let track = self.focused_track();
                 self.add_effect(track, registry::effects()[*i].id);
+            }
+            y += 42.0;
+        }
+        let plugins = self.plugins.clone();
+        let plugs = rank(plugins.iter().enumerate().map(|(i, p)| (i, p.name.clone(), p.vendor.clone())).collect());
+        if !plugs.is_empty() {
+            y += 16.0;
+            section(self, c, &mut y, "Plugins CLAP");
+        }
+        for (i, name, vendor) in &plugs {
+            let row = Rect::new(inner_x, y, w, 40.0);
+            if self.browser_row(c, input, wid("br-clap", *i, 0), row, name, vendor) {
+                let info = &plugins[*i];
+                let kind = ponzik_clap::kind_for(&info.path, &info.id);
+                if info.is_instrument {
+                    let idx = self.project.add_channel(info.name.clone(), InstrumentDef::new(&kind), 60);
+                    self.focus = Focus::Channel(idx);
+                    self.commit("Ajouter un plugin");
+                } else {
+                    let track = self.focused_track();
+                    match self.project.tracks[track].inserts.iter().position(Option::is_none) {
+                        Some(slot) => {
+                            self.project.tracks[track].inserts[slot] = Some(EffectDef::new(&kind));
+                            self.commit("Ajouter un plugin");
+                        }
+                        None => self.toast("Plus d'emplacement libre sur cette piste"),
+                    }
+                }
             }
             y += 42.0;
         }

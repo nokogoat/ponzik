@@ -212,7 +212,8 @@ impl App {
         let nh = self.hover_anim(nid, nhov);
         let (name, kind) = {
             let c = &self.project.channels[ch];
-            let kind = ponzik_engine::registry::instrument_kind(&c.instrument.kind).map_or("?", |k| k.name);
+            let kind = ponzik_engine::registry::instrument_kind(&c.instrument.kind)
+                .map_or_else(|| super::app::display_kind(&c.instrument.kind), |k| k.name.to_string());
             (c.name.clone(), kind)
         };
         let track = self.project.channels[ch].track;

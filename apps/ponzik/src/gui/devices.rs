@@ -54,7 +54,14 @@ thread_local! {
 pub fn params_of(kind: &str, instrument: bool) -> &'static [ParamInfo] {
     PARAMS.with(|cache| {
         *cache.borrow_mut().entry((instrument, kind.to_string())).or_insert_with(|| {
-            if instrument {
+            if kind.starts_with(ponzik_clap::KIND_PREFIX) {
+                // Plugin CLAP : ses fiches sont créées une fois par type de plugin.
+                if instrument {
+                    ponzik_clap::instrument_from_kind(kind).map_or(&[], |i| i.params())
+                } else {
+                    ponzik_clap::effect_from_kind(kind).map_or(&[], |e| e.params())
+                }
+            } else if instrument {
                 registry::create_instrument(kind).map_or(&[], |i| i.params())
             } else {
                 registry::create_effect(kind).map_or(&[], |e| e.params())
@@ -235,12 +242,12 @@ impl App {
 
         let (name, bypass, color) = match device {
             Device::Instrument(_) => {
-                let name = registry::instrument_kind(&kind).map_or(kind.clone(), |k| k.name.to_string());
+                let name = registry::instrument_kind(&kind).map_or_else(|| super::app::display_kind(&kind), |k| k.name.to_string());
                 (name, false, t.accent)
             }
             Device::Effect { track, slot } => {
                 let def = self.project.tracks[track].inserts[slot].as_ref().expect("effet présent");
-                let name = registry::effect_kind(&def.kind).map_or(def.kind.clone(), |k| k.name.to_string());
+                let name = registry::effect_kind(&def.kind).map_or_else(|| super::app::display_kind(&def.kind), |k| k.name.to_string());
                 (name, def.bypass, pattern_color(1))
             }
         };
