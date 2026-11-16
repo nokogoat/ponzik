@@ -13,6 +13,7 @@ pub mod env;
 pub mod fft;
 pub mod filter;
 pub mod lfo;
+pub mod loudness;
 pub mod noise;
 pub mod osc;
 pub mod oversample;
