@@ -103,12 +103,28 @@ impl Rasterizer {
     }
 
     /// Couverture finale de chaque pixel, ligne par ligne.
-    pub(crate) fn for_each_coverage(&mut self, mut f: impl FnMut(usize, usize, f32)) {
-        for y in 0..self.height {
-            let row = y * self.stride;
+    pub(crate) fn for_each_coverage(&mut self, f: impl FnMut(usize, usize, f32)) {
+        self.for_each_coverage_in(0, 0, self.width, self.height, f);
+    }
+
+    /// Couverture des seuls pixels de [x0, x1) × [y0, y1) ; la somme de chaque
+    /// ligne part toujours de la colonne 0, donc les valeurs sont identiques.
+    pub(crate) fn for_each_coverage_in(
+        &mut self,
+        x0: usize,
+        y0: usize,
+        x1: usize,
+        y1: usize,
+        mut f: impl FnMut(usize, usize, f32),
+    ) {
+        for y in y0..y1.min(self.height) {
+            let row = &self.acc[y * self.stride..y * self.stride + x1.min(self.width)];
             let mut sum = 0.0f32;
-            for x in 0..self.width {
-                sum += self.acc[row + x];
+            for (x, &a) in row.iter().enumerate() {
+                sum += a;
+                if x < x0 {
+                    continue;
+                }
                 let c = sum.abs().min(1.0);
                 if c > 1.0 / 512.0 {
                     f(x, y, c);
