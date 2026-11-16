@@ -7,6 +7,7 @@ use crate::effects::{
     Pompe, Reverb, Saturator, Shimmer, Tranche, Transient, Utility,
 };
 use crate::effects::BusComp;
+use crate::effects::EffectRack;
 use crate::effects::CharDelay;
 use crate::effects::MasterLimiter;
 use crate::effects::MixAssistant;
@@ -337,6 +338,13 @@ pub fn effects() -> &'static [EffectKind] {
             category: "Mixing",
             description: "Listens to the track and suggests a high-pass, EQ, de-esser, compressor, saturation, width and level per source type; nothing changes until you apply",
             create: || Box::new(MixAssistant::default()),
+        },
+        EffectKind {
+            id: "rack",
+            name: "Rack",
+            category: "Utilities",
+            description: "Chains of effects in one slot, side by side or in parallel, with eight macro knobs",
+            create: || Box::new(EffectRack::default()),
         },
     ]
 }

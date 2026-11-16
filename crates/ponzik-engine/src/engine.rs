@@ -10,7 +10,9 @@ use crate::input::{CALIBRATION_CLICKS, InputChain, InputConsumer, InputSource, I
 use crate::instrument::Instrument;
 use crate::meter::{PeakMeter, peak};
 use crate::midi_out::{MidiClock, MidiLink, MidiOut};
+use crate::effects::fx_rack::{MacroMap, RackLayout};
 use crate::mixer::{INSERT_SLOTS, MASTER, Mixer, SEND_SLOTS, TRACKS};
+use crate::modulation::{ModClock, ModInput, ModSet};
 use crate::note_fx::NoteFx;
 use crate::pool::WorkerPool;
 use crate::rack::{Channel, NOTE_FX_SLOTS};
@@ -87,6 +89,18 @@ pub enum Command {
     /// une clé pas encore traitée dans le bloc est lue comme du silence.
     SetInsertSidechain { track: usize, slot: usize, key: Option<usize> },
     SetEffectParam { track: usize, slot: usize, id: u32, value: f32 },
+    /// Order and bypass of the devices of the rack in an insert slot.
+    SetRackLayout { track: usize, slot: usize, layout: RackLayout },
+    /// Places (or removes) a device of a rack, already at the sample rate; the
+    /// old one comes back as [`Garbage::Effect`].
+    SetRackUnit { track: usize, slot: usize, unit: usize, effect: Option<Box<dyn Effect>> },
+    /// Sets (or clears) one macro mapping of a rack.
+    SetRackMapping { track: usize, slot: usize, index: usize, map: Option<MacroMap> },
+    /// Modulators of a track (targets: its inserts); the old set comes back as
+    /// [`Garbage::Modulators`], its running state carried over.
+    SetTrackModulators { track: usize, mods: Option<Box<ModSet>> },
+    /// Modulators of a channel (targets: its instrument).
+    SetChannelModulators { channel: usize, mods: Option<Box<ModSet>> },
     SetMetronome(bool),
     /// Branche (ou débranche) l'entrée audio ; l'ancienne repart en [`Garbage::Input`].
     SetInput(Option<Box<InputConsumer>>),
@@ -153,6 +167,11 @@ impl std::fmt::Debug for Command {
             Command::SetInsertBypass { .. } => "SetInsertBypass",
             Command::SetInsertSidechain { .. } => "SetInsertSidechain",
             Command::SetEffectParam { .. } => "SetEffectParam",
+            Command::SetRackLayout { .. } => "SetRackLayout",
+            Command::SetRackUnit { .. } => "SetRackUnit",
+            Command::SetRackMapping { .. } => "SetRackMapping",
+            Command::SetTrackModulators { .. } => "SetTrackModulators",
+            Command::SetChannelModulators { .. } => "SetChannelModulators",
             Command::SetMetronome(_) => "SetMetronome",
             Command::SetInput(_) => "SetInput",
             Command::SetMonitor { .. } => "SetMonitor",
@@ -175,6 +194,7 @@ pub enum Garbage {
     Instrument(Box<dyn Instrument>),
     Effect(Box<dyn Effect>),
     NoteFx(Box<dyn NoteFx>),
+    Modulators(Box<ModSet>),
     Routing(Box<[usize]>),
     Input(Box<InputConsumer>),
     /// Enregistrement terminé : gardé à part par [`EngineHandle::take_recordings`].
@@ -775,13 +795,16 @@ impl Engine {
             match lane.target {
                 AutoTarget::InstrumentParam { channel, id } => {
                     if let Some(ch) = self.channels.get_mut(channel)
+                        && !ch.mods.as_mut().is_some_and(|m| m.set_base(0, id, v))
                         && ch.instrument.get_param(id) != v
                     {
                         ch.instrument.set_param(id, v);
                     }
                 }
                 AutoTarget::EffectParam { track, slot, id } => {
-                    if let Some(Some(fx)) = self.mixer.tracks.get_mut(track).and_then(|t| t.inserts.get_mut(slot))
+                    if let Some(t) = self.mixer.tracks.get_mut(track)
+                        && !t.mods.as_mut().is_some_and(|m| m.set_base(slot, id, v))
+                        && let Some(Some(fx)) = t.inserts.get_mut(slot)
                         && fx.get_param(id) != v
                     {
                         fx.set_param(id, v);
@@ -809,6 +832,28 @@ impl Engine {
                 }
                 AutoTarget::Tempo => {}
             }
+        }
+    }
+
+    /// The effect rack in an insert slot.
+    fn rack(&mut self, track: usize, slot: usize) -> Option<&mut crate::effects::EffectRack> {
+        self.mixer.tracks.get_mut(track)?.inserts.get_mut(slot)?.as_mut()?.as_rack()
+    }
+
+    /// Transport for the modulators, at the start of the block.
+    fn mod_clock(&self) -> ModClock {
+        ModClock { sample_rate: self.sample_rate, bpm: self.bpm, beats: self.pos / PPQ as f64, playing: self.playing }
+    }
+
+    /// Channel modulators: one update per block, before the instruments play.
+    fn modulate_channels(&mut self, n: usize) {
+        let clock = self.mod_clock();
+        for ch in &mut self.channels {
+            let Channel { mods, instrument, level, .. } = ch;
+            if let Some(mods) = mods.as_mut().filter(|m| !m.is_empty()) {
+                mods.run(&clock, n, &ModInput::Level(*level), |_, id, v| instrument.set_param(id, v));
+            }
+            *level = 0.0;
         }
     }
 
@@ -844,6 +889,8 @@ impl Engine {
         self.midi_clock.process(&mut self.midi, self.playing, pos_start, contiguous, n, to, &frame_of, self.clock);
 
         self.mixer.clear(n);
+        self.modulate_channels(n);
+        self.mixer.clock = self.mod_clock();
         // Threads de calcul : rendus à la fin du bloc (déplacer le pool n'alloue rien).
         let pool = self.pool.take();
         let parallel = pool.as_ref().filter(|_| self.channels.len() >= 2);
@@ -1084,6 +1131,9 @@ impl Engine {
             }
             if let Some(m) = meter {
                 m.record(peak(l), peak(r));
+            }
+            if ch.mods.is_some() {
+                ch.level = ch.level.max(peak(l)).max(peak(r));
             }
         }
         ch.cpu_ns += started.elapsed().as_nanos() as u64;
@@ -1332,7 +1382,9 @@ impl Engine {
                 }
             }
             Command::SetInstrumentParam { channel, id, value } => {
-                if let Some(ch) = self.channels.get_mut(channel) {
+                if let Some(ch) = self.channels.get_mut(channel)
+                    && !ch.mods.as_mut().is_some_and(|m| m.set_base(0, id, value))
+                {
                     ch.instrument.set_param(id, value);
                 }
             }
@@ -1435,8 +1487,52 @@ impl Engine {
                 }
             }
             Command::SetEffectParam { track, slot, id, value } => {
-                if let Some(Some(fx)) = self.mixer.tracks.get_mut(track).and_then(|t| t.inserts.get_mut(slot)) {
+                if let Some(t) = self.mixer.tracks.get_mut(track)
+                    && !t.mods.as_mut().is_some_and(|m| m.set_base(slot, id, value))
+                    && let Some(Some(fx)) = t.inserts.get_mut(slot)
+                {
                     fx.set_param(id, value);
+                }
+            }
+            Command::SetRackLayout { track, slot, layout } => {
+                if let Some(rack) = self.rack(track, slot) {
+                    rack.set_layout(layout);
+                }
+            }
+            Command::SetRackUnit { track, slot, unit, effect } => {
+                let rest = match self.rack(track, slot) {
+                    Some(rack) => rack.set_unit(unit, effect),
+                    None => effect,
+                };
+                if let Some(old) = rest {
+                    self.trash(Garbage::Effect(old));
+                }
+            }
+            Command::SetRackMapping { track, slot, index, map } => {
+                if let Some(rack) = self.rack(track, slot) {
+                    rack.set_mapping(index, map);
+                }
+            }
+            Command::SetTrackModulators { track, mut mods } => {
+                if let Some(t) = self.mixer.tracks.get_mut(track) {
+                    if let (Some(new), Some(old)) = (mods.as_mut(), t.mods.as_ref()) {
+                        new.inherit(old);
+                    }
+                    mods = std::mem::replace(&mut t.mods, mods);
+                }
+                if let Some(old) = mods {
+                    self.trash(Garbage::Modulators(old));
+                }
+            }
+            Command::SetChannelModulators { channel, mut mods } => {
+                if let Some(ch) = self.channels.get_mut(channel) {
+                    if let (Some(new), Some(old)) = (mods.as_mut(), ch.mods.as_ref()) {
+                        new.inherit(old);
+                    }
+                    mods = std::mem::replace(&mut ch.mods, mods);
+                }
+                if let Some(old) = mods {
+                    self.trash(Garbage::Modulators(old));
                 }
             }
             Command::SetMetronome(on) => self.metronome = on,

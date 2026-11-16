@@ -40,6 +40,12 @@ pub trait Effect: Params + Send {
         None
     }
 
+    /// The effect rack behind this effect, for the commands that edit its
+    /// chains and macros.
+    fn as_rack(&mut self) -> Option<&mut crate::effects::EffectRack> {
+        None
+    }
+
     /// Traitement sur place d'un bloc stéréo (`left.len() == right.len()`).
     fn process(&mut self, left: &mut [f32], right: &mut [f32]);
 }

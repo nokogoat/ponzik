@@ -32,6 +32,10 @@ pub struct Channel {
     stages: [NoteBuffer; 2],
     /// Temps de rendu de l'instrument accumulé (ns), relevé par le moteur.
     pub(crate) cpu_ns: u64,
+    /// Modulators of the instrument's parameters.
+    pub mods: Option<Box<crate::modulation::ModSet>>,
+    /// Peak of the block, heard by an envelope follower on the channel.
+    pub(crate) level: f32,
 }
 
 impl Channel {
@@ -49,6 +53,8 @@ impl Channel {
             inputs: NoteBuffer::default(),
             stages: Default::default(),
             cpu_ns: 0,
+            mods: None,
+            level: 0.0,
         }
     }
 

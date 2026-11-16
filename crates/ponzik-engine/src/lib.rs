@@ -15,6 +15,7 @@ pub mod instruments;
 mod meter;
 pub mod midi_out;
 pub mod mixer;
+pub mod modulation;
 pub mod note_fx;
 pub mod param;
 pub mod pool;
@@ -27,6 +28,8 @@ pub mod tempo_map;
 pub mod wav;
 
 pub use effect::Effect;
+pub use effects::fx_rack::{MacroMap, RackLayout};
+pub use modulation::{ModClock, ModKind, ModLink, ModMeters, ModParam, ModSet, Modulator};
 pub use engine::{Command, Engine, EngineHandle, Garbage, MAX_CHANNELS, MAX_RECORDINGS};
 pub use input::{InputConsumer, InputProducer, InputSource, InputStrip, RecordBuffer, TakeSlice, input_channel};
 pub use instrument::Instrument;

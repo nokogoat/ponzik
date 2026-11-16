@@ -21,6 +21,7 @@ use std::time::Instant;
 
 use crate::effect::Effect;
 use crate::meter::{PeakMeter, peak};
+use crate::modulation::{MOD_CHUNK, ModClock, ModInput, ModSet};
 use crate::pool::{Graph, WorkerPool};
 
 /// Master + 32 pistes.
@@ -46,6 +47,8 @@ pub struct Track {
     /// Piste VCA qui pilote le volume de celle-ci : son gain et son muet
     /// s'appliquent en plus des siens.
     pub vca: Option<usize>,
+    /// Modulators of the track's inserts (rack macros and devices included).
+    pub mods: Option<Box<ModSet>>,
     pub(crate) l: Vec<f32>,
     pub(crate) r: Vec<f32>,
     /// Retard de l'entrée directe (compensation).
@@ -72,6 +75,7 @@ impl Track {
             bypass: [false; INSERT_SLOTS],
             sidechain: [None; INSERT_SLOTS],
             vca: None,
+            mods: None,
             l: vec![0.0; max_block],
             r: vec![0.0; max_block],
             input_delay: Delay::new(max_block, max_latency),
@@ -195,6 +199,7 @@ struct Ctx<'a> {
     reduced: &'a [bool; TRACKS],
     silence: &'a [f32],
     meters: &'a [PeakMeter],
+    clock: ModClock,
 }
 
 /// Pistes partagées entre les threads du bloc : chaque tâche n'emprunte en
@@ -243,6 +248,8 @@ pub struct Mixer {
     /// court-circuités et dont le signal n'est pas retardé par la compensation.
     pub(crate) reduced: [bool; TRACKS],
     plan: Box<Plan>,
+    /// Transport of the block, for the modulators.
+    pub(crate) clock: ModClock,
 }
 
 /// Ordre par défaut : toutes les pistes vont directement au master.
@@ -316,6 +323,39 @@ unsafe fn route(tracks: Tracks, src: usize, dst: usize, amount: f32, cx: &Ctx) {
 /// # Safety
 /// La piste `idx` est à l'appelant seul ; les pistes que `ready` accepte ne sont plus écrites.
 unsafe fn run_inserts(tracks: Tracks, idx: usize, cx: &Ctx, ready: impl Fn(usize) -> bool) {
+    // SAFETY: voir la fonction.
+    let modulated = unsafe { (*tracks.0.add(idx)).mods.as_ref().is_some_and(|m| !m.is_empty()) };
+    if !modulated {
+        // SAFETY: voir la fonction.
+        return unsafe { run_insert_range(tracks, idx, cx, &ready, 0, cx.n) };
+    }
+    // Modulated track: the inserts run in chunks, the modulators updated before each.
+    let mut a = 0;
+    while a < cx.n {
+        let b = (a + MOD_CHUNK).min(cx.n);
+        {
+            // SAFETY: voir la fonction ; l'emprunt se termine avant les inserts.
+            let Track { mods, inserts, l, r, .. } = unsafe { &mut *tracks.0.add(idx) };
+            if let Some(mods) = mods.as_mut() {
+                let input = ModInput::Audio(&l[a..b], &r[a..b]);
+                mods.run(&cx.clock.after(a), b - a, &input, |slot, id, v| {
+                    if let Some(Some(fx)) = inserts.get_mut(slot) {
+                        fx.set_param(id, v);
+                    }
+                });
+            }
+        }
+        // SAFETY: voir la fonction.
+        unsafe { run_insert_range(tracks, idx, cx, &ready, a, b) };
+        a = b;
+    }
+}
+
+/// Inserts of track `idx` over the frames `a..b` of the block.
+///
+/// # Safety
+/// Comme [`run_inserts`].
+unsafe fn run_insert_range(tracks: Tracks, idx: usize, cx: &Ctx, ready: &impl Fn(usize) -> bool, a: usize, b: usize) {
     let n = cx.n;
     // SAFETY: voir la fonction.
     let Track { inserts, bypass, sidechain, l, r, key_l, key_r, insert_ns, .. } = unsafe { &mut *tracks.0.add(idx) };
@@ -335,24 +375,25 @@ unsafe fn run_inserts(tracks: Tracks, idx: usize, cx: &Ctx, ready: impl Fn(usize
         let started = Instant::now();
         if let Some(k) = key {
             let (kl, kr): (&[f32], &[f32]) = if !ready(k) {
-                (&cx.silence[..n], &cx.silence[..n])
+                (&cx.silence[a..b], &cx.silence[a..b])
             } else {
                 // SAFETY: piste clé déjà traitée, lue seulement.
                 let kt = unsafe { &*tracks.0.add(k) };
                 if delay > 0 {
                     // Clé en avance sur le signal qu'elle pilote : on la retarde.
-                    kt.output_delay.read(delay, n, |i, a, b| {
-                        key_l[i] = a;
-                        key_r[i] = b;
+                    // Frames a..b of the block: the last n - a written, minus the n - b after.
+                    kt.output_delay.read(delay + (n - b), b - a, |i, x, y| {
+                        key_l[a + i] = x;
+                        key_r[a + i] = y;
                     });
-                    (&key_l[..n], &key_r[..n])
+                    (&key_l[a..b], &key_r[a..b])
                 } else {
-                    (&kt.l[..n], &kt.r[..n])
+                    (&kt.l[a..b], &kt.r[a..b])
                 }
             };
             fx.sidechain(kl, kr);
         }
-        fx.process(&mut l[..n], &mut r[..n]);
+        fx.process(&mut l[a..b], &mut r[a..b]);
         insert_ns[slot] += started.elapsed().as_nanos() as u64;
     }
 }
@@ -430,6 +471,7 @@ impl Mixer {
                 routes: [(0, 0.0); MAX_ROUTES],
                 vca: [1.0; TRACKS],
             }),
+            clock: ModClock::default(),
         }
     }
 
@@ -523,9 +565,9 @@ impl Mixer {
         self.plan_latency();
         self.delay_inputs(n);
         let vca: [f32; TRACKS] = std::array::from_fn(|idx| self.vca_gain(idx));
-        let Self { tracks, order, silence, lat, reduced, .. } = self;
+        let Self { tracks, order, silence, lat, reduced, clock, .. } = self;
         let tracks = Tracks(tracks.as_mut_ptr());
-        let cx = Ctx { n, lat, reduced, silence, meters };
+        let cx = Ctx { n, lat, reduced, silence, meters, clock: *clock };
         let mut ready = [false; TRACKS];
         for &idx in order.iter() {
             if idx == MASTER || idx >= TRACKS || ready[idx] {
@@ -629,9 +671,9 @@ impl Mixer {
         }
         self.plan_latency();
         self.delay_inputs(n);
-        let Self { tracks, silence, lat, reduced, plan, .. } = self;
+        let Self { tracks, silence, lat, reduced, plan, clock, .. } = self;
         let tracks = Tracks(tracks.as_mut_ptr());
-        let cx = Ctx { n, lat, reduced, silence, meters };
+        let cx = Ctx { n, lat, reduced, silence, meters, clock: *clock };
         let plan = &**plan;
         let gather = |dst: usize| {
             for &(src, amount) in plan.routes_into(dst) {
