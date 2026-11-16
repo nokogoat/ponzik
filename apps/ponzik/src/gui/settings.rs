@@ -145,7 +145,7 @@ enum Glyph {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Workspace {
     /// Dans l'ordre de [`View::ALL`].
-    pub views: [bool; 5],
+    pub views: [bool; 6],
     pub browser: bool,
     pub panel: bool,
     pub count_in: bool,
@@ -154,7 +154,7 @@ pub struct Workspace {
 
 impl Default for Workspace {
     fn default() -> Self {
-        Self { views: [true; 5], browser: true, panel: true, count_in: true, bar: [true; 11] }
+        Self { views: [true; 6], browser: true, panel: true, count_in: true, bar: [true; 11] }
     }
 }
 
@@ -165,6 +165,7 @@ fn view_id(v: View) -> &'static str {
         View::Playlist => "playlist",
         View::Session => "session",
         View::Mixer => "mixer",
+        View::Lab => "lab",
     }
 }
 
@@ -175,6 +176,7 @@ fn view_hint(v: View) -> &'static str {
         View::Playlist => "L'arrangement du morceau",
         View::Session => "Clips lancés en direct",
         View::Mixer => "Pistes, effets et envois",
+        View::Lab => "Chop, edit and flip samples",
     }
 }
 
@@ -190,7 +192,7 @@ impl Workspace {
     /// Au moins une vue reste proposée.
     fn fix(&mut self) {
         if !self.views.iter().any(|&v| v) {
-            self.views = [true; 5];
+            self.views = [true; 6];
         }
     }
 
@@ -210,7 +212,7 @@ pub fn presets() -> [(&'static str, &'static str, Workspace); 5] {
     [
         ("Complet", "Tout Ponzik", Workspace::default()),
         ("Beatmaker", "Rack, playlist et mixer", Workspace::with(&[Rack, Playlist, Mixer], true, true, &[Bar::Keyboard])),
-        ("Sampling", "Tout sauf le piano roll", Workspace::with(&[Rack, Playlist, Session, Mixer], true, true, &[Bar::Scale, Bar::Keyboard])),
+        ("Sampling", "Tout sauf le piano roll", Workspace::with(&[Rack, Playlist, Session, Mixer, Lab], true, true, &[Bar::Scale, Bar::Keyboard])),
         ("Live", "Session et mixer, pour jouer en direct", Workspace::with(&[Session, Mixer], true, true, &[Bar::Pattern, Bar::Position])),
         (
             "Minimal",
@@ -393,7 +395,7 @@ impl App {
 
     /// Capture d'écran : touches changées et un conflit en attente.
     pub fn screenshot_conflict(&mut self) {
-        self.prefs.keymap.rebind(Shortcut::ViewSession, Combo::key(Key::F(8)), false);
+        self.prefs.keymap.rebind(Shortcut::ViewSession, Combo::key(Key::F(11)), false);
         self.prefs.keymap.set(Shortcut::TapTempo, None);
         let combo = Combo::ctrl(Key::Char('m'));
         self.prefs.conflict = Some((Shortcut::Record, combo, Shortcut::Metronome));
@@ -469,7 +471,9 @@ impl App {
                 return;
             }
             Shortcut::Settings => Action::Popup(Popup::Settings { tab: 0 }),
-            Shortcut::ViewPlaylist | Shortcut::ViewRack | Shortcut::ViewPiano | Shortcut::ViewSession | Shortcut::ViewMixer => return,
+            Shortcut::ViewPlaylist | Shortcut::ViewRack | Shortcut::ViewPiano | Shortcut::ViewSession | Shortcut::ViewMixer | Shortcut::ViewLab => {
+                return;
+            }
         };
         self.run_action(action, anchor);
     }
@@ -1098,7 +1102,7 @@ mod tests {
         ws.browser = false;
         ws.count_in = false;
         let mut keymap = Keymap::default();
-        keymap.rebind(Shortcut::ViewSession, Combo::key(Key::F(8)), false);
+        keymap.rebind(Shortcut::ViewSession, Combo::key(Key::F(11)), false);
         keymap.set(Shortcut::TapTempo, None);
         let text = to_json(&ws, &keymap, "Glace").pretty();
         let (ws2, keymap2, theme) = from_json(&json::parse(&text).expect("JSON valide"));
@@ -1115,10 +1119,10 @@ mod tests {
         assert_eq!(keymap, Keymap::default());
         assert_eq!(theme, None);
         // Types faux, clés inconnues, aucune vue : on garde ce qui se lit.
-        let text = r#"{"views": {"rack": false, "piano": false, "playlist": false, "session": false, "mixer": false},
+        let text = r#"{"views": {"rack": false, "piano": false, "playlist": false, "session": false, "mixer": false, "lab": false},
             "bar": {"tap": false, "scale": "oui", "zzz": true}, "panel": 3, "keys": {"save": 12, "undo": "ctrl+u", "nope": "f1"}}"#;
         let (ws, keymap, _) = from_json(&json::parse(text).unwrap());
-        assert_eq!(ws.views, [true; 5], "au moins une vue");
+        assert_eq!(ws.views, [true; 6], "au moins une vue");
         assert!(!ws.bar(Bar::Tap));
         assert!(ws.bar(Bar::Scale));
         assert!(ws.panel);

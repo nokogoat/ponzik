@@ -512,6 +512,11 @@ impl App {
         }
         let name = std::path::Path::new(&path).file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
         self.text(c, self.f.sans_med, 11.0, r.x + 10.0, r.y + 12.0, &name, t.text2);
+        let open = Rect::new(r.right() - 34.0, r.bottom() - 32.0, 26.0, 26.0);
+        if self.icon_button(c, input, wid("smp-lab", device_key(device), 0), open, super::widgets::Icon::Lab, false, ("Open in the Sample Lab: chop, trim, stretch", "F8")) {
+            self.open_channel_in_lab(ch);
+            return;
+        }
 
         // Marqueurs : début et fin (et début de boucle si présent), en pourcentage.
         let find = |n: &str| params.iter().find(|p| p.name == n);

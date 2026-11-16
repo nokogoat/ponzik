@@ -127,6 +127,16 @@ pub enum Icon {
     Vca,
     /// Fenêtre découpée en zones : espace de travail et réglages.
     Layout,
+    /// Forme d'onde et marqueur : l'Atelier.
+    Lab,
+    /// Tranches et marqueurs : découper vers le Découpeur.
+    Slice,
+    /// Double flèche : étirer dans le temps.
+    Stretch,
+    /// Barres sous un plafond : normaliser.
+    Normalize,
+    /// Barres en dégradé : couleurs spectrales.
+    Spectral,
 }
 
 /// Dessine une icône au trait, dans un carré de `size` centré sur (`cx`, `cy`).
@@ -349,6 +359,49 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
             c.fill_rect(rr(-7.0, 2.5, 14.0, 4.0), col.alpha(0.55));
             c.stroke_polyline(&[p(0.0, -4.5), p(0.0, 0.5)], stroke, col);
             c.stroke_polyline(&[p(-3.0, -2.0), p(0.0, 1.0), p(3.0, -2.0)], stroke, col);
+        }
+        Icon::Lab => {
+            // Forme d'onde coupée par un marqueur à fanion.
+            for (i, h) in [3.0, 8.0, 12.0, 6.0, 10.0, 4.0].into_iter().enumerate() {
+                let x = -7.0 + i as f32 * 2.6 + if i >= 3 { 1.6 } else { 0.0 };
+                c.stroke_polyline(&[p(x, 1.0 - h * 0.5), p(x, 1.0 + h * 0.5)], stroke * 0.8, if i >= 3 { col.alpha(0.55) } else { col });
+            }
+            c.stroke_polyline(&[p(0.6, -7.0), p(0.6, 7.5)], stroke * 0.8, col);
+            let mut path = Path::new();
+            path.polygon(&[p(0.6, -7.5), p(5.0, -5.5), p(0.6, -3.5)]);
+            c.fill_path(&path, col);
+        }
+        Icon::Slice => {
+            // Trois tranches séparées par deux marqueurs.
+            c.fill_rrect(rr(-7.5, -3.0, 4.0, 9.0), 1.0 * s, col.alpha(0.55));
+            c.fill_rrect(rr(-2.0, -1.0, 4.0, 7.0), 1.0 * s, col);
+            c.fill_rrect(rr(3.5, 1.0, 4.0, 5.0), 1.0 * s, col.alpha(0.55));
+            for x in [-2.75, 2.75] {
+                let mut path = Path::new();
+                path.polygon(&[p(x - 2.2, -7.0), p(x + 2.2, -7.0), p(x, -4.2)]);
+                c.fill_path(&path, col);
+            }
+        }
+        Icon::Stretch => {
+            c.stroke_polyline(&[p(-7.0, 0.0), p(7.0, 0.0)], stroke, col);
+            c.stroke_polyline(&[p(-4.0, -3.0), p(-7.0, 0.0), p(-4.0, 3.0)], stroke, col);
+            c.stroke_polyline(&[p(4.0, -3.0), p(7.0, 0.0), p(4.0, 3.0)], stroke, col);
+            c.stroke_polyline(&[p(-1.5, -6.5), p(-1.5, -3.5)], stroke * 0.8, col.alpha(0.6));
+            c.stroke_polyline(&[p(1.5, 3.5), p(1.5, 6.5)], stroke * 0.8, col.alpha(0.6));
+        }
+        Icon::Normalize => {
+            c.stroke_polyline(&[p(-7.0, -6.0), p(7.0, -6.0)], stroke * 0.8, col);
+            for (i, h) in [5.0, 9.0, 11.0, 7.0].into_iter().enumerate() {
+                let x = -4.5 + i as f32 * 3.0;
+                c.fill_rrect(rr(x - 1.0, 7.0 - h, 2.0, h), 1.0 * s, if h > 10.0 { col } else { col.alpha(0.6) });
+            }
+        }
+        Icon::Spectral => {
+            // Barres en dégradé : grave sombre, aigu clair.
+            for (i, h) in [11.0, 8.0, 10.0, 6.0, 4.0].into_iter().enumerate() {
+                let x = -7.0 + i as f32 * 3.4;
+                c.fill_rrect(rr(x, 5.5 - h, 2.4, h), 1.0 * s, col.alpha(0.35 + 0.16 * i as f32));
+            }
         }
         Icon::Check => c.stroke_polyline(&[p(-6.0, 0.5), p(-2.0, 4.5), p(6.0, -4.5)], stroke * 1.15, col),
         Icon::Play => {

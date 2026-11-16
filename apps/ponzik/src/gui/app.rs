@@ -36,10 +36,12 @@ pub enum View {
     Playlist,
     Session,
     Mixer,
+    /// Atelier : éditeur d'échantillons.
+    Lab,
 }
 
 impl View {
-    pub const ALL: [View; 5] = [View::Rack, View::Piano, View::Playlist, View::Session, View::Mixer];
+    pub const ALL: [View; 6] = [View::Rack, View::Piano, View::Playlist, View::Session, View::Mixer, View::Lab];
 
     pub fn icon(self) -> Icon {
         match self {
@@ -48,6 +50,7 @@ impl View {
             View::Playlist => Icon::Playlist,
             View::Session => Icon::Session,
             View::Mixer => Icon::Mixer,
+            View::Lab => Icon::Lab,
         }
     }
 
@@ -58,6 +61,7 @@ impl View {
             View::Playlist => "Playlist",
             View::Session => "Session",
             View::Mixer => "Mixer",
+            View::Lab => "Sample Lab",
         }
     }
 
@@ -505,6 +509,8 @@ pub struct App {
     pub cursor: ponzik_window::Cursor,
     /// Espace de travail et raccourcis choisis.
     pub prefs: super::settings::Prefs,
+    /// Atelier : échantillon ouvert et son édition.
+    pub lab: super::samplelab::Lab,
 }
 
 impl App {
@@ -612,6 +618,7 @@ impl App {
             layout: Default::default(),
             cursor: Default::default(),
             prefs: Default::default(),
+            lab: Default::default(),
         }
     }
 
@@ -1523,6 +1530,7 @@ impl App {
             || !self.toasts.is_empty()
             || self.tips.waiting
             || self.dnd.is_some()
+            || self.engine.audition_position().is_some()
             || self.track_meters.iter().any(Meter::active)
             || self.channel_meters.iter().any(Meter::active)
     }
@@ -1530,6 +1538,9 @@ impl App {
     /// Raccourcis globaux, ceux de la table des touches (FL Studio par défaut).
     fn shortcuts(&mut self, input: &Input) {
         for &(key, mods) in &input.keys {
+            if self.view == View::Lab && self.lab_key(key, mods) {
+                continue;
+            }
             if key == Key::Escape {
                 self.popup = None;
                 self.mixer_sel.clear();
@@ -1582,6 +1593,9 @@ impl App {
             return;
         }
         if v != self.view {
+            if self.view == View::Lab {
+                self.lab_stop();
+            }
             self.view = v;
             self.anim.set(wid("view-enter", 0, 0), 0.0);
         }
@@ -2153,6 +2167,7 @@ impl App {
             View::Playlist => self.playlist_view(c, input, header, body_shifted),
             View::Session => self.session_view(c, input, header, body_shifted),
             View::Mixer => self.mixer_view(c, input, header, body_shifted),
+            View::Lab => self.lab_view(c, input, header, body_shifted),
         }
         if enter < 0.999 {
             c.fill_rect(Rect::new(r.x, header.y - 2.0, r.w, r.bottom() - header.y + 2.0), t.bg.alpha(1.0 - enter));

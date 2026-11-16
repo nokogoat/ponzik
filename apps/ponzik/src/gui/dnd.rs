@@ -50,6 +50,8 @@ pub enum DropTarget {
     Slot(usize, usize),
     /// Ligne de playlist, au tick indiqué.
     Lane { lane: usize, tick: u32 },
+    /// L'Atelier : l'échantillon s'y ouvre.
+    Lab,
 }
 
 pub struct Dnd {
@@ -78,7 +80,7 @@ impl App {
             (payload, target),
             (Payload::Instrument { .. }, DropTarget::Rack | DropTarget::Channel(_))
                 | (Payload::Effect { .. }, DropTarget::Channel(_) | DropTarget::Track(_) | DropTarget::Slot(..))
-                | (Payload::Sample(_), DropTarget::Rack | DropTarget::Channel(_) | DropTarget::Lane { .. })
+                | (Payload::Sample(_), DropTarget::Rack | DropTarget::Channel(_) | DropTarget::Lane { .. } | DropTarget::Lab)
         )
     }
 
@@ -140,7 +142,11 @@ impl App {
             }
             Payload::Sample(path) => {
                 let path = path.to_string_lossy().into_owned();
-                if self.view == View::Playlist { self.add_audio_clip(&path, None) } else { self.add_sample_channel(&path) }
+                match self.view {
+                    View::Playlist => self.add_audio_clip(&path, None),
+                    View::Lab => self.open_in_lab(&path, super::samplelab::Source::Browser),
+                    _ => self.add_sample_channel(&path),
+                }
             }
         }
     }
@@ -175,6 +181,9 @@ impl App {
                 } else {
                     self.add_sample_channel(&path);
                 }
+            }
+            (Payload::Sample(path), DropTarget::Lab) => {
+                self.open_in_lab(&path.to_string_lossy(), super::samplelab::Source::Browser);
             }
             (Payload::Sample(path), DropTarget::Lane { lane, tick }) => {
                 self.add_audio_clip(&path.to_string_lossy(), Some((lane, tick)));

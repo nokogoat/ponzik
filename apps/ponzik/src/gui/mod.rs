@@ -18,6 +18,7 @@ mod palette;
 mod piano;
 mod playlist;
 mod rack;
+mod samplelab;
 mod session;
 mod settings;
 mod sync;
@@ -278,6 +279,7 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
         "playlist" => View::Playlist,
         "mixer" => View::Mixer,
         "session" => View::Session,
+        "lab" => View::Lab,
         _ => View::Rack,
     };
     if app.view_shown(view) {
@@ -354,6 +356,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // dernier bus, VCA, sélection et retours d'effet créés pour la capture.
     if let Ok(spec) = std::env::var("PONZIK_MIXER") {
         app.screenshot_mixer(&spec);
+    }
+    // PONZIK_SAMPLELAB=demo|<wav> : ouvre l'Atelier sur un échantillon.
+    if let Ok(spec) = std::env::var("PONZIK_SAMPLELAB") {
+        app.screenshot_lab(&spec);
     }
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {

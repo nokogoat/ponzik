@@ -21,7 +21,8 @@ Usage :
                                            exporte la démo en WAV 24 bits
   ponzik screenshot <sortie.png> [vue] [largeur hauteur]
                                            capture l'interface hors écran
-                                           (vues : rack, piano, playlist, mixer)
+                                           (vues : rack, piano, playlist, mixer, lab ;
+                                           PONZIK_SAMPLELAB=demo|<wav> ouvre l'Atelier)
   ponzik help                              affiche cette aide";
 
 fn main() -> ExitCode {

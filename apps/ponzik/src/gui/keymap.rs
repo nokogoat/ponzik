@@ -193,6 +193,7 @@ pub enum Shortcut {
     ViewPiano,
     ViewSession,
     ViewMixer,
+    ViewLab,
     NextView,
     ToggleBrowser,
     TogglePanel,
@@ -216,7 +217,7 @@ pub enum Shortcut {
 pub const GROUPS: [&str; 5] = ["Transport", "Vues", "Pattern", "Édition", "Fichier"];
 
 impl Shortcut {
-    pub const ALL: [Shortcut; 28] = [
+    pub const ALL: [Shortcut; 29] = [
         Shortcut::PlayStop,
         Shortcut::ToggleMode,
         Shortcut::Record,
@@ -228,6 +229,7 @@ impl Shortcut {
         Shortcut::ViewPiano,
         Shortcut::ViewSession,
         Shortcut::ViewMixer,
+        Shortcut::ViewLab,
         Shortcut::NextView,
         Shortcut::ToggleBrowser,
         Shortcut::TogglePanel,
@@ -261,6 +263,7 @@ impl Shortcut {
             Shortcut::ViewPiano => "view_piano",
             Shortcut::ViewSession => "view_session",
             Shortcut::ViewMixer => "view_mixer",
+            Shortcut::ViewLab => "view_lab",
             Shortcut::NextView => "next_view",
             Shortcut::ToggleBrowser => "toggle_browser",
             Shortcut::TogglePanel => "toggle_panel",
@@ -298,6 +301,7 @@ impl Shortcut {
             Shortcut::ViewPiano => "Piano roll",
             Shortcut::ViewSession => "Session",
             Shortcut::ViewMixer => "Mixer",
+            Shortcut::ViewLab => "Sample Lab",
             Shortcut::NextView => "Vue suivante",
             Shortcut::ToggleBrowser => "Navigateur",
             Shortcut::TogglePanel => "Panneau d'appareils",
@@ -331,6 +335,7 @@ impl Shortcut {
             Shortcut::ViewPiano => Icon::Piano,
             Shortcut::ViewSession => Icon::Session,
             Shortcut::ViewMixer => Icon::Mixer,
+            Shortcut::ViewLab => Icon::Lab,
             Shortcut::NextView => Icon::ChevronRight,
             Shortcut::ToggleBrowser => Icon::Sidebar,
             Shortcut::TogglePanel => Icon::Panel,
@@ -364,6 +369,7 @@ impl Shortcut {
             | Shortcut::ViewPiano
             | Shortcut::ViewSession
             | Shortcut::ViewMixer
+            | Shortcut::ViewLab
             | Shortcut::NextView
             | Shortcut::ToggleBrowser
             | Shortcut::TogglePanel => "Vues",
@@ -393,6 +399,7 @@ impl Shortcut {
             Shortcut::ViewPiano => Combo::key(F(7)),
             Shortcut::ViewSession => return None,
             Shortcut::ViewMixer => Combo::key(F(9)),
+            Shortcut::ViewLab => Combo::key(F(8)),
             Shortcut::NextView => Combo::key(Tab),
             Shortcut::ToggleBrowser => Combo::alt(F(8)),
             Shortcut::TogglePanel => return None,
@@ -421,6 +428,7 @@ impl Shortcut {
             Shortcut::ViewPiano => Some(View::Piano),
             Shortcut::ViewSession => Some(View::Session),
             Shortcut::ViewMixer => Some(View::Mixer),
+            Shortcut::ViewLab => Some(View::Lab),
             _ => None,
         }
     }
@@ -432,6 +440,7 @@ impl Shortcut {
             View::Piano => Shortcut::ViewPiano,
             View::Session => Shortcut::ViewSession,
             View::Mixer => Shortcut::ViewMixer,
+            View::Lab => Shortcut::ViewLab,
         }
     }
 }
@@ -579,7 +588,7 @@ mod tests {
     #[test]
     fn overrides_round_trip_and_tolerate_junk() {
         let mut k = Keymap::default();
-        k.rebind(Shortcut::ViewSession, Combo::key(Key::F(8)), false);
+        k.rebind(Shortcut::ViewSession, Combo::key(Key::F(11)), false);
         k.set(Shortcut::TapTempo, None);
         let saved = k.overrides();
         assert_eq!(saved.len(), 2);
