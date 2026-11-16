@@ -46,9 +46,6 @@ fn same_instrument(a: &InstrumentDef, b: &InstrumentDef) -> bool {
 
 pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: &dyn Fn(&str) -> Option<Arc<Sample>>) -> Vec<Command> {
     let mut cmds = Vec::new();
-    if old.bpm != new.bpm {
-        cmds.push(Command::SetBpm(new.bpm));
-    }
 
     // Canaux : par position ; un retrait au milieu remplace les suivants.
     let (n_old, n_new) = (old.channels.len(), new.channels.len());
@@ -100,6 +97,7 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: &dyn Fn(&str
     }
 
     if old.patterns != new.patterns
+        || old.bpm != new.bpm
         || old.clips != new.clips
         || old.mode != new.mode
         || old.swing != new.swing

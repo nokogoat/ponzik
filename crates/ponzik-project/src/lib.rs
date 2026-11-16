@@ -11,9 +11,10 @@ use ponzik_i18n::{tr, tr_fmt, tr_noop};
 use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS, TRACKS, routing_order};
 use ponzik_engine::registry;
 use ponzik_engine::{
-    AudioClip, AutomationLane, Channel, Clip, Command, Effect, Engine, EngineHandle, Instrument, NOTE_FX_SLOTS, Note,
+    AudioClip, AutomationLane, Channel, Clip, Effect, Engine, EngineHandle, Instrument, NOTE_FX_SLOTS, Note,
     NoteFx, Pattern, PlayMode, Sample, Sequence, TICKS_PER_BAR, TICKS_PER_STEP,
 };
+pub use ponzik_engine::{TempoMap, TempoPoint, TimeSig};
 pub use ponzik_engine::{AutoPoint, AutoScope, AutoTarget, SessionSlot};
 
 /// Dimensions de la grille de la vue Session.
@@ -382,6 +383,39 @@ impl Project {
         self.sequence_with(&|_| None)
     }
 
+    /// Tempo map of the song: the project tempo, or the song tempo automation
+    /// lane when there is one (its points become tempo points, straight
+    /// segments become ramps and curved ones a chain of short ramps).
+    pub fn tempo_map(&self) -> TempoMap {
+        TempoMap::new(self.tempo_points(), Vec::new())
+    }
+
+    fn tempo_points(&self) -> Vec<TempoPoint> {
+        let base = TempoPoint { tick: 0, bpm: self.bpm, ramp: false };
+        let Some(lane) = self.automation_lane(AutoTarget::Tempo, AutoScope::Song).filter(|l| !l.points.is_empty()) else {
+            return vec![base];
+        };
+        const PIECES: u32 = 16;
+        let mut out = vec![TempoPoint { tick: 0, bpm: lane.points[0].value, ramp: false }];
+        for (i, p) in lane.points.iter().enumerate() {
+            match i.checked_sub(1).map(|j| lane.points[j]) {
+                Some(a) if a.curve.abs() > 1e-6 && p.tick > a.tick + 1 => {
+                    let span = p.tick - a.tick;
+                    for k in 1..PIECES {
+                        let tick = a.tick + span * k / PIECES;
+                        if let Some(bpm) = lane.value_at(tick as f64) {
+                            out.push(TempoPoint { tick, bpm, ramp: true });
+                        }
+                    }
+                    out.push(TempoPoint { tick: p.tick, bpm: p.value, ramp: true });
+                }
+                Some(_) => out.push(TempoPoint { tick: p.tick, bpm: p.value, ramp: true }),
+                None => out.push(TempoPoint { tick: p.tick, bpm: p.value, ramp: false }),
+            }
+        }
+        out
+    }
+
     /// Instantané de séquence complet : les clips audio dont le fichier ne se
     /// charge pas sont ignorés.
     pub fn sequence_with(&self, loader: SampleLoader) -> Sequence {
@@ -398,6 +432,7 @@ impl Project {
             })
             .collect();
         Sequence {
+            tempo: self.tempo_map(),
             patterns,
             clips: self
                 .clips
@@ -577,7 +612,7 @@ impl Project {
     /// Moteur complet dans l'état du projet.
     pub fn build_engine(&self, sample_rate: f32, loader: SampleLoader) -> (Engine, EngineHandle) {
         let channels = (0..self.channels.len()).map(|i| self.make_channel(i, sample_rate, loader)).collect();
-        let (mut engine, mut handle) = Engine::new(sample_rate, channels, self.sequence_with(loader));
+        let (mut engine, handle) = Engine::new(sample_rate, channels, self.sequence_with(loader));
         let mixer = engine.mixer_mut();
         for (i, def) in self.tracks.iter().enumerate().take(TRACKS) {
             let t = &mut mixer.tracks[i];
@@ -596,7 +631,6 @@ impl Project {
         if let Some(order) = self.routing_order() {
             mixer.order = order;
         }
-        let _ = handle.send(Command::SetBpm(self.bpm));
         (engine, handle)
     }
 
@@ -1016,6 +1050,7 @@ impl Project {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ponzik_engine::Command;
 
     fn no_samples(_: &str) -> Option<Arc<Sample>> {
         None
@@ -1448,5 +1483,28 @@ mod tests {
         assert_eq!(muted, 0.0, "tout passe par le bus");
         let quiet = bus_peak(|p, bus| p.tracks[bus].gain = 0.25);
         assert!(quiet < open * 0.6, "{quiet} / {open}");
+    }
+
+    #[test]
+    fn tempo_lane_becomes_the_tempo_map() {
+        let mut p = Project::empty();
+        p.bpm = 100.0;
+        assert_eq!(p.tempo_map().bpm_at(5_000.0), 100.0);
+        p.add_automation_point(AutoTarget::Tempo, AutoScope::Song, 384, 120.0);
+        p.add_automation_point(AutoTarget::Tempo, AutoScope::Song, 768, 240.0);
+        let map = p.tempo_map();
+        // Held before the first point, straight segments become exact ramps.
+        assert_eq!(map.bpm_at(0.0), 120.0);
+        assert!((map.bpm_at(576.0) - 180.0).abs() < 1e-9);
+        assert_eq!(map.bpm_at(2_000.0), 240.0);
+        // A curved segment: a chain of ramps through the curve.
+        p.automation[0].points[0].curve = 0.6;
+        let map = p.tempo_map();
+        let lane = p.automation_lane(AutoTarget::Tempo, AutoScope::Song).unwrap();
+        for tick in [400.0, 500.0, 650.0] {
+            let want = lane.value_at(tick).unwrap() as f64;
+            assert!((map.bpm_at(tick) - want).abs() < 3.0, "{tick}: {} vs {want}", map.bpm_at(tick));
+        }
+        assert_eq!(p.sequence().tempo, map);
     }
 }

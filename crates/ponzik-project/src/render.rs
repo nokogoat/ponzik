@@ -106,8 +106,14 @@ pub fn render_song_threads(
     }
 
     // Queue : plus aucune note (pas de pattern, pas de boucle), les voix s'éteignent.
-    let silent =
-        Sequence { patterns: Vec::new(), clips: Vec::new(), mode: PlayMode::Pattern(0), ..Sequence::default() };
+    let last_bpm = project.tempo_map().bpm_at(ticks as f64);
+    let silent = Sequence {
+        patterns: Vec::new(),
+        clips: Vec::new(),
+        mode: PlayMode::Pattern(0),
+        tempo: ponzik_engine::TempoMap::constant(last_bpm as f32),
+        ..Sequence::default()
+    };
     let _ = handle.send(Command::SetSequence(Box::new(silent)));
     // Latence compensée par le mixer : tout le morceau sort retardé d'autant.
     let latency = handle.latency();

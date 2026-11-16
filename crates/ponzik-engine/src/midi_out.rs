@@ -138,7 +138,9 @@ impl MidiClock {
     }
 
     /// Bloc de `n` échantillons commençant à l'horloge `clock`, au tick
-    /// `pos_start` ; `contiguous` : le bloc suit le précédent sans saut.
+    /// `pos_start` et finissant au tick `to` ; `contiguous` : le bloc suit le
+    /// précédent sans saut. `frame_of` gives the frame (in the block) of a tick,
+    /// through the tempo map.
     #[allow(clippy::too_many_arguments)]
     pub fn process(
         &mut self,
@@ -147,7 +149,8 @@ impl MidiClock {
         pos_start: f64,
         contiguous: bool,
         n: usize,
-        spt: f64,
+        to: f64,
+        frame_of: &dyn Fn(f64) -> usize,
         clock: u64,
     ) {
         if self.ports == 0 || !link.is_connected() || n == 0 {
@@ -186,7 +189,6 @@ impl MidiClock {
                 self.resume_at = Some(next * TICKS_PER_SIXTEENTH);
             }
         }
-        let to = pos_start + n as f64 / spt;
         let from = self.resume_at.map_or(pos_start, |r| r.max(pos_start));
         let mut k = ((from - EPS) / TICKS_PER_CLOCK).ceil();
         loop {
@@ -194,8 +196,7 @@ impl MidiClock {
             if tick >= to - EPS {
                 break;
             }
-            let offset = (((tick - pos_start) * spt - 1e-6).ceil().max(0.0) as usize).min(n - 1);
-            let frame = now + offset as i64;
+            let frame = now + frame_of(tick).min(n - 1) as i64;
             if self.resume_at.is_some_and(|r| (r - tick).abs() < EPS) {
                 link.send_ports(ports, frame, ShortMessage::realtime(CONTINUE));
                 self.resume_at = None;
@@ -226,12 +227,19 @@ mod tests {
         std::iter::from_fn(|| rx.pop()).map(|m| (m.port, m.frame, m.message.bytes().to_vec())).collect()
     }
 
+    /// Un bloc à tempo constant.
+    #[allow(clippy::too_many_arguments)]
+    fn block(clock: &mut MidiClock, link: &mut MidiLink, playing: bool, pos: f64, contiguous: bool, n: usize, at: u64) {
+        let frame_of = |tick: f64| ((tick - pos) * SPT - 1e-6).ceil().max(0.0) as usize;
+        clock.process(link, playing, pos, contiguous, n, pos + n as f64 / SPT, &frame_of, at);
+    }
+
     /// Joue `blocks` blocs de `n` échantillons depuis `pos`, sans saut.
     fn play(clock: &mut MidiClock, link: &mut MidiLink, pos: f64, clock0: u64, blocks: usize, n: usize) {
         for b in 0..blocks {
             let at = clock0 + (b * n) as u64;
             link.begin(at, 0);
-            clock.process(link, true, pos + (b * n) as f64 / SPT, b > 0, n, SPT, at);
+            block(clock, link, true, pos + (b * n) as f64 / SPT, b > 0, n, at);
         }
     }
 
@@ -270,13 +278,13 @@ mod tests {
         drain(&mut rx);
         // Saut (retour de boucle) au tick 96 : Stop, SPP 4, Continue, impulsion.
         link.begin(1_000, 0);
-        clock.process(&mut link, true, 96.0, false, 250, SPT, 1_000);
+        block(&mut clock, &mut link, true, 96.0, false, 250, 1_000);
         let sent: Vec<Vec<u8>> = drain(&mut rx).into_iter().map(|m| m.2).collect();
         assert_eq!(sent, [vec![STOP], vec![0xF2, 4, 0], vec![CONTINUE], vec![CLOCK]]);
         // Arrêt, puis saut à l'arrêt.
-        clock.process(&mut link, false, 97.0, false, 250, SPT, 1_250);
-        clock.process(&mut link, false, 97.0, false, 250, SPT, 1_500);
-        clock.process(&mut link, false, 384.0, false, 250, SPT, 1_750);
+        block(&mut clock, &mut link, false, 97.0, false, 250, 1_250);
+        block(&mut clock, &mut link, false, 97.0, false, 250, 1_500);
+        block(&mut clock, &mut link, false, 384.0, false, 250, 1_750);
         let sent: Vec<(u64, Vec<u8>)> = drain(&mut rx).into_iter().map(|m| (m.1, m.2)).collect();
         assert_eq!(sent, [(1_250, vec![STOP]), (1_750, vec![0xF2, 16, 0])]);
     }
@@ -304,7 +312,7 @@ mod tests {
         clock.set_ports(&mut link, 0, 100);
         let sent: Vec<(u8, Vec<u8>)> = drain(&mut rx).into_iter().map(|m| (m.0, m.2)).collect();
         assert_eq!(sent, [(0, vec![STOP]), (1, vec![STOP])]);
-        clock.process(&mut link, true, 1.0, true, 100, SPT, 100);
+        block(&mut clock, &mut link, true, 1.0, true, 100, 100);
         assert!(rx.pop().is_none());
     }
 }

@@ -23,6 +23,7 @@ pub mod registry;
 pub mod ring;
 pub mod sample;
 pub mod sequence;
+pub mod tempo_map;
 pub mod wav;
 
 pub use effect::Effect;
@@ -39,3 +40,4 @@ pub use sequence::{
     AudioClip, AutoPoint, AutoScope, AutoTarget, AutomationLane, Clip, Note, PPQ, Pattern, PlayMode, Sequence, SessionSlot,
     TICKS_PER_BAR, TICKS_PER_STEP,
 };
+pub use tempo_map::{BarBeat, TempoMap, TempoPoint, TempoView, TimeSig};

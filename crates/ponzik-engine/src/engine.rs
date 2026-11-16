@@ -53,6 +53,8 @@ pub enum Command {
     Stop,
     /// Saute à une position, en ticks.
     Locate(f64),
+    /// Sets the first tempo of the tempo map (the whole tempo when the song
+    /// has no tempo change).
     SetBpm(f32),
     SetSequence(Box<Sequence>),
     AddChannel(Box<Channel>),
@@ -401,9 +403,10 @@ pub struct Engine {
     bpm: f64,
     /// Position de lecture en ticks.
     pos: f64,
-    /// Ancre de la position : au `clock` `anchor_clock`, on était au tick `anchor_tick`.
-    /// Recalculer depuis l'ancre évite toute dérive d'arrondi.
-    anchor_tick: f64,
+    /// Position anchor: at `anchor_clock`, the tempo map was at `anchor_secs`
+    /// seconds. Positions are recomputed from it (no rounding drift) and
+    /// converted through the tempo map, so ramps stay sample-accurate.
+    anchor_secs: f64,
     anchor_clock: u64,
     metronome: bool,
     /// Pré-compte : ticks restants et durée totale ; la lecture démarre à 0.
@@ -414,6 +417,8 @@ pub struct Engine {
     click_hz: f32,
 
     events: Vec<SeqEvent>,
+    /// For each event of the block: its frame in the block and its length in samples.
+    event_frames: Vec<(usize, u64)>,
     scratch_l: Vec<f32>,
     scratch_r: Vec<f32>,
     /// Lecture des clips audio, un par clip de la séquence.
@@ -462,11 +467,12 @@ struct AudioVoice {
 
 impl Engine {
     pub fn new(sample_rate: f32, mut channels: Vec<Channel>, sequence: Sequence) -> (Engine, EngineHandle) {
+        let bpm = sequence.tempo_view().bpm_at(0.0);
         for ch in &mut channels {
             ch.instrument.set_sample_rate(sample_rate);
             for fx in ch.note_fx.iter_mut().flatten() {
                 fx.set_sample_rate(sample_rate);
-                fx.set_tempo(120.0);
+                fx.set_tempo(bpm as f32);
             }
         }
         channels.reserve(MAX_CHANNELS.saturating_sub(channels.len()));
@@ -504,9 +510,9 @@ impl Engine {
             garbage: trash_tx,
             clock: 0,
             playing: false,
-            bpm: 120.0,
+            bpm,
             pos: 0.0,
-            anchor_tick: 0.0,
+            anchor_secs: 0.0,
             anchor_clock: 0,
             metronome: false,
             count_in: 0.0,
@@ -515,6 +521,7 @@ impl Engine {
             click_env: 0.0,
             click_hz: 0.0,
             events: Vec::with_capacity(MAX_EVENTS),
+            event_frames: Vec::with_capacity(MAX_EVENTS),
             scratch_l: vec![0.0; MAX_BLOCK],
             scratch_r: vec![0.0; MAX_BLOCK],
             voices,
@@ -576,14 +583,35 @@ impl Engine {
         &mut self.mixer
     }
 
-    /// Échantillons par tick au tempo courant.
+    /// Samples per tick at the current tempo (count-in, recording).
     fn spt(&self) -> f64 {
         self.sample_rate as f64 * 60.0 / (self.bpm * PPQ as f64)
     }
 
+    /// Seconds on the tempo map at the start of the next block.
+    fn block_secs(&self) -> f64 {
+        self.anchor_secs + (self.clock - self.anchor_clock) as f64 / self.sample_rate as f64
+    }
+
+    /// Restarts the position count from here (after a jump, a new tempo map…).
     fn anchor(&mut self) {
-        self.anchor_tick = self.pos;
+        self.anchor_secs = self.sequence.tempo_view().secs_at(self.pos);
         self.anchor_clock = self.clock;
+    }
+
+    /// Frames from the start of the next block to `tick`, rounded up.
+    /// Tolerance: a position computed a hair before `tick` must not add a sample.
+    fn frames_to(&self, tick: f64) -> f64 {
+        ((self.sequence.tempo_view().secs_at(tick) - self.block_secs()) * self.sample_rate as f64 - 1e-6).ceil()
+    }
+
+    /// Tempo at the current position, passed on to the synced effects.
+    fn follow_tempo(&mut self) {
+        let bpm = self.sequence.tempo_view().bpm_at(self.pos);
+        if (bpm - self.bpm).abs() > 1e-6 {
+            self.bpm = bpm;
+            self.set_tempo();
+        }
     }
 
     fn trash(&mut self, g: Garbage) {
@@ -658,7 +686,7 @@ impl Engine {
             if self.playing {
                 let end = self.sequence.loop_end();
                 if let Some(end) = end
-                    && self.pos >= end - 1e-9
+                    && (self.pos >= end - 1e-9 || self.frames_to(end) <= 0.0)
                 {
                     if stop_at_end {
                         break;
@@ -666,20 +694,17 @@ impl Engine {
                     self.pos = self.sequence.loop_start();
                     self.anchor();
                 }
-                // Avant de couper le bloc : l'automation peut changer le tempo.
                 self.apply_automation();
                 if let Some(end) = end {
                     // On coupe le bloc à la fin de la boucle du morceau.
-                    // Tolérance : une position calculée un rien avant la fin ne doit pas
-                    // ajouter un échantillon.
-                    let left = ((end - self.pos) * self.spt() - 1e-6).ceil().max(1.0) as usize;
-                    n = n.min(left);
+                    n = n.min(self.frames_to(end).max(1.0) as usize);
                 }
             } else if self.count_in > 0.0 {
                 // Le bloc s'arrête pile à la fin du pré-compte.
                 let left = (self.count_in * self.spt() - 1e-6).ceil().max(1.0) as usize;
                 n = n.min(left);
             }
+            self.follow_tempo();
             let direct = if in_channels > 0 { input.get(done * in_channels..).unwrap_or(&[]) } else { &[] };
             self.process_chunk(n, direct, in_channels);
             let (l, r) = self.mixer.master(n);
@@ -737,9 +762,9 @@ impl Engine {
     }
 
     /// Applique les courbes actives à la position courante (début de bloc).
+    /// Tempo lanes are folded into the tempo map by the project.
     fn apply_automation(&mut self) {
         let pos = self.pos;
-        let mut tempo = None;
         for lane in &self.sequence.automation {
             let Some(v) = self.sequence.automation_tick(lane.scope, pos).and_then(|t| lane.value_at(t)) else {
                 continue;
@@ -782,16 +807,7 @@ impl Engine {
                         t.pan = v.clamp(-1.0, 1.0);
                     }
                 }
-                AutoTarget::Tempo => tempo = Some(v),
-            }
-        }
-        if let Some(bpm) = tempo {
-            let bpm = (bpm as f64).clamp(20.0, 999.0);
-            if bpm != self.bpm {
-                // Nouvelle ancre à la position courante : pas de saut.
-                self.anchor();
-                self.bpm = bpm;
-                self.set_tempo();
+                AutoTarget::Tempo => {}
             }
         }
     }
@@ -807,16 +823,25 @@ impl Engine {
 
     fn process_chunk(&mut self, n: usize, input: &[f32], in_channels: usize) {
         let spt = self.spt();
+        let sr = self.sample_rate as f64;
         let pos_start = self.pos;
+        let t0 = self.block_secs();
+        let view = self.sequence.tempo_view();
+        let to = view.tick_at_secs(t0 + n as f64 / sr);
+        // Frame of a tick in this block: the first sample at or after it.
+        let frame_of = |tick: f64| (((view.secs_at(tick) - t0) * sr - 1e-6).ceil().max(0.0) as usize).min(n - 1);
+        self.event_frames.clear();
         if self.playing {
-            let to = pos_start + n as f64 / spt;
             self.sequence.collect(pos_start, to, &mut self.events);
+            for ev in &self.events {
+                let len = (view.secs_at(ev.tick + ev.len.max(1) as f64) - view.secs_at(ev.tick)) * sr;
+                self.event_frames.push((frame_of(ev.tick), len.round().max(1.0) as u64));
+            }
         } else {
             self.events.clear();
         }
-        let offset_of = |tick: f64| ((((tick - pos_start) * spt) - 1e-6).ceil().max(0.0) as usize).min(n - 1);
         let contiguous = (pos_start - self.audio_next).abs() < 1e-6;
-        self.midi_clock.process(&mut self.midi, self.playing, pos_start, contiguous, n, spt, self.clock);
+        self.midi_clock.process(&mut self.midi, self.playing, pos_start, contiguous, n, to, &frame_of, self.clock);
 
         self.mixer.clear(n);
         // Threads de calcul : rendus à la fin du bloc (déplacer le pool n'alloue rien).
@@ -829,17 +854,16 @@ impl Engine {
             for ch in &mut self.channels {
                 ch.release_due(now);
             }
-            while let Some(ev) = self.events.get(next_event) {
-                if offset_of(ev.tick) > i {
+            while let Some(&(frame, len)) = self.event_frames.get(next_event) {
+                if frame > i {
                     break;
                 }
-                let ev = *ev;
+                let ev = self.events[next_event];
                 next_event += 1;
                 if let Some(ch) = self.channels.get_mut(ev.channel)
                     && !ch.muted
                 {
-                    let off_at = now + (ev.len.max(1) as f64 * spt).round().max(1.0) as u64;
-                    ch.trigger(now, ev.key, ev.vel, off_at);
+                    ch.trigger(now, ev.key, ev.vel, now + len);
                 }
             }
             for ch in &mut self.channels {
@@ -847,8 +871,8 @@ impl Engine {
             }
             // Jusqu'au prochain événement (début ou fin de note).
             let mut end = n;
-            if let Some(ev) = self.events.get(next_event) {
-                end = end.min(offset_of(ev.tick).clamp(i + 1, n));
+            if let Some(&(frame, _)) = self.event_frames.get(next_event) {
+                end = end.min(frame.clamp(i + 1, n));
             }
             let next_off = self.channels.iter().filter_map(Channel::next_off).min();
             let next_fx = self.channels.iter().filter_map(Channel::next_fx_event).min();
@@ -868,9 +892,9 @@ impl Engine {
             self.sum_lanes(n);
         }
 
-        self.render_audio_clips(pos_start, n, spt);
+        self.render_audio_clips(pos_start, n, t0);
         self.capture_input(input, in_channels, pos_start, n, spt);
-        self.metronome_click(pos_start, n, spt);
+        self.metronome_click(pos_start, n, t0, spt);
         match pool.as_ref() {
             Some(pool) => self.mixer.process_parallel(n, &self.state.track_peaks, pool),
             None => self.mixer.process(n, &self.state.track_peaks),
@@ -880,7 +904,7 @@ impl Engine {
         self.feed_scope(n);
         self.clock += n as u64;
         if self.playing {
-            self.pos = self.anchor_tick + (self.clock - self.anchor_clock) as f64 / spt;
+            self.pos = self.sequence.tempo_view().tick_at_secs(self.block_secs());
             self.audio_next = self.pos;
         } else {
             self.audio_next = f64::NAN;
@@ -897,14 +921,17 @@ impl Engine {
 
     /// Clips audio (mode morceau) : lecture à la fréquence de l'échantillon,
     /// interpolation linéaire, début à l'échantillon près, fondus aux bords.
-    fn render_audio_clips(&mut self, pos_start: f64, n: usize, spt: f64) {
+    /// Clips keep their place in ticks and play at their own speed: they don't
+    /// follow tempo changes (no warping).
+    fn render_audio_clips(&mut self, pos_start: f64, n: usize, t0: f64) {
         let song = self.playing && self.sequence.mode == PlayMode::Song;
         // Bloc dans la continuité du précédent : les clips reprennent où ils étaient
         // (même si le tempo a changé entre-temps).
         let contiguous = (pos_start - self.audio_next).abs() < 1e-6;
         let sr = self.sample_rate as f64;
-        let to = pos_start + n as f64 / spt;
-        let first = |tick: f64| (((tick - pos_start) * spt - 1e-6).ceil().max(0.0) as usize).min(n);
+        let view = self.sequence.tempo_view();
+        let to = view.tick_at_secs(t0 + n as f64 / sr);
+        let first = |tick: f64| (((view.secs_at(tick) - t0) * sr - 1e-6).ceil().max(0.0) as usize).min(n);
         for (idx, clip) in self.sequence.audio_clips.iter().enumerate() {
             let prev = self.voices.get(idx).copied().unwrap_or_default();
             let mut voice = AudioVoice::default();
@@ -919,8 +946,7 @@ impl Engine {
                 let (mut p, mut run) = if resume {
                     (prev.src, prev.run)
                 } else {
-                    let tick = pos_start + k0 as f64 / spt;
-                    let secs = clip.offset.max(0.0) + (tick - start).max(0.0) * spt / sr;
+                    let secs = clip.offset.max(0.0) + (t0 + k0 as f64 / sr - view.secs_at(start)).max(0.0);
                     // Après un saut, petit fondu d'entrée ; sinon (nouvelle séquence,
                     // début du clip) seul le fondu du clip compte.
                     (secs * src_rate, if contiguous { f64::MAX / 2.0 } else { 0.0 })
@@ -928,7 +954,7 @@ impl Engine {
                 let origin = clip.offset.max(0.0) * src_rate;
                 let fade_in = clip.fade_in.max(MIN_FADE) as f64 * sr;
                 let fade_out = clip.fade_out.max(MIN_FADE) as f64 * sr;
-                let end_at = (end - pos_start) * spt;
+                let end_at = (view.secs_at(end) - t0) * sr;
                 let right = if sample.right.len() == len { &sample.right } else { &sample.left };
                 let (tl, tr) = self.mixer.input(clip.track, n);
                 for k in k0..k1 {
@@ -1123,29 +1149,52 @@ impl Engine {
         }
     }
 
-    /// Clic de métronome sur chaque temps, ajouté directement au master. Pendant
-    /// le pré-compte, les temps se comptent depuis son début.
-    fn metronome_click(&mut self, pos_start: f64, n: usize, spt: f64) {
-        let pos_start = if self.count_in > 0.0 {
-            self.count_len - self.count_in
+    /// Clic de métronome sur chaque temps, ajouté directement au master, with an
+    /// accent on the first beat of each bar (beats and bars follow the time
+    /// signature map). Pendant le pré-compte, les temps se comptent depuis son
+    /// début, in the signature where playback will start.
+    fn metronome_click(&mut self, pos_start: f64, n: usize, t0: f64, spt: f64) {
+        const MAX_CLICKS: usize = 16;
+        let mut clicks = [(usize::MAX, false); MAX_CLICKS];
+        let mut count = 0;
+        let mut push = |frame: usize, down: bool| {
+            if frame < n && count < MAX_CLICKS {
+                clicks[count] = (frame, down);
+                count += 1;
+            }
+        };
+        let view = self.sequence.tempo_view();
+        if self.count_in > 0.0 {
+            let from = self.count_len - self.count_in;
+            let to = from + n as f64 / spt;
+            let sig = view.sig_at(self.pos);
+            let beat = sig.beat_len() as f64;
+            let mut k = (from / beat - 1e-9).ceil().max(0.0) as u64;
+            while (k as f64 * beat) < to {
+                let frame = ((k as f64 * beat - from) * spt - 1e-6).ceil().max(0.0) as usize;
+                push(frame, k % sig.num.max(1) as u64 == 0);
+                k += 1;
+            }
         } else if self.playing && self.metronome {
-            pos_start
+            let sr = self.sample_rate as f64;
+            let to = view.tick_at_secs(t0 + n as f64 / sr);
+            view.for_each_beat(pos_start, to, |tick, down| {
+                push(((view.secs_at(tick) - t0) * sr - 1e-6).ceil().max(0.0) as usize, down);
+            });
         } else {
             self.click_env = 0.0;
             return;
-        };
+        }
         let sr = self.sample_rate;
         let decay = (-1.0 / (0.012 * sr)).exp();
-        let beat_ticks = PPQ as f64;
         let (l, r) = self.mixer.input(MASTER, n);
+        let mut next = 0;
         for k in 0..n {
-            let tick = pos_start + k as f64 / spt;
-            let beat = (tick / beat_ticks).floor();
-            if tick - beat * beat_ticks < 1.0 / spt {
-                let bar_start = (beat as i64).rem_euclid(4) == 0;
-                self.click_hz = if bar_start { 1_760.0 } else { 1_320.0 };
+            while next < count && clicks[next].0 <= k {
+                self.click_hz = if clicks[next].1 { 1_760.0 } else { 1_320.0 };
                 self.click_env = 0.35;
                 self.click_phase = 0.0;
+                next += 1;
             }
             if self.click_env > 1e-4 {
                 self.click_phase = (self.click_phase + self.click_hz / sr).fract();
@@ -1219,9 +1268,8 @@ impl Engine {
                 self.silence_all();
             }
             Command::SetBpm(bpm) => {
+                self.sequence.tempo.set_first_bpm(bpm);
                 self.anchor();
-                self.bpm = (bpm as f64).clamp(20.0, 999.0);
-                self.set_tempo();
             }
             Command::SetSequence(seq) => {
                 // Dans la capacité réservée : pas d'allocation.
@@ -1230,6 +1278,8 @@ impl Engine {
                 self.voices.resize(voices, AudioVoice::default());
                 let old = std::mem::replace(&mut self.sequence, seq);
                 self.trash(Garbage::Sequence(old));
+                // New tempo map (or mode): same position, counted from here.
+                self.anchor();
             }
             Command::AddChannel(mut ch) => {
                 if self.channels.len() < MAX_CHANNELS {
@@ -1981,28 +2031,127 @@ mod tests {
     }
 
     #[test]
-    fn tempo_lane_changes_note_timing() {
-        let (mut engine, mut handle, probe) = setup(&[0, 4, 8]);
+    fn tempo_map_ramp_places_notes_on_the_exact_sample() {
+        use crate::tempo_map::{TempoMap, TempoPoint};
+        let map = TempoMap::new(
+            vec![
+                TempoPoint { tick: 0, bpm: 120.0, ramp: false },
+                TempoPoint { tick: 96, bpm: 120.0, ramp: false },
+                TempoPoint { tick: 288, bpm: 240.0, ramp: true },
+                TempoPoint { tick: 336, bpm: 90.0, ramp: false },
+            ],
+            Vec::new(),
+        );
+        let steps: Vec<usize> = (0..16).collect();
+        let expected: Vec<u64> = (0..16)
+            .map(|s| ((map.secs_at((s * TICKS_PER_STEP) as f64) * SR as f64) - 1e-6).ceil() as u64)
+            .collect();
+        for block in [64, 333, 1024] {
+            let (mut engine, mut handle, probe) = setup(&steps);
+            let seq = Sequence {
+                patterns: vec![pattern(&steps)],
+                clips: vec![Clip { pattern: 0, start: 0, len: 384, offset: 0 }],
+                mode: PlayMode::Song,
+                song_len: 384 * 4,
+                tempo: map.clone(),
+                ..Default::default()
+            };
+            handle.send(Command::SetSequence(Box::new(seq))).unwrap();
+            handle.send(Command::Play).unwrap();
+            let frames = 100_000;
+            run(&mut engine, frames, block);
+            assert_eq!(ons(&probe), expected, "block {block}");
+            let want = map.tick_at_secs(frames as f64 / SR as f64);
+            assert!((handle.position() - want).abs() < 1e-6, "block {block}");
+        }
+    }
+
+    /// Click onsets (frame, accented) of a render: a click starts after silence;
+    /// the accent is the higher pitch, counted by zero crossings over 10 ms.
+    fn clicks(buf: &[f32]) -> Vec<(usize, bool)> {
+        let left: Vec<f32> = buf.iter().step_by(2).copied().collect();
+        let mut out = Vec::new();
+        let mut quiet = usize::MAX;
+        for (i, &s) in left.iter().enumerate() {
+            if s.abs() > 1e-3 {
+                if quiet > 2_000 {
+                    let w = &left[i..(i + 480).min(left.len())];
+                    let crossings = w.windows(2).filter(|p| (p[0] >= 0.0) != (p[1] >= 0.0)).count();
+                    out.push((i, crossings > 30));
+                }
+                quiet = 0;
+            } else {
+                quiet = quiet.saturating_add(1);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn metronome_accents_follow_the_time_signature_map() {
+        use crate::tempo_map::{TempoMap, TimeSig};
+        let (mut engine, mut handle, _) = setup(&[]);
+        let tempo = TempoMap::new(Vec::new(), vec![TimeSig { tick: 0, num: 3, den: 4 }, TimeSig { tick: 576, num: 6, den: 8 }]);
+        let seq = Sequence { mode: PlayMode::Song, song_len: 384 * 8, tempo, ..Default::default() };
+        handle.send(Command::SetSequence(Box::new(seq))).unwrap();
+        handle.send(Command::SetChannelMute { channel: 0, muted: true }).unwrap();
+        handle.send(Command::SetMetronome(true)).unwrap();
+        handle.send(Command::Play).unwrap();
+        let mut buf = vec![0.0; 2 * 250 * 870];
+        for chunk in buf.chunks_mut(2 * 300) {
+            engine.process(chunk, 2);
+        }
+        // 3/4 in quarters, then 6/8 in eighths; 250 samples per tick.
+        let beats = [0, 96, 192, 288, 384, 480, 576, 624, 672, 720, 768, 816, 864];
+        let accents = [0, 288, 576, 864];
+        let want: Vec<(usize, bool)> = beats.iter().map(|&t| (t * 250, accents.contains(&t))).collect();
+        assert_eq!(clicks(&buf), want);
+    }
+
+    #[test]
+    fn count_in_counts_the_bar_of_the_signature() {
+        use crate::tempo_map::{TempoMap, TimeSig};
+        let (mut engine, mut handle, probe) = setup(&[0]);
+        let tempo = TempoMap::new(Vec::new(), vec![TimeSig { tick: 0, num: 3, den: 4 }]);
+        let seq = Sequence { patterns: vec![pattern(&[0])], tempo, ..Default::default() };
+        handle.send(Command::SetSequence(Box::new(seq))).unwrap();
+        handle.send(Command::SetChannelMute { channel: 0, muted: true }).unwrap();
+        handle.send(Command::CountIn(288)).unwrap();
+        let mut buf = vec![0.0; 2 * 72_000];
+        for chunk in buf.chunks_mut(2 * 256) {
+            engine.process(chunk, 2);
+        }
+        assert_eq!(clicks(&buf), [(0, true), (24_000, false), (48_000, false)]);
+        assert!(handle.is_playing());
+        handle.send(Command::SetChannelMute { channel: 0, muted: false }).unwrap();
+        run(&mut engine, 1_000, 256);
+        assert_eq!(ons(&probe), [72_000]);
+    }
+
+    #[test]
+    fn audio_clip_starts_at_its_tick_through_the_tempo_map() {
+        use crate::tempo_map::{TempoMap, TempoPoint};
+        let left = vec![0.5f32; 4_800];
+        let sample = Sample { name: "dc".into(), sample_rate: SR, right: left.clone(), left, markers: Vec::new() };
+        let (mut engine, mut handle, _) = setup(&[]);
+        // 96 ticks at 120 BPM (0.5 s), then 60 BPM: tick 192 is at 1.5 s.
+        let tempo = TempoMap::new(vec![TempoPoint { tick: 0, bpm: 120.0, ramp: false }, TempoPoint { tick: 96, bpm: 60.0, ramp: false }], Vec::new());
         let seq = Sequence {
-            patterns: vec![pattern(&[0, 4, 8])],
-            clips: vec![Clip { pattern: 0, start: 0, len: 384, offset: 0 }],
             mode: PlayMode::Song,
-            song_len: 384,
-            automation: vec![lane(AutoTarget::Tempo, AutoScope::Song, &[(0, 120.0), (48, 120.0), (49, 240.0)])],
+            song_len: 384 * 8,
+            audio_clips: vec![audio_clip(sample, 192, 0.0, 1.0)],
+            tempo,
             ..Default::default()
         };
+        handle.send(Command::SetChannelMute { channel: 0, muted: true }).unwrap();
         handle.send(Command::SetSequence(Box::new(seq))).unwrap();
         handle.send(Command::Play).unwrap();
-        run(&mut engine, 40_000, 256);
-        let on = ons(&probe);
-        assert_eq!(on.len(), 3, "{on:?}");
-        assert_eq!(on[0], 0);
-        // 48 ticks à 120 BPM (12 000 échantillons), une rampe d'un tick évaluée par blocs
-        // de 256, puis le reste à 240 BPM (au lieu de 24 000 sans automation).
-        assert!((17_875..=18_200).contains(&on[1]), "{on:?}");
-        // Ensuite tempo constant à 240 BPM : 96 ticks × 125 échantillons.
-        assert!(on[2].abs_diff(on[1] + 12_000) <= 1, "{on:?}");
-        assert!((handle.position() - (192.0 + (40_000 - on[2]) as f64 / 125.0)).abs() < 0.01);
+        let mut buf = vec![0.0; 2 * 80_000];
+        for chunk in buf.chunks_mut(2 * 500) {
+            engine.process(chunk, 2);
+        }
+        let first = buf.iter().step_by(2).position(|&s| s != 0.0);
+        assert_eq!(first, Some(72_000));
     }
 
     fn audio_clip(sample: Sample, start: u32, offset: f64, gain: f32) -> AudioClip {

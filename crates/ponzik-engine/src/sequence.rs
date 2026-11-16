@@ -5,12 +5,14 @@
 use std::sync::Arc;
 
 use crate::sample::Sample;
+use crate::tempo_map::{TempoMap, TempoView};
 
 /// Résolution : ticks par noire.
 pub const PPQ: u32 = 96;
 /// Une double-croche, le pas du step sequencer.
 pub const TICKS_PER_STEP: u32 = PPQ / 4;
-/// Une mesure en 4/4.
+/// Une mesure en 4/4 (grilles de pas des patterns ; la playlist suit la
+/// carte des signatures, voir [`TempoMap`]).
 pub const TICKS_PER_BAR: u32 = PPQ * 4;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -184,6 +186,9 @@ pub struct Sequence {
     pub loop_range: Option<(u32, u32)>,
     /// Clips lancés en vue Session.
     pub session: Vec<SessionSlot>,
+    /// Tempo and time signature changes of the song timeline. Patterns and
+    /// session clips play at the first tempo and signature.
+    pub tempo: TempoMap,
 }
 
 impl Default for Sequence {
@@ -198,6 +203,7 @@ impl Default for Sequence {
             audio_clips: Vec::new(),
             loop_range: None,
             session: Vec::new(),
+            tempo: TempoMap::default(),
         }
     }
 }
@@ -213,6 +219,15 @@ pub struct SeqEvent {
 }
 
 impl Sequence {
+    /// Tempo map in effect: the whole map in song mode, its first tempo and
+    /// signature otherwise.
+    pub fn tempo_view(&self) -> TempoView<'_> {
+        match self.mode {
+            PlayMode::Song => self.tempo.view(),
+            PlayMode::Pattern(_) | PlayMode::Session => self.tempo.head(),
+        }
+    }
+
     /// Boucle explicite valide (non vide).
     fn active_loop(&self) -> Option<(u32, u32)> {
         self.loop_range.filter(|(a, b)| b > a)
