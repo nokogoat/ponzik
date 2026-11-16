@@ -615,6 +615,149 @@ impl Project {
         });
     }
 
+    /// Nom libre dérivé de `base` : « Groove » donne « Groove 2 », « Pattern 3 »
+    /// donne « Pattern 4 » (ou le suivant libre).
+    pub fn unique_pattern_name(&self, base: &str) -> String {
+        let taken = |n: &str| self.patterns.iter().any(|p| p.name == n);
+        let (stem, mut n) = match base.rsplit_once(' ') {
+            Some((stem, num)) if !stem.is_empty() && num.parse::<u32>().is_ok() => (stem, num.parse::<u32>().unwrap_or(1)),
+            _ => (base, 1),
+        };
+        loop {
+            n += 1;
+            let name = format!("{stem} {n}");
+            if !taken(&name) {
+                return name;
+            }
+        }
+    }
+
+    /// « Make unique » : le clip reçoit sa propre copie du pattern (notes,
+    /// longueur, couleur), qu'on peut modifier sans toucher aux autres clips.
+    /// Renvoie l'indice du nouveau pattern.
+    pub fn make_unique(&mut self, clip: usize) -> Option<usize> {
+        let src = self.clips.get(clip)?.pattern;
+        let mut copy = self.patterns.get(src)?.clone();
+        copy.name = self.unique_pattern_name(&copy.name);
+        self.patterns.push(copy);
+        let p = self.patterns.len() - 1;
+        self.clips[clip].pattern = p;
+        Some(p)
+    }
+
+    /// Secondes par tick au tempo du projet.
+    fn secs_per_tick(&self) -> f64 {
+        60.0 / (self.bpm.clamp(20.0, 999.0) as f64 * ponzik_engine::PPQ as f64)
+    }
+
+    /// Vide la plage `[a, b)` de la playlist : les clips qui la chevauchent sont
+    /// raccourcis, ou coupés en deux s'ils la traversent.
+    pub fn clear_time(&mut self, a: u32, b: u32) {
+        if b <= a {
+            return;
+        }
+        let mut clips = Vec::with_capacity(self.clips.len());
+        for c in &self.clips {
+            let end = c.start.saturating_add(c.len);
+            if end <= a || c.start >= b {
+                clips.push(*c);
+                continue;
+            }
+            if c.start < a {
+                clips.push(ClipDef { len: a - c.start, ..*c });
+            }
+            if end > b {
+                clips.push(ClipDef { start: b, len: end - b, offset: c.offset + (b - c.start), ..*c });
+            }
+        }
+        self.clips = clips;
+        let spt = self.secs_per_tick();
+        let mut audio = Vec::with_capacity(self.audio_clips.len());
+        for c in &self.audio_clips {
+            let end = c.start.saturating_add(c.len);
+            if end <= a || c.start >= b {
+                audio.push(c.clone());
+                continue;
+            }
+            if c.start < a {
+                audio.push(AudioClipDef { len: a - c.start, fade_out: 0.0, ..c.clone() });
+            }
+            if end > b {
+                let offset = c.offset + (b - c.start) as f64 * spt;
+                audio.push(AudioClipDef { start: b, len: end - b, offset, fade_in: 0.0, ..c.clone() });
+            }
+        }
+        self.audio_clips = audio;
+    }
+
+    /// Recopie tout ce que contient la plage `[a, b)` de la playlist juste
+    /// après elle, dans `[b, 2b − a)`, à la place de ce qui s'y trouvait : clips
+    /// de pattern et clips audio (coupés aux bords de la plage) et points
+    /// d'automation du morceau. Renvoie le nombre de clips copiés.
+    pub fn duplicate_time(&mut self, a: u32, b: u32) -> usize {
+        if b <= a {
+            return 0;
+        }
+        let span = b - a;
+        let cut = |start: u32, len: u32| {
+            let (s, e) = (start.max(a), start.saturating_add(len).min(b));
+            (s < e).then(|| (s, e - s, s - start))
+        };
+        let clips: Vec<ClipDef> = self
+            .clips
+            .iter()
+            .filter_map(|c| {
+                let (start, len, skip) = cut(c.start, c.len)?;
+                Some(ClipDef { start: start + span, len, offset: c.offset + skip, ..*c })
+            })
+            .collect();
+        let secs_per_tick = self.secs_per_tick();
+        let audio: Vec<AudioClipDef> = self
+            .audio_clips
+            .iter()
+            .filter_map(|c| {
+                let (start, len, skip) = cut(c.start, c.len)?;
+                // Une coupe à l'intérieur du clip n'a pas de fondu d'entrée ou de sortie.
+                let fade_in = if skip == 0 { c.fade_in } else { 0.0 };
+                let fade_out = if start + len == c.start + c.len { c.fade_out } else { 0.0 };
+                let offset = c.offset + skip as f64 * secs_per_tick;
+                Some(AudioClipDef { start: start + span, len, offset, fade_in, fade_out, ..c.clone() })
+            })
+            .collect();
+        let copied = clips.len() + audio.len();
+        self.clear_time(b, b + span);
+        self.clips.extend(clips);
+        self.audio_clips.extend(audio);
+
+        let end = b + span;
+        for lane in self.automation.iter_mut().filter(|l| l.scope == AutoScope::Song && !l.points.is_empty()) {
+            let at = |t: u32| lane.value_at(t as f64).unwrap_or(0.0);
+            let (head, last, tail) = (at(a), at(b - 1), at(end));
+            let mut copy: Vec<AutoPoint> = lane
+                .points
+                .iter()
+                .filter(|p| p.tick >= a && p.tick < b)
+                .map(|p| AutoPoint { tick: p.tick + span, ..*p })
+                .collect();
+            if copy.first().is_none_or(|p| p.tick != b) {
+                copy.insert(0, AutoPoint { tick: b, value: head, curve: 0.0 });
+            }
+            // La copie s'arrête sur la valeur de la fin de la plage, un tick avant
+            // de retrouver la courbe d'origine.
+            if copy.last().is_some_and(|p| p.tick < end - 1) {
+                copy.push(AutoPoint { tick: end - 1, value: last, curve: 0.0 });
+            }
+            let has_tail = lane.points.iter().any(|p| p.tick == end);
+            lane.points.retain(|p| p.tick < b || p.tick >= end);
+            if !has_tail {
+                copy.push(AutoPoint { tick: end, value: tail, curve: 0.0 });
+            }
+            let at = lane.points.partition_point(|p| p.tick < b);
+            lane.points.splice(at..at, copy);
+        }
+        copied
+    }
+
     pub fn add_pattern(&mut self) -> usize {
         let n = self.patterns.len() + 1;
         self.patterns.push(PatternDef {
@@ -686,6 +829,106 @@ mod tests {
         p.tracks[1].output = 2;
         p.tracks[2].output = 1;
         assert!(p.routing_order().is_none());
+    }
+
+    #[test]
+    fn make_unique_gives_the_clip_its_own_pattern() {
+        let mut p = Project::empty();
+        let ch = p.add_channel("Kick", InstrumentDef::new("drumsynth"), 60);
+        p.set_step(0, ch, 0, true);
+        p.patterns[0].color = 0x123456;
+        let clip = ClipDef { pattern: 0, lane: 0, start: 0, len: TICKS_PER_BAR, offset: 0 };
+        p.clips.extend([clip, ClipDef { start: TICKS_PER_BAR, ..clip }]);
+        assert_eq!(p.make_unique(1), Some(1));
+        assert_eq!(p.clips[1].pattern, 1);
+        assert_eq!(p.clips[0].pattern, 0);
+        assert_eq!(p.patterns[1].name, "Pattern 2");
+        assert_eq!(p.patterns[1].notes, p.patterns[0].notes);
+        assert_eq!(p.patterns[1].color, 0x123456);
+        // Une modification du nouveau pattern ne touche pas l'ancien.
+        p.set_step(1, ch, 4, true);
+        assert!(p.step_on(0, ch, 4).is_none());
+        assert_eq!(p.make_unique(9), None);
+        assert_eq!(p.unique_pattern_name("Groove"), "Groove 2");
+        assert_eq!(p.unique_pattern_name("Pattern 1"), "Pattern 3");
+    }
+
+    #[test]
+    fn duplicate_time_copies_clips_audio_and_automation() {
+        let mut p = Project::empty();
+        p.bpm = 120.0;
+        let bar = TICKS_PER_BAR;
+        // Un clip dans la plage, un à cheval sur son début, un après.
+        p.clips.push(ClipDef { pattern: 0, lane: 0, start: bar, len: bar, offset: 0 });
+        p.clips.push(ClipDef { pattern: 0, lane: 1, start: 0, len: 2 * bar, offset: 0 });
+        p.clips.push(ClipDef { pattern: 0, lane: 2, start: 3 * bar, len: bar, offset: 0 });
+        // Celui-ci traverse la destination : il est coupé autour de la copie.
+        p.clips.push(ClipDef { pattern: 0, lane: 4, start: bar + 96, len: 3 * bar, offset: 0 });
+        p.audio_clips.push(AudioClipDef {
+            path: "a.wav".into(),
+            lane: 3,
+            track: 1,
+            start: bar / 2,
+            len: bar,
+            offset: 0.0,
+            gain: 1.0,
+            fade_in: 0.01,
+            fade_out: 0.01,
+        });
+        let gain = AutoTarget::TrackGain(1);
+        p.add_automation_point(gain, AutoScope::Song, 0, 0.0);
+        p.add_automation_point(gain, AutoScope::Song, bar + 96, 1.0);
+        p.add_automation_point(gain, AutoScope::Song, 2 * bar + 96, 0.2);
+        p.add_automation_point(gain, AutoScope::Song, 4 * bar, 0.5);
+        let before = p.automation[0].clone();
+
+        assert_eq!(p.duplicate_time(bar, 2 * bar), 4);
+        let lane4: Vec<_> = p.clips.iter().filter(|c| c.lane == 4).map(|c| (c.start, c.len, c.offset)).collect();
+        assert_eq!(lane4, [(bar + 96, bar - 96, 0), (3 * bar, bar + 96, 2 * bar - 96), (2 * bar + 96, bar - 96, 0)]);
+        assert!(p.clips.contains(&ClipDef { pattern: 0, lane: 0, start: 2 * bar, len: bar, offset: 0 }));
+        assert!(p.clips.contains(&ClipDef { pattern: 0, lane: 1, start: 2 * bar, len: bar, offset: bar }));
+        assert!(p.clips.contains(&ClipDef { pattern: 0, lane: 2, start: 3 * bar, len: bar, offset: 0 }));
+        // Le clip audio commence avant la plage : la copie saute une demi-mesure (1 s à 120 BPM).
+        let a = p.audio_clips.last().unwrap();
+        assert_eq!((a.start, a.len, a.lane), (2 * bar, bar / 2, 3));
+        assert!((a.offset - 1.0).abs() < 1e-9);
+        assert_eq!((a.fade_in, a.fade_out), (0.0, 0.01));
+
+        // La courbe de la destination reprend celle de la plage, puis retombe sur l'original.
+        let lane = &p.automation[0];
+        for k in 0..bar {
+            let (src, dst) = (before.value_at((bar + k) as f64), lane.value_at((2 * bar + k) as f64));
+            assert!((src.unwrap() - dst.unwrap()).abs() < 1e-6, "{k}");
+        }
+        for t in [0, bar / 2, bar + 7, 3 * bar, 3 * bar + 50, 4 * bar, 5 * bar] {
+            assert_eq!(lane.value_at(t as f64), before.value_at(t as f64), "{t}");
+        }
+        assert!(lane.points.windows(2).all(|w| w[0].tick < w[1].tick));
+        // Plage vide ou à l'envers : rien.
+        assert_eq!(p.duplicate_time(5, 5), 0);
+    }
+
+    #[test]
+    fn clear_time_trims_and_splits_audio() {
+        let mut p = Project::empty();
+        p.bpm = 120.0;
+        let bar = TICKS_PER_BAR;
+        let clip = AudioClipDef {
+            path: "a.wav".into(),
+            lane: 0,
+            track: 1,
+            start: 0,
+            len: 3 * bar,
+            offset: 0.5,
+            gain: 1.0,
+            fade_in: 0.01,
+            fade_out: 0.02,
+        };
+        p.audio_clips.push(clip);
+        p.clear_time(bar, 2 * bar);
+        let parts: Vec<_> = p.audio_clips.iter().map(|c| (c.start, c.len, c.offset, c.fade_in, c.fade_out)).collect();
+        // Une mesure = 2 s à 120 BPM.
+        assert_eq!(parts, [(0, bar, 0.5, 0.01, 0.0), (2 * bar, bar, 4.5, 0.0, 0.02)]);
     }
 
     fn keyed(kind: &str, key: usize) -> Option<EffectDef> {
