@@ -104,6 +104,8 @@ pub enum Icon {
     Chord,
     /// Dé : humaniser.
     Dice,
+    /// Horloge : historique des modifications.
+    History,
 }
 
 /// Dessine une icône au trait, dans un carré de `size` centré sur (`cx`, `cy`).
@@ -266,6 +268,10 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
             for (x, y) in [(-3.0, -3.0), (0.0, 0.0), (3.0, 3.0)] {
                 c.fill_circle(cx + x * s, cy + y * s, 1.4 * s.max(0.9), col);
             }
+        }
+        Icon::History => {
+            c.stroke_circle(cx, cy, 6.8 * s, stroke, col);
+            c.stroke_polyline(&[p(0.0, -4.0), p(0.0, 0.0), p(3.0, 2.0)], stroke, col);
         }
         Icon::Check => c.stroke_polyline(&[p(-6.0, 0.5), p(-2.0, 4.5), p(6.0, -4.5)], stroke * 1.15, col),
         Icon::Play => {

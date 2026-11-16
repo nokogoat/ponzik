@@ -116,6 +116,8 @@ pub enum Popup {
     Chord,
     /// Force de l'humanisation des notes.
     Humanize,
+    /// Historique des modifications.
+    History,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -192,6 +194,8 @@ pub enum Action {
     SetChord(Option<ChordKind>),
     /// Humanise les notes du piano roll : écart de début (ticks), écart relatif de vélocité.
     Humanize(u32, f32),
+    /// Revient à l'état qui suit les n premières étapes de l'historique.
+    JumpHistory(usize),
     SetParamValue(ponzik_engine::AutoTarget, f32),
 }
 
@@ -207,12 +211,14 @@ pub struct MenuItem {
     pub sep: bool,
     /// Choix actuel, mis en évidence.
     pub on: bool,
+    /// Ligne en retrait (étape annulée de l'historique, par exemple).
+    pub dim: bool,
     pub action: Action,
 }
 
 impl MenuItem {
     fn plain(name: &str, action: Action) -> Self {
-        Self { icon: None, color: None, name: name.into(), detail: String::new(), tip: String::new(), sep: false, on: false, action }
+        Self { icon: None, color: None, name: name.into(), detail: String::new(), tip: String::new(), sep: false, on: false, dim: false, action }
     }
 
     fn new(icon: Icon, name: &str, action: Action) -> Self {
@@ -236,6 +242,11 @@ impl MenuItem {
 
     fn on(mut self, on: bool) -> Self {
         self.on = on;
+        self
+    }
+
+    fn dim(mut self, dim: bool) -> Self {
+        self.dim = dim;
         self
     }
 }
@@ -539,6 +550,16 @@ impl App {
                 return;
             }
             "humanize" => Popup::Humanize,
+            "history" => {
+                for label in ["Poser une note", "Déplacer des notes", "Tempo", "Gamme", "Ajouter un effet"] {
+                    self.project.bpm += 1.0;
+                    self.commit(label);
+                    self.last_edit = None;
+                }
+                self.undo();
+                self.undo();
+                Popup::History
+            }
             "chord" => {
                 self.piano.chord_stamp = true;
                 Popup::Chord
@@ -681,6 +702,29 @@ impl App {
             let current = std::mem::replace(&mut self.project, next);
             self.past.push((label.clone(), current));
             self.after_history(&format!("Rétabli : {label}"));
+        }
+    }
+
+    /// Annule ou rétablit jusqu'à ce que `n` étapes soient faites.
+    pub fn jump_history(&mut self, n: usize) {
+        let mut moved = false;
+        while self.past.len() > n
+            && let Some((label, prev)) = self.past.pop()
+        {
+            let current = std::mem::replace(&mut self.project, prev);
+            self.future.push((label, current));
+            moved = true;
+        }
+        while self.past.len() < n
+            && let Some((label, next)) = self.future.pop()
+        {
+            let current = std::mem::replace(&mut self.project, next);
+            self.past.push((label, current));
+            moved = true;
+        }
+        if moved {
+            let msg = self.past.last().map_or("Retour au départ".to_string(), |(l, _)| format!("Retour à : {l}"));
+            self.after_history(&msg);
         }
     }
 
@@ -1547,6 +1591,7 @@ impl App {
             (Icon::Folder, "tb-open", ("Ouvrir", "Ctrl O")),
             (Icon::Redo, "tb-redo", ("Rétablir", "Ctrl Y")),
             (Icon::Undo, "tb-undo", ("Annuler", "Ctrl Z")),
+            (Icon::History, "tb-history", ("Historique", "")),
         ];
         for (icon, name, tip) in buttons {
             if rx < cluster_end + 8.0 {
@@ -1564,6 +1609,7 @@ impl App {
                     }
                     Icon::Redo => self.redo(),
                     Icon::Undo => self.undo(),
+                    Icon::History => self.open_popup(Popup::History, Rect::new(rx, cy - 16.0, 32.0, 32.0)),
                     _ => {}
                 }
             }
@@ -2200,6 +2246,23 @@ impl App {
                 }
                 ("Accord".into(), v)
             }
+            Popup::History => {
+                // Le plus récent en haut : les étapes annulées (en retrait), puis celles
+                // qui ont mené à l'état actuel, jusqu'au départ.
+                let (past, future) = (self.past.len(), self.future.len());
+                let mark = |it: MenuItem, col: Color| MenuItem { color: Some(col), ..it };
+                let mut v: Vec<MenuItem> = self
+                    .future
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (label, _))| mark(MenuItem::plain(label, Action::JumpHistory(past + future - i)).dim(true), self.theme.raised_hi))
+                    .collect();
+                v.extend(self.past.iter().enumerate().rev().map(|(j, (label, _))| {
+                    mark(MenuItem::plain(label, Action::JumpHistory(j + 1)).on(j + 1 == past), self.theme.accent.alpha(0.7))
+                }));
+                v.push(mark(MenuItem::plain("Départ", Action::JumpHistory(0)).on(past == 0).dim(past > 0), self.theme.muted).sep());
+                ("Historique".into(), v)
+            }
             Popup::Humanize => (
                 "Humaniser".into(),
                 super::piano::HUMANIZE
@@ -2378,6 +2441,7 @@ impl App {
                 self.commit("Remplir une case");
             }
             Action::Humanize(ticks, vel) => self.humanize(ticks, vel),
+            Action::JumpHistory(n) => self.jump_history(n),
             Action::SetChord(kind) => {
                 self.piano.chord = kind;
                 self.piano.chord_stamp = true;
@@ -2587,7 +2651,13 @@ impl App {
                 c.fill_rrect(row, 9.0, t.raised.mix(t.raised_hi, hv * 0.6).alpha(hv.max(current as u8 as f32 * 0.7)));
             }
             let danger = it.icon == Some(Icon::Trash);
-            let ink = if danger { t.negative } else { t.text2.mix(t.text, hv.max(current as u8 as f32)) };
+            let ink = if danger {
+                t.negative
+            } else if it.dim {
+                t.muted.mix(t.text2, hv)
+            } else {
+                t.text2.mix(t.text, hv.max(current as u8 as f32))
+            };
             let cy = row.y + row.h * 0.5;
             let mut tx = row.x + 12.0;
             if let Some(icon) = it.icon {

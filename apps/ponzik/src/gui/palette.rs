@@ -127,6 +127,7 @@ impl App {
         }
         add("Annuler".into(), "Édition", "Ctrl Z", Action::Undo);
         add("Rétablir".into(), "Édition", "Ctrl Y", Action::Redo);
+        add("Historique".into(), "Édition", "", Action::Popup(Popup::History));
         add("Démo : groove house".into(), "Démo", "", Action::LoadDemo(0));
         add("Démo : Amen rave (breakcore)".into(), "Démo", "", Action::LoadDemo(1));
         for (i, th) in THEMES.iter().enumerate() {
