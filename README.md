@@ -41,8 +41,10 @@ It runs on Linux and Windows.
   Pump, Ducking, Reverb, Algorithmic Reverb, Shimmer, Delay, Character Delay,
   Chorus, Phaser, AutoFilter, Saturator, Character Saturation, Bitcrusher, Noise
   and Texture, Slice, Pitch Shifter, Stereo Imager, Utility.
-- **Third-party plugins**: CLAP and VST3 instruments and effects, with their
-  parameters in the device panel and their latency compensated.
+- **Third-party plugins**: CLAP and VST3 instruments and effects, with their own
+  interface in a window of its own (edits there are undoable and automatable),
+  their parameters in the device panel and their latency compensated. Plugins are
+  scanned in separate processes, so a broken one can't take Ponzik down.
 - **Mixer**: master plus 32 tracks, 8 inserts and 4 sends per track, free routing
   with loop rejection, solo, sidechain key per insert, plugin delay compensation
   (PDC) on tracks, sends and keys, master LUFS meter and spectrum analyzer.
@@ -81,6 +83,59 @@ Environment variables:
 |---|---|
 | `PONZIK_LATENCY_MS` | Audio output latency in milliseconds (2 to 100, default 10) |
 | `CLAP_PATH` | Extra folders to scan for CLAP plugins |
+| `VST3_PATH` | Extra folders to scan for VST3 plugins |
+
+## Plugins
+
+Ponzik hosts **CLAP** and **VST3** plugins (not VST2). It looks for them in the
+standard folders, subfolders included:
+
+| Platform | CLAP | VST3 |
+|---|---|---|
+| Linux | `~/.clap`, `/usr/lib/clap`, `/usr/local/lib/clap` | `~/.vst3`, `/usr/lib/vst3`, `/usr/local/lib/vst3` |
+| Windows | `%COMMONPROGRAMFILES%\CLAP`, `%LOCALAPPDATA%\Programs\Common\CLAP` | `%COMMONPROGRAMFILES%\VST3`, `%LOCALAPPDATA%\Programs\Common\VST3` |
+
+Each plugin file is loaded once by a child process (`ponzik scan-plugin <path>`)
+with a timeout; the results are cached in `~/.config/ponzik/plugins.cache`, so
+only new or updated plugins are loaded again. Plugins that crash or hang while
+loading are listed at the bottom of the browser's plugin tab, with the reason
+in the tooltip. After installing or fixing a plugin, run **Rescan plugins**
+(command palette, Ctrl+K, or the button under the plugin list).
+
+Click the window button next to a plugin's name in the device panel (or
+double-click the name) to open its own interface. Native Linux plugins such as
+[Surge XT](https://surge-synthesizer.github.io/) (`pacman -S surge-xt`,
+`apt install surge-xt`) or [Vital](https://vital.audio/) work out of the box.
+
+### Windows plugins on Linux (Serum, ZENOLOGY…) with Wine and yabridge
+
+Plugins that only exist for Windows can run on Linux through
+[Wine](https://www.winehq.org/) and [yabridge](https://github.com/robbert-vdh/yabridge),
+which makes them look like native Linux plugins:
+
+1. Install Wine (yabridge recommends Wine Staging) and yabridge, for example
+   `sudo pacman -S wine-staging yabridge yabridgectl` on CachyOS, or the
+   packages listed in the yabridge README for other distributions.
+2. Install the plugin with its Windows installer through Wine:
+   `wine <installer>.exe`. Pick the **VST3** (or CLAP) format; VST3 plugins
+   usually land in `~/.wine/drive_c/Program Files/Common Files/VST3`.
+   Plugins that need an online account (Roland Cloud for ZENOLOGY, for instance)
+   also need their manager app installed and logged in through Wine.
+3. Tell yabridge where they are and create the Linux bridges:
+   ```sh
+   yabridgectl add "$HOME/.wine/drive_c/Program Files/Common Files/VST3"
+   yabridgectl sync
+   ```
+   yabridge writes the bridged plugins to `~/.vst3/yabridge` and
+   `~/.clap/yabridge`, which Ponzik scans already.
+4. Start Ponzik (or run **Rescan plugins**): the plugins appear in the browser
+   with a VST3 or CLAP badge. The first load of a bridged plugin starts Wine and
+   can take a few seconds.
+
+Run `yabridgectl sync` again after installing, updating or removing a Windows
+plugin, then rescan. `yabridgectl status` shows what is bridged; if a plugin
+fails to load, its reason shows in the browser and in yabridge's own logs
+(`YABRIDGE_DEBUG_LEVEL=1`).
 
 ## Platform support
 
@@ -99,10 +154,10 @@ Environment variables:
 | `crates/ponzik-project` | Project model, JSON files, offline rendering, undo history, scales and chords, templates, autosave, MIDI files, demos |
 | `crates/ponzik-audio` | In-house audio drivers: ALSA (Linux), WASAPI (Windows), playback and capture |
 | `crates/ponzik-midi` | In-house MIDI input: ALSA rawmidi (Linux), WinMM (Windows) |
-| `crates/ponzik-window` | In-house windowing: direct X11 protocol with MIT-SHM (Linux), Win32 (Windows) |
+| `crates/ponzik-window` | In-house windowing: direct X11 protocol with MIT-SHM (Linux), Win32 (Windows), Cocoa (macOS); plugin host windows |
 | `crates/ponzik-ui` | In-house 2D rendering: anti-aliased rasterizer, TrueType reader (glyf, cmap, GPOS), animations, PNG |
-| `crates/ponzik-clap` | CLAP plugin host (audio, parameters, notes, latency) |
-| `crates/ponzik-vst3` | VST3 plugin host (hand-written COM ABI, bundle loading, instruments and effects, latency) |
+| `crates/ponzik-clap` | CLAP plugin host (audio, parameters, notes, latency, `clap.gui` with timer and fd support) |
+| `crates/ponzik-vst3` | VST3 plugin host (hand-written COM ABI, bundle loading, instruments and effects, latency, `IPlugView` with the Linux run loop) |
 | `crates/ponzik-clap-test-plugin`, `crates/ponzik-vst3-test-plugin` | Minimal plugins used by the host integration tests |
 | `apps/ponzik` | The application |
 
