@@ -128,7 +128,7 @@ impl Input {
                 }
             }
             Event::KeyUp { .. } | Event::CloseRequested => return false,
-            Event::Resized { .. } | Event::Redraw => {}
+            Event::Resized { .. } | Event::Redraw | Event::ScaleChanged { .. } => {}
         }
         true
     }

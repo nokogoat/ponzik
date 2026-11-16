@@ -123,7 +123,11 @@ unsafe extern "system" {
     fn MsgWaitForMultipleObjects(count: u32, handles: *const HANDLE, wait_all: i32, ms: u32, mask: u32) -> u32;
     fn LoadCursorW(instance: HINSTANCE, name: *const u16) -> HANDLE;
     fn SetCursor(cursor: HANDLE) -> HANDLE;
-    fn AdjustWindowRectEx(rect: *mut RECT, style: u32, menu: i32, ex_style: u32) -> i32;
+    fn AdjustWindowRectExForDpi(rect: *mut RECT, style: u32, menu: i32, ex_style: u32, dpi: u32) -> i32;
+    fn SetProcessDpiAwarenessContext(context: isize) -> i32;
+    fn GetDpiForWindow(hwnd: HWND) -> u32;
+    fn SetWindowPos(hwnd: HWND, after: HWND, x: i32, y: i32, w: i32, h: i32, flags: u32) -> i32;
+    fn ShowWindow(hwnd: HWND, cmd: i32) -> i32;
     fn GetClientRect(hwnd: HWND, rect: *mut RECT) -> i32;
     fn ValidateRect(hwnd: HWND, rect: *const RECT) -> i32;
     fn GetDC(hwnd: HWND) -> HDC;
@@ -165,7 +169,6 @@ unsafe extern "system" {
 }
 
 const WS_OVERLAPPEDWINDOW: u32 = 0x00CF_0000;
-const WS_VISIBLE: u32 = 0x1000_0000;
 const CW_USEDEFAULT: i32 = 0x8000_0000_u32 as i32;
 const CS_HREDRAW: u32 = 0x2;
 const CS_VREDRAW: u32 = 0x1;
@@ -184,6 +187,14 @@ const QS_ALLINPUT: u32 = 0x04FF;
 const SRCCOPY: u32 = 0x00CC_0020;
 const TME_LEAVE: u32 = 0x2;
 const DWMWA_USE_IMMERSIVE_DARK_MODE: u32 = 20;
+/// DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 : Windows ne met plus la fenêtre
+/// à l'échelle en bitmap, on reçoit les vrais pixels et WM_DPICHANGED.
+const DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2: isize = -4;
+const BASE_DPI: u32 = 96;
+const SWP_NOMOVE: u32 = 0x2;
+const SWP_NOZORDER: u32 = 0x4;
+const SWP_NOACTIVATE: u32 = 0x10;
+const SW_SHOW: i32 = 5;
 
 const WM_SIZE: u32 = 0x0005;
 const WM_KILLFOCUS: u32 = 0x0008;
@@ -205,6 +216,7 @@ const WM_MBUTTONDOWN: u32 = 0x0207;
 const WM_MBUTTONUP: u32 = 0x0208;
 const WM_MOUSEWHEEL: u32 = 0x020A;
 const WM_MOUSELEAVE: u32 = 0x02A3;
+const WM_DPICHANGED: u32 = 0x02E0;
 
 const MIN_SIZE: (i32, i32) = (960, 640);
 
@@ -213,6 +225,8 @@ thread_local! {
     static TRACKING: Cell<bool> = const { Cell::new(false) };
     /// Curseur voulu dans la zone cliente (nul : celui de la classe).
     static CURSOR: Cell<HANDLE> = const { Cell::new(null_mut()) };
+    /// Points par pouce du moniteur de la fenêtre (96 = échelle 1).
+    static DPI: Cell<u32> = const { Cell::new(BASE_DPI) };
 }
 
 fn push(ev: Event) {
@@ -274,11 +288,18 @@ fn cursor_id(cursor: Cursor) -> usize {
     }
 }
 
-fn min_window_size() -> (i32, i32) {
-    let mut r = RECT { left: 0, top: 0, right: MIN_SIZE.0, bottom: MIN_SIZE.1 };
+/// Taille de fenêtre (cadre compris) pour une zone cliente de `w` × `h` pixels
+/// logiques, à `dpi`.
+fn outer_size(w: i32, h: i32, dpi: u32) -> (i32, i32) {
+    let px = |v: i32| (v as i64 * dpi as i64 / BASE_DPI as i64) as i32;
+    let mut r = RECT { left: 0, top: 0, right: px(w), bottom: px(h) };
     // SAFETY: RECT valide.
-    unsafe { AdjustWindowRectEx(&mut r, WS_OVERLAPPEDWINDOW, 0, 0) };
+    unsafe { AdjustWindowRectExForDpi(&mut r, WS_OVERLAPPEDWINDOW, 0, 0, dpi) };
     (r.right - r.left, r.bottom - r.top)
+}
+
+fn min_window_size() -> (i32, i32) {
+    outer_size(MIN_SIZE.0, MIN_SIZE.1, DPI.get())
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
@@ -367,6 +388,17 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
                 }
             }
             WM_KILLFOCUS => push(Event::FocusLost),
+            WM_DPICHANGED => {
+                // Fenêtre passée sur un autre moniteur, ou échelle changée :
+                // Windows propose le rectangle qui garde la même taille apparente.
+                let dpi = (w & 0xffff) as u32;
+                let r = &*(l as *const RECT);
+                SetWindowPos(hwnd, null_mut(), r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOZORDER | SWP_NOACTIVATE);
+                if dpi != DPI.get() && dpi > 0 {
+                    DPI.set(dpi);
+                    push(Event::ScaleChanged { scale: dpi as f32 / BASE_DPI as f32 });
+                }
+            }
             _ => return DefWindowProcW(hwnd, msg, w, l),
         }
     }
@@ -403,18 +435,19 @@ impl Window {
             };
             // Échoue sans conséquence si la classe existe déjà.
             RegisterClassExW(&class);
+            // Échoue sans conséquence si le manifeste l'a déjà fait (ou avant Windows 10 1703).
+            SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
-            let mut r = RECT { left: 0, top: 0, right: width as i32, bottom: height as i32 };
-            AdjustWindowRectEx(&mut r, WS_OVERLAPPEDWINDOW, 0, 0);
+            let (ow, oh) = outer_size(width as i32, height as i32, BASE_DPI);
             let hwnd = CreateWindowExW(
                 0,
                 class_name.as_ptr(),
                 title.as_ptr(),
-                WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                WS_OVERLAPPEDWINDOW,
                 CW_USEDEFAULT,
                 CW_USEDEFAULT,
-                r.right - r.left,
-                r.bottom - r.top,
+                ow,
+                oh,
                 null_mut(),
                 null_mut(),
                 instance,
@@ -425,11 +458,23 @@ impl Window {
             }
             let dark: i32 = 1;
             DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, (&dark as *const i32).cast(), 4);
+            // La taille demandée est logique : mise à l'échelle du moniteur avant d'afficher.
+            let dpi = GetDpiForWindow(hwnd);
+            if dpi > 0 && dpi != BASE_DPI {
+                DPI.set(dpi);
+                let (ow, oh) = outer_size(width as i32, height as i32, dpi);
+                SetWindowPos(hwnd, null_mut(), 0, 0, ow, oh, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+            ShowWindow(hwnd, SW_SHOW);
 
             let mut client = RECT::default();
             GetClientRect(hwnd, &mut client);
             Ok(Window { hwnd, size: ((client.right - client.left) as u32, (client.bottom - client.top) as u32), cursor: Cursor::Arrow })
         }
+    }
+
+    pub(crate) fn scale_factor(&self) -> f32 {
+        DPI.get() as f32 / BASE_DPI as f32
     }
 
     pub(crate) fn size(&self) -> (u32, u32) {

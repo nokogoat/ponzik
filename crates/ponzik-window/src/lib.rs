@@ -8,6 +8,10 @@
 //!   le calque de la vue.
 //!
 //! La fenêtre affiche un tampon de pixels `0x00RRGGBB` fourni par l'appelant.
+//!
+//! Tailles et positions de souris sont en pixels physiques ; [`Window::scale_factor`]
+//! donne l'échelle du système (1 = 96 ppp, 2 = écran 4K « Retina ») et
+//! [`Event::ScaleChanged`] signale qu'elle a changé.
 
 use std::fmt;
 use std::time::Duration;
@@ -111,6 +115,9 @@ pub enum Event {
     /// indépendant de la disposition.
     Physical { code: u16, down: bool },
     FocusLost,
+    /// L'échelle du système a changé (réglage de l'écran, fenêtre passée sur un
+    /// autre moniteur) : pixels physiques par pixel logique.
+    ScaleChanged { scale: f32 },
 }
 
 #[derive(Debug)]
@@ -139,11 +146,18 @@ pub struct Window {
 }
 
 impl Window {
+    /// Ouvre une fenêtre de `width` × `height` pixels logiques : la taille réelle
+    /// suit l'échelle du système.
     pub fn open(title: &str, width: u32, height: u32) -> Result<Self, WindowError> {
         Ok(Self { inner: backend::Window::open(title, width, height)? })
     }
 
-    /// Taille de la zone cliente, en pixels.
+    /// Échelle du système : pixels physiques par pixel logique (1 = 96 ppp).
+    pub fn scale_factor(&self) -> f32 {
+        self.inner.scale_factor()
+    }
+
+    /// Taille de la zone cliente, en pixels physiques.
     pub fn size(&self) -> (u32, u32) {
         self.inner.size()
     }

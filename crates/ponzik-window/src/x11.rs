@@ -32,6 +32,7 @@ const OP_CHANGE_WINDOW_ATTRIBUTES: u8 = 2;
 const OP_MAP_WINDOW: u8 = 8;
 const OP_INTERN_ATOM: u8 = 16;
 const OP_CHANGE_PROPERTY: u8 = 18;
+const OP_GET_PROPERTY: u8 = 20;
 const OP_GET_INPUT_FOCUS: u8 = 43;
 const OP_OPEN_FONT: u8 = 45;
 const OP_CREATE_GC: u8 = 55;
@@ -59,6 +60,12 @@ const EVENT_MASK: u32 = 0x1 // KeyPress
     | 0x8000 // Exposure
     | 0x2_0000 // StructureNotify
     | 0x20_0000; // FocusChange
+
+/// Attribut de fenêtre CWEventMask, et l'événement PropertyChange.
+const CW_EVENT_MASK: u32 = 0x800;
+const PROPERTY_CHANGE_MASK: u32 = 0x40_0000;
+/// Taille maximale lue de la base de ressources, en mots de 4 octets.
+const RESOURCES_MAX_WORDS: u32 = 64 * 1024;
 
 const MIN_SIZE: (u32, u32) = (960, 640);
 /// Attribut de fenêtre CWCursor.
@@ -146,6 +153,50 @@ fn window_cursor_req(window: u32, cursor: u32) -> Vec<u8> {
     r.finish().to_vec()
 }
 
+/// GetProperty : toute la valeur de `prop` sur `window`, quel que soit son type.
+fn get_property_req(window: u32, prop: u32) -> Vec<u8> {
+    let mut r = Req::new(OP_GET_PROPERTY, 0);
+    r.u32(window).u32(prop).u32(0).u32(0).u32(RESOURCES_MAX_WORDS);
+    r.finish().to_vec()
+}
+
+/// Valeur d'une réponse GetProperty en octets (vide si la propriété n'existe pas).
+fn property_value(reply: &[u8]) -> &[u8] {
+    if reply.len() < 32 || reply[1] == 0 {
+        return &[];
+    }
+    let len = u32_at(reply, 16) as usize * (reply[1] as usize / 8);
+    &reply[32..(32 + len).min(reply.len())]
+}
+
+/// Échelle tirée de la base de ressources X (`RESOURCE_MANAGER`) : `Xft.dpi: 192` → 2.
+/// La dernière définition l'emporte, comme dans xrdb.
+fn scale_from_resources(resources: &str) -> Option<f32> {
+    resources
+        .lines()
+        .filter_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            (name.trim() == "Xft.dpi").then(|| value.trim().parse::<f32>().ok()).flatten()
+        })
+        .next_back()
+        .and_then(|dpi| sane_scale(dpi / 96.0))
+}
+
+/// Repli sans Xft.dpi : `GDK_SCALE` (entier) puis `QT_SCALE_FACTOR`.
+fn scale_from_env(var: impl Fn(&str) -> Option<String>) -> Option<f32> {
+    ["GDK_SCALE", "QT_SCALE_FACTOR"].into_iter().find_map(|name| sane_scale(var(name)?.trim().parse().ok()?))
+}
+
+fn sane_scale(scale: f32) -> Option<f32> {
+    (scale.is_finite() && scale > 0.0).then(|| scale.clamp(0.5, 4.0))
+}
+
+fn system_scale(resources: &[u8]) -> f32 {
+    scale_from_resources(&String::from_utf8_lossy(resources))
+        .or_else(|| scale_from_env(|name| std::env::var(name).ok()))
+        .unwrap_or(1.0)
+}
+
 /// Constructeur de requête : longueur en mots de 4 octets écrite à la fin.
 struct Req(Vec<u8>);
 
@@ -185,7 +236,10 @@ impl Req {
 enum Incoming {
     Event(Event),
     ShmCompletion,
-    Reply,
+    /// Réponse complète (en-tête de 32 octets compris).
+    Reply(Vec<u8>),
+    /// La base de ressources X (donc peut-être Xft.dpi) a changé.
+    ResourcesChanged,
     Error { code: u8, major: u8 },
     Closed,
 }
@@ -254,6 +308,8 @@ fn modifiers(state: u16) -> Modifiers {
 
 struct ReaderCtx {
     keymap: Keymap,
+    root: u32,
+    resource_manager: u32,
     wm_protocols: u32,
     wm_delete: u32,
     shm_event: Option<u8>,
@@ -311,13 +367,17 @@ fn reader_loop(mut stream: UnixStream, tx: Sender<Incoming>, ctx: ReaderCtx) {
             1 | 35 => {
                 // Réponse ou événement générique : longueur additionnelle à lire.
                 let extra = u32_at(&b, 4) as usize * 4;
-                let mut rest = vec![0u8; extra];
-                if stream.read_exact(&mut rest).is_err() {
+                let mut full = b.to_vec();
+                full.resize(32 + extra, 0);
+                if stream.read_exact(&mut full[32..]).is_err() {
                     let _ = tx.send(Incoming::Closed);
                     return;
                 }
-                (b[0] == 1).then_some(Incoming::Reply)
+                (b[0] == 1).then_some(Incoming::Reply(full))
             }
+            // PropertyNotify sur la racine : seul RESOURCE_MANAGER nous intéresse.
+            28 | 156 => (u32_at(&b, 4) == ctx.root && u32_at(&b, 8) == ctx.resource_manager)
+                .then_some(Incoming::ResourcesChanged),
             c => {
                 let code = c & 0x7f;
                 if Some(code) == ctx.shm_event {
@@ -526,6 +586,10 @@ pub(crate) struct Window {
     cursor_font: u32,
     cursors: [u32; CURSOR_SHAPES],
     cursor: Option<Cursor>,
+    /// Échelle du système (Xft.dpi / 96) et atome de la base de ressources.
+    scale: f32,
+    resource_manager: u32,
+    resources_changed: bool,
 }
 
 impl Window {
@@ -536,6 +600,11 @@ impl Window {
         let wm_delete = intern_atom(&mut stream, "WM_DELETE_WINDOW")?;
         let net_wm_name = intern_atom(&mut stream, "_NET_WM_NAME")?;
         let utf8_string = intern_atom(&mut stream, "UTF8_STRING")?;
+        let resource_manager = intern_atom(&mut stream, "RESOURCE_MANAGER")?;
+        let resources = roundtrip(&mut stream, &get_property_req(setup.root, resource_manager))?;
+        let scale = system_scale(property_value(&resources));
+        let px = |v: u32| (v as f32 * scale).round() as u32;
+        let (width, height) = (px(width), px(height));
 
         let count = setup.max_keycode - setup.min_keycode + 1;
         let mut r = Req::new(OP_GET_KEYBOARD_MAPPING, 0);
@@ -567,6 +636,9 @@ impl Window {
             cursor_font: 0,
             cursors: [0; CURSOR_SHAPES],
             cursor: None,
+            scale,
+            resource_manager,
+            resources_changed: false,
             setup,
         };
         win.window = win.alloc_id();
@@ -594,10 +666,16 @@ impl Window {
         win.set_property(wm_protocols, ATOM_ATOM, 32, &wm_delete.to_le_bytes())?;
         let mut hints = [0u32; 18];
         hints[0] = 16; // PMinSize
-        hints[5] = MIN_SIZE.0;
-        hints[6] = MIN_SIZE.1;
+        hints[5] = px(MIN_SIZE.0);
+        hints[6] = px(MIN_SIZE.1);
         let hints: Vec<u8> = hints.iter().flat_map(|v| v.to_le_bytes()).collect();
         win.set_property(ATOM_WM_NORMAL_HINTS, ATOM_WM_SIZE_HINTS, 32, &hints)?;
+
+        // Écoute la base de ressources de la racine : un changement de Xft.dpi
+        // (réglage d'échelle du bureau) arrive sans redémarrer.
+        let mut r = Req::new(OP_CHANGE_WINDOW_ATTRIBUTES, 0);
+        r.u32(win.setup.root).u32(CW_EVENT_MASK).u32(PROPERTY_CHANGE_MASK);
+        win.send(r.finish())?;
 
         let mut r = Req::new(OP_CREATE_GC, 0);
         r.u32(win.gc).u32(win.window).u32(0x1_0000).u32(0); // GraphicsExposures = faux
@@ -609,7 +687,7 @@ impl Window {
         let (tx, rx) = mpsc::channel();
         win.rx = rx;
         let reader = win.stream.try_clone().map_err(io_err)?;
-        let ctx = ReaderCtx { keymap, wm_protocols, wm_delete, shm_event };
+        let ctx = ReaderCtx { keymap, root: win.setup.root, resource_manager, wm_protocols, wm_delete, shm_event };
         thread::Builder::new()
             .name("ponzik-x11".into())
             .spawn(move || reader_loop(reader, tx, ctx))
@@ -646,19 +724,21 @@ impl Window {
         self.send(r.finish())
     }
 
-    fn handle(&mut self, msg: Incoming) -> bool {
+    /// Traite un message du lecteur ; renvoie le contenu d'une réponse.
+    fn handle(&mut self, msg: Incoming) -> Option<Vec<u8>> {
         match msg {
             Incoming::Event(ev) => {
                 if let Event::Resized { width, height } = ev {
                     if (width, height) == self.size {
-                        return false;
+                        return None;
                     }
                     self.size = (width, height);
                 }
                 self.pending.push_back(ev);
             }
             Incoming::ShmCompletion => self.shm_busy = false,
-            Incoming::Reply => return true,
+            Incoming::Reply(data) => return Some(data),
+            Incoming::ResourcesChanged => self.resources_changed = true,
             Incoming::Error { code, major } => {
                 if Some(major) == self.shm_major {
                     self.shm_failed = true;
@@ -669,25 +749,47 @@ impl Window {
             }
             Incoming::Closed => self.pending.push_back(Event::CloseRequested),
         }
-        false
+        None
     }
 
-    /// Attend que le serveur ait traité toutes nos requêtes.
-    fn sync(&mut self) -> Result<(), WindowError> {
-        let mut r = Req::new(OP_GET_INPUT_FOCUS, 0);
-        self.send(r.finish())?;
+    /// Envoie une requête à réponse et attend celle-ci.
+    fn request(&mut self, req: &[u8]) -> Result<Vec<u8>, WindowError> {
+        self.send(req)?;
         let deadline = Instant::now() + Duration::from_secs(2);
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
             match self.rx.recv_timeout(left) {
                 Ok(msg) => {
-                    if self.handle(msg) {
-                        return Ok(());
+                    if let Some(reply) = self.handle(msg) {
+                        return Ok(reply);
                     }
                 }
                 Err(_) => return Err(proto("le serveur ne répond plus")),
             }
         }
+    }
+
+    /// Attend que le serveur ait traité toutes nos requêtes.
+    fn sync(&mut self) -> Result<(), WindowError> {
+        let mut r = Req::new(OP_GET_INPUT_FOCUS, 0);
+        let req = r.finish().to_vec();
+        self.request(&req).map(drop)
+    }
+
+    /// Relit Xft.dpi après un changement de la base de ressources.
+    fn refresh_scale(&mut self) {
+        self.resources_changed = false;
+        let req = get_property_req(self.setup.root, self.resource_manager);
+        let Ok(reply) = self.request(&req) else { return };
+        let scale = system_scale(property_value(&reply));
+        if (scale - self.scale).abs() > 1e-3 {
+            self.scale = scale;
+            self.pending.push_back(Event::ScaleChanged { scale });
+        }
+    }
+
+    pub(crate) fn scale_factor(&self) -> f32 {
+        self.scale
     }
 
     fn create_shm(&mut self, size: usize) -> Option<Shm> {
@@ -736,6 +838,9 @@ impl Window {
     fn drain(&mut self) {
         while let Ok(msg) = self.rx.try_recv() {
             self.handle(msg);
+        }
+        if self.resources_changed {
+            self.refresh_scale();
         }
     }
 
@@ -924,6 +1029,47 @@ mod tests {
         assert_eq!(req.len(), 16);
         assert_eq!(&req[..4], &[OP_CHANGE_WINDOW_ATTRIBUTES, 0, 4, 0]);
         assert_eq!((u32_at(&req, 4), u32_at(&req, 8), u32_at(&req, 12)), (0x10, CW_CURSOR, 0x20));
+    }
+
+    #[test]
+    fn xft_dpi_sets_the_scale() {
+        assert_eq!(scale_from_resources("Xft.dpi:\t96\n"), Some(1.0));
+        assert_eq!(scale_from_resources("Xcursor.size:\t48\nXft.dpi:\t192\nXft.antialias:\t1\n"), Some(2.0));
+        assert_eq!(scale_from_resources("Xft.dpi: 144"), Some(1.5));
+        // La dernière définition l'emporte ; les autres ressources sont ignorées.
+        assert_eq!(scale_from_resources("Xft.dpi:\t96\nXft.dpi:\t120\n"), Some(1.25));
+        assert_eq!(scale_from_resources("*dpi:\t192\nXft.dpis:\t192\n"), None);
+        assert_eq!(scale_from_resources("Xft.dpi:\tbeaucoup\n"), None);
+        assert_eq!(scale_from_resources("Xft.dpi:\t0\n"), None);
+        assert_eq!(scale_from_resources("Xft.dpi:\t9600\n"), Some(4.0));
+        assert_eq!(scale_from_resources(""), None);
+    }
+
+    #[test]
+    fn env_scale_is_a_fallback() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |name: &str| pairs.iter().find(|(k, _)| *k == name).map(|(_, v)| v.to_string())
+        };
+        assert_eq!(scale_from_env(env(&[])), None);
+        assert_eq!(scale_from_env(env(&[("GDK_SCALE", "2")])), Some(2.0));
+        assert_eq!(scale_from_env(env(&[("QT_SCALE_FACTOR", "1.5")])), Some(1.5));
+        assert_eq!(scale_from_env(env(&[("GDK_SCALE", "2"), ("QT_SCALE_FACTOR", "1.5")])), Some(2.0));
+        assert_eq!(scale_from_env(env(&[("GDK_SCALE", "x"), ("QT_SCALE_FACTOR", "1.25")])), Some(1.25));
+    }
+
+    #[test]
+    fn get_property_reply_value() {
+        let req = get_property_req(0x100, 23);
+        assert_eq!(&req[..4], &[OP_GET_PROPERTY, 0, 6, 0]);
+        assert_eq!((u32_at(&req, 4), u32_at(&req, 8), u32_at(&req, 12)), (0x100, 23, 0));
+        assert_eq!(u32_at(&req, 20), RESOURCES_MAX_WORDS);
+        let mut reply = vec![0u8; 32];
+        reply[0] = 1;
+        assert_eq!(property_value(&reply), b"", "propriété absente");
+        reply[1] = 8;
+        reply[16..20].copy_from_slice(&11u32.to_le_bytes());
+        reply.extend_from_slice(b"Xft.dpi:192\0");
+        assert_eq!(property_value(&reply), b"Xft.dpi:192");
     }
 
     #[test]
