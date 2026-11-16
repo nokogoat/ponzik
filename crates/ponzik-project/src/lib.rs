@@ -18,6 +18,7 @@ pub use ponzik_engine::{AutoPoint, AutoScope, AutoTarget, SessionSlot};
 pub const SESSION_COLUMNS: usize = 8;
 pub const SESSION_SCENES: usize = 8;
 
+pub mod autosave;
 mod breakcore;
 mod demo;
 pub mod history;
