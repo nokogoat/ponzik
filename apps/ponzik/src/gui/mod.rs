@@ -277,6 +277,14 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     if std::env::var_os("PONZIK_RECOVER").is_some() {
         app.recovery = Some((std::path::PathBuf::new(), "Démo · il y a 3 min".into()));
     }
+    // PONZIK_SCALE=9,minor : gamme du projet (tonique, mode).
+    if let Some((key, scale)) = std::env::var("PONZIK_SCALE").ok().and_then(|v| {
+        let (k, s) = v.split_once(',')?;
+        Some((k.trim().parse::<u8>().ok()?, ponzik_project::ScaleKind::from_id(s.trim())?))
+    }) {
+        app.project.key = key;
+        app.project.scale = scale;
+    }
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {
         app.screenshot_popup(&name);

@@ -8,7 +8,7 @@ use ponzik_engine::mixer::{MASTER, TRACKS};
 use ponzik_engine::registry;
 use ponzik_engine::{Command, EngineHandle, PlayMode, Sample, TICKS_PER_BAR, TICKS_PER_STEP};
 use ponzik_project::autosave::{self, Autosaver};
-use ponzik_project::{EffectDef, InstrumentDef, Project};
+use ponzik_project::{EffectDef, InstrumentDef, Project, ScaleKind};
 use ponzik_ui::{Anim, Canvas, Color, FontId, Fonts, Rect, embedded};
 use ponzik_window::Key;
 
@@ -104,6 +104,8 @@ pub enum Popup {
     Param { target: ponzik_engine::AutoTarget, value: f32, default: f32 },
     /// Nouveau projet : choix d'un modèle.
     Templates,
+    /// Tonalité et gamme du projet.
+    Scale,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -393,6 +395,8 @@ pub struct App {
     autosaver: Option<Autosaver>,
     /// Sauvegarde d'une session interrompue, proposée au démarrage : fichier, ligne de détail.
     pub recovery: Option<(PathBuf, String)>,
+    /// Place de la pastille de gamme, où s'ouvre son menu.
+    scale_anchor: Rect,
 }
 
 impl App {
@@ -483,6 +487,7 @@ impl App {
             sidebar_tab: 0,
             autosaver: None,
             recovery: None,
+            scale_anchor: Rect::new(0.0, 0.0, 0.0, 0.0),
         }
     }
 
@@ -490,6 +495,7 @@ impl App {
     pub fn screenshot_popup(&mut self, name: &str) {
         let kind = match name {
             "templates" => Popup::Templates,
+            "scale" => Popup::Scale,
             _ => return,
         };
         self.open_popup(kind, Rect::new(60.0, 8.0, 0.0, TOP_BAR - 12.0));
@@ -1384,7 +1390,7 @@ impl App {
         let wordmark = self.text(c, self.f.sans_med, 18.0, 70.0, cy, "Ponzik", t.text);
 
         // Transport, centré.
-        let cluster = 40.0 + 6.0 + 40.0 + 14.0 + 132.0 + 10.0 + 188.0 + 10.0 + 116.0 + 10.0 + 132.0 + 6.0 + 36.0 + 4.0 + 36.0 + 4.0 + 36.0;
+        let cluster = 40.0 + 6.0 + 40.0 + 14.0 + 132.0 + 10.0 + 188.0 + 10.0 + 116.0 + 10.0 + 132.0 + 6.0 + 128.0 + 6.0 + 36.0 + 4.0 + 36.0 + 4.0 + 36.0;
         let mut x = ((r.w - cluster) * 0.5).round().max(70.0 + wordmark + 24.0);
         let start = x;
 
@@ -1446,6 +1452,8 @@ impl App {
         self.position_field(c, pos_r);
         self.tip_zone(input, pos_r, "Position\nmesure . temps . pas", "");
         x += 138.0;
+        self.scale_chip(c, input, Rect::new(x, cy - 18.0, 128.0, 36.0));
+        x += 134.0;
         if self.icon_button(c, input, wid("tb-metro", 0, 0), Rect::new(x, cy - 18.0, 36.0, 36.0), Icon::Metronome, self.metronome, ("Métronome", "Ctrl M")) {
             self.metronome = !self.metronome;
             let m = self.metronome;
@@ -1585,6 +1593,104 @@ impl App {
         c.fill_rrect(Rect::new(mid.x + 6.0, cy - 6.0, 3.0, 12.0), 1.5, super::playlist::pattern_color(cur));
         let label = self.fit(self.f.sans_med, 13.0, &name, mid.w - 22.0);
         self.text_center(c, self.f.sans_med, 13.0, cx + 4.0, cy, &label, t.text2.mix(t.text, 0.6 + 0.4 * hv));
+    }
+
+    /// Pastille de la gamme du projet : clic pour la choisir, molette pour la tonalité.
+    fn scale_chip(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
+        let t = self.theme;
+        self.scale_anchor = r;
+        let id = wid("tb-scale", 0, 0);
+        let hov = self.hovered(input, id, r);
+        let hv = self.hover_anim(id, hov);
+        c.fill_rrect(r, 10.0, t.raised.mix(t.raised_hi, hv));
+        c.stroke_rrect(r, 10.0, 1.0, t.hairline);
+        let (key, scale) = (self.project.key, self.project.scale);
+        let chromatic = scale == ScaleKind::Chromatic;
+        let cy = r.y + r.h * 0.5;
+        draw_icon(c, Icon::Scale, r.x + 18.0, cy, 15.0, if chromatic { t.muted } else { t.accent });
+        let label = scale_label(key, scale);
+        self.text_fit(c, self.f.sans_med, 13.0, r.x + 34.0, cy, &label, r.w - 42.0, if chromatic { t.text2 } else { t.text });
+        if hov {
+            let tip = if chromatic {
+                "Gamme du projet\nAucune : toutes les notes".to_string()
+            } else {
+                format!("Gamme du projet\n{} {} · molette : tonalité", key_name(key), scale.name().to_lowercase())
+            };
+            self.set_tip(&tip, "");
+        }
+        if hov && input.pressed {
+            self.open_popup(Popup::Scale, r);
+        }
+        if hov && input.wheel != 0.0 && !chromatic {
+            self.project.key = ((key as i32 + input.wheel.signum() as i32).rem_euclid(12)) as u8;
+            self.commit("Tonalité");
+        }
+    }
+
+    /// Choix de la gamme : douze toniques (les notes de la gamme pointées), puis
+    /// les modes. Renvoie faux quand il se ferme.
+    fn scale_popup(&mut self, c: &mut Canvas, input: &Input, anchor: Rect, screen: Rect) -> bool {
+        let t = self.theme;
+        let open = self.anim.to(wid("popup", 0, 0), 1.0, T_HOVER);
+        const GAP: f32 = 4.0;
+        let w = 320.0;
+        let key_w = (w - 24.0 - 5.0 * GAP) / 6.0;
+        let (key_h, row_h) = (36.0, 32.0);
+        let scale_rows = ScaleKind::ALL.len().div_ceil(2) as f32;
+        let h = 40.0 + 2.0 * key_h + GAP + 17.0 + scale_rows * row_h + 10.0;
+        let x = anchor.x.min(screen.right() - 12.0 - w).max(12.0);
+        let r = Rect::new(x, anchor.bottom() + 8.0 + (1.0 - open) * 6.0, w, h);
+        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, Color::rgba(0, 0, 0, (90.0 * open) as u8));
+        c.fill_rrect(r, 14.0, t.panel);
+        c.stroke_rrect(r, 14.0, 1.0, t.hairline.alpha(1.6));
+        self.text(c, self.f.sans_med, 12.0, r.x + 16.0, r.y + 20.0, "Gamme", t.muted);
+
+        let (key, scale) = (self.project.key, self.project.scale);
+        let chromatic = scale == ScaleKind::Chromatic;
+        let over = |b: Rect| input.inside && b.contains(input.x, input.y);
+        for k in 0..12u8 {
+            let cell = Rect::new(r.x + 12.0 + (k % 6) as f32 * (key_w + GAP), r.y + 36.0 + (k / 6) as f32 * (key_h + GAP), key_w, key_h);
+            let hov = over(cell);
+            let hv = self.hover_anim(wid("scale-key", k as usize, 0), hov);
+            let cur = k == key % 12;
+            let fill = if cur && !chromatic { t.accent } else if cur { t.raised_hi } else { t.raised.mix(t.raised_hi, hv).alpha(0.6 + 0.4 * hv) };
+            c.fill_rrect(cell, 8.0, fill);
+            let ink = if cur && !chromatic { t.on_accent } else { t.text2.mix(t.text, hv.max(cur as u8 as f32)) };
+            let (cx, cy) = cell.center();
+            self.text_center(c, self.f.sans_med, 13.0, cx, cy - 2.0, key_name(k), ink);
+            // Les notes de la gamme : un point sous leur nom.
+            if !chromatic && !cur && scale.contains(key, k) {
+                c.fill_circle(cx, cell.bottom() - 6.0, 2.0, t.accent.alpha(0.8));
+            }
+            if hov && input.pressed && !cur {
+                self.project.key = k;
+                self.commit("Tonalité");
+            }
+        }
+        let sep_y = r.y + 36.0 + 2.0 * key_h + GAP + 8.0;
+        c.fill_rect(Rect::new(r.x + 12.0, sep_y, r.w - 24.0, 1.0), t.hairline);
+        let col_w = (r.w - 24.0 - GAP) * 0.5;
+        for (i, sc) in ScaleKind::ALL.into_iter().enumerate() {
+            let row = Rect::new(r.x + 12.0 + (i % 2) as f32 * (col_w + GAP), sep_y + 8.0 + (i / 2) as f32 * row_h, col_w, row_h - 4.0);
+            let hov = over(row);
+            let hv = self.hover_anim(wid("scale-kind", i, 0), hov);
+            let cur = sc == scale;
+            if hv > 0.01 || cur {
+                c.fill_rrect(row, 8.0, t.raised.mix(t.raised_hi, hv * 0.6).alpha(hv.max(cur as u8 as f32 * 0.8)));
+            }
+            let cy = row.y + row.h * 0.5;
+            if cur {
+                c.fill_rrect(Rect::new(row.x + 4.0, cy - 6.0, 3.0, 12.0), 1.5, t.accent);
+            }
+            let ink = t.text2.mix(t.text, hv.max(cur as u8 as f32));
+            self.text_fit(c, self.f.sans_med, 12.0, row.x + 14.0, cy, sc.name(), row.w - 20.0, ink);
+            if hov && input.pressed && !cur {
+                self.project.scale = sc;
+                self.commit("Gamme");
+            }
+        }
+        let clicked = input.pressed || input.right_pressed;
+        !clicked || r.contains(input.x, input.y) || anchor.contains(input.x, input.y)
     }
 
     fn position_field(&mut self, c: &mut Canvas, r: Rect) {
@@ -2024,7 +2130,7 @@ impl App {
                     })
                     .collect(),
             ),
-            Popup::Rename { .. } | Popup::Palette { .. } => (String::new(), Vec::new()),
+            Popup::Rename { .. } | Popup::Palette { .. } | Popup::Scale => (String::new(), Vec::new()),
         }
     }
 
@@ -2278,6 +2384,12 @@ impl App {
             }
             return;
         }
+        if matches!(state.kind, Popup::Scale) {
+            if self.scale_popup(c, input, self.scale_anchor, screen) {
+                self.popup = Some(state);
+            }
+            return;
+        }
         let open = self.anim.to(wid("popup", 0, 0), 1.0, T_HOVER);
 
         // Renommage : un champ texte posé sur le nom (ou au centre, sans ancre).
@@ -2482,4 +2594,30 @@ fn template_icon(i: usize) -> Icon {
         4 => Icon::Metronome,
         _ => Icon::Effect,
     }
+}
+
+/// Noms des toniques ; « # » et « b » : les polices embarquées n'ont pas ♯ ni ♭.
+const KEY_LABELS: [&str; 12] = ["Do", "Do#", "Ré", "Mib", "Mi", "Fa", "Fa#", "Sol", "Lab", "La", "Sib", "Si"];
+
+pub fn key_name(key: u8) -> &'static str {
+    KEY_LABELS[usize::from(key % 12)]
+}
+
+/// « La mineur », « Ré dorien » ; « Chromatique » sans gamme.
+fn scale_label(key: u8, scale: ScaleKind) -> String {
+    let mode = match scale {
+        ScaleKind::Chromatic => return "Chromatique".into(),
+        ScaleKind::Major => "majeur",
+        ScaleKind::Minor => "mineur",
+        ScaleKind::Dorian => "dorien",
+        ScaleKind::Phrygian => "phrygien",
+        ScaleKind::Lydian => "lydien",
+        ScaleKind::Mixolydian => "mixolydien",
+        ScaleKind::HarmonicMinor => "m. harm.",
+        ScaleKind::MelodicMinor => "m. mél.",
+        ScaleKind::PentatonicMajor => "penta maj.",
+        ScaleKind::PentatonicMinor => "penta min.",
+        ScaleKind::Blues => "blues",
+    };
+    format!("{} {mode}", key_name(key))
 }

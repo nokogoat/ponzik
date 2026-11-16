@@ -1,6 +1,7 @@
 //! Piano roll : notes du canal sélectionné dans le pattern courant.
 
 use ponzik_engine::{Note, PlayMode, TICKS_PER_BAR, TICKS_PER_STEP};
+use ponzik_project::ScaleKind;
 use ponzik_ui::{Canvas, Rect};
 use ponzik_window::Key;
 
@@ -174,10 +175,19 @@ impl App {
         let prev = c.push_clip(grid);
         let top_key = sy.floor() as i32;
         let rows = (grid.h / KEY_H).ceil() as i32 + 2;
+        let scaled = self.project.scale != ScaleKind::Chromatic;
         for k in (top_key - rows..=top_key + 1).filter(|k| (0..128).contains(k)) {
             let y = y_of(k as f32);
             let col = if is_black(k as u8) { t.well } else { t.panel.mix(t.raised, 0.35) };
             c.fill_rect(Rect::new(grid.x, y, grid.w, KEY_H), col);
+            // Gamme du projet : rangées hors gamme assombries, tonique teintée.
+            if scaled {
+                if !self.project.in_scale(k as u8) {
+                    c.fill_rect(Rect::new(grid.x, y, grid.w, KEY_H), t.bg_deep.alpha(0.55));
+                } else if (k as u8 + 12 - self.project.key % 12) % 12 == 0 {
+                    c.fill_rect(Rect::new(grid.x, y, grid.w, KEY_H), t.accent.alpha(0.05));
+                }
+            }
             if k % 12 == 0 {
                 c.fill_rect(Rect::new(grid.x, y + KEY_H - 1.0, grid.w, 1.0), t.hairline.alpha(2.0));
             }

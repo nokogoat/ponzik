@@ -98,6 +98,8 @@ pub enum Icon {
     Columns,
     /// Valider.
     Check,
+    /// Marches montantes : gamme du projet.
+    Scale,
 }
 
 /// Dessine une icône au trait, dans un carré de `size` centré sur (`cx`, `cy`).
@@ -240,6 +242,13 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
         Icon::Columns => {
             for i in 0..3 {
                 c.stroke_rrect(rr(-7.0 + i as f32 * 5.0, -6.5, 4.0, 13.0), 1.2 * s, stroke * 0.85, col);
+            }
+        }
+        Icon::Scale => {
+            // Quatre marches posées sur la même ligne, de plus en plus hautes.
+            for i in 0..4 {
+                let h = 4.0 + i as f32 * 3.3;
+                c.fill_rrect(rr(-7.0 + i as f32 * 3.8, 7.0 - h, 2.8, h), 1.0 * s, col.alpha(0.55 + 0.15 * i as f32));
             }
         }
         Icon::Check => c.stroke_polyline(&[p(-6.0, 0.5), p(-2.0, 4.5), p(6.0, -4.5)], stroke * 1.15, col),
