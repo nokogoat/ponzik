@@ -3,7 +3,7 @@
 use ponzik_engine::{PlayMode, TICKS_PER_BAR};
 use ponzik_project::ClipDef;
 use ponzik_ui::{Canvas, Color, Rect};
-use ponzik_window::Key;
+use ponzik_window::{Cursor, Key};
 
 use super::Input;
 use super::app::{App, Popup, Rename, View};
@@ -147,6 +147,7 @@ impl App {
                 // Bouton d'édition, au-dessus de la ligne.
             } else if hov {
                 self.set_tip("Clic : pinceau · double-clic : renommer\nClic droit : couleur, dupliquer, supprimer", "");
+                self.set_cursor(Cursor::Hand);
                 if input.right_pressed {
                     self.select_pattern(p);
                     self.open_popup(Popup::PatternMenu(p), Rect::new(input.x, input.y, 0.0, 0.0));
@@ -174,6 +175,7 @@ impl App {
         draw_icon(c, Icon::Plus, ax, ay, 16.0, t.muted.mix(t.accent, hv));
         if hov {
             self.set_tip("Nouveau pattern", "F4");
+            self.set_cursor(Cursor::Hand);
             if input.pressed {
                 let p = self.project.add_pattern();
                 self.playlist.brush = p;
@@ -418,6 +420,14 @@ impl App {
             if input.released {
                 self.clip_drag = None;
             }
+        }
+        // Curseur : bord à étirer, clip à saisir (saisi pendant le geste).
+        let gesture = if input.down && (self.is_dragging(grid_id) || self.is_dragging(audio_id)) { self.clip_drag } else { None };
+        match (gesture, hover_audio.or(hover_clip)) {
+            (Some(ClipDrag::Resize { .. } | ClipDrag::AudioResize { .. }), _) | (None, Some((_, true))) => self.set_cursor(Cursor::ResizeH),
+            (Some(_), _) => self.set_cursor(Cursor::Grab),
+            (None, Some(_)) => self.set_cursor(Cursor::Move),
+            _ => {}
         }
         if self.popup.is_none() && !self.sidebar_focus {
             for &(key, mods) in &input.keys {

@@ -7,6 +7,7 @@
 //! redimensionnent en tirant leur bord.
 
 use ponzik_ui::{Canvas, Color, Rect};
+use ponzik_window::Cursor;
 
 use super::Input;
 use super::app::{App, Focus};
@@ -200,6 +201,7 @@ impl App {
         if !self.hovered(input, id, grip) {
             return;
         }
+        self.set_cursor(Cursor::Grab);
         if floating {
             self.set_tip("Glisser : déplacer\nDouble-clic ou glisser sur le panneau : réancrer", "");
         } else {
@@ -246,6 +248,7 @@ impl App {
         self.text_center(c, self.f.sans, 12.0, cx, cy + 14.0, &name, t.muted.mix(t.text2, hv));
         if hov {
             self.set_tip("Dans une fenêtre\nClic : premier plan · double-clic : réancrer", "");
+            self.set_cursor(Cursor::Hand);
             if input.pressed {
                 if input.double {
                     self.dock(device);
@@ -366,6 +369,10 @@ impl App {
             }
         }
 
+        if input.down && matches!(self.layout.gesture, Some(Gesture::Tear { .. } | Gesture::Move { .. })) {
+            self.set_cursor(Cursor::Grab);
+        }
+
         // Déplacement et redimensionnement.
         let mut docking = false;
         match self.layout.gesture {
@@ -451,6 +458,9 @@ impl App {
             if flash > 0.01 {
                 c.stroke_rrect(r, 14.0, 1.5, t.accent.alpha(flash));
             }
+            if rhov || self.is_dragging(rid) {
+                self.set_cursor(Cursor::ResizeNwSe);
+            }
             let rv = self.hover_anim(rid, rhov || self.is_dragging(rid));
             let col = t.muted.alpha(0.6).mix(t.accent, rv);
             for k in 0..3 {
@@ -474,6 +484,9 @@ impl App {
             let corner = k == 1 && self.layout.sidebar_edge.is_some_and(|s| s.contains(input.x, input.y));
             let hov = free && !corner && self.hovered(input, id, e);
             let hv = self.hover_anim(id, hov || self.is_dragging(id));
+            if hov || self.is_dragging(id) {
+                self.set_cursor(if k == 0 { Cursor::ResizeH } else { Cursor::ResizeV });
+            }
             if hov {
                 let tip = if k == 0 { "Glisser : largeur du navigateur" } else { "Glisser : hauteur du panneau" };
                 self.set_tip(&format!("{tip}\nDouble-clic : taille par défaut"), "");
@@ -539,6 +552,28 @@ mod tests {
         step(&mut app, &mut c, &mut i, 900.0, 820.0, true);
         step(&mut app, &mut c, &mut i, 900.0, 820.0, false);
         assert!(app.layout.wins.is_empty());
+    }
+
+    #[test]
+    fn splitters_and_grips_set_the_cursor() {
+        let mut app = app();
+        let mut c = Canvas::new(1600, 960);
+        let mut i = Input::default();
+        step(&mut app, &mut c, &mut i, 10.0, 10.0, false);
+        let (sx, sy) = app.layout.sidebar_edge.expect("navigateur ouvert").center();
+        step(&mut app, &mut c, &mut i, sx, sy, false);
+        assert_eq!(app.cursor, Cursor::ResizeH);
+        // Pendant le glisser, la forme tient même si la souris quitte le bord.
+        step(&mut app, &mut c, &mut i, sx, sy, true);
+        step(&mut app, &mut c, &mut i, sx + 40.0, sy, true);
+        assert_eq!(app.cursor, Cursor::ResizeH);
+        step(&mut app, &mut c, &mut i, sx + 40.0, sy, false);
+        let (px, py) = app.layout.panel_edge.expect("panneau ouvert").center();
+        step(&mut app, &mut c, &mut i, px, py, false);
+        assert_eq!(app.cursor, Cursor::ResizeV);
+        // En-tête de l'instrument dans le panneau : une prise à saisir.
+        step(&mut app, &mut c, &mut i, 450.0, 750.0, false);
+        assert_eq!(app.cursor, Cursor::Grab);
     }
 
     #[test]

@@ -3,7 +3,7 @@
 use ponzik_engine::{Note, PlayMode, TICKS_PER_BAR, TICKS_PER_STEP};
 use ponzik_project::{ChordKind, ScaleKind, Voicing, revoice};
 use ponzik_ui::{Canvas, Color, Rect};
-use ponzik_window::Key;
+use ponzik_window::{Cursor, Key};
 
 use super::Input;
 use super::app::{App, Focus, Popup, Rename, View};
@@ -702,6 +702,15 @@ impl App {
                 self.text(c, self.f.mono_med, 10.0, r.x + 5.0, r.y + r.h * 0.5, &note_name(n.key), t.on_accent);
             }
         }
+        // Curseur : poignée de durée, note à saisir (saisie pendant le geste), pose dans le vide.
+        let gesture = if self.is_dragging(grid_id) && input.down { self.piano_drag.as_ref() } else { None };
+        match (gesture, hover_note) {
+            (Some(PianoDrag::Resize { .. }), _) | (None, Some((_, true))) => self.set_cursor(Cursor::ResizeH),
+            (Some(PianoDrag::Move { .. }), _) => self.set_cursor(Cursor::Grab),
+            (None, Some(_)) => self.set_cursor(Cursor::Move),
+            _ if over_grid => self.set_cursor(Cursor::Crosshair),
+            _ => {}
+        }
         // L'index peut viser une note effacée par le clic droit de cette image.
         if let Some((i, edge)) = hover_note
             && self.drag.is_none()
@@ -815,6 +824,9 @@ impl App {
         c.fill_rrect(vel_lane, 10.0, t.well);
         let prev = c.push_clip(vel_lane);
         let vid = wid("pr-vel", 0, 0);
+        if self.hovered(input, vid, vel_lane) || self.is_dragging(vid) {
+            self.set_cursor(Cursor::ResizeV);
+        }
         if self.hovered(input, vid, vel_lane) && input.pressed {
             self.begin_drag(vid, input, 0.0);
             self.piano_drag = Some(PianoDrag::Velocity);

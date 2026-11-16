@@ -2,6 +2,7 @@
 
 use ponzik_engine::{TICKS_PER_BAR, TICKS_PER_STEP};
 use ponzik_ui::{Canvas, Color, Rect};
+use ponzik_window::Cursor;
 
 use super::Input;
 use super::app::{App, Focus, Popup, Rename, View};
@@ -160,6 +161,7 @@ impl App {
         draw_icon(c, Icon::Plus, ax, ay, 18.0, t.muted.mix(t.accent, hv));
         if hov {
             self.set_tip("Ajouter un instrument\nou glisser depuis le navigateur", "");
+            self.set_cursor(Cursor::Hand);
             if input.pressed {
                 self.open_popup(Popup::AddInstrument { replace: None }, add);
             }
@@ -203,6 +205,7 @@ impl App {
         }
         if hov {
             self.set_tip(if self.project.channels[ch].muted { "Réactiver" } else { "Couper" }, "");
+            self.set_cursor(Cursor::Hand);
         }
         c.fill_rrect(led, 8.0, t.raised_hi.alpha(0.4 + hv * 0.6));
         let (lx, ly) = led.center();
@@ -246,6 +249,7 @@ impl App {
         self.text_fit(c, self.f.sans_med, 15.0, name_r.x, cy, &name, name_r.w, name_col);
         if nhov {
             self.set_tip(&format!("{kind} · piste {track}\nDouble-clic : renommer · clic droit : menu"), "");
+            self.set_cursor(Cursor::Hand);
         }
 
         // Piano roll du canal : visible au survol de la ligne ou quand elle est choisie.
@@ -327,6 +331,9 @@ impl App {
         }
         let note = self.note_in_step(ch, i);
 
+        if hov {
+            self.set_cursor(Cursor::Hand);
+        }
         let hv = self.hover_anim(wid("pad", ch, i), hov);
         let headv = self.anim.to(wid("pad-head", ch, i), (head == Some(i)) as u8 as f32, T_HEAD);
         let flash = self.anim.to(wid("pad-flash", ch, i), 0.0, T_FLASH);
@@ -390,6 +397,9 @@ impl App {
         }
         if hov && input.wheel != 0.0 {
             out = Some((norm + input.wheel * 0.03).clamp(0.0, 1.0));
+        }
+        if hov || self.is_dragging(id) {
+            self.set_cursor(Cursor::ResizeV);
         }
         let hv = self.hover_anim(id, hov || self.is_dragging(id));
         let v = out.unwrap_or(norm);

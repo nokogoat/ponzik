@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use ponzik_engine::mixer::INSERT_SLOTS;
 use ponzik_project::{EffectDef, InstrumentDef};
 use ponzik_ui::{Canvas, Color, Rect};
+use ponzik_window::Cursor;
 
 use super::Input;
 use super::app::{App, Focus, View};
@@ -102,6 +103,8 @@ impl App {
         let t = self.theme;
         let target = drops.iter().rev().find(|(r, _)| input.inside && r.contains(input.x, input.y)).copied();
         if active {
+            // Saisi au-dessus d'une zone de dépôt ; interdit ailleurs.
+            self.set_cursor(if target.is_some() { Cursor::Grab } else { Cursor::NotAllowed });
             if let Some((r, _)) = target {
                 c.fill_rrect(r, 10.0, t.accent.alpha(0.1));
                 c.stroke_rrect(r, 10.0, 1.5, t.accent.alpha(0.9));
