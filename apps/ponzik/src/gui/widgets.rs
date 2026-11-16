@@ -110,6 +110,8 @@ pub enum Icon {
     Menu,
     /// Pastille mi-pleine : thème.
     Theme,
+    /// Clé : entrée latérale d'un effet.
+    Key,
 }
 
 /// Dessine une icône au trait, dans un carré de `size` centré sur (`cx`, `cy`).
@@ -287,6 +289,12 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
             let mut half = Path::new();
             half.polygon(&[p(0.0, -6.5), p(4.6, -4.6), p(6.5, 0.0), p(4.6, 4.6), p(0.0, 6.5)]);
             c.fill_path(&half, col);
+        }
+        Icon::Key => {
+            c.stroke_circle(cx - 3.5 * s, cy, 3.6 * s, stroke, col);
+            c.stroke_polyline(&[p(0.1, 0.0), p(7.5, 0.0)], stroke, col);
+            c.stroke_polyline(&[p(4.2, 0.0), p(4.2, 3.2)], stroke, col);
+            c.stroke_polyline(&[p(6.8, 0.0), p(6.8, 2.6)], stroke, col);
         }
         Icon::Check => c.stroke_polyline(&[p(-6.0, 0.5), p(-2.0, 4.5), p(6.0, -4.5)], stroke * 1.15, col),
         Icon::Play => {

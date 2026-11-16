@@ -61,7 +61,23 @@ fn fmt_tick(d: f32) -> String {
     }
 }
 
+/// Couleur d'identité d'une piste (clés latérales, menus).
+pub fn track_color(t: usize) -> ponzik_ui::Color {
+    super::playlist::pattern_color(t.saturating_sub(1))
+}
+
 impl App {
+    /// Inserts qui écoutent la piste `key` : (piste, nom de l'effet).
+    fn key_listeners(&self, key: usize) -> Vec<(usize, &'static str)> {
+        let mut out = Vec::new();
+        for (t, tr) in self.project.tracks.iter().enumerate() {
+            for fx in tr.inserts.iter().flatten().filter(|fx| fx.sidechain == Some(key)) {
+                out.push((t, registry::effect_kind(&fx.kind).map_or("Effet", |k| k.name)));
+            }
+        }
+        out
+    }
+
     /// Pistes affichées : le master, celles des canaux, et celles qui ont des effets.
     fn visible_tracks(&self, all: bool) -> Vec<usize> {
         let mut out = vec![MASTER];
@@ -174,23 +190,45 @@ impl App {
         }
         let num = if tr == MASTER { "M".to_string() } else { tr.to_string() };
         self.text_center(c, self.f.mono, 10.0, inner.x + inner.w * 0.5, inner.y + 25.0, &num, t.muted);
+        // Piste qui sert de clé : une petite clé de sa couleur, à droite du numéro.
+        let listeners = self.key_listeners(tr);
+        if !listeners.is_empty() {
+            let (kx, ky) = (inner.x + inner.w * 0.5 + 16.0, inner.y + 25.0);
+            draw_icon(c, Icon::Key, kx, ky, 12.0, track_color(tr));
+            let zone = Rect::new(kx - 8.0, ky - 7.0, 16.0, 14.0);
+            if self.hovered(input, wid("mx-keysrc", tr, 0), zone) {
+                let list: Vec<String> =
+                    listeners.iter().map(|(t, n)| format!("{} · {n}", self.project.tracks[*t].name)).collect();
+                self.set_tip(&format!("Sert de clé à\n{}", list.join("\n")), "");
+            }
+        }
 
         // Inserts.
         let mut y = inner.y + 38.0;
         for slot in 0..INSERT_SLOTS {
             let row = Rect::new(inner.x, y, inner.w, 20.0);
             let id = wid("mx-slot", tr, slot);
-            let hov = self.hovered(input, id, row);
+            let fx = self.project.tracks[tr].inserts[slot].clone();
+            // Entrée latérale : un petit sélecteur à clé au bout de l'insert.
+            let keyed = fx.as_ref().is_some_and(|d| registry::takes_sidechain(&d.kind));
+            let key_r = Rect::new(row.right() - 19.0, row.y + 1.0, 18.0, 18.0);
+            let kid = wid("mx-key", tr, slot);
+            let khov = keyed && self.hovered(input, kid, key_r);
+            let hov = self.hovered(input, id, row) && !khov;
             let hv = self.hover_anim(id, hov);
             self.drop_zone(input, row, DropTarget::Slot(tr, slot));
-            let fx = self.project.tracks[tr].inserts[slot].clone();
             match &fx {
                 Some(def) => {
                     let name = registry::effect_kind(&def.kind).map_or(def.kind.as_str(), |k| k.name);
                     c.fill_rrect(row, 6.0, t.raised.mix(t.raised_hi, hv));
                     let dot = if def.bypass { t.muted } else { t.accent };
                     c.fill_circle(row.x + 9.0, row.y + 10.0, 3.0, dot);
-                    self.text_fit(c, self.f.sans, 11.0, row.x + 18.0, row.y + 10.0, name, row.w - 22.0, if def.bypass { t.muted } else { t.text2 });
+                    let text_w = row.w - if keyed { 40.0 } else { 22.0 };
+                    let ink = if def.bypass { t.muted } else { t.text2 };
+                    self.text_fit(c, self.f.sans, 11.0, row.x + 18.0, row.y + 10.0, name, text_w, ink);
+                    if keyed {
+                        self.key_selector(c, input, kid, key_r, khov, tr, slot, def.sidechain);
+                    }
                 }
                 None => {
                     c.stroke_rrect(row, 6.0, 1.0, t.hairline.alpha(0.6 + hv));
@@ -318,6 +356,54 @@ impl App {
             draw_icon(c, Icon::Solo, sx, sy, 14.0, ink);
             if shov {
                 self.set_tip("Solo", "");
+            }
+        }
+    }
+
+    /// Sélecteur de piste clé d'un insert : clé grise sans clé, de la couleur de la
+    /// piste clé une fois branchée.
+    #[allow(clippy::too_many_arguments)]
+    fn key_selector(
+        &mut self,
+        c: &mut Canvas,
+        input: &Input,
+        id: u64,
+        r: Rect,
+        hov: bool,
+        tr: usize,
+        slot: usize,
+        key: Option<usize>,
+    ) {
+        let t = self.theme;
+        let hv = self.hover_anim(id, hov);
+        let (cx, cy) = r.center();
+        match key {
+            Some(k) => {
+                let col = track_color(k);
+                c.fill_rrect(r.inset(1.0), 5.0, col.alpha(0.16 + 0.14 * hv));
+                draw_icon(c, Icon::Key, cx, cy, 12.0, col);
+            }
+            None => {
+                if hv > 0.01 {
+                    c.fill_rrect(r.inset(1.0), 5.0, t.raised_hi.alpha(hv));
+                }
+                draw_icon(c, Icon::Key, cx, cy, 12.0, t.muted.mix(t.text2, hv).alpha(0.55 + 0.45 * hv));
+            }
+        }
+        if hov {
+            let tip = match key {
+                Some(k) => format!("Clé : {}\nClic : changer · clic droit : débrancher", self.project.tracks[k].name),
+                None => "Entrée latérale\nClic : choisir la piste clé".to_string(),
+            };
+            self.set_tip(&tip, "");
+            if input.pressed {
+                self.open_popup(Popup::Sidechain { track: tr, slot }, r);
+            }
+            if input.right_pressed && key.is_some() {
+                if let Some(fx) = self.project.tracks[tr].inserts[slot].as_mut() {
+                    fx.sidechain = None;
+                }
+                self.commit("Débrancher la clé");
             }
         }
     }

@@ -285,6 +285,23 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
         app.project.key = key;
         app.project.scale = scale;
     }
+    // PONZIK_INSERTS=3:compressor@2,lofi;0:master_limiter : effets ajoutés (piste:type@clé).
+    if let Ok(spec) = std::env::var("PONZIK_INSERTS") {
+        for part in spec.split(';') {
+            let Some((track, list)) = part.split_once(':') else { continue };
+            let track = track.trim().parse::<usize>().ok().filter(|&t| t < ponzik_engine::mixer::TRACKS);
+            let Some(track) = track else { continue };
+            for item in list.split(',') {
+                let (kind, key) = item.split_once('@').map_or((item, None), |(k, key)| (k, key.trim().parse().ok()));
+                let inserts = &mut app.project.tracks[track].inserts;
+                if let Some(slot) = inserts.iter().position(Option::is_none) {
+                    let def = ponzik_project::EffectDef::new(kind.trim());
+                    inserts[slot] = Some(ponzik_project::EffectDef { sidechain: key, ..def });
+                }
+            }
+        }
+        app.commit("Effets de capture");
+    }
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {
         app.screenshot_popup(&name);

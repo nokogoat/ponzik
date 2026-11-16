@@ -97,6 +97,8 @@ pub enum Popup {
     Output(usize),
     /// Destination d'un nouvel envoi.
     Send(usize),
+    /// Piste clé (entrée latérale) d'un insert.
+    Sidechain { track: usize, slot: usize },
     Rename { target: Rename, text: String },
     /// Palette touche-à-tout (Ctrl+K).
     Palette { query: String, selected: usize },
@@ -165,6 +167,8 @@ pub enum Action {
     ChannelPianoRoll(usize),
     SetOutput(usize, usize),
     AddSend(usize, usize),
+    /// Piste clé d'un insert (piste, emplacement), ou aucune.
+    SetSidechain(usize, usize, Option<usize>),
     ResetTrack(usize),
     PlayStop,
     ToggleMode,
@@ -556,6 +560,18 @@ impl App {
                 return;
             }
             "humanize" => Popup::Humanize,
+            "sidechain" => {
+                // Premier insert à clé de la piste en focus.
+                let track = self.focused_track();
+                let Some(slot) = self.project.tracks[track]
+                    .inserts
+                    .iter()
+                    .position(|fx| fx.as_ref().is_some_and(|d| registry::takes_sidechain(&d.kind)))
+                else {
+                    return;
+                };
+                Popup::Sidechain { track, slot }
+            }
             "history" => {
                 for label in ["Poser une note", "Déplacer des notes", "Tempo", "Gamme", "Ajouter un effet"] {
                     self.project.bpm += 1.0;
@@ -2157,6 +2173,26 @@ impl App {
                     .collect();
                 (if send { "Envoyer vers" } else { "Sortie vers" }.into(), v)
             }
+            Popup::Sidechain { track, slot } => {
+                let (t, slot) = (*track, *slot);
+                let current = p.tracks[t].inserts[slot].as_ref().and_then(|d| d.sidechain);
+                let none = MenuItem::new(Icon::Close, "Aucune", Action::SetSidechain(t, slot, None));
+                let mut v = vec![none.on(current.is_none())];
+                for d in (1..TRACKS).filter(|&d| d != t && (self.track_in_use(d) || current == Some(d))) {
+                    let ok = self.sidechain_ok(t, slot, d);
+                    let detail = if ok { d.to_string() } else { "boucle".into() };
+                    let mut it = MenuItem::plain(&track_name(d), Action::SetSidechain(t, slot, Some(d)))
+                        .detail(detail)
+                        .on(current == Some(d))
+                        .dim(!ok);
+                    it.color = Some(super::mixer::track_color(d).alpha(if ok { 1.0 } else { 0.3 }));
+                    if !ok {
+                        it = it.tip("Impossible : créerait une boucle de routage");
+                    }
+                    v.push(it);
+                }
+                ("Piste clé".into(), v)
+            }
             Popup::Param { target, value, default } => {
                 let label = self.target_info(*target).map_or(String::new(), |(l, _)| l);
                 let mut v = vec![MenuItem::new(Icon::Automation, "Automatiser", Action::Automate(*target, *value)).tip("Une courbe dans la playlist")];
@@ -2322,6 +2358,16 @@ impl App {
         p.routing_order().is_some()
     }
 
+    /// Vrai si la piste `key` peut servir de clé à l'insert `slot` de `track` sans boucle.
+    pub fn sidechain_ok(&self, track: usize, slot: usize, key: usize) -> bool {
+        let mut p = self.project.clone();
+        match p.tracks[track].inserts[slot].as_mut() {
+            Some(fx) => fx.sidechain = Some(key),
+            None => return false,
+        }
+        p.routing_order().is_some()
+    }
+
     fn run_action(&mut self, action: Action, anchor: Rect) {
         match action {
             Action::None => {}
@@ -2384,6 +2430,16 @@ impl App {
                         self.commit("Ajouter un envoi");
                     }
                     None => self.toast("Plus d'envoi libre sur cette piste"),
+                }
+            }
+            Action::SetSidechain(t, slot, Some(k)) if !self.sidechain_ok(t, slot, k) => {
+                let name = self.project.tracks[k].name.clone();
+                self.toast(&format!("{name} ne peut pas servir de clé : boucle de routage"));
+            }
+            Action::SetSidechain(t, slot, key) => {
+                if let Some(fx) = self.project.tracks[t].inserts[slot].as_mut() {
+                    fx.sidechain = key;
+                    self.commit(if key.is_some() { "Brancher une clé" } else { "Débrancher la clé" });
                 }
             }
             Action::ResetTrack(t) => {
