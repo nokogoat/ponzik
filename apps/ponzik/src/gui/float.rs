@@ -524,15 +524,16 @@ mod tests {
         let mut app = app();
         let mut c = Canvas::new(1600, 960);
         let mut i = Input::default();
-        // En-tête de la première carte du panneau, tiré vers le haut.
-        step(&mut app, &mut c, &mut i, 300.0, 750.0, false);
-        step(&mut app, &mut c, &mut i, 300.0, 750.0, true);
+        // En-tête de l'instrument (après la carte des effets de notes), tiré vers le haut.
+        step(&mut app, &mut c, &mut i, 450.0, 750.0, false);
+        step(&mut app, &mut c, &mut i, 450.0, 750.0, true);
         step(&mut app, &mut c, &mut i, 600.0, 400.0, true);
         step(&mut app, &mut c, &mut i, 640.0, 420.0, true);
         step(&mut app, &mut c, &mut i, 640.0, 420.0, false);
         assert_eq!(app.layout.wins.len(), 1);
         let r = app.layout.wins[0].rect;
-        assert_eq!((r.x, r.y), (640.0 - 36.0, 420.0 - 15.0));
+        // La fenêtre garde la prise de l'en-tête : saisi 100 px après le bord de la carte.
+        assert_eq!((r.x, r.y), (640.0 - 100.0, 420.0 - 15.0));
         // Reposée sur le panneau du bas : réancrée.
         step(&mut app, &mut c, &mut i, 640.0, 420.0, true);
         step(&mut app, &mut c, &mut i, 900.0, 820.0, true);
