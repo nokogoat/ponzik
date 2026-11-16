@@ -11,10 +11,12 @@ use std::path::Path;
 use std::ptr::null_mut;
 use std::sync::{Arc, Mutex};
 
-use ponzik_engine::{Effect, Instrument, ParamInfo, Params, Unit};
+use ponzik_engine::ring::Producer;
+use ponzik_engine::{Editor, Effect, Instrument, ParamInfo, Params, Unit};
 
 use crate::abi::*;
 use crate::com::*;
+use crate::editor::{ComponentHandler, Vst3Editor, Vst3Shared, to_norm, to_value};
 use crate::library::Module;
 
 /// Taille de bloc maximale annoncée au plugin ; les blocs plus longs sont découpés.
@@ -99,13 +101,11 @@ struct Param {
 
 impl Param {
     fn normalize(&self, v: f32) -> f64 {
-        let v = if self.steps > 0 { v.round() as f64 / self.steps as f64 } else { v as f64 };
-        v.clamp(0.0, 1.0)
+        to_norm(self.steps, v)
     }
 
     fn denormalize(&self, n: f64) -> f32 {
-        let n = n.clamp(0.0, 1.0);
-        if self.steps > 0 { (n * self.steps as f64).round() as f32 } else { n as f32 }
+        to_value(self.steps, n)
     }
 }
 
@@ -135,6 +135,9 @@ struct Core {
     held: u128,
     active: bool,
     processing: bool,
+    /// Changements de sortie du processeur, vers le contrôleur (thread de l'interface).
+    edits: Producer<(ParamId, f64)>,
+    shared: Arc<Vst3Shared>,
     // Détruits après le plugin (ordre de déclaration).
     _handler: Owned<ComponentHandler>,
     _host: Owned<HostApplication>,
@@ -260,7 +263,8 @@ impl Core {
             }
             sync_controller(&component, ctrl);
         }
-        let handler = Owned::new(ComponentHandler);
+        let (shared, edits) = Vst3Shared::new();
+        let handler = Owned::new(ComponentHandler(shared.clone()));
         if let Some(ctrl) = &controller {
             call!(ctrl, IEditControllerVtbl, set_component_handler, handler.as_ptr());
         }
@@ -298,6 +302,7 @@ impl Core {
         }
         values.sort_by_key(|p| p.id);
         values.dedup_by_key(|p| p.id);
+        shared.attach(controller.clone(), values.iter().map(|p| (p.id, p.steps)).collect());
         let context = Box::new(ProcessContext {
             state: K_TEMPO_VALID | K_CONT_TIME_VALID,
             tempo: 120.0,
@@ -326,6 +331,8 @@ impl Core {
             latency: 0,
             active: false,
             processing: false,
+            edits,
+            shared,
             _handler: handler,
             _host: host,
             _module: module,
@@ -441,10 +448,13 @@ impl Core {
         self.context.project_time_samples += frames as i64;
         let out = self.out_changes.get();
         for q in out.queues() {
-            if let (Ok(i), Some(n)) = (self.values.binary_search_by_key(&q.id(), |p| p.id), q.last()) {
+            let Some(n) = q.last() else { continue };
+            if let Ok(i) = self.values.binary_search_by_key(&q.id(), |p| p.id) {
                 let v = self.values[i].denormalize(n);
                 self.values[i].value = v;
             }
+            // File pleine : le contrôleur ne verra pas ce changement.
+            let _ = self.edits.push((q.id(), n));
         }
         out.clear();
         status == K_RESULT_OK || status == K_RESULT_FALSE
@@ -453,6 +463,8 @@ impl Core {
 
 impl Drop for Core {
     fn drop(&mut self) {
+        // La vue d'abord ; l'éditeur rend ensuite toutes ses références.
+        self.shared.detach();
         self.stop();
         if let Some(ctrl) = &self.controller {
             call!(ctrl, IEditControllerVtbl, set_component_handler, null_mut());
@@ -579,6 +591,12 @@ macro_rules! impl_params {
 impl_params!(Vst3Instrument);
 impl_params!(Vst3Effect);
 
+impl Core {
+    fn editor(&self) -> Option<Editor> {
+        Some(Arc::new(Vst3Editor(self.shared.clone())))
+    }
+}
+
 impl Instrument for Vst3Instrument {
     fn kind(&self) -> &'static str {
         self.0.kind
@@ -602,6 +620,10 @@ impl Instrument for Vst3Instrument {
 
     fn all_notes_off(&mut self) {
         self.0.all_notes_off();
+    }
+
+    fn editor(&self) -> Option<Editor> {
+        self.0.editor()
     }
 
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
@@ -637,6 +659,10 @@ impl Effect for Vst3Effect {
     /// Lue à l'activation : un `restartComponent(kLatencyChanged)` ultérieur n'est pas suivi.
     fn latency(&self) -> usize {
         self.0.latency
+    }
+
+    fn editor(&self) -> Option<Editor> {
+        self.0.editor()
     }
 
     /// VST 3 n'a pas de `reset` : on arrête le traitement, relancé au bloc suivant.

@@ -9,6 +9,13 @@
 //! `ModuleEntry`, une libération en trop ou un objet encore vivant à
 //! `ModuleExit` interrompt le processus. Le gain reste muet tant que le
 //! contrôleur ne s'est pas annoncé au processeur par un `IMessage`.
+//!
+//! Le contrôleur du gain a une vue (`IPlugView`) réduite à sa comptabilité :
+//! taille, échelle, parent, cadre. Attachée sous Linux, elle prend l'`IRunLoop`
+//! du cadre : une minuterie dont le premier tick simule une édition du gain
+//! (`beginEdit` / `performEdit` / `endEdit` vers l'hôte) et un tube surveillé
+//! dont la lecture demande au cadre un redimensionnement à 420 × 260. Une vue
+//! libérée encore attachée interrompt le processus.
 
 use std::ffi::{CStr, c_char, c_void};
 use std::mem::offset_of;
@@ -245,6 +252,8 @@ struct Plugin {
     class: Class,
     host: *mut IHostApplication,
     peer: *mut IConnectionPoint,
+    /// `IComponentHandler` de l'hôte (référence tenue).
+    handler: *mut IComponentHandler,
     greeted: bool,
     sample_rate: f64,
     /// Gain réel du processeur (0..2).
@@ -331,6 +340,7 @@ impl Plugin {
             class,
             host: null_mut(),
             peer: null_mut(),
+            handler: null_mut(),
             greeted: false,
             sample_rate: 44_100.0,
             gain: 1.0,
@@ -367,9 +377,11 @@ impl Plugin {
     }
 
     fn release_links(&mut self) {
-        for p in
-            [std::mem::replace(&mut self.host, null_mut()).cast(), std::mem::replace(&mut self.peer, null_mut()).cast()]
-        {
+        for p in [
+            std::mem::replace(&mut self.host, null_mut()).cast(),
+            std::mem::replace(&mut self.peer, null_mut()).cast(),
+            std::mem::replace(&mut self.handler, null_mut()).cast(),
+        ] {
             unref(p);
         }
     }
@@ -764,12 +776,326 @@ unsafe extern "system" fn set_param_normalized(this: *mut c_void, id: ParamId, v
     K_RESULT_OK
 }
 
-unsafe extern "system" fn set_component_handler(_: *mut c_void, _: *mut IComponentHandler) -> TResult {
+unsafe extern "system" fn set_component_handler(this: *mut c_void, h: *mut IComponentHandler) -> TResult {
+    let p = controller(this);
+    if !h.is_null() {
+        // SAFETY : interface fournie par l'hôte ; on garde une référence.
+        unsafe { ((*(*h).vtbl).unknown.add_ref)(h.cast()) };
+    }
+    unref(std::mem::replace(&mut p.handler, h).cast());
     K_RESULT_OK
 }
 
-unsafe extern "system" fn create_view(_: *mut c_void, _: *const c_char) -> *mut c_void {
-    null_mut()
+unsafe extern "system" fn create_view(this: *mut c_void, name: *const c_char) -> *mut c_void {
+    let p = controller(this);
+    // SAFETY : chaîne C fournie par l'hôte.
+    if p.class != Class::GainController || name.is_null() || unsafe { CStr::from_ptr(name) } != c"editor" {
+        return null_mut();
+    }
+    View::create(this)
+}
+
+// --- IPlugView (comptabilité seulement) ---------------------------------------
+
+/// Valeur normalisée donnée au gain par la vue au premier tick (gain 0,25).
+pub const VIEW_EDIT: f64 = 0.125;
+/// Taille demandée au cadre quand le tube devient lisible.
+pub const VIEW_REQUEST: (i32, i32) = (420, 260);
+/// Taille de la vue à l'échelle 1.
+pub const VIEW_SIZE: (i32, i32) = (300, 200);
+
+#[cfg(target_os = "macos")]
+const PLATFORM: &CStr = c"NSView";
+#[cfg(windows)]
+const PLATFORM: &CStr = c"HWND";
+#[cfg(not(any(target_os = "macos", windows)))]
+const PLATFORM: &CStr = c"X11EmbedWindowID";
+
+#[cfg(unix)]
+mod sys {
+    use std::ffi::{c_int, c_void};
+    unsafe extern "C" {
+        pub fn pipe(fds: *mut c_int) -> c_int;
+        pub fn read(fd: c_int, buf: *mut c_void, n: usize) -> isize;
+        pub fn write(fd: c_int, buf: *const c_void, n: usize) -> isize;
+        pub fn close(fd: c_int) -> c_int;
+    }
+}
+
+/// Une table par interface : vue, échelle, minuterie, descripteur.
+#[repr(C)]
+struct View {
+    view: &'static IPlugViewVtbl,
+    scale_support: &'static IPlugViewContentScaleSupportVtbl,
+    timer: &'static ITimerHandlerVtbl,
+    event: &'static IEventHandlerVtbl,
+    refs: AtomicU32,
+    /// Contrôleur (champ `controller` d'un `Plugin`, référence tenue).
+    owner: *mut c_void,
+    frame: *mut IPlugFrame,
+    run_loop: *mut IRunLoop,
+    parent: *mut c_void,
+    scale: f32,
+    size: (i32, i32),
+    ticks: u32,
+    pipe: Option<(i32, i32)>,
+}
+
+const VIEW: usize = offset_of!(View, view);
+const SCALE: usize = offset_of!(View, scale_support);
+const TIMER: usize = offset_of!(View, timer);
+const EVENT: usize = offset_of!(View, event);
+
+const fn view_unknown<const OFF: usize>() -> FUnknownVtbl {
+    FUnknownVtbl { query_interface: view_query::<OFF>, add_ref: view_add_ref::<OFF>, release: view_release::<OFF> }
+}
+
+static VIEW_VTBL: IPlugViewVtbl = IPlugViewVtbl {
+    unknown: view_unknown::<VIEW>(),
+    is_platform_type_supported: view_platform,
+    attached: view_attached,
+    removed: view_removed,
+    on_wheel: view_wheel,
+    on_key_down: view_key,
+    on_key_up: view_key,
+    get_size: view_get_size,
+    on_size: view_on_size,
+    on_focus: view_focus,
+    set_frame: view_set_frame,
+    can_resize: view_can_resize,
+    check_size_constraint: view_check_size,
+};
+static SCALE_VTBL: IPlugViewContentScaleSupportVtbl =
+    IPlugViewContentScaleSupportVtbl { unknown: view_unknown::<SCALE>(), set_content_scale_factor: view_set_scale };
+static TIMER_VTBL: ITimerHandlerVtbl = ITimerHandlerVtbl { unknown: view_unknown::<TIMER>(), on_timer: view_on_timer };
+static EVENT_VTBL: IEventHandlerVtbl = IEventHandlerVtbl { unknown: view_unknown::<EVENT>(), on_fd_is_set: view_on_fd };
+
+impl View {
+    /// Nouvelle vue (une référence pour l'hôte) ; `owner` est le contrôleur.
+    fn create(owner: *mut c_void) -> *mut c_void {
+        LIVE.fetch_add(1, Ordering::SeqCst);
+        // SAFETY : interface du contrôleur vivante ; la vue en garde une référence.
+        unsafe { add_ref::<CONTROLLER>(owner) };
+        let v = Box::into_raw(Box::new(View {
+            view: &VIEW_VTBL,
+            scale_support: &SCALE_VTBL,
+            timer: &TIMER_VTBL,
+            event: &EVENT_VTBL,
+            refs: AtomicU32::new(1),
+            owner,
+            frame: null_mut(),
+            run_loop: null_mut(),
+            parent: null_mut(),
+            scale: 1.0,
+            size: VIEW_SIZE,
+            ticks: 0,
+            pipe: None,
+        }));
+        // SAFETY : champ `view` de la vue neuve.
+        unsafe { (v as *mut u8).add(VIEW).cast() }
+    }
+}
+
+fn view<'a, const OFF: usize>(this: *mut c_void) -> &'a mut View {
+    // SAFETY : `this` désigne le champ `OFF` d'une `View` vivante.
+    unsafe { &mut *((this as *mut u8).sub(OFF) as *mut View) }
+}
+
+unsafe extern "system" fn view_query<const OFF: usize>(this: *mut c_void, iid: *const Tuid, obj: *mut *mut c_void) -> TResult {
+    let v = view::<OFF>(this);
+    // SAFETY : identifiant fourni par l'hôte.
+    let iid = unsafe { *iid };
+    let off = match iid {
+        FUNKNOWN_IID | IPLUG_VIEW_IID => Some(VIEW),
+        IPLUG_VIEW_CONTENT_SCALE_SUPPORT_IID => Some(SCALE),
+        ITIMER_HANDLER_IID => Some(TIMER),
+        IEVENT_HANDLER_IID => Some(EVENT),
+        _ => None,
+    };
+    let base = v as *mut View as *mut u8;
+    // SAFETY : sortie fournie par l'hôte ; décalage d'un champ de `View`.
+    unsafe { *obj = off.map_or(null_mut(), |o| base.add(o).cast()) };
+    if off.is_some() {
+        v.refs.fetch_add(1, Ordering::SeqCst);
+        K_RESULT_OK
+    } else {
+        K_NO_INTERFACE
+    }
+}
+
+unsafe extern "system" fn view_add_ref<const OFF: usize>(this: *mut c_void) -> u32 {
+    view::<OFF>(this).refs.fetch_add(1, Ordering::SeqCst) + 1
+}
+
+unsafe extern "system" fn view_release<const OFF: usize>(this: *mut c_void) -> u32 {
+    let v = view::<OFF>(this);
+    let prev = v.refs.fetch_sub(1, Ordering::SeqCst);
+    check(prev > 0, "vue libérée en trop");
+    if prev == 1 {
+        check(v.parent.is_null(), "vue libérée encore attachée");
+        unref(std::mem::replace(&mut v.frame, null_mut()).cast());
+        // SAFETY : référence prise par `View::create`.
+        unsafe { release::<CONTROLLER>(v.owner) };
+        drop(unsafe { Box::from_raw(v as *mut View) });
+        LIVE.fetch_sub(1, Ordering::SeqCst);
+    }
+    prev - 1
+}
+
+unsafe extern "system" fn view_platform(_: *mut c_void, kind: *const c_char) -> TResult {
+    // SAFETY : chaîne C fournie par l'hôte.
+    if !kind.is_null() && unsafe { CStr::from_ptr(kind) } == PLATFORM { K_RESULT_TRUE } else { K_RESULT_FALSE }
+}
+
+unsafe extern "system" fn view_attached(this: *mut c_void, parent: *mut c_void, kind: *const c_char) -> TResult {
+    let v = view::<VIEW>(this);
+    if parent.is_null() || !v.parent.is_null() || v.frame.is_null() || unsafe { view_platform(this, kind) } != K_RESULT_TRUE {
+        return K_RESULT_FALSE;
+    }
+    v.parent = parent;
+    #[cfg(all(unix, not(target_os = "macos")))]
+    // SAFETY : cadre fourni par l'hôte ; références tenues jusqu'à `removed`.
+    unsafe {
+        let frame = v.frame;
+        let mut rl: *mut c_void = null_mut();
+        if ((*(*frame).vtbl).unknown.query_interface)(frame.cast(), &IRUN_LOOP_IID, &mut rl) == K_RESULT_OK {
+            v.run_loop = rl.cast();
+            let vt = &*(*v.run_loop).vtbl;
+            let base = v as *mut View as *mut u8;
+            (vt.register_timer)(rl, base.add(TIMER).cast(), 1);
+            let mut fds = [0; 2];
+            if sys::pipe(fds.as_mut_ptr()) == 0 {
+                sys::write(fds[1], b"!".as_ptr().cast(), 1);
+                v.pipe = Some((fds[0], fds[1]));
+                (vt.register_event_handler)(rl, base.add(EVENT).cast(), fds[0]);
+            }
+        }
+    }
+    K_RESULT_OK
+}
+
+unsafe extern "system" fn view_removed(this: *mut c_void) -> TResult {
+    let v = view::<VIEW>(this);
+    if v.parent.is_null() {
+        return K_RESULT_FALSE;
+    }
+    v.parent = null_mut();
+    if !v.run_loop.is_null() {
+        let base = v as *mut View as *mut u8;
+        // SAFETY : boucle obtenue par `attached`, gestionnaires enregistrés là.
+        unsafe {
+            let vt = &*(*v.run_loop).vtbl;
+            (vt.unregister_timer)(v.run_loop.cast(), base.add(TIMER).cast());
+            (vt.unregister_event_handler)(v.run_loop.cast(), base.add(EVENT).cast());
+        }
+        unref(std::mem::replace(&mut v.run_loop, null_mut()).cast());
+    }
+    #[cfg(unix)]
+    if let Some((r, w)) = v.pipe.take() {
+        // SAFETY : tube ouvert par `attached`.
+        unsafe {
+            sys::close(r);
+            sys::close(w);
+        }
+    }
+    K_RESULT_OK
+}
+
+unsafe extern "system" fn view_wheel(_: *mut c_void, _: f32) -> TResult {
+    K_RESULT_FALSE
+}
+
+unsafe extern "system" fn view_key(_: *mut c_void, _: u16, _: i16, _: i16) -> TResult {
+    K_RESULT_FALSE
+}
+
+unsafe extern "system" fn view_focus(_: *mut c_void, _: TBool) -> TResult {
+    K_RESULT_OK
+}
+
+unsafe extern "system" fn view_get_size(this: *mut c_void, r: *mut ViewRect) -> TResult {
+    let v = view::<VIEW>(this);
+    // SAFETY : sortie fournie par l'hôte.
+    unsafe { *r = ViewRect { left: 0, top: 0, right: v.size.0, bottom: v.size.1 } };
+    K_RESULT_OK
+}
+
+/// Au moins 100 × 80, par pas de 10 pixels.
+fn constrain(r: &mut ViewRect) {
+    r.right = r.left + (r.right - r.left).max(100) / 10 * 10;
+    r.bottom = r.top + (r.bottom - r.top).max(80) / 10 * 10;
+}
+
+unsafe extern "system" fn view_on_size(this: *mut c_void, r: *mut ViewRect) -> TResult {
+    let v = view::<VIEW>(this);
+    // SAFETY : rectangle fourni par l'hôte.
+    let r = unsafe { *r };
+    v.size = (r.right - r.left, r.bottom - r.top);
+    K_RESULT_OK
+}
+
+unsafe extern "system" fn view_set_frame(this: *mut c_void, frame: *mut IPlugFrame) -> TResult {
+    let v = view::<VIEW>(this);
+    if !frame.is_null() {
+        // SAFETY : cadre fourni par l'hôte ; on garde une référence.
+        unsafe { ((*(*frame).vtbl).unknown.add_ref)(frame.cast()) };
+    }
+    unref(std::mem::replace(&mut v.frame, frame).cast());
+    K_RESULT_OK
+}
+
+unsafe extern "system" fn view_can_resize(_: *mut c_void) -> TResult {
+    K_RESULT_TRUE
+}
+
+unsafe extern "system" fn view_check_size(_: *mut c_void, r: *mut ViewRect) -> TResult {
+    // SAFETY : rectangle fourni par l'hôte.
+    constrain(unsafe { &mut *r });
+    K_RESULT_TRUE
+}
+
+unsafe extern "system" fn view_set_scale(this: *mut c_void, factor: f32) -> TResult {
+    let v = view::<SCALE>(this);
+    v.scale = factor;
+    v.size = ((VIEW_SIZE.0 as f32 * factor) as i32, (VIEW_SIZE.1 as f32 * factor) as i32);
+    K_RESULT_TRUE
+}
+
+/// Premier tick : l'édition d'un utilisateur, rapportée à l'hôte.
+unsafe extern "system" fn view_on_timer(this: *mut c_void) {
+    let v = view::<TIMER>(this);
+    v.ticks += 1;
+    let p = controller(v.owner);
+    if v.ticks != 1 || p.handler.is_null() {
+        return;
+    }
+    p.norm = VIEW_EDIT;
+    let h = p.handler;
+    // SAFETY : gestionnaire retenu par le contrôleur.
+    unsafe {
+        let vt = &*(*h).vtbl;
+        (vt.begin_edit)(h.cast(), GAIN_PARAM);
+        (vt.perform_edit)(h.cast(), GAIN_PARAM, VIEW_EDIT);
+        (vt.end_edit)(h.cast(), GAIN_PARAM);
+    }
+}
+
+unsafe extern "system" fn view_on_fd(this: *mut c_void, fd: i32) {
+    let v = view::<EVENT>(this);
+    #[cfg(unix)]
+    if v.pipe.is_some_and(|(r, _)| r == fd) {
+        let mut b = [0u8; 1];
+        // SAFETY : tube lisible ouvert par `attached`.
+        unsafe { sys::read(fd, b.as_mut_ptr().cast(), 1) };
+        if !v.frame.is_null() {
+            let mut r = ViewRect { left: 0, top: 0, right: VIEW_REQUEST.0, bottom: VIEW_REQUEST.1 };
+            let base = v as *mut View as *mut u8;
+            // SAFETY : cadre retenu par la vue.
+            unsafe { ((*(*v.frame).vtbl).resize_view)(v.frame.cast(), base.add(VIEW).cast(), &mut r) };
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = (v, fd);
 }
 
 // --- IConnectionPoint ------------------------------------------------------

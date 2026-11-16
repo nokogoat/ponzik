@@ -8,3 +8,6 @@ rust-version.workspace = true
 
 [dependencies]
 ponzik-engine.workspace = true
+
+[dev-dependencies]
+ponzik-window.workspace = true

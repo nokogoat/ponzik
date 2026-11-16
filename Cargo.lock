@@ -78,6 +78,7 @@ name = "ponzik-vst3"
 version = "0.1.0"
 dependencies = [
  "ponzik-engine",
+ "ponzik-window",
 ]
 
 [[package]]

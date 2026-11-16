@@ -56,6 +56,14 @@ impl<I: Interface> Com<I> {
     }
 }
 
+impl<I: Interface> Clone for Com<I> {
+    fn clone(&self) -> Self {
+        // SAFETY : nouvelle référence comptée sur le même objet.
+        unsafe { (self.unknown().add_ref)(self.as_ptr()) };
+        Com { ptr: self.ptr, _i: PhantomData }
+    }
+}
+
 impl<I: Interface> Drop for Com<I> {
     fn drop(&mut self) {
         // SAFETY : on rend la référence possédée.
@@ -130,12 +138,12 @@ unsafe extern "system" fn query_interface<T: HostObject>(
     }
 }
 
-unsafe extern "system" fn add_ref(this: *mut c_void) -> u32 {
+pub(crate) unsafe extern "system" fn add_ref(this: *mut c_void) -> u32 {
     // SAFETY : tout `Obj` commence par `Header`.
     unsafe { (*(this as *const Header)).refs.fetch_add(1, Ordering::Relaxed) + 1 }
 }
 
-unsafe extern "system" fn release<T: HostObject>(this: *mut c_void) -> u32 {
+pub(crate) unsafe extern "system" fn release<T: HostObject>(this: *mut c_void) -> u32 {
     // SAFETY : tout `Obj` commence par `Header`.
     let refs = unsafe { &(*(this as *const Header)).refs };
     let prev = refs.fetch_sub(1, Ordering::AcqRel);
@@ -236,35 +244,6 @@ unsafe extern "system" fn host_create_instance(
     // SAFETY : sortie fournie par le plugin.
     unsafe { *obj = created.unwrap_or(null_mut()) };
     if created.is_some() { K_RESULT_OK } else { K_NO_INTERFACE }
-}
-
-// --- IComponentHandler -----------------------------------------------------
-
-/// Récepteur des éditions du contrôleur ; sans interface graphique, elles sont ignorées.
-pub(crate) struct ComponentHandler;
-
-impl HostObject for ComponentHandler {
-    type Vtbl = IComponentHandlerVtbl;
-    const VTBL: &'static IComponentHandlerVtbl = &IComponentHandlerVtbl {
-        unknown: unknown_vtbl::<Self>(),
-        begin_edit: handler_edit,
-        perform_edit: handler_perform,
-        end_edit: handler_edit,
-        restart_component: handler_restart,
-    };
-    const IIDS: &'static [Tuid] = &[ICOMPONENT_HANDLER_IID];
-}
-
-unsafe extern "system" fn handler_edit(_: *mut c_void, _: ParamId) -> TResult {
-    K_RESULT_OK
-}
-
-unsafe extern "system" fn handler_perform(_: *mut c_void, _: ParamId, _: ParamValue) -> TResult {
-    K_RESULT_OK
-}
-
-unsafe extern "system" fn handler_restart(_: *mut c_void, _: i32) -> TResult {
-    K_NOT_IMPLEMENTED
 }
 
 // --- IMessage / IAttributeList ---------------------------------------------

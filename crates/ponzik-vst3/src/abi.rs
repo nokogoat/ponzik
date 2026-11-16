@@ -2,7 +2,7 @@
 //! (`pluginterfaces/base/{funknown,ipluginbase,ibstream}.h`,
 //! `pluginterfaces/vst/{ivstcomponent,ivstaudioprocessor,ivsteditcontroller,
 //! ivstparameterchanges,ivstevents,ivstmessage,ivstattributes,ivsthostapplication,
-//! ivstprocesscontext}.h`).
+//! ivstprocesscontext}.h`, `pluginterfaces/gui/iplugview{,contentscalesupport}.h`).
 //!
 //! Chaque interface C++ est une structure dont le premier champ pointe sur sa
 //! table virtuelle ; les tables héritées sont imbriquées en tête (`base`). Les
@@ -97,6 +97,13 @@ pub const IHOST_APPLICATION_IID: Tuid = uid(0x58E595CC, 0xDB2D4969, 0x8B6AAF8C, 
 pub const IPARAM_VALUE_QUEUE_IID: Tuid = uid(0x01263A18, 0xED074F6F, 0x98C9D356, 0x4686F9BA);
 pub const IPARAMETER_CHANGES_IID: Tuid = uid(0xA4779663, 0x0BB64A56, 0xB44384A8, 0x466FEB9D);
 pub const IEVENT_LIST_IID: Tuid = uid(0x3A2C4214, 0x346349FE, 0xB2C4F397, 0xB9695A44);
+pub const IPLUG_VIEW_IID: Tuid = uid(0x5BC32507, 0xD06049EA, 0xA6151B52, 0x2B755B29);
+pub const IPLUG_FRAME_IID: Tuid = uid(0x367FAF01, 0xAFA94693, 0x8D4DA2A0, 0xED0882A3);
+pub const IPLUG_VIEW_CONTENT_SCALE_SUPPORT_IID: Tuid = uid(0x65ED9690, 0x8AC44525, 0x8AADEF7A, 0x72EA703F);
+/// `Steinberg::Linux::IRunLoop`, obtenu par `queryInterface` sur l'`IPlugFrame`.
+pub const IRUN_LOOP_IID: Tuid = uid(0x18C35366, 0x97764F1A, 0x9C5B8385, 0x7A871389);
+pub const IEVENT_HANDLER_IID: Tuid = uid(0x561E65C9, 0x13A0496F, 0x813A2C35, 0x654D7983);
+pub const ITIMER_HANDLER_IID: Tuid = uid(0x10BDD94F, 0x41424774, 0x821FAD8F, 0xECA72CA9);
 
 // --- Constantes ---------------------------------------------------------------
 
@@ -145,6 +152,16 @@ pub const K_CONT_TIME_VALID: u32 = 1 << 17;
 
 pub const K_MANY_INSTANCES: i32 = 0x7FFF_FFFF;
 
+/// `IComponentHandler::restartComponent` : les valeurs des paramètres ont changé.
+pub const K_PARAM_VALUES_CHANGED: i32 = 1 << 2;
+
+/// Types de fenêtres de `IPlugView::isPlatformTypeSupported` / `attached`.
+pub const K_PLATFORM_TYPE_HWND: &[u8] = b"HWND\0";
+pub const K_PLATFORM_TYPE_NSVIEW: &[u8] = b"NSView\0";
+pub const K_PLATFORM_TYPE_X11_EMBED_WINDOW_ID: &[u8] = b"X11EmbedWindowID\0";
+/// Nom de la vue principale pour `IEditController::createView`.
+pub const VIEW_TYPE_EDITOR: &[u8] = b"editor\0";
+
 // --- funknown.h ---------------------------------------------------------------
 
 #[repr(C)]
@@ -192,6 +209,12 @@ interface! {
     IParamValueQueue => IParamValueQueueVtbl, IPARAM_VALUE_QUEUE_IID;
     IParameterChanges => IParameterChangesVtbl, IPARAMETER_CHANGES_IID;
     IEventList => IEventListVtbl, IEVENT_LIST_IID;
+    IPlugView => IPlugViewVtbl, IPLUG_VIEW_IID;
+    IPlugFrame => IPlugFrameVtbl, IPLUG_FRAME_IID;
+    IPlugViewContentScaleSupport => IPlugViewContentScaleSupportVtbl, IPLUG_VIEW_CONTENT_SCALE_SUPPORT_IID;
+    IRunLoop => IRunLoopVtbl, IRUN_LOOP_IID;
+    IEventHandler => IEventHandlerVtbl, IEVENT_HANDLER_IID;
+    ITimerHandler => ITimerHandlerVtbl, ITIMER_HANDLER_IID;
 }
 
 // --- ipluginbase.h ------------------------------------------------------------
@@ -600,6 +623,85 @@ pub struct IEventListVtbl {
     pub add_event: unsafe extern "system" fn(this: *mut c_void, event: *mut Event) -> TResult,
 }
 
+// --- gui/iplugview.h, iplugviewcontentscalesupport.h ---------------------------
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ViewRect {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+}
+
+impl ViewRect {
+    pub fn sized(width: u32, height: u32) -> Self {
+        ViewRect { left: 0, top: 0, right: width as i32, bottom: height as i32 }
+    }
+
+    pub fn width(&self) -> u32 {
+        (self.right - self.left).max(0) as u32
+    }
+
+    pub fn height(&self) -> u32 {
+        (self.bottom - self.top).max(0) as u32
+    }
+}
+
+#[repr(C)]
+pub struct IPlugViewVtbl {
+    pub unknown: FUnknownVtbl,
+    pub is_platform_type_supported: unsafe extern "system" fn(this: *mut c_void, kind: *const c_char) -> TResult,
+    pub attached: unsafe extern "system" fn(this: *mut c_void, parent: *mut c_void, kind: *const c_char) -> TResult,
+    pub removed: unsafe extern "system" fn(this: *mut c_void) -> TResult,
+    pub on_wheel: unsafe extern "system" fn(this: *mut c_void, distance: f32) -> TResult,
+    pub on_key_down: unsafe extern "system" fn(this: *mut c_void, key: u16, code: i16, modifiers: i16) -> TResult,
+    pub on_key_up: unsafe extern "system" fn(this: *mut c_void, key: u16, code: i16, modifiers: i16) -> TResult,
+    pub get_size: unsafe extern "system" fn(this: *mut c_void, size: *mut ViewRect) -> TResult,
+    pub on_size: unsafe extern "system" fn(this: *mut c_void, size: *mut ViewRect) -> TResult,
+    pub on_focus: unsafe extern "system" fn(this: *mut c_void, state: TBool) -> TResult,
+    pub set_frame: unsafe extern "system" fn(this: *mut c_void, frame: *mut IPlugFrame) -> TResult,
+    pub can_resize: unsafe extern "system" fn(this: *mut c_void) -> TResult,
+    pub check_size_constraint: unsafe extern "system" fn(this: *mut c_void, rect: *mut ViewRect) -> TResult,
+}
+
+#[repr(C)]
+pub struct IPlugFrameVtbl {
+    pub unknown: FUnknownVtbl,
+    pub resize_view:
+        unsafe extern "system" fn(this: *mut c_void, view: *mut IPlugView, size: *mut ViewRect) -> TResult,
+}
+
+#[repr(C)]
+pub struct IPlugViewContentScaleSupportVtbl {
+    pub unknown: FUnknownVtbl,
+    pub set_content_scale_factor: unsafe extern "system" fn(this: *mut c_void, factor: f32) -> TResult,
+}
+
+// --- gui/iplugview.h, `Steinberg::Linux` ---------------------------------------
+
+#[repr(C)]
+pub struct IRunLoopVtbl {
+    pub unknown: FUnknownVtbl,
+    pub register_event_handler:
+        unsafe extern "system" fn(this: *mut c_void, handler: *mut IEventHandler, fd: i32) -> TResult,
+    pub unregister_event_handler: unsafe extern "system" fn(this: *mut c_void, handler: *mut IEventHandler) -> TResult,
+    pub register_timer: unsafe extern "system" fn(this: *mut c_void, handler: *mut ITimerHandler, ms: u64) -> TResult,
+    pub unregister_timer: unsafe extern "system" fn(this: *mut c_void, handler: *mut ITimerHandler) -> TResult,
+}
+
+#[repr(C)]
+pub struct IEventHandlerVtbl {
+    pub unknown: FUnknownVtbl,
+    pub on_fd_is_set: unsafe extern "system" fn(this: *mut c_void, fd: i32),
+}
+
+#[repr(C)]
+pub struct ITimerHandlerVtbl {
+    pub unknown: FUnknownVtbl,
+    pub on_timer: unsafe extern "system" fn(this: *mut c_void),
+}
+
 // Tailles des en-têtes C++ sur les plateformes 64 bits.
 #[cfg(target_pointer_width = "64")]
 const _: () = {
@@ -613,6 +715,7 @@ const _: () = {
     assert!(size_of::<ParameterInfo>() == 792);
     assert!(size_of::<Event>() == 48);
     assert!(size_of::<ProcessContext>() == 112);
+    assert!(size_of::<ViewRect>() == 16);
 };
 
 /// Copie une chaîne ASCII/UTF-8 dans un tableau C de taille fixe (tronquée, terminée par zéro).

@@ -1,5 +1,6 @@
-//! Hôte de plugins VST 3 pour Ponzik : audio, paramètres et notes (pas
-//! d'interface graphique de plugin).
+//! Hôte de plugins VST 3 pour Ponzik : audio, paramètres, notes et interface
+//! du plugin (`IPlugView`, avec `IPlugFrame`, l'`IRunLoop` de Linux et les
+//! éditions reçues par `IComponentHandler`).
 //!
 //! L'ABI COM de VST 3 est écrite à la main dans [`abi`] ; les modules sont
 //! chargés avec `dlopen` (Unix) ou `LoadLibraryExW` (Windows). Les paquets
@@ -13,6 +14,7 @@
 
 pub mod abi;
 mod com;
+mod editor;
 mod library;
 mod plugin;
 

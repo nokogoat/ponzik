@@ -9,6 +9,7 @@
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX};
 use std::path::{Path, PathBuf};
 
+use ponzik_engine::{EditorEvent, ParentWindow};
 use ponzik_vst3::abi::uid;
 use ponzik_vst3::{
     class_id_hex, create_effect, create_instrument, effect_from_kind, instrument_from_kind, kind_for, scan_dir,
@@ -203,4 +204,70 @@ fn wrong_kinds_are_errors() {
     assert!(create_effect(&path, "00000000000000000000000000000000").is_err());
     assert!(effect_from_kind(&kind_for(&path, &gain_id())).is_ok());
     assert!(effect_from_kind("vst3:sans-identifiant").is_err());
+}
+
+#[cfg(target_os = "macos")]
+const PARENT: ParentWindow = ParentWindow::Cocoa(0x1234);
+#[cfg(windows)]
+const PARENT: ParentWindow = ParentWindow::Win32(0x1234);
+#[cfg(not(any(target_os = "macos", windows)))]
+const PARENT: ParentWindow = ParentWindow::X11(0x1234);
+
+#[test]
+fn editor_lifecycle_run_loop_and_edits() {
+    let Some(path) = fixture("gui", true) else { return };
+    // The sine's controller has no view: opening fails cleanly.
+    let inst = create_instrument(&path, &sine_id()).unwrap();
+    let ed = inst.editor().expect("every VST 3 instance has an editor handle");
+    assert!(ed.open(PARENT, 1.0).is_err());
+    assert!(!ed.is_open());
+    drop(inst);
+    assert!(!ed.is_alive());
+
+    let mut fx = create_effect(&path, &gain_id()).unwrap();
+    fx.set_sample_rate(SR);
+    let ed = fx.editor().unwrap();
+    assert!(ed.has_gui() && ed.is_alive());
+    // Scale 2 through IPlugViewContentScaleSupport: the view doubles.
+    let size = ed.open(PARENT, 2.0).unwrap();
+    assert_eq!((size.width, size.height, size.resizable), (600, 400, true));
+    assert!(ed.is_open() && ed.resizable());
+    // The user's size goes through checkSizeConstraint (10 px steps, at least 100 × 80).
+    assert_eq!(ed.set_size(455, 50), Some((450, 80)));
+
+    let mut ev = Vec::new();
+    if cfg!(target_os = "linux") {
+        // IRunLoop: the timer reports an edit, the readable pipe asks for a resize.
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        ed.idle(&mut ev);
+        assert_eq!(
+            ev,
+            [
+                EditorEvent::GestureBegin(7),
+                EditorEvent::Param { id: 7, value: 0.125 },
+                EditorEvent::GestureEnd(7),
+                EditorEvent::Resize { width: 420, height: 260 },
+            ]
+        );
+        // The size the plugin asked for is applied as is.
+        assert_eq!(ed.set_size(420, 260), Some((420, 260)));
+        // The host's echo of the edit is not sent back; its own changes are.
+        ed.param_changed(7, 0.125);
+        ed.param_changed(7, 0.75);
+    }
+
+    ed.close();
+    assert!(!ed.is_open() && !ed.resizable());
+    assert_eq!(ed.set_size(300, 200), None);
+    ev.clear();
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    ed.idle(&mut ev);
+    assert!(ev.is_empty(), "{ev:?}");
+
+    // Destroyed with its view attached: the host removes it first (the plugin
+    // aborts otherwise) and gives every reference back (checked at ModuleExit).
+    ed.open(PARENT, 1.0).unwrap();
+    drop(fx);
+    assert!(!ed.is_alive() && !ed.is_open() && !ed.has_gui());
+    assert!(ed.open(PARENT, 1.0).is_err());
 }
