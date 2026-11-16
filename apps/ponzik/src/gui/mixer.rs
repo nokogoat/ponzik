@@ -668,6 +668,11 @@ impl App {
         }
         let gain = self.project.tracks[tr].gain;
         self.text_center(c, self.f.mono, 12.0, inner.x + inner.w * 0.5, readout_y, &fmt_db(gain), t.text2);
+        // CPU load of the track (inserts and fader), share of one core.
+        let cpu = self.engine.track_cpu(tr);
+        if cpu >= 0.0005 {
+            self.text_right(c, self.f.mono, 9.0, inner.right(), pan_y + 16.0, &format!("{:.1}%", cpu * 100.0), t.muted);
+        }
 
         let oid = wid("mx-out", tr, 0);
         let ohov = self.hovered(input, oid, out_r) && tr != MASTER;

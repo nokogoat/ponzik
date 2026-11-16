@@ -314,7 +314,14 @@ impl App {
             }
         };
         c.fill_rrect(Rect::new(head.x + 12.0, head.y + 12.0, 3.0, 12.0), 1.5, if bypass { t.muted } else { color });
+        // CPU load of the device, share of one core.
+        let cpu = match device {
+            Device::Instrument(ch) => self.engine.channel_cpu(ch),
+            Device::Effect { track, slot } => self.engine.insert_cpu(track, slot),
+        };
+        let cpu = (cpu >= 0.0005).then(|| format!("{:.1}%", cpu * 100.0));
         let title_w = if matches!(device, Device::Effect { .. }) { head.w - 158.0 } else { head.w - 98.0 };
+        let title_w = title_w - if cpu.is_some() { 36.0 } else { 0.0 };
         self.text_fit(c, self.f.sans_med, 13.0, head.x + 22.0, head.y + 18.0, &name, title_w, if bypass { t.muted } else { t.text });
 
         // Presets de l'appareil.
@@ -325,6 +332,9 @@ impl App {
         }
         // Fenêtre : détacher ou réancrer ; l'en-tête se tire comme une barre de titre.
         let float = Rect::new(preset.x - 28.0, preset.y, 26.0, 26.0);
+        if let Some(cpu) = cpu {
+            self.text_right(c, self.f.mono, 9.0, float.x - 4.0, head.y + 18.0, &cpu, t.muted);
+        }
         let (icon, tip) = if floating { (Icon::Dock, "Réancrer") } else { (Icon::Detach, "Détacher dans une fenêtre") };
         if self.icon_button(c, input, wid("fx-float", device_key(device), 0), float, icon, false, (tip, "")) {
             if floating { self.dock(device) } else { self.detach(device, Some(card)) }
