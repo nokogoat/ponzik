@@ -97,9 +97,8 @@ impl App {
         for (i, (name, desc, _)) in super::settings::presets().into_iter().enumerate() {
             add(tr_fmt!("Profile: {} · {}", name, desc.to_lowercase()), tr("Settings"), none(), Action::ApplyPreset(i));
         }
-        add(ponzik_i18n::tr_fmt!("Language: System ({})", ponzik_i18n::Lang::detect().name()), tr("Settings"), none(), Action::SetLanguage(None));
         for lang in ponzik_i18n::Lang::all() {
-            add(ponzik_i18n::tr_fmt!("Language: {}", lang.name()), tr("Settings"), none(), Action::SetLanguage(Some(lang)));
+            add(ponzik_i18n::tr_fmt!("Language: {}", lang.name()), tr("Settings"), none(), Action::SetLanguage(if lang == ponzik_i18n::Lang::EN { None } else { Some(lang) }));
         }
         for view in View::ALL {
             let title = if self.view_shown(view) { tr_fmt!("Hide the {} view", view.label()) } else { tr_fmt!("Show the {} view", view.label()) };

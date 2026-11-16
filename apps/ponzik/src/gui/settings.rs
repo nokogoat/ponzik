@@ -317,11 +317,11 @@ pub fn lang_from_json(j: &Json) -> Option<Lang> {
 }
 
 /// Langue au démarrage, avant de construire quoi que ce soit : `PONZIK_LANG`,
-/// sinon celle des réglages, sinon celle du système (anglais par défaut).
+/// sinon celle des réglages, sinon l'anglais (les traductions se choisissent).
 pub fn init_language() {
     let env = std::env::var("PONZIK_LANG").ok().and_then(|v| Lang::from_code(&v));
     let saved = || std::fs::read_to_string(settings_path()).ok().and_then(|t| json::parse(&t).ok()).and_then(|j| lang_from_json(&j));
-    ponzik_i18n::set_lang(env.or_else(saved).unwrap_or_else(Lang::detect));
+    ponzik_i18n::set_lang(env.or_else(saved).unwrap_or(Lang::EN));
 }
 
 /// Lecture tolérante : tout ce qui manque ou ne se lit pas garde sa valeur par défaut.
@@ -463,7 +463,7 @@ impl App {
     /// (`None` : suivre le système).
     pub fn set_language(&mut self, lang: Option<Lang>) {
         self.prefs.lang = lang;
-        let lang = lang.unwrap_or_else(Lang::detect);
+        let lang = lang.unwrap_or(Lang::EN);
         ponzik_i18n::set_lang(lang);
         self.save_settings();
         self.toast(&tr_fmt!("Language: {}", lang.name()));
@@ -913,8 +913,9 @@ impl App {
         // Langue de l'interface : effet immédiat.
         let y = (y + 96.0).min(right.bottom() - 58.0);
         self.section(c, right.x, y, tr("Language"));
-        let mut choices: Vec<(Option<Lang>, String)> = vec![(None, tr_fmt!("System ({})", Lang::detect().name()))];
-        choices.extend(Lang::all().map(|l| (Some(l), l.name().to_string())));
+        // Anglais par défaut (aucun choix enregistré), les autres langues sont des traductions.
+        let choices: Vec<(Option<Lang>, String)> =
+            Lang::all().map(|l| (if l == Lang::EN { None } else { Some(l) }, l.name().to_string())).collect();
         let mut x = right.x;
         let mut row_y = y + 20.0;
         for (k, (choice, label)) in choices.into_iter().enumerate() {
@@ -932,7 +933,7 @@ impl App {
             }
             if self.hovered(input, id, r) {
                 *hint = Some(match choice {
-                    None => tr("Follow the language of the system").to_string(),
+                    None => tr_fmt!("Interface in {} · takes effect immediately", Lang::EN.name()),
                     Some(l) => tr_fmt!("Interface in {} · takes effect immediately", l.name()),
                 });
             }

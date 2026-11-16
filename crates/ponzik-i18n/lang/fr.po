@@ -24,11 +24,7 @@ msgstr "{} notes"
 msgid "Language"
 msgstr "Langue"
 
-msgid "System ({})"
-msgstr "Système ({})"
 
-msgid "Follow the language of the system"
-msgstr "Suivre la langue du système"
 
 msgid "Interface in {} · takes effect immediately"
 msgstr "Interface : {} · effet immédiat"
@@ -36,8 +32,6 @@ msgstr "Interface : {} · effet immédiat"
 msgid "Language: {}"
 msgstr "Langue : {}"
 
-msgid "Language: System ({})"
-msgstr "Langue : système ({})"
 
 # --- Parameter values ---
 
