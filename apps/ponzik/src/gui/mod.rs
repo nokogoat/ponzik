@@ -206,6 +206,8 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
     let mut events = Vec::new();
     let mut dirty = true;
     let mut last_frame = Instant::now() - FRAME;
+    // PONZIK_DEBUG_INPUT=1 : journal des événements et des ouvertures de menus.
+    let debug_input = std::env::var_os("PONZIK_DEBUG_INPUT").is_some();
 
     loop {
         // Au repos, on dort jusqu'au prochain événement ; sinon on vise 60 images/s
@@ -232,6 +234,13 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
         window.poll_events(&mut events);
 
         input.begin_frame();
+        if debug_input {
+            for ev in &events {
+                if !matches!(ev, Event::MouseMove { .. }) {
+                    eprintln!("[{:>8.3}] {ev:?}", started.elapsed().as_secs_f64());
+                }
+            }
+        }
         for ev in events.drain(..) {
             if ev == Event::CloseRequested {
                 return Ok(());
@@ -254,7 +263,13 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
             let now = Instant::now();
             let dt = now.duration_since(last_frame).as_secs_f32();
             last_frame = now;
+            let before = (app.popup.is_some(), app.rec.panel);
             app.frame(&mut canvas, &input, dt);
+            let after = (app.popup.is_some(), app.rec.panel);
+            if debug_input && before != after {
+                eprintln!("[{:>8.3}] menu {} → {} · panneau micro {} → {} (pressed {}, released {})",
+                    started.elapsed().as_secs_f64(), before.0, after.0, before.1, after.1, input.pressed, input.released);
+            }
             window.set_cursor(app.cursor);
             window.present(canvas.pixels(), w, h).map_err(|e| e.to_string())?;
             dirty = false;
