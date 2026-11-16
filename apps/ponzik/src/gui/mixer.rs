@@ -122,6 +122,23 @@ impl App {
         let name = self.project.tracks[tr].name.clone();
         let label = self.fit(self.f.sans_med, 13.0, &name, inner.w - 4.0);
         self.text_center(c, self.f.sans_med, 13.0, inner.x + inner.w * 0.5, inner.y + 10.0, &label, t.text);
+        // Armement de l'enregistrement audio.
+        if tr != MASTER {
+            let arm = Rect::new(inner.right() - 18.0, inner.y + 2.0, 18.0, 18.0);
+            let aid = wid("mx-arm", tr, 0);
+            let ahov = self.hovered(input, aid, arm);
+            let armed = self.rec_track == Some(tr);
+            let ahv = self.hover_anim(aid, ahov);
+            let col = if armed { t.negative } else { t.muted.mix(t.text2, ahv) };
+            if armed {
+                c.fill_circle(arm.x + 9.0, arm.y + 9.0, 5.0, col);
+            } else {
+                c.stroke_circle(arm.x + 9.0, arm.y + 9.0, 5.0, 1.4, col);
+            }
+            if ahov && input.pressed {
+                self.toggle_arm(tr);
+            }
+        }
         let num = if tr == MASTER { "M".to_string() } else { tr.to_string() };
         self.text_center(c, self.f.mono, 10.0, inner.x + inner.w * 0.5, inner.y + 25.0, &num, t.muted);
 

@@ -281,6 +281,10 @@ pub struct App {
     pub keyboard_octave: i32,
     /// Enregistrement armé : les notes jouées pendant la lecture sont écrites.
     pub record: bool,
+    /// Entrée audio ouverte au premier armement, piste armée, nombre de prises.
+    pub input_stream: Option<ponzik_audio::InputStream>,
+    pub rec_track: Option<usize>,
+    takes: usize,
     /// Piste en solo (non enregistrée) : les autres sont coupées dans le moteur.
     pub solo: Option<usize>,
     /// État des colonnes de la vue Session (non enregistré).
@@ -368,6 +372,9 @@ impl App {
             typing_keyboard: false,
             session_cols: Default::default(),
             solo: None,
+            input_stream: None,
+            rec_track: None,
+            takes: 0,
             start_marker: 0.0,
             clipboard_notes: Vec::new(),
             clipboard_clip: None,
@@ -660,6 +667,96 @@ impl App {
         }
     }
 
+    /// Arme ou désarme l'enregistrement audio d'une piste. L'entrée audio n'est
+    /// ouverte qu'au premier armement.
+    pub fn toggle_arm(&mut self, track: usize) {
+        if self.rec_track == Some(track) {
+            self.rec_track = None;
+            self.send(Command::Record { track, armed: false, buffer: None });
+            self.toast("Enregistrement audio désarmé");
+            return;
+        }
+        if self.input_stream.is_none() {
+            let input = match ponzik_audio::open_default_input() {
+                Ok(i) => i,
+                Err(e) => {
+                    self.toast(&e.to_string());
+                    return;
+                }
+            };
+            if input.config().sample_rate != self.sample_rate {
+                self.toast("Attention : l'entrée et la sortie n'ont pas la même fréquence");
+            }
+            let (mut producer, consumer) = ponzik_engine::input_channel(self.sample_rate as usize);
+            match input.start(move |data, ch| {
+                producer.push(data, ch);
+            }) {
+                Ok(stream) => self.input_stream = Some(stream),
+                Err(e) => {
+                    self.toast(&e.to_string());
+                    return;
+                }
+            }
+            self.send(Command::SetInput(Some(Box::new(consumer))));
+        }
+        self.arm(track);
+        let name = self.project.tracks[track].name.clone();
+        self.toast(&format!("{name} armée : lance la lecture pour enregistrer"));
+    }
+
+    fn arm(&mut self, track: usize) {
+        self.rec_track = Some(track);
+        let buffer = ponzik_engine::RecordBuffer::with_duration(300.0, self.sample_rate as f32);
+        self.send(Command::Record { track, armed: true, buffer: Some(Box::new(buffer)) });
+    }
+
+    /// Prises revenues du moteur : fichier WAV, clip audio à leur position, réarmement.
+    fn collect_takes(&mut self) {
+        let takes = self.engine.take_recordings();
+        if takes.is_empty() {
+            return;
+        }
+        for take in takes {
+            if take.len == 0 {
+                continue;
+            }
+            self.takes += 1;
+            let (track, start, sr) = (take.track, take.start_tick, take.sample_rate as u32);
+            let name = format!("{} prise {}", self.project.tracks[track].name, self.takes);
+            let sample = take.into_sample(name.clone());
+            let audio: Vec<f32> = sample.left.iter().zip(&sample.right).flat_map(|(&l, &r)| [l, r]).collect();
+            let path = compat::projects_dir().join("Enregistrements").join(format!("{name}.wav"));
+            if let Some(dir) = path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            if let Err(e) = ponzik_project::write_wav(&path, &audio, sr, ponzik_project::BitDepth::Pcm24) {
+                self.toast(&format!("{} : {e}", path.display()));
+                continue;
+            }
+            let key = path.to_string_lossy().into_owned();
+            let secs = sample.duration() as f64;
+            self.samples.insert(key.clone(), Arc::new(sample));
+            let ticks = (secs * self.project.bpm as f64 / 60.0 * ponzik_engine::PPQ as f64).round().max(1.0) as u32;
+            let lane = self.project.clips.iter().map(|c| c.lane + 1).chain(self.project.audio_clips.iter().map(|c| c.lane + 1)).max().unwrap_or(0);
+            self.project.audio_clips.push(ponzik_project::AudioClipDef {
+                path: key,
+                lane,
+                track,
+                start: start.max(0.0) as u32,
+                len: ticks,
+                offset: 0.0,
+                gain: 1.0,
+                fade_in: 0.002,
+                fade_out: 0.002,
+            });
+            self.commit("Enregistrer de l'audio");
+            self.toast(&format!("Prise enregistrée : {name} ({secs:.1} s)"));
+        }
+        if let Some(track) = self.rec_track {
+            self.arm(track);
+        }
+    }
+
     pub fn export_stems(&mut self) {
         let result = {
             let loader = self.sample_loader();
@@ -876,6 +973,7 @@ impl App {
 
     fn poll_engine(&mut self, dt: f32) {
         self.engine.collect_garbage();
+        self.collect_takes();
         self.position = self.engine.position();
         for (i, m) in self.channel_meters.iter_mut().enumerate() {
             m.feed(self.engine.take_channel_peak(i), dt);
