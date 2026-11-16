@@ -1,0 +1,9 @@
+{
+  "kind": "limiter",
+  "name": "Drum Squash",
+  "params": [
+    [0, 8],
+    [1, -1],
+    [2, 0.02]
+  ]
+}

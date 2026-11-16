@@ -1,0 +1,10 @@
+{
+  "kind": "slicer",
+  "name": "Marker Slices",
+  "params": [
+    [0, 2],
+    [3, 0.001],
+    [4, 0.02],
+    [7, -3]
+  ]
+}

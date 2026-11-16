@@ -1,0 +1,12 @@
+{
+  "kind": "autofilter",
+  "name": "Sixteenth Gate Filter",
+  "params": [
+    [0, 0],
+    [1, 400],
+    [2, 2],
+    [3, 2],
+    [4, 5],
+    [6, 0.7]
+  ]
+}

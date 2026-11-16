@@ -1,0 +1,7 @@
+{
+  "kind": "utility",
+  "name": "Wide Stereo",
+  "params": [
+    [2, 1.4]
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "kind": "char_saturation",
+  "name": "Transistor Bite",
+  "params": [
+    [0, 2],
+    [1, 14],
+    [8, 2],
+    [9, -4]
+  ]
+}

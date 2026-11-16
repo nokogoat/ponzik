@@ -1,0 +1,10 @@
+{
+  "kind": "char_saturation",
+  "name": "Tape Glue",
+  "params": [
+    [0, 1],
+    [1, 10],
+    [8, -1.5],
+    [9, -2]
+  ]
+}

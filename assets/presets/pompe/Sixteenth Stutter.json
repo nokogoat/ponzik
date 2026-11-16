@@ -1,0 +1,9 @@
+{
+  "kind": "pompe",
+  "name": "Sixteenth Stutter",
+  "params": [
+    [0, 4],
+    [1, 1],
+    [2, 0.6]
+  ]
+}

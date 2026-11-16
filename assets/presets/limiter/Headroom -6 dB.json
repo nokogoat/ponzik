@@ -1,0 +1,9 @@
+{
+  "kind": "limiter",
+  "name": "Headroom -6 dB",
+  "params": [
+    [0, 0],
+    [1, -6],
+    [2, 0.1]
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "kind": "transient",
+  "name": "Long Sustain",
+  "params": [
+    [0, 0],
+    [1, 0.6],
+    [2, -2]
+  ]
+}

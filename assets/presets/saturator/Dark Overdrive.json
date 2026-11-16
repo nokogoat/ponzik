@@ -1,0 +1,11 @@
+{
+  "kind": "saturator",
+  "name": "Dark Overdrive",
+  "params": [
+    [0, 2],
+    [1, 18],
+    [2, -6],
+    [3, -6],
+    [4, 1]
+  ]
+}

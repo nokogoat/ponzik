@@ -1,0 +1,7 @@
+{
+  "kind": "utility",
+  "name": "Gain -6 dB",
+  "params": [
+    [0, -6]
+  ]
+}

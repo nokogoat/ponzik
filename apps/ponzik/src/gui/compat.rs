@@ -243,33 +243,14 @@ pub fn list_presets(kind: &str) -> Vec<PathBuf> {
 
 /// Enregistre les réglages d'un appareil : `{"kind": …, "params": [[id, valeur], …]}`.
 pub fn save_preset(kind: &str, name: &str, params: &[(u32, f32)]) -> Result<PathBuf, String> {
-    use ponzik_project::json::Json;
     let dir = presets_dir(kind);
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let path = dir.join(format!("{}.json", file_name(name)));
-    let doc = Json::Obj(vec![
-        ("kind".into(), Json::Str(kind.into())),
-        ("name".into(), Json::Str(name.into())),
-        (
-            "params".into(),
-            Json::Arr(params.iter().map(|&(id, v)| Json::Arr(vec![Json::Num(id as f64), Json::Num(v as f64)])).collect()),
-        ),
-    ]);
-    std::fs::write(&path, doc.pretty()).map_err(|e| format!("{}: {e}", path.display()))?;
+    std::fs::write(&path, ponzik_project::presets::preset_json(kind, name, params)).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(path)
 }
 
 pub fn load_preset(path: &Path) -> Result<Vec<(u32, f32)>, String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let doc = ponzik_project::json::parse(&text)?;
-    Ok(doc
-        .get("params")
-        .and_then(|p| p.as_arr())
-        .unwrap_or(&[])
-        .iter()
-        .filter_map(|pair| {
-            let a = pair.as_arr()?;
-            Some((a.first()?.as_f64()? as u32, a.get(1)?.as_f64()? as f32))
-        })
-        .collect())
+    ponzik_project::presets::parse_preset(&text)
 }

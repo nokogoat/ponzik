@@ -1,0 +1,12 @@
+{
+  "kind": "master_limiter",
+  "name": "Podcast Leveler",
+  "params": [
+    [0, 0],
+    [1, 6],
+    [2, -1.5],
+    [3, 0.2],
+    [4, 0.005],
+    [5, 1]
+  ]
+}

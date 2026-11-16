@@ -1,0 +1,8 @@
+{
+  "kind": "ott",
+  "name": "Slow Breathing",
+  "params": [
+    [0, 0.6],
+    [1, 5]
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "kind": "saturator",
+  "name": "Hard Clip",
+  "params": [
+    [0, 1],
+    [1, 8],
+    [3, -3],
+    [4, 1]
+  ]
+}

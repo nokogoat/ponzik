@@ -1,0 +1,9 @@
+{
+  "kind": "pompe",
+  "name": "Quarter Pump",
+  "params": [
+    [0, 0],
+    [1, 0],
+    [2, 0.8]
+  ]
+}

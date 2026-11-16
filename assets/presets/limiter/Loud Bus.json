@@ -1,0 +1,9 @@
+{
+  "kind": "limiter",
+  "name": "Loud Bus",
+  "params": [
+    [0, 4],
+    [1, -0.5],
+    [2, 0.06]
+  ]
+}

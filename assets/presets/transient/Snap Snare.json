@@ -1,0 +1,9 @@
+{
+  "kind": "transient",
+  "name": "Snap Snare",
+  "params": [
+    [0, 0.8],
+    [1, -0.2],
+    [2, -2]
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "kind": "limiter",
+  "name": "Gentle Peak Control",
+  "params": [
+    [0, 2],
+    [1, -1],
+    [2, 0.25]
+  ]
+}

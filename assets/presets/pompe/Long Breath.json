@@ -1,0 +1,9 @@
+{
+  "kind": "pompe",
+  "name": "Long Breath",
+  "params": [
+    [0, 1],
+    [1, 2],
+    [2, 0.7]
+  ]
+}

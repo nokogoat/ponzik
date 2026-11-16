@@ -1,0 +1,8 @@
+{
+  "kind": "bitcrusher",
+  "name": "8-Bit Console",
+  "params": [
+    [0, 8],
+    [1, 4]
+  ]
+}

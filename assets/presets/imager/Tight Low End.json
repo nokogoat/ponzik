@@ -1,0 +1,9 @@
+{
+  "kind": "imager",
+  "name": "Tight Low End",
+  "params": [
+    [0, 1],
+    [5, 1],
+    [6, 150]
+  ]
+}

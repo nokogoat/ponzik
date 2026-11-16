@@ -28,6 +28,7 @@ pub mod io;
 pub mod flp;
 pub mod json;
 pub mod midi_file;
+pub mod presets;
 pub mod render;
 pub mod scale;
 pub mod templates;

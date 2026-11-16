@@ -1,0 +1,8 @@
+{
+  "kind": "bitcrusher",
+  "name": "12-Bit Sampler",
+  "params": [
+    [0, 12],
+    [1, 2]
+  ]
+}

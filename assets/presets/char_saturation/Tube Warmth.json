@@ -1,0 +1,9 @@
+{
+  "kind": "char_saturation",
+  "name": "Tube Warmth",
+  "params": [
+    [0, 0],
+    [1, 8],
+    [9, -2]
+  ]
+}

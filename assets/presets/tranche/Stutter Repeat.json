@@ -1,0 +1,10 @@
+{
+  "kind": "tranche",
+  "name": "Stutter Repeat",
+  "params": [
+    [0, 1],
+    [1, 1],
+    [2, 3],
+    [3, 1]
+  ]
+}

@@ -219,6 +219,8 @@ pub enum Action {
     SaveAs,
     ExportStems,
     LoadPreset(super::devices::Device, PathBuf),
+    /// A factory preset of the device, by name.
+    LoadFactoryPreset(super::devices::Device, &'static str),
     ImportMidiMenu,
     ImportMidi(PathBuf),
     ImportFlpMenu,
@@ -2632,6 +2634,10 @@ impl App {
                     let it = MenuItem::new(Icon::Preset, &name, Action::LoadPreset(*device, path));
                     v.push(if i == 0 { it.sep() } else { it });
                 }
+                for (i, name) in ponzik_project::presets::factory_preset_names(kind).into_iter().enumerate() {
+                    let it = MenuItem::new(Icon::Preset, name, Action::LoadFactoryPreset(*device, name)).detail(tr("Factory").into());
+                    v.push(if i == 0 { it.sep() } else { it });
+                }
                 (tr("Presets").into(), v)
             }
             Popup::SessionAssign { col, row } => (
@@ -3002,6 +3008,13 @@ impl App {
                 }
                 Err(e) => self.toast(&e),
             },
+            Action::LoadFactoryPreset(device, name) => {
+                let (kind, _) = self.device_kind(device);
+                if let Some(params) = ponzik_project::presets::factory_preset(&kind, name) {
+                    self.apply_preset(device, &params);
+                    self.toast(&format!("Preset loaded: {name}"));
+                }
+            }
             Action::AssignSession(col, row, p) => {
                 self.project.session_grid[col][row] = Some(p);
                 self.commit(tr("Fill a slot"));
