@@ -257,7 +257,8 @@ impl App {
         let pv = self.anim.to(wid("ch-pr-v", ch, 0), (row_hov || selected) as u8 as f32, T_HOVER);
         if pv > 0.01 {
             let pr = Rect::new(name_r.right() + 2.0, cy - 14.0, 28.0, 28.0);
-            if self.icon_button(c, input, wid("ch-pr", ch, 0), pr, Icon::Piano, false, ("Piano roll", "F7")) {
+            let key = self.key_label(super::keymap::Shortcut::ViewPiano);
+            if self.view_shown(View::Piano) && self.icon_button(c, input, wid("ch-pr", ch, 0), pr, Icon::Piano, false, ("Piano roll", &key)) {
                 self.focus = Focus::Channel(ch);
                 self.set_view(View::Piano);
             }

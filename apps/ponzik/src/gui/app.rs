@@ -51,17 +51,6 @@ impl View {
         }
     }
 
-    /// Raccourci clavier, ceux de FL Studio.
-    pub fn key(self) -> &'static str {
-        match self {
-            View::Rack => "F6",
-            View::Piano => "F7",
-            View::Playlist => "F5",
-            View::Session => "",
-            View::Mixer => "F9",
-        }
-    }
-
     pub fn label(self) -> &'static str {
         match self {
             View::Rack => "Channel Rack",
@@ -72,7 +61,7 @@ impl View {
         }
     }
 
-    fn index(self) -> usize {
+    pub fn index(self) -> usize {
         View::ALL.iter().position(|v| *v == self).unwrap_or(0)
     }
 }
@@ -138,6 +127,8 @@ pub enum Popup {
     PatternMenu(usize),
     /// Couleur d'un pattern.
     PatternColor(usize),
+    /// Réglages : espace de travail (0) ou raccourcis (1).
+    Settings { tab: usize },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -246,6 +237,10 @@ pub enum Action {
     ToggleFold(usize),
     /// Défait un bus ou un VCA.
     Dissolve(usize),
+    /// Profil d'espace de travail n.
+    ApplyPreset(usize),
+    /// Affiche ou masque une vue.
+    ToggleViewShown(View),
 }
 
 /// Ligne de menu : une icône (ou la couleur d'un pattern), un nom court, une
@@ -508,6 +503,8 @@ pub struct App {
     /// Forme du curseur voulue par l'image en cours (flèche par défaut) ;
     /// la boucle principale l'applique à la fenêtre.
     pub cursor: ponzik_window::Cursor,
+    /// Espace de travail et raccourcis choisis.
+    pub prefs: super::settings::Prefs,
 }
 
 impl App {
@@ -614,6 +611,7 @@ impl App {
             scale_anchor: Rect::new(0.0, 0.0, 0.0, 0.0),
             layout: Default::default(),
             cursor: Default::default(),
+            prefs: Default::default(),
         }
     }
 
@@ -688,6 +686,11 @@ impl App {
             "track" => {
                 let t = self.focused_track();
                 self.open_popup(Popup::TrackMenu(t), Rect::new(560.0, 146.0, 0.0, 0.0));
+                return;
+            }
+            "settings" | "keys" => Popup::Settings { tab: usize::from(name == "keys") },
+            "conflict" => {
+                self.screenshot_conflict();
                 return;
             }
             "menu" | "themes" => {
@@ -1524,82 +1527,37 @@ impl App {
             || self.channel_meters.iter().any(Meter::active)
     }
 
-    /// Raccourcis globaux, ceux de FL Studio.
+    /// Raccourcis globaux, ceux de la table des touches (FL Studio par défaut).
     fn shortcuts(&mut self, input: &Input) {
         for &(key, mods) in &input.keys {
-            match key {
-                Key::Escape => {
-                    self.popup = None;
-                    self.mixer_sel.clear();
-                    self.piano.selected.clear();
-                    self.playlist.selected = None;
-                    if let Some((v, _, _)) = self.time_selection.take() {
-                        self.set_loop(v, None);
-                    }
+            if key == Key::Escape {
+                self.popup = None;
+                self.mixer_sel.clear();
+                self.piano.selected.clear();
+                self.playlist.selected = None;
+                if let Some((v, _, _)) = self.time_selection.take() {
+                    self.set_loop(v, None);
                 }
-                Key::Space => self.play_stop(),
-                Key::F(5) => self.set_view(View::Playlist),
-                Key::F(6) => self.set_view(View::Rack),
-                Key::F(7) => self.set_view(View::Piano),
-                Key::F(9) => self.set_view(View::Mixer),
-                Key::F(8) if mods.alt => self.sidebar = !self.sidebar,
-                Key::F(4) => {
-                    let p = self.project.add_pattern();
-                    self.select_pattern(p);
-                    self.toast("Nouveau pattern");
-                }
-                Key::Tab => {
-                    let next = View::ALL[(self.view.index() + 1) % View::ALL.len()];
-                    self.set_view(next);
-                }
-                Key::Char('+') => {
-                    let next = (self.project.current_pattern + 1).min(self.project.patterns.len() - 1);
-                    self.select_pattern(next);
-                }
-                Key::Char('-') => self.select_pattern(self.project.current_pattern.saturating_sub(1)),
-                Key::Char('z') if mods.ctrl && mods.shift => self.redo(),
-                Key::Char('z') if mods.ctrl => self.undo(),
-                Key::Char('y') if mods.ctrl => self.redo(),
-                Key::Char('s') if mods.ctrl && mods.shift => {
-                    let text = self.project.name.clone();
-                    self.open_popup(Popup::Rename { target: Rename::SaveAs, text }, Rect::new(0.0, 0.0, 0.0, 0.0));
-                }
-                Key::Char('s') if mods.ctrl => self.save(),
-                Key::Char('o') if mods.ctrl => {
-                    self.open_popup(Popup::OpenProject(compat::list_projects()), Rect::new(12.0, TOP_BAR, 0.0, 0.0))
-                }
-                Key::Char('n') if mods.ctrl => self.open_popup(Popup::Templates, Rect::new(60.0, 8.0, 0.0, TOP_BAR - 12.0)),
-                Key::Char('r') if mods.ctrl => self.export(),
-                Key::Char('k') if mods.ctrl => self.open_palette(),
-                Key::Char('g') if mods.ctrl && self.view == View::Mixer => {
-                    let group = self.group_for(self.focused_track());
-                    self.new_bus(&group);
-                }
-                Key::Char('f') if mods.ctrl => {
-                    self.sidebar = true;
-                    self.sidebar_focus = true;
-                }
-                Key::Char('m') if mods.ctrl => {
-                    self.metronome = !self.metronome;
-                    let m = self.metronome;
-                    self.send(Command::SetMetronome(m));
-                }
-                Key::Char('t') if mods.ctrl => self.toggle_typing_keyboard(),
-                _ if mods.ctrl || mods.alt || self.typing_keyboard => {}
-                Key::Char('l') => {
-                    let mode = match self.project.mode {
-                        PlayMode::Pattern(_) => PlayMode::Song,
-                        PlayMode::Song | PlayMode::Session => PlayMode::Pattern(self.project.current_pattern),
-                    };
-                    self.set_mode(mode);
-                }
-                Key::Char('r') => {
-                    self.record = !self.record;
-                    self.toast(if self.record { "Enregistrement armé" } else { "Enregistrement désarmé" });
-                }
-                Key::Char('t') => self.tap_tempo(),
-                _ => {}
+                continue;
             }
+            // Ctrl+G dans le mixer : grouper dans un bus.
+            if key == Key::Char('g') && mods.ctrl && self.view == View::Mixer && self.prefs.keymap.lookup(key, mods).is_none() {
+                let group = self.group_for(self.focused_track());
+                self.new_bus(&group);
+                continue;
+            }
+            let Some(s) = self.prefs.keymap.lookup(key, mods) else {
+                // Ctrl+Maj+Z rétablit aussi, comme ailleurs.
+                if key == Key::Char('z') && mods.ctrl && mods.shift {
+                    self.redo();
+                }
+                continue;
+            };
+            // Clavier musical actif : les lettres seules jouent des notes.
+            if self.typing_keyboard && self.prefs.keymap.get(s).is_some_and(super::keymap::Combo::is_plain_char) {
+                continue;
+            }
+            self.run_shortcut(s);
         }
     }
 
@@ -1610,14 +1568,19 @@ impl App {
     pub fn toggle_typing_keyboard(&mut self) {
         self.typing_keyboard = !self.typing_keyboard;
         self.release_all_held();
-        self.toast(if self.typing_keyboard {
-            "Clavier musical activé : les lettres jouent des notes (Ctrl+T pour revenir)"
+        let key = self.key_label(super::keymap::Shortcut::TypingKeyboard);
+        self.toast(&if self.typing_keyboard {
+            format!("Clavier musical activé : les lettres jouent des notes ({key} pour revenir)")
         } else {
-            "Clavier musical désactivé"
+            "Clavier musical désactivé".into()
         });
     }
 
     pub fn set_view(&mut self, v: View) {
+        if !self.view_shown(v) {
+            self.toast(&format!("{} est masqué · ☰ Réglages pour l'afficher", v.label()));
+            return;
+        }
         if v != self.view {
             self.view = v;
             self.anim.set(wid("view-enter", 0, 0), 0.0);
@@ -1632,7 +1595,7 @@ impl App {
         if self.popup.is_none() && !self.sidebar_focus {
             self.shortcuts(input);
             self.musical_keyboard(input);
-        } else if self.popup.is_some() && input.keys.iter().any(|(k, _)| *k == Key::Escape) {
+        } else if self.popup.is_some() && !self.settings_open() && input.keys.iter().any(|(k, _)| *k == Key::Escape) {
             self.popup = None;
         }
         if input.focus_lost {
@@ -1710,7 +1673,15 @@ impl App {
         c.fill_rect(Rect::new(r.x, r.bottom() - 1.0, r.w, 1.0), t.hairline);
         let cy = r.y + r.h * 0.5;
 
-        if self.icon_button(c, input, wid("tb-sidebar", 0, 0), Rect::new(12.0, cy - 16.0, 32.0, 32.0), Icon::Sidebar, self.sidebar, ("Navigateur", "Alt F8")) {
+        use super::keymap::Shortcut as S;
+        use super::settings::Bar;
+        let key = |s: S| self.key_label(s);
+        let (k_play, k_mode, k_tap, k_metro, k_rec, k_keys) =
+            (key(S::PlayStop), key(S::ToggleMode), key(S::TapTempo), key(S::Metronome), key(S::Record), key(S::TypingKeyboard));
+        let k_browser = key(S::ToggleBrowser);
+        let (k_pal, k_save, k_redo, k_undo, k_panel, k_hist) =
+            (key(S::Palette), key(S::Save), key(S::Redo), key(S::Undo), key(S::TogglePanel), key(S::History));
+        if self.icon_button(c, input, wid("tb-sidebar", 0, 0), Rect::new(12.0, cy - 16.0, 32.0, 32.0), Icon::Sidebar, self.sidebar, ("Navigateur", &k_browser)) {
             self.sidebar = !self.sidebar;
         }
         // Marque : le nom et sa LED, qui s'allume quand ça joue.
@@ -1718,8 +1689,10 @@ impl App {
         c.fill_circle(58.0, cy, 4.0, t.raised_hi.mix(t.accent, led.max(0.35)));
         let wordmark = self.text(c, self.f.sans_med, 18.0, 70.0, cy, "Ponzik", t.text);
 
-        // Transport, centré.
-        let cluster = 40.0 + 6.0 + 40.0 + 14.0 + 132.0 + 10.0 + 188.0 + 10.0 + 116.0 + 4.0 + 40.0 + 10.0 + 132.0 + 6.0 + 128.0 + 6.0 + 36.0 + 4.0 + 36.0 + 4.0 + 36.0;
+        // Transport, centré ; l'espace de travail choisit ses éléments.
+        let on = |b: Bar| self.bar_shown(b);
+        let widths = [(Bar::Mode, 142.0), (Bar::Pattern, 198.0), (Bar::Tap, 50.0), (Bar::Position, 138.0), (Bar::Scale, 134.0), (Bar::Metronome, 40.0), (Bar::Record, 40.0), (Bar::Keyboard, 40.0)];
+        let cluster = 46.0 + 54.0 + 120.0 - 4.0 + widths.iter().filter(|(b, _)| on(*b)).map(|(_, w)| w).sum::<f32>();
         let mut x = ((r.w - cluster) * 0.5).round().max(70.0 + wordmark + 24.0);
         let start = x;
 
@@ -1729,7 +1702,7 @@ impl App {
             self.toggle_play();
         }
         if hov {
-            self.set_tip(if self.playing { "Pause" } else { "Lecture" }, "Espace");
+            self.set_tip(if self.playing { "Pause" } else { "Lecture" }, &k_play);
         }
         let hv = self.hover_anim(wid("tb-play", 0, 0), hov);
         let on = self.anim.to(wid("tb-play-on", 0, 0), self.playing as u8 as f32, T_HOVER);
@@ -1750,21 +1723,25 @@ impl App {
             PlayMode::Session => 2,
         };
         let icons = [Icon::Rack, Icon::Playlist, Icon::Session];
-        let tips = [("Jouer le pattern", "L"), ("Jouer le morceau", "L"), ("Jouer la session", "")];
-        if let Some(m) = self.icon_segmented(c, input, wid("tb-mode", 0, 0), Rect::new(x, cy - 18.0, 132.0, 36.0), &icons, &tips, mode) {
-            let cur = self.project.current_pattern;
-            self.set_mode(match m {
-                0 => PlayMode::Pattern(cur),
-                1 => PlayMode::Song,
-                _ => PlayMode::Session,
-            });
-            if m == 2 {
-                self.set_view(View::Session);
+        let tips = [("Jouer le pattern", k_mode.as_str()), ("Jouer le morceau", k_mode.as_str()), ("Jouer la session", "")];
+        if self.bar_shown(Bar::Mode) {
+            if let Some(m) = self.icon_segmented(c, input, wid("tb-mode", 0, 0), Rect::new(x, cy - 18.0, 132.0, 36.0), &icons, &tips, mode) {
+                let cur = self.project.current_pattern;
+                self.set_mode(match m {
+                    0 => PlayMode::Pattern(cur),
+                    1 => PlayMode::Song,
+                    _ => PlayMode::Session,
+                });
+                if m == 2 && self.view_shown(View::Session) {
+                    self.set_view(View::Session);
+                }
             }
+            x += 142.0;
         }
-        x += 142.0;
-        self.pattern_selector(c, input, Rect::new(x, cy - 18.0, 188.0, 36.0));
-        x += 198.0;
+        if self.bar_shown(Bar::Pattern) {
+            self.pattern_selector(c, input, Rect::new(x, cy - 18.0, 188.0, 36.0));
+            x += 198.0;
+        }
 
         let bpm_text = format!("{:.1}", self.project.bpm).replace('.', ",");
         let bpm_r = Rect::new(x, cy - 18.0, 116.0, 36.0);
@@ -1777,79 +1754,62 @@ impl App {
         }
         self.tip_zone(input, bpm_r, "Tempo\nGlisser ou molette · Maj : fin", "");
         x += 120.0;
-        self.tap_button(c, input, Rect::new(x, cy - 18.0, 40.0, 36.0));
-        x += 50.0;
-        let pos_r = Rect::new(x, cy - 18.0, 132.0, 36.0);
-        self.position_field(c, pos_r);
-        self.tip_zone(input, pos_r, "Position\nmesure . temps . pas", "");
-        x += 138.0;
-        self.scale_chip(c, input, Rect::new(x, cy - 18.0, 128.0, 36.0));
-        x += 134.0;
-        if self.icon_button(c, input, wid("tb-metro", 0, 0), Rect::new(x, cy - 18.0, 36.0, 36.0), Icon::Metronome, self.metronome, ("Métronome", "Ctrl M")) {
-            self.metronome = !self.metronome;
-            let m = self.metronome;
-            self.send(Command::SetMetronome(m));
+        if self.bar_shown(Bar::Tap) {
+            self.tap_button(c, input, Rect::new(x, cy - 18.0, 40.0, 36.0), &k_tap);
+            x += 50.0;
         }
-        x += 40.0;
-        let rec = Rect::new(x, cy - 18.0, 36.0, 36.0);
-        let rid = wid("tb-rec", 0, 0);
-        let rhov = self.hovered(input, rid, rec);
-        let rhv = self.hover_anim(rid, rhov);
-        let on = self.anim.to(wid("tb-rec-on", 0, 0), self.record as u8 as f32, T_HOVER);
-        c.fill_rrect(rec, 8.0, t.raised.alpha(rhv.max(on * 0.6)));
-        let (rx0, ry0) = rec.center();
-        let pulse = if self.record && self.playing { 0.75 + 0.25 * (self.time * 6.0).sin().abs() } else { 1.0 };
-        c.fill_circle(rx0, ry0, 6.0, t.muted.mix(t.text2, rhv).mix(t.negative, on).alpha(pulse));
-        // Anneau : pré-compte d'une mesure ; il se remplit pendant le décompte.
-        let ci = self.anim.to(wid("tb-rec-ci", 0, 0), self.count_in as u8 as f32, T_HOVER);
-        if ci > 0.01 {
-            let ring = t.muted.mix(t.negative, on).alpha(0.55 * ci);
-            c.stroke_circle(rx0, ry0, 10.5, 1.2, ring);
-            if self.counting > 0.0 {
-                let done = (1.0 - self.counting / TICKS_PER_BAR as f64).clamp(0.0, 1.0) as f32;
-                let a0 = -std::f32::consts::FRAC_PI_2;
-                let pts: Vec<(f32, f32)> = (0..=32)
-                    .map(|k| a0 + done * std::f32::consts::TAU * k as f32 / 32.0)
-                    .map(|a| (rx0 + 10.5 * a.cos(), ry0 + 10.5 * a.sin()))
-                    .collect();
-                c.stroke_polyline(&pts, 2.0, t.negative);
+        if self.bar_shown(Bar::Position) {
+            let pos_r = Rect::new(x, cy - 18.0, 132.0, 36.0);
+            self.position_field(c, pos_r);
+            self.tip_zone(input, pos_r, "Position\nmesure . temps . pas", "");
+            x += 138.0;
+        }
+        if self.bar_shown(Bar::Scale) {
+            self.scale_chip(c, input, Rect::new(x, cy - 18.0, 128.0, 36.0));
+            x += 134.0;
+        }
+        if self.bar_shown(Bar::Metronome) {
+            if self.icon_button(c, input, wid("tb-metro", 0, 0), Rect::new(x, cy - 18.0, 36.0, 36.0), Icon::Metronome, self.metronome, ("Métronome", &k_metro)) {
+                self.metronome = !self.metronome;
+                let m = self.metronome;
+                self.send(Command::SetMetronome(m));
             }
+            x += 40.0;
         }
-        if rhov {
-            let tip = if self.count_in {
-                "Enregistrer les notes et l'audio\nPré-compte d'une mesure · clic droit : couper"
-            } else {
-                "Enregistrer les notes et l'audio\nSans pré-compte · clic droit : l'activer"
-            };
-            self.set_tip(tip, "R");
+        if self.bar_shown(Bar::Record) {
+            self.record_button(c, input, Rect::new(x, cy - 18.0, 36.0, 36.0), &k_rec);
+            x += 40.0;
         }
-        if rhov && input.pressed {
-            self.record = !self.record;
-            self.toast(if self.record { "Enregistrement armé" } else { "Enregistrement désarmé" });
+        if self.bar_shown(Bar::Keyboard) {
+            if self.icon_button(c, input, wid("tb-keys", 0, 0), Rect::new(x, cy - 18.0, 36.0, 36.0), Icon::Keyboard, self.typing_keyboard, ("Clavier musical", &k_keys)) {
+                self.toggle_typing_keyboard();
+            }
+            x += 40.0;
         }
-        if rhov && input.right_pressed {
-            self.toggle_count_in();
-        }
-        x += 40.0;
-        if self.icon_button(c, input, wid("tb-keys", 0, 0), Rect::new(x, cy - 18.0, 36.0, 36.0), Icon::Keyboard, self.typing_keyboard, ("Clavier musical", "Ctrl T")) {
-            self.toggle_typing_keyboard();
-        }
-        let cluster_end = x + 36.0;
+        let cluster_end = x - 4.0;
 
         // Droite : fichier et historique, puis la charge DSP si la place le permet.
         let mut rx = r.w - 12.0 - 32.0;
         let buttons = [
             (Icon::Menu, "tb-menu", ("Menu", "")),
-            (Icon::Search, "tb-search", ("Tout trouver", "Ctrl K")),
-            (Icon::Panel, "tb-panel", ("Appareils", "")),
-            (Icon::Save, "tb-save", ("Enregistrer", "Ctrl S")),
-            (Icon::Redo, "tb-redo", ("Rétablir", "Ctrl Y")),
-            (Icon::Undo, "tb-undo", ("Annuler", "Ctrl Z")),
-            (Icon::History, "tb-history", ("Historique", "")),
+            (Icon::Search, "tb-search", ("Tout trouver", k_pal.as_str())),
+            (Icon::Panel, "tb-panel", ("Appareils", k_panel.as_str())),
+            (Icon::Save, "tb-save", ("Enregistrer", k_save.as_str())),
+            (Icon::Redo, "tb-redo", ("Rétablir", k_redo.as_str())),
+            (Icon::Undo, "tb-undo", ("Annuler", k_undo.as_str())),
+            (Icon::History, "tb-history", ("Historique", k_hist.as_str())),
         ];
         for (icon, name, tip) in buttons {
             if rx < cluster_end + 8.0 {
                 break;
+            }
+            let hidden = match icon {
+                Icon::History => !self.bar_shown(Bar::History),
+                Icon::Undo | Icon::Redo => !self.bar_shown(Bar::Undo),
+                _ => false,
+            };
+            if hidden {
+                continue;
             }
             let on = icon == Icon::Panel && self.panel;
             if self.icon_button(c, input, wid(name, 0, 0), Rect::new(rx, cy - 16.0, 32.0, 32.0), icon, on, tip) {
@@ -1868,7 +1828,7 @@ impl App {
             rx -= 36.0;
         }
         // Charge DSP : une jauge discrète, la valeur en infobulle.
-        if rx + 32.0 - 40.0 > cluster_end + 16.0 {
+        if self.bar_shown(Bar::Load) && rx + 32.0 - 40.0 > cluster_end + 16.0 {
             let gauge = Rect::new(rx + 32.0 - 34.0, cy - 3.0, 26.0, 6.0);
             let load = self.load.clamp(0.0, 1.0);
             c.fill_rrect(gauge, 3.0, t.raised);
@@ -1912,10 +1872,12 @@ impl App {
         let cur = self.project.current_pattern;
         let prev = Rect::new(r.x + 2.0, r.y + 2.0, 28.0, r.h - 4.0);
         let next = Rect::new(r.right() - 30.0, r.y + 2.0, 28.0, r.h - 4.0);
-        if self.icon_button(c, input, wid("pat-prev", 0, 0), prev, Icon::ChevronLeft, false, ("Pattern précédent", "−")) && cur > 0 {
+        use super::keymap::Shortcut as S;
+        let (k_prev, k_next, k_new) = (self.key_label(S::PrevPattern), self.key_label(S::NextPattern), self.key_label(S::NewPattern));
+        if self.icon_button(c, input, wid("pat-prev", 0, 0), prev, Icon::ChevronLeft, false, ("Pattern précédent", &k_prev)) && cur > 0 {
             self.select_pattern(cur - 1);
         }
-        let next_tip = if cur + 1 < n { ("Pattern suivant", "+") } else { ("Nouveau pattern", "F4") };
+        let next_tip = if cur + 1 < n { ("Pattern suivant", k_next.as_str()) } else { ("Nouveau pattern", k_new.as_str()) };
         if self.icon_button(c, input, wid("pat-next", 0, 0), next, Icon::ChevronRight, false, next_tip) {
             if cur + 1 < n {
                 self.select_pattern(cur + 1);
@@ -2091,7 +2053,7 @@ impl App {
 
     /// Bouton TAP : chaque appui cale le tempo sur la moyenne des 4 derniers ;
     /// les points dessous comptent les appuis pris en compte.
-    fn tap_button(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
+    fn tap_button(&mut self, c: &mut Canvas, input: &Input, r: Rect, key: &str) {
         let t = self.theme;
         let id = wid("tb-tap", 0, 0);
         let hov = self.hovered(input, id, r);
@@ -2113,7 +2075,50 @@ impl App {
             c.fill_circle(cx - 7.5 + k as f32 * 5.0, cy + 8.0, 1.3, t.raised_hi.mix(t.accent, on));
         }
         if hov {
-            self.set_tip("Tap tempo\nTape le temps : moyenne des 4 derniers appuis", "T");
+            self.set_tip("Tap tempo\nTape le temps : moyenne des 4 derniers appuis", key);
+        }
+    }
+
+    /// Bouton d'enregistrement, avec l'anneau du pré-compte.
+    fn record_button(&mut self, c: &mut Canvas, input: &Input, rec: Rect, key: &str) {
+        let t = self.theme;
+        let rid = wid("tb-rec", 0, 0);
+        let rhov = self.hovered(input, rid, rec);
+        let rhv = self.hover_anim(rid, rhov);
+        let on = self.anim.to(wid("tb-rec-on", 0, 0), self.record as u8 as f32, T_HOVER);
+        c.fill_rrect(rec, 8.0, t.raised.alpha(rhv.max(on * 0.6)));
+        let (rx0, ry0) = rec.center();
+        let pulse = if self.record && self.playing { 0.75 + 0.25 * (self.time * 6.0).sin().abs() } else { 1.0 };
+        c.fill_circle(rx0, ry0, 6.0, t.muted.mix(t.text2, rhv).mix(t.negative, on).alpha(pulse));
+        // Anneau : pré-compte d'une mesure ; il se remplit pendant le décompte.
+        let ci = self.anim.to(wid("tb-rec-ci", 0, 0), self.count_in as u8 as f32, T_HOVER);
+        if ci > 0.01 {
+            let ring = t.muted.mix(t.negative, on).alpha(0.55 * ci);
+            c.stroke_circle(rx0, ry0, 10.5, 1.2, ring);
+            if self.counting > 0.0 {
+                let done = (1.0 - self.counting / TICKS_PER_BAR as f64).clamp(0.0, 1.0) as f32;
+                let a0 = -std::f32::consts::FRAC_PI_2;
+                let pts: Vec<(f32, f32)> = (0..=32)
+                    .map(|k| a0 + done * std::f32::consts::TAU * k as f32 / 32.0)
+                    .map(|a| (rx0 + 10.5 * a.cos(), ry0 + 10.5 * a.sin()))
+                    .collect();
+                c.stroke_polyline(&pts, 2.0, t.negative);
+            }
+        }
+        if rhov {
+            let tip = if self.count_in {
+                "Enregistrer les notes et l'audio\nPré-compte d'une mesure · clic droit : couper"
+            } else {
+                "Enregistrer les notes et l'audio\nSans pré-compte · clic droit : l'activer"
+            };
+            self.set_tip(tip, key);
+        }
+        if rhov && input.pressed {
+            self.record = !self.record;
+            self.toast(if self.record { "Enregistrement armé" } else { "Enregistrement désarmé" });
+        }
+        if rhov && input.right_pressed {
+            self.toggle_count_in();
         }
     }
 
@@ -2121,11 +2126,15 @@ impl App {
 
     fn main_area(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
         let t = self.theme;
-        let tabs = Rect::new(r.x + PAD, r.y + 12.0, 270.0f32.min(r.w - 2.0 * PAD), 36.0);
-        let icons: Vec<Icon> = View::ALL.iter().map(|v| v.icon()).collect();
-        let tips: Vec<(&str, &str)> = View::ALL.iter().map(|v| (v.label(), v.key())).collect();
-        if let Some(i) = self.icon_segmented(c, input, wid("tabs", 0, 0), tabs, &icons, &tips, self.view.index()) {
-            self.set_view(View::ALL[i]);
+        // Onglets des seules vues proposées par l'espace de travail.
+        let views = self.shown_views();
+        let tabs = Rect::new(r.x + PAD, r.y + 12.0, (54.0 * views.len() as f32).min(r.w - 2.0 * PAD), 36.0);
+        let icons: Vec<Icon> = views.iter().map(|v| v.icon()).collect();
+        let keys: Vec<String> = views.iter().map(|&v| self.key_label(super::keymap::Shortcut::for_view(v))).collect();
+        let tips: Vec<(&str, &str)> = views.iter().zip(&keys).map(|(v, k)| (v.label(), k.as_str())).collect();
+        let sel = views.iter().position(|v| *v == self.view).unwrap_or(0);
+        if let Some(i) = self.icon_segmented(c, input, wid("tabs", 0, 0), tabs, &icons, &tips, sel) {
+            self.set_view(views[i]);
         }
         let header = Rect::new(tabs.right() + 16.0, r.y + 12.0, r.right() - PAD - tabs.right() - 16.0, 36.0);
         let body = Rect::new(r.x + PAD, r.y + 60.0, r.w - 2.0 * PAD, r.h - 60.0 - PAD);
@@ -2259,7 +2268,10 @@ impl App {
         if query.is_empty() && !self.sidebar_focus {
             self.text(c, self.f.sans, 13.0, field.x + 34.0, field.y + 18.0, "Rechercher", t.muted);
             if fhv > 0.01 {
-                self.keycap(c, field.right() - 8.0, field.y + 18.0, "Ctrl F", fhv);
+                let key = self.key_label(super::keymap::Shortcut::Search);
+                if !key.is_empty() {
+                    self.keycap(c, field.right() - 8.0, field.y + 18.0, &key, fhv);
+                }
             }
         }
         let tw = self.text(c, self.f.sans, 13.0, field.x + 34.0, field.y + 18.0, &query, t.text);
@@ -2666,22 +2678,26 @@ impl App {
                     .collect(),
             ),
             Popup::MainMenu => {
-                let key = |k: &str| k.to_string();
+                use super::keymap::Shortcut as S;
+                let key = |s: S| self.key_label(s);
                 let theme = THEMES.iter().position(|th| th.name == self.theme.name).unwrap_or(0);
                 (
                     "Ponzik".into(),
                     vec![
-                        MenuItem::new(Icon::Plus, "Nouveau", Action::NewProject).detail(key("Ctrl N")),
-                        MenuItem::new(Icon::Folder, "Ouvrir", Action::OpenMenu).detail(key("Ctrl O")),
-                        MenuItem::new(Icon::Save, "Enregistrer", Action::Save).detail(key("Ctrl S")),
-                        MenuItem::new(Icon::Pencil, "Enregistrer sous", Action::SaveAs),
-                        MenuItem::new(Icon::Export, "Exporter en WAV", Action::Export).detail(key("Ctrl R")).sep(),
+                        MenuItem::new(Icon::Plus, "Nouveau", Action::NewProject).detail(key(S::NewProject)),
+                        MenuItem::new(Icon::Folder, "Ouvrir", Action::OpenMenu).detail(key(S::Open)),
+                        MenuItem::new(Icon::Save, "Enregistrer", Action::Save).detail(key(S::Save)),
+                        MenuItem::new(Icon::Pencil, "Enregistrer sous", Action::SaveAs).detail(key(S::SaveAs)),
+                        MenuItem::new(Icon::Export, "Exporter en WAV", Action::Export).detail(key(S::Export)).sep(),
                         MenuItem::new(Icon::Columns, "Exporter les pistes", Action::ExportStems).tip("Un WAV par piste du mixer"),
                         MenuItem::new(Icon::Piano, "Importer du MIDI", Action::ImportMidiMenu).sep(),
                         MenuItem::new(Icon::Piano, "Exporter en MIDI", Action::ExportMidi).tip("Le pattern actuel"),
                         MenuItem::new(Icon::Play, "Démo house", Action::LoadDemo(0)).sep(),
                         MenuItem::new(Icon::Play, "Démo breakcore", Action::LoadDemo(1)),
                         MenuItem::new(Icon::Theme, "Thème", Action::Popup(Popup::Themes)).detail(THEMES[theme].name.into()).sep(),
+                        MenuItem::new(Icon::Layout, "Réglages", Action::Popup(Popup::Settings { tab: 0 }))
+                            .detail(key(S::Settings))
+                            .tip("Vues, panneaux et raccourcis"),
                     ],
                 )
             }
@@ -2727,7 +2743,7 @@ impl App {
                 let mut color = MenuItem::plain("Couleur", Action::Popup(Popup::PatternColor(pat)));
                 color.color = Some(self.pattern_tint(pat));
                 let mut v = vec![
-                    MenuItem::new(Icon::Rack, "Éditer", Action::EditPattern(pat)).detail("F6".into()),
+                    MenuItem::new(Icon::Rack, "Éditer", Action::EditPattern(pat)).detail(self.key_label(super::keymap::Shortcut::ViewRack)),
                     MenuItem::new(Icon::Pencil, "Renommer", Action::Popup(rename)),
                     color,
                     MenuItem::new(Icon::Duplicate, "Dupliquer", Action::DuplicatePattern),
@@ -2750,7 +2766,7 @@ impl App {
                 }
                 (format!("Couleur · {}", p.patterns[pat].name), v)
             }
-            Popup::Rename { .. } | Popup::Palette { .. } | Popup::Scale | Popup::Chord => (String::new(), Vec::new()),
+            Popup::Rename { .. } | Popup::Palette { .. } | Popup::Scale | Popup::Chord | Popup::Settings { .. } => (String::new(), Vec::new()),
         }
     }
 
@@ -2781,7 +2797,7 @@ impl App {
         p.routing_order().is_some()
     }
 
-    fn run_action(&mut self, action: Action, anchor: Rect) {
+    pub(super) fn run_action(&mut self, action: Action, anchor: Rect) {
         match action {
             Action::None => {}
             Action::AddInstrument(kind, None) => self.add_instrument(kind),
@@ -2933,7 +2949,12 @@ impl App {
                 self.replace_project(p, None);
                 self.toast(&format!("Démo chargée : {name}"));
             }
-            Action::SetTheme(i) => self.theme = THEMES[i.min(THEMES.len() - 1)],
+            Action::SetTheme(i) => {
+                self.theme = THEMES[i.min(THEMES.len() - 1)];
+                self.save_settings();
+            }
+            Action::ApplyPreset(i) => self.apply_profile(i),
+            Action::ToggleViewShown(v) => self.toggle_view_shown(v),
             Action::Automate(target, value) => self.create_automation(target, value),
             Action::SaveAs => {
                 let text = self.project.name.clone();
@@ -3068,6 +3089,12 @@ impl App {
         if matches!(state.kind, Popup::Chord) {
             if self.chord_popup(c, input, state.anchor, screen) {
                 self.popup = Some(state);
+            }
+            return;
+        }
+        if let Popup::Settings { tab } = state.kind {
+            if let Some(tab) = self.settings_sheet(c, input, screen, tab) {
+                self.popup = Some(PopupState { kind: Popup::Settings { tab }, ..state });
             }
             return;
         }

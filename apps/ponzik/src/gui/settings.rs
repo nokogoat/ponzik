@@ -1,0 +1,1147 @@
+//! Réglages : l'espace de travail (vues, panneaux, éléments de la barre du haut,
+//! profils en un clic) et les raccourcis remappables, enregistrés dans
+//! `settings.json` du dossier de configuration de l'utilisateur.
+
+use ponzik_project::json::{self, Json};
+use ponzik_ui::{Canvas, Color, Rect};
+use ponzik_window::Key;
+
+use super::Input;
+use super::app::{Action, App, Popup, View};
+use super::compat;
+use super::keymap::{Combo, GROUPS, Keymap, Shortcut};
+use super::theme::*;
+use super::widgets::{Icon, draw_icon, wid};
+
+const VERSION: f64 = 1.0;
+
+/// Éléments facultatifs de la barre du haut.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Bar {
+    Mode,
+    Pattern,
+    Tap,
+    Position,
+    Scale,
+    Metronome,
+    Record,
+    Keyboard,
+    /// Annuler et rétablir.
+    Undo,
+    History,
+    Load,
+}
+
+impl Bar {
+    pub const ALL: [Bar; 11] = [
+        Bar::Mode,
+        Bar::Pattern,
+        Bar::Tap,
+        Bar::Position,
+        Bar::Scale,
+        Bar::Metronome,
+        Bar::Record,
+        Bar::Keyboard,
+        Bar::Undo,
+        Bar::History,
+        Bar::Load,
+    ];
+
+    fn index(self) -> usize {
+        Bar::ALL.iter().position(|b| *b == self).unwrap_or(0)
+    }
+
+    fn id(self) -> &'static str {
+        match self {
+            Bar::Mode => "mode",
+            Bar::Pattern => "pattern",
+            Bar::Tap => "tap",
+            Bar::Position => "position",
+            Bar::Scale => "scale",
+            Bar::Metronome => "metronome",
+            Bar::Record => "record",
+            Bar::Keyboard => "keyboard",
+            Bar::Undo => "undo",
+            Bar::History => "history",
+            Bar::Load => "load",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Bar::Mode => "Mode",
+            Bar::Pattern => "Pattern",
+            Bar::Tap => "Tap",
+            Bar::Position => "Position",
+            Bar::Scale => "Gamme",
+            Bar::Metronome => "Métronome",
+            Bar::Record => "Rec",
+            Bar::Keyboard => "Clavier",
+            Bar::Undo => "Annuler",
+            Bar::History => "Historique",
+            Bar::Load => "DSP",
+        }
+    }
+
+    fn hint(self) -> &'static str {
+        match self {
+            Bar::Mode => "Jouer le pattern, le morceau ou la session",
+            Bar::Pattern => "Choix du pattern en cours",
+            Bar::Tap => "Tap tempo : taper le temps",
+            Bar::Position => "Mesure, temps et pas de la lecture",
+            Bar::Scale => "Gamme du projet",
+            Bar::Metronome => "Métronome",
+            Bar::Record => "Enregistrer les notes et l'audio",
+            Bar::Keyboard => "Clavier d'ordinateur joué comme un piano",
+            Bar::Undo => "Boutons annuler et rétablir",
+            Bar::History => "Historique des modifications",
+            Bar::Load => "Charge du processeur audio",
+        }
+    }
+
+    fn glyph(self) -> Glyph {
+        match self {
+            Bar::Mode => Glyph::Icon(Icon::Swap),
+            Bar::Pattern => Glyph::Icon(Icon::Rack),
+            Bar::Tap => Glyph::Text("TAP"),
+            Bar::Position => Glyph::Text("1.1.1"),
+            Bar::Scale => Glyph::Icon(Icon::Scale),
+            Bar::Metronome => Glyph::Icon(Icon::Metronome),
+            Bar::Record => Glyph::Rec,
+            Bar::Keyboard => Glyph::Icon(Icon::Keyboard),
+            Bar::Undo => Glyph::Icon(Icon::Undo),
+            Bar::History => Glyph::Icon(Icon::History),
+            Bar::Load => Glyph::Gauge,
+        }
+    }
+
+    /// Largeur dans la vraie barre (px), pour l'aperçu.
+    fn width(self) -> f32 {
+        match self {
+            Bar::Mode => 142.0,
+            Bar::Pattern => 198.0,
+            Bar::Tap => 50.0,
+            Bar::Position => 138.0,
+            Bar::Scale => 134.0,
+            Bar::Metronome | Bar::Record | Bar::Keyboard => 40.0,
+            Bar::Undo => 72.0,
+            Bar::History => 36.0,
+            Bar::Load => 34.0,
+        }
+    }
+}
+
+/// Ce qu'affiche une tuile.
+#[derive(Clone, Copy)]
+enum Glyph {
+    Icon(Icon),
+    Text(&'static str),
+    Rec,
+    Gauge,
+    CountIn,
+}
+
+/// Espace de travail : vues proposées et éléments affichés.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Workspace {
+    /// Dans l'ordre de [`View::ALL`].
+    pub views: [bool; 5],
+    pub browser: bool,
+    pub panel: bool,
+    pub count_in: bool,
+    pub bar: [bool; 11],
+}
+
+impl Default for Workspace {
+    fn default() -> Self {
+        Self { views: [true; 5], browser: true, panel: true, count_in: true, bar: [true; 11] }
+    }
+}
+
+fn view_id(v: View) -> &'static str {
+    match v {
+        View::Rack => "rack",
+        View::Piano => "piano",
+        View::Playlist => "playlist",
+        View::Session => "session",
+        View::Mixer => "mixer",
+    }
+}
+
+fn view_hint(v: View) -> &'static str {
+    match v {
+        View::Rack => "Pas et canaux : le cœur du beat",
+        View::Piano => "Mélodies et accords, note par note",
+        View::Playlist => "L'arrangement du morceau",
+        View::Session => "Clips lancés en direct",
+        View::Mixer => "Pistes, effets et envois",
+    }
+}
+
+impl Workspace {
+    pub fn view(&self, v: View) -> bool {
+        self.views[v.index()]
+    }
+
+    pub fn bar(&self, b: Bar) -> bool {
+        self.bar[b.index()]
+    }
+
+    /// Au moins une vue reste proposée.
+    fn fix(&mut self) {
+        if !self.views.iter().any(|&v| v) {
+            self.views = [true; 5];
+        }
+    }
+
+    fn with(views: &[View], browser: bool, panel: bool, hide: &[Bar]) -> Self {
+        let mut ws = Workspace { browser, panel, ..Default::default() };
+        ws.views = View::ALL.map(|v| views.contains(&v));
+        for b in hide {
+            ws.bar[b.index()] = false;
+        }
+        ws
+    }
+}
+
+/// Profils en un clic : nom, description, espace de travail.
+pub fn presets() -> [(&'static str, &'static str, Workspace); 5] {
+    use View::*;
+    [
+        ("Complet", "Tout Ponzik", Workspace::default()),
+        ("Beatmaker", "Rack, playlist et mixer", Workspace::with(&[Rack, Playlist, Mixer], true, true, &[Bar::Keyboard])),
+        ("Sampling", "Tout sauf le piano roll", Workspace::with(&[Rack, Playlist, Session, Mixer], true, true, &[Bar::Scale, Bar::Keyboard])),
+        ("Live", "Session et mixer, pour jouer en direct", Workspace::with(&[Session, Mixer], true, true, &[Bar::Pattern, Bar::Position])),
+        (
+            "Minimal",
+            "Rack et playlist, rien d'autre",
+            Workspace::with(&[Rack, Playlist], true, false, &[Bar::Tap, Bar::Scale, Bar::Keyboard, Bar::History, Bar::Load]),
+        ),
+    ]
+}
+
+/// Réglages enregistrés et état de leur écran.
+#[derive(Default)]
+pub struct Prefs {
+    pub ws: Workspace,
+    pub keymap: Keymap,
+    /// Action dont on attend la nouvelle touche.
+    capture: Option<Shortcut>,
+    /// Touche demandée déjà prise : (action, touche, action qui l'a).
+    conflict: Option<(Shortcut, Combo, Shortcut)>,
+    scroll: f32,
+}
+
+/// Texte JSON des réglages.
+pub fn to_json(ws: &Workspace, keymap: &Keymap, theme: &str) -> Json {
+    let views = View::ALL.iter().map(|&v| (view_id(v).to_string(), Json::Bool(ws.view(v)))).collect();
+    let bar = Bar::ALL.iter().map(|&b| (b.id().to_string(), Json::Bool(ws.bar(b)))).collect();
+    let keys = keymap.overrides().into_iter().map(|(id, text)| (id.to_string(), Json::Str(text))).collect();
+    Json::Obj(vec![
+        ("version".into(), VERSION.into()),
+        ("theme".into(), theme.into()),
+        ("views".into(), Json::Obj(views)),
+        ("browser".into(), ws.browser.into()),
+        ("panel".into(), ws.panel.into()),
+        ("count_in".into(), ws.count_in.into()),
+        ("bar".into(), Json::Obj(bar)),
+        ("keys".into(), Json::Obj(keys)),
+    ])
+}
+
+/// Lecture tolérante : tout ce qui manque ou ne se lit pas garde sa valeur par défaut.
+pub fn from_json(j: &Json) -> (Workspace, Keymap, Option<String>) {
+    let mut ws = Workspace::default();
+    let flag = |obj: Option<&Json>, key: &str| obj.and_then(|o| o.get(key)).and_then(Json::as_bool);
+    for (i, &v) in View::ALL.iter().enumerate() {
+        if let Some(on) = flag(j.get("views"), view_id(v)) {
+            ws.views[i] = on;
+        }
+    }
+    for (i, &b) in Bar::ALL.iter().enumerate() {
+        if let Some(on) = flag(j.get("bar"), b.id()) {
+            ws.bar[i] = on;
+        }
+    }
+    ws.browser = j.get("browser").and_then(Json::as_bool).unwrap_or(ws.browser);
+    ws.panel = j.get("panel").and_then(Json::as_bool).unwrap_or(ws.panel);
+    ws.count_in = j.get("count_in").and_then(Json::as_bool).unwrap_or(ws.count_in);
+    ws.fix();
+    let mut keymap = Keymap::default();
+    if let Some(pairs) = j.get("keys").and_then(Json::as_obj) {
+        keymap.apply_overrides(pairs.iter().filter_map(|(k, v)| Some((k.as_str(), v.as_str()?))));
+    }
+    let theme = j.get("theme").and_then(Json::as_str).map(str::to_string);
+    (ws, keymap, theme)
+}
+
+fn settings_path() -> std::path::PathBuf {
+    compat::config_dir().join("settings.json")
+}
+
+/// Rangées de l'écran des raccourcis : en-têtes de famille et actions, par colonne.
+enum KeyRow {
+    Head(&'static str),
+    Item(Shortcut),
+}
+
+fn key_columns() -> [Vec<KeyRow>; 2] {
+    let mut cols: [Vec<KeyRow>; 2] = [Vec::new(), Vec::new()];
+    for (g, name) in GROUPS.iter().enumerate() {
+        let col = &mut cols[usize::from(g >= 2)];
+        col.push(KeyRow::Head(name));
+        col.extend(Shortcut::ALL.iter().filter(|s| s.group() == *name).map(|&s| KeyRow::Item(s)));
+    }
+    cols
+}
+
+impl App {
+    // --- Fichier ---
+
+    /// Charge `settings.json` ; un fichier absent ou abîmé laisse les valeurs par défaut.
+    pub fn load_settings(&mut self) {
+        let path = settings_path();
+        let Ok(text) = std::fs::read_to_string(&path) else { return };
+        let j = match json::parse(&text) {
+            Ok(j) => j,
+            Err(e) => {
+                eprintln!("réglages ignorés ({}) : {e}", path.display());
+                return;
+            }
+        };
+        let (ws, keymap, theme) = from_json(&j);
+        if let Some(th) = theme.and_then(|name| THEMES.iter().find(|t| t.name == name)) {
+            self.theme = *th;
+        }
+        self.prefs.keymap = keymap;
+        self.apply_workspace(ws, false);
+    }
+
+    pub fn save_settings(&mut self) {
+        self.sync_workspace();
+        let text = to_json(&self.prefs.ws, &self.prefs.keymap, self.theme.name).pretty();
+        let path = settings_path();
+        let tmp = path.with_extension("json.tmp");
+        let res = path
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|_| std::fs::write(&tmp, text))
+            .and_then(|_| std::fs::rename(&tmp, &path));
+        if let Err(e) = res {
+            eprintln!("réglages non enregistrés ({}) : {e}", path.display());
+        }
+    }
+
+    /// Les bascules faites ailleurs (Alt F8, pré-compte…) rejoignent l'espace de travail.
+    fn sync_workspace(&mut self) {
+        let ws = &mut self.prefs.ws;
+        (ws.browser, ws.panel, ws.count_in) = (self.sidebar, self.panel, self.count_in);
+    }
+
+    /// Applique un espace de travail ; la vue en cours change si elle disparaît.
+    pub fn apply_workspace(&mut self, mut ws: Workspace, save: bool) {
+        ws.fix();
+        (self.sidebar, self.panel, self.count_in) = (ws.browser, ws.panel, ws.count_in);
+        self.prefs.ws = ws;
+        if !self.view_shown(self.view)
+            && let Some(&v) = self.shown_views().first()
+        {
+            self.set_view(v);
+        }
+        if save {
+            self.save_settings();
+        }
+    }
+
+    pub fn apply_profile(&mut self, i: usize) {
+        if let Some((name, _, ws)) = presets().into_iter().nth(i) {
+            self.apply_workspace(ws, true);
+            self.toast(&format!("Profil : {name}"));
+        }
+    }
+
+    // --- Requêtes ---
+
+    pub fn view_shown(&self, v: View) -> bool {
+        self.prefs.ws.view(v)
+    }
+
+    pub fn shown_views(&self) -> Vec<View> {
+        View::ALL.into_iter().filter(|&v| self.view_shown(v)).collect()
+    }
+
+    pub fn bar_shown(&self, b: Bar) -> bool {
+        self.prefs.ws.bar(b)
+    }
+
+    /// Touche d'une action, pour les infobulles et la palette.
+    pub fn key_label(&self, s: Shortcut) -> String {
+        self.prefs.keymap.label(s)
+    }
+
+    /// Affiche ou masque une vue (jamais la dernière).
+    pub fn toggle_view_shown(&mut self, v: View) {
+        let mut ws = self.prefs.ws.clone();
+        let i = v.index();
+        ws.views[i] = !ws.views[i];
+        if !ws.views.iter().any(|&on| on) {
+            self.toast("Il faut garder au moins une vue");
+            return;
+        }
+        self.apply_workspace(ws, true);
+    }
+
+    /// Capture d'écran : touches changées et un conflit en attente.
+    pub fn screenshot_conflict(&mut self) {
+        self.prefs.keymap.rebind(Shortcut::ViewSession, Combo::key(Key::F(8)), false);
+        self.prefs.keymap.set(Shortcut::TapTempo, None);
+        let combo = Combo::ctrl(Key::Char('m'));
+        self.prefs.conflict = Some((Shortcut::Record, combo, Shortcut::Metronome));
+        self.open_popup(Popup::Settings { tab: 1 }, Rect::default());
+    }
+
+    /// Les réglages tiennent Échap pour annuler une saisie de touche.
+    pub fn settings_open(&self) -> bool {
+        self.popup.as_ref().is_some_and(|p| matches!(p.kind, Popup::Settings { .. }))
+    }
+
+    // --- Raccourcis ---
+
+    /// Exécute l'action d'une touche.
+    pub(super) fn run_shortcut(&mut self, s: Shortcut) {
+        let anchor = Rect::new(60.0, 8.0, 0.0, TOP_BAR - 12.0);
+        if let Some(v) = s.view() {
+            self.set_view(v);
+            return;
+        }
+        let action = match s {
+            Shortcut::PlayStop => Action::PlayStop,
+            Shortcut::ToggleMode => Action::ToggleMode,
+            Shortcut::Record => {
+                self.record = !self.record;
+                self.toast(if self.record { "Enregistrement armé" } else { "Enregistrement désarmé" });
+                return;
+            }
+            Shortcut::TapTempo => Action::TapTempo,
+            Shortcut::Metronome => Action::ToggleMetronome,
+            Shortcut::TypingKeyboard => Action::ToggleTyping,
+            Shortcut::NextView => {
+                let views = self.shown_views();
+                let i = views.iter().position(|v| *v == self.view).map_or(0, |i| (i + 1) % views.len());
+                self.set_view(views[i]);
+                return;
+            }
+            Shortcut::ToggleBrowser => Action::ToggleSidebar,
+            Shortcut::TogglePanel => Action::TogglePanel,
+            Shortcut::NewPattern => {
+                let p = self.project.add_pattern();
+                self.select_pattern(p);
+                self.toast("Nouveau pattern");
+                return;
+            }
+            Shortcut::NextPattern => {
+                let next = (self.project.current_pattern + 1).min(self.project.patterns.len() - 1);
+                self.select_pattern(next);
+                return;
+            }
+            Shortcut::PrevPattern => {
+                self.select_pattern(self.project.current_pattern.saturating_sub(1));
+                return;
+            }
+            Shortcut::Undo => Action::Undo,
+            Shortcut::Redo => Action::Redo,
+            Shortcut::History => Action::Popup(Popup::History),
+            Shortcut::Save => Action::Save,
+            Shortcut::SaveAs => Action::SaveAs,
+            Shortcut::Open => {
+                self.open_popup(Popup::OpenProject(compat::list_projects()), Rect::new(12.0, TOP_BAR, 0.0, 0.0));
+                return;
+            }
+            Shortcut::NewProject => Action::NewProject,
+            Shortcut::Export => Action::Export,
+            Shortcut::Palette => {
+                self.open_palette();
+                return;
+            }
+            Shortcut::Search => {
+                self.sidebar = true;
+                self.sidebar_focus = true;
+                return;
+            }
+            Shortcut::Settings => Action::Popup(Popup::Settings { tab: 0 }),
+            Shortcut::ViewPlaylist | Shortcut::ViewRack | Shortcut::ViewPiano | Shortcut::ViewSession | Shortcut::ViewMixer => return,
+        };
+        self.run_action(action, anchor);
+    }
+
+    // --- Écran des réglages ---
+
+    /// Feuille des réglages ; renvoie l'onglet à garder ouvert, ou `None` pour fermer.
+    pub(super) fn settings_sheet(&mut self, c: &mut Canvas, input: &Input, screen: Rect, tab: usize) -> Option<usize> {
+        let t = self.theme;
+        let open = self.anim.to(wid("popup", 0, 0), 1.0, T_HOVER);
+        let mut tab = tab.min(1);
+        let mut close = false;
+
+        // Clavier : saisie d'une touche, conflit en attente, ou navigation.
+        for &(key, mods) in &input.keys {
+            if let Some(s) = self.prefs.capture {
+                self.prefs.capture = None;
+                if key == Key::Escape {
+                    continue;
+                }
+                let combo = Combo::from_event(key, mods);
+                match self.prefs.keymap.conflict(combo, s) {
+                    Some(other) => self.prefs.conflict = Some((s, combo, other)),
+                    None => self.bind(s, combo, false),
+                }
+            } else if let Some((s, combo, _)) = self.prefs.conflict {
+                match key {
+                    Key::Escape => self.prefs.conflict = None,
+                    Key::Enter => self.bind(s, combo, true),
+                    _ => {}
+                }
+            } else {
+                match key {
+                    Key::Escape => close = true,
+                    Key::Tab => tab = 1 - tab,
+                    _ => {}
+                }
+            }
+        }
+        if self.prefs.capture.is_some() || self.prefs.conflict.is_some() {
+            // Tient l'image éveillée : la touche en attente pulse.
+            self.anim.set(wid("caret", 0, 0), self.time);
+        }
+
+        c.fill_rect(screen, Color::rgba(0, 0, 0, (110.0 * open) as u8));
+        let w = 960.0f32.min(screen.w - 40.0);
+        let h = 640.0f32.min(screen.h - 40.0);
+        let r = Rect::new(((screen.w - w) * 0.5).round(), ((screen.h - h) * 0.5 + (1.0 - open) * 10.0).round(), w, h);
+        c.fill_rrect(r.translate(0.0, 10.0).inset(-4.0), 22.0, Color::rgba(0, 0, 0, (90.0 * open) as u8));
+        c.fill_rrect(r, 18.0, t.panel);
+        c.stroke_rrect(r, 18.0, 1.0, t.hairline.alpha(1.8));
+
+        // En-tête : deux onglets, et la croix.
+        let tabs = Rect::new(r.x + 16.0, r.y + 14.0, 272.0, 38.0);
+        c.fill_rrect(tabs, 11.0, t.bg_deep);
+        c.stroke_rrect(tabs, 11.0, 1.0, t.hairline);
+        let pos = self.anim.to(wid("set-tabs", 0, 0), tab as f32, T_LAYOUT);
+        let seg_w = (tabs.w - 6.0) * 0.5;
+        let knob = Rect::new(tabs.x + 3.0 + pos * seg_w, tabs.y + 3.0, seg_w, tabs.h - 6.0);
+        c.fill_rrect(knob, 8.0, t.raised_hi);
+        let names = [(Icon::Layout, "Espace de travail", "Vues, panneaux et barre du haut"), (Icon::Keyboard, "Raccourcis", "Changer les touches")];
+        let mut hint: Option<String> = None;
+        for (i, (icon, name, tip)) in names.into_iter().enumerate() {
+            let seg = Rect::new(tabs.x + 3.0 + i as f32 * seg_w, tabs.y, seg_w, tabs.h);
+            let id = wid("set-tab", i, 0);
+            let hov = self.hovered(input, id, seg);
+            let hv = self.hover_anim(id, hov);
+            let sel = 1.0 - (pos - i as f32).abs().min(1.0);
+            let tw = self.fonts.measure(self.f.sans_med, 13.0, name);
+            let x0 = seg.x + (seg.w - tw - 24.0) * 0.5;
+            let cy = seg.y + seg.h * 0.5;
+            draw_icon(c, icon, x0 + 8.0, cy, 15.0, t.muted.mix(t.text, hv * 0.7).mix(t.accent, sel));
+            self.text(c, self.f.sans_med, 13.0, x0 + 24.0, cy, name, t.muted.mix(t.text2, hv).mix(t.text, sel));
+            if hov {
+                hint = Some(tip.to_string());
+                if input.pressed && i != tab {
+                    tab = i;
+                }
+            }
+        }
+        let close_r = Rect::new(r.right() - 16.0 - 34.0, r.y + 16.0, 34.0, 34.0);
+        if self.icon_button(c, input, wid("set-close", 0, 0), close_r, Icon::Close, false, ("Fermer", "Échap")) {
+            close = true;
+        }
+        if self.prefs.capture.is_none() && input.pressed && !r.contains(input.x, input.y) {
+            close = true;
+        }
+        let was = self.anim.get(wid("set-tab-was", 0, 0));
+        if was != Some(tab as f32) {
+            self.anim.set(wid("set-tab-was", 0, 0), tab as f32);
+            self.anim.set(wid("set-enter", 0, 0), 0.0);
+            if was.is_some() {
+                self.prefs.capture = None;
+                self.prefs.conflict = None;
+            }
+        }
+
+        // Corps, avec un fondu à chaque changement d'onglet.
+        let enter = self.anim.to(wid("set-enter", 0, 0), 1.0, T_LAYOUT);
+        let body = Rect::new(r.x + 20.0, r.y + 68.0 + ((1.0 - enter) * 8.0).round(), r.w - 40.0, r.h - 68.0 - 52.0);
+        let foot = Rect::new(r.x + 20.0, r.bottom() - 46.0, r.w - 40.0, 34.0);
+        c.fill_rect(Rect::new(r.x + 1.0, foot.y - 8.0, r.w - 2.0, 1.0), t.hairline);
+        if tab == 0 {
+            self.workspace_tab(c, input, body, &mut hint);
+        } else {
+            self.keys_tab(c, input, body, foot, &mut hint);
+        }
+        if enter < 0.999 {
+            c.fill_rect(Rect::new(r.x + 1.0, r.y + 60.0, r.w - 2.0, body.h + 8.0), t.panel.alpha(1.0 - enter));
+        }
+        // Barre d'aide de la feuille : ce que fait l'élément survolé.
+        let showing_banner = tab == 1 && self.prefs.conflict.is_some();
+        if !showing_banner {
+            let line = hint.unwrap_or_else(|| {
+                if tab == 0 { "Clic sur une tuile pour l'afficher ou la masquer".into() } else { "Clic sur une touche, puis la nouvelle combinaison · Échap annule".into() }
+            });
+            let right = if tab == 1 { foot.x + 190.0 } else { foot.x };
+            self.text_fit(c, self.f.sans, 12.0, right, foot.y + foot.h * 0.5, &line, foot.right() - right, t.text2);
+        }
+        if close {
+            self.prefs.capture = None;
+            self.prefs.conflict = None;
+            return None;
+        }
+        Some(tab)
+    }
+
+    fn bind(&mut self, s: Shortcut, combo: Combo, swap: bool) {
+        self.prefs.keymap.rebind(s, combo, swap);
+        self.prefs.conflict = None;
+        self.anim.set(wid("set-flash", s as usize, 0), 1.0);
+        self.save_settings();
+    }
+
+    fn section(&mut self, c: &mut Canvas, x: f32, y: f32, label: &str) {
+        let t = self.theme;
+        self.text(c, self.f.sans_med, 11.0, x + 2.0, y + 8.0, label, t.muted);
+    }
+
+    /// Tuile à bascule : pictogramme, nom, petit interrupteur dans le coin.
+    fn tile(&mut self, c: &mut Canvas, input: &Input, id: u64, r: Rect, glyph: Glyph, label: &str, on: bool, key: &str) -> bool {
+        let t = self.theme;
+        let hov = self.hovered(input, id, r);
+        let hv = self.hover_anim(id, hov);
+        let onv = self.anim.to(id ^ 0x4f4e, on as u8 as f32, T_HOVER);
+        let press = self.anim.to(id ^ 0x5052, if hov && input.down { 0.95 } else { 1.0 }, T_PRESS);
+        let body = r.scale(press);
+        let fill = t.well.mix(t.raised, onv).mix(t.raised_hi, hv * 0.5);
+        c.fill_rrect(body, 12.0, fill);
+        c.stroke_rrect(body, 12.0, 1.0, t.hairline.mix(t.accent.alpha(0.55), onv));
+        // Interrupteur : une pastille qui glisse vers la droite et s'allume.
+        let sw = Rect::new(body.right() - 26.0, body.y + 9.0, 16.0, 9.0);
+        c.fill_rrect(sw, 4.5, t.raised_hi.mix(t.accent.alpha(0.35), onv));
+        c.fill_circle(sw.x + 4.5 + onv * 7.0, sw.y + 4.5, 3.2, t.muted.mix(t.accent, onv));
+        let ink = t.muted.alpha(0.55).mix(t.accent, onv).mix(t.text, hv * 0.25);
+        let big = r.h >= 80.0;
+        let gy = body.y + if big { 34.0 } else { 26.0 };
+        let (gx, size) = (body.x + body.w * 0.5, if big { 24.0 } else { 18.0 });
+        self.glyph(c, glyph, gx, gy, size, ink);
+        let ly = body.y + if big { 62.0 } else { 48.0 };
+        let txt = t.muted.mix(t.text, onv.max(hv * 0.6));
+        let fs = if big { 12.0 } else { 11.0 };
+        let label = self.fit(self.f.sans_med, fs, label, body.w - 8.0);
+        self.text_center(c, self.f.sans_med, fs, gx, ly, &label, txt);
+        if big && !key.is_empty() {
+            let kw = self.fonts.measure(self.f.mono, 10.0, key);
+            self.text(c, self.f.mono, 10.0, gx - kw * 0.5, body.bottom() - 11.0, key, t.muted.alpha(0.5 + 0.5 * onv));
+        }
+        hov && input.pressed
+    }
+
+    fn glyph(&mut self, c: &mut Canvas, g: Glyph, cx: f32, cy: f32, size: f32, col: Color) {
+        let t = self.theme;
+        match g {
+            Glyph::Icon(icon) => draw_icon(c, icon, cx, cy, size, col),
+            Glyph::Text(s) => self.text_center(c, self.f.mono_med, size * 0.6, cx, cy, s, col),
+            Glyph::Rec => c.fill_circle(cx, cy, size * 0.3, t.negative.alpha(col.a as f32 / 255.0)),
+            Glyph::CountIn => {
+                c.stroke_circle(cx, cy, size * 0.42, 1.4, col);
+                c.stroke_arc(cx, cy, size * 0.42, -std::f32::consts::FRAC_PI_2, 0.6, 2.4, col);
+                c.fill_circle(cx, cy, size * 0.2, col);
+            }
+            Glyph::Gauge => {
+                let g = Rect::new(cx - size * 0.6, cy - 3.0, size * 1.2, 6.0);
+                c.fill_rrect(g, 3.0, col.alpha(0.3 * col.a as f32 / 255.0));
+                c.fill_rrect(Rect::new(g.x, g.y, g.w * 0.45, g.h), 3.0, col);
+            }
+        }
+    }
+
+    fn workspace_tab(&mut self, c: &mut Canvas, input: &Input, body: Rect, hint: &mut Option<String>) {
+        let t = self.theme;
+        let gap = 8.0;
+        let left = Rect::new(body.x, body.y, (body.w * 0.62).round() - 12.0, body.h);
+        let right = Rect::new(left.right() + 24.0, body.y, body.right() - left.right() - 24.0, body.h);
+        let mut y = left.y;
+
+        // Profils.
+        self.section(c, left.x, y, "Profils");
+        y += 20.0;
+        let current = {
+            let mut ws = self.prefs.ws.clone();
+            (ws.browser, ws.panel, ws.count_in) = (self.sidebar, self.panel, self.count_in);
+            ws
+        };
+        let card_w = ((left.w - 4.0 * gap) / 5.0).floor();
+        for (i, (name, desc, ws)) in presets().into_iter().enumerate() {
+            let card = Rect::new(left.x + i as f32 * (card_w + gap), y, card_w, 70.0);
+            let id = wid("set-preset", i, 0);
+            let hov = self.hovered(input, id, card);
+            let hv = self.hover_anim(id, hov);
+            let active = ws == current;
+            let on = self.anim.to(id ^ 0x4f4e, active as u8 as f32, T_HOVER);
+            let lift = (hv * 2.0).round();
+            let body = card.translate(0.0, -lift);
+            c.fill_rrect(body, 12.0, t.raised.mix(t.raised_hi, hv * 0.6).mix(t.accent.alpha(0.18), on * 0.6));
+            c.stroke_rrect(body, 12.0, 1.0 + on * 0.5, t.hairline.mix(t.accent, on));
+            // Les vues du profil, en petites icônes.
+            let views: Vec<View> = View::ALL.into_iter().filter(|&v| ws.view(v)).collect();
+            let step = 16.0;
+            let x0 = body.x + body.w * 0.5 - (views.len() as f32 - 1.0) * step * 0.5;
+            for (k, v) in views.iter().enumerate() {
+                draw_icon(c, v.icon(), x0 + k as f32 * step, body.y + 24.0, 12.0, t.muted.mix(t.accent, on.max(hv * 0.5)));
+            }
+            self.text_center(c, self.f.sans_med, 12.0, body.x + body.w * 0.5, body.y + 50.0, name, t.text2.mix(t.text, on.max(hv)));
+            if hov {
+                *hint = Some(format!("{name} · {desc}"));
+                if input.pressed {
+                    self.apply_profile(i);
+                }
+            }
+        }
+        y += 70.0 + 18.0;
+
+        // Vues.
+        self.section(c, left.x, y, "Vues");
+        y += 20.0;
+        let tile_w = card_w;
+        for (i, v) in View::ALL.into_iter().enumerate() {
+            let r = Rect::new(left.x + i as f32 * (tile_w + gap), y, tile_w, 92.0);
+            let key = self.key_label(Shortcut::for_view(v));
+            let on = self.view_shown(v);
+            let id = wid("set-view", i, 0);
+            if self.tile(c, input, id, r, Glyph::Icon(v.icon()), v.label(), on, &key) {
+                self.toggle_view_shown(v);
+            }
+            if self.hovered(input, id, r) {
+                *hint = Some(format!("{} · {}", v.label(), view_hint(v)));
+            }
+        }
+        y += 92.0 + 18.0;
+
+        // Panneaux, puis la barre du haut.
+        self.section(c, left.x, y, "Panneaux et barre du haut");
+        y += 20.0;
+        let cols = 7;
+        let small_w = ((left.w - (cols - 1) as f32 * gap) / cols as f32).floor();
+        let mut cells: Vec<(Glyph, &str, &str, bool)> = vec![
+            (Glyph::Icon(Icon::Sidebar), "Navigateur", "Sons, instruments et effets", self.sidebar),
+            (Glyph::Icon(Icon::Panel), "Appareils", "Le détail du canal ou de la piste choisie", self.panel),
+        ];
+        for b in Bar::ALL {
+            cells.push((b.glyph(), b.label(), b.hint(), self.bar_shown(b)));
+            if b == Bar::Record {
+                cells.push((Glyph::CountIn, "Pré-compte", "Une mesure de métronome avant d'enregistrer", self.count_in));
+            }
+        }
+        let mut toggled = None;
+        for (k, (glyph, label, desc, on)) in cells.iter().enumerate() {
+            let r = Rect::new(left.x + (k % cols) as f32 * (small_w + gap), y + (k / cols) as f32 * (64.0 + gap), small_w, 64.0);
+            let id = wid("set-cell", k, 0);
+            if self.tile(c, input, id, r, *glyph, label, *on, "") {
+                toggled = Some(k);
+            }
+            if self.hovered(input, id, r) {
+                *hint = Some(format!("{label} · {desc}"));
+            }
+        }
+        if let Some(k) = toggled {
+            let mut ws = current.clone();
+            match k {
+                0 => ws.browser = !ws.browser,
+                1 => ws.panel = !ws.panel,
+                _ => {
+                    let (glyph, ..) = cells[k];
+                    if matches!(glyph, Glyph::CountIn) {
+                        ws.count_in = !ws.count_in;
+                    } else {
+                        // Les cases suivent Bar::ALL, le pré-compte glissé après Rec.
+                        let b = k - 2 - usize::from(k > 2 + Bar::Record.index());
+                        ws.bar[b] = !ws.bar[b];
+                    }
+                }
+            }
+            self.apply_workspace(ws, true);
+        }
+
+        // Aperçu en direct.
+        self.section(c, right.x, right.y, "Aperçu");
+        let fw = right.w;
+        let fh = (fw * 0.66).round();
+        self.workspace_preview(c, Rect::new(right.x, right.y + 20.0, fw, fh));
+
+        // Sous l'aperçu : le profil reconnu, ou « Sur mesure ».
+        let found = presets().into_iter().find(|(_, _, ws)| *ws == current);
+        let (name, desc) = found.map_or(("Sur mesure", "Ton propre espace de travail"), |(n, d, _)| (n, d));
+        let y = right.y + 20.0 + fh + 28.0;
+        self.text(c, self.f.sans_med, 16.0, right.x + 2.0, y, name, t.text);
+        self.text_fit(c, self.f.sans, 12.0, right.x + 2.0, y + 22.0, desc, right.w - 4.0, t.text2);
+        let shown = self.shown_views();
+        for (i, v) in shown.iter().enumerate() {
+            let cx = right.x + 14.0 + i as f32 * 34.0;
+            c.fill_rrect(Rect::new(cx - 14.0, y + 42.0, 28.0, 28.0), 8.0, t.raised);
+            draw_icon(c, v.icon(), cx, y + 56.0, 15.0, t.accent);
+        }
+    }
+
+    /// Miniature de l'interface : barre du haut, navigateur, onglets, panneau du bas.
+    fn workspace_preview(&mut self, c: &mut Canvas, f: Rect) {
+        let t = self.theme;
+        c.fill_rrect(f.translate(0.0, 4.0), 12.0, Color::rgba(0, 0, 0, 60));
+        c.fill_rrect(f, 12.0, t.bg);
+        let prev = c.push_clip(f.inset(1.0));
+        let k = f.w / 1600.0;
+        let top = (TOP_BAR * k * 1.4).round();
+        c.fill_rect(Rect::new(f.x, f.y, f.w, top), t.bg_deep);
+        c.fill_rect(Rect::new(f.x, f.y + top, f.w, 1.0), t.hairline);
+        let cy = f.y + top * 0.5;
+        // Barre : lecture et tempo toujours là, le reste glisse en place.
+        let mut widths: Vec<(Option<Bar>, f32)> = vec![(None, 100.0)];
+        for b in [Bar::Mode, Bar::Pattern] {
+            widths.push((Some(b), b.width()));
+        }
+        widths.push((None, 120.0));
+        for b in [Bar::Tap, Bar::Position, Bar::Scale, Bar::Metronome, Bar::Record, Bar::Keyboard] {
+            widths.push((Some(b), b.width()));
+        }
+        let mut items = Vec::new();
+        let mut total = 0.0;
+        for (i, (b, wpx)) in widths.iter().enumerate() {
+            let on = b.is_none_or(|b| self.bar_shown(b));
+            let v = self.anim.to(wid("set-pv-bar", i, 0), on as u8 as f32, T_LAYOUT);
+            items.push((*b, wpx * k * v, v));
+            total += wpx * k * v;
+        }
+        let mut x = f.x + ((f.w - total) * 0.5).max(4.0);
+        for (i, (b, w, v)) in items.into_iter().enumerate() {
+            if w > 1.0 {
+                let blk = Rect::new(x + 1.0, cy - top * 0.3, (w - 2.0).max(0.0), top * 0.6);
+                let col = match (i, b) {
+                    (0, _) => t.accent,
+                    (_, Some(Bar::Record)) => t.negative.alpha(0.8),
+                    _ => t.raised_hi,
+                };
+                c.fill_rrect(blk, 2.5, col.alpha(v));
+            }
+            x += w;
+        }
+        let right_items = [(Bar::Undo, 0), (Bar::History, 1), (Bar::Load, 2)];
+        let mut rx = f.right() - 6.0;
+        for (b, i) in right_items {
+            let v = self.anim.to(wid("set-pv-right", i, 0), self.bar_shown(b) as u8 as f32, T_LAYOUT);
+            if v > 0.01 {
+                let w = b.width() * k * 0.8;
+                c.fill_rrect(Rect::new(rx - w, cy - top * 0.2, w, top * 0.4), 2.0, t.raised.alpha(v));
+                rx -= w + 3.0;
+            }
+        }
+
+        // Navigateur et panneau.
+        let sb = self.anim.to(wid("set-pv-sb", 0, 0), if self.sidebar { f.w * 0.16 } else { 0.0 }, T_LAYOUT);
+        let below = f.bottom() - f.y - top;
+        let pn = self.anim.to(wid("set-pv-pn", 0, 0), if self.panel { below * 0.28 } else { 0.0 }, T_LAYOUT);
+        if sb > 0.5 {
+            let s = Rect::new(f.x, f.y + top + 1.0, sb, below);
+            c.fill_rect(s, t.panel);
+            for i in 0..7 {
+                let row = Rect::new(s.x + 6.0, s.y + 10.0 + i as f32 * 9.0, (s.w - 12.0) * if i % 3 == 0 { 0.7 } else { 0.9 }, 4.0);
+                c.fill_rrect(row, 2.0, t.raised_hi.alpha(if i == 0 { 1.0 } else { 0.6 }));
+            }
+        }
+        if pn > 0.5 {
+            let p = Rect::new(f.x + sb, f.bottom() - pn, f.w - sb, pn);
+            c.fill_rect(p, t.bg_deep);
+            c.fill_rect(Rect::new(p.x, p.y, p.w, 1.0), t.hairline);
+            for i in 0..3 {
+                let card = Rect::new(p.x + 8.0 + i as f32 * 62.0, p.y + 7.0, 56.0, (p.h - 14.0).max(0.0));
+                c.fill_rrect(card, 5.0, t.raised.alpha(0.9));
+                c.fill_circle(card.x + 14.0, card.y + card.h * 0.55, 6.0, t.raised_hi);
+                c.fill_circle(card.x + 34.0, card.y + card.h * 0.55, 6.0, t.raised_hi);
+            }
+        }
+
+        // Zone principale : les onglets des vues proposées, et la vue en cours.
+        let main = Rect::new(f.x + sb, f.y + top + 1.0, f.w - sb, below - pn - 1.0);
+        let views = self.shown_views();
+        let seg = 18.0;
+        let tabs = Rect::new(main.x + 8.0, main.y + 7.0, views.len() as f32 * seg + 4.0, 18.0);
+        let tw = self.anim.to(wid("set-pv-tabs", 0, 0), tabs.w, T_LAYOUT);
+        let tabs = Rect::new(tabs.x, tabs.y, tw, tabs.h);
+        c.fill_rrect(tabs, 5.0, t.bg_deep);
+        c.stroke_rrect(tabs, 5.0, 1.0, t.hairline);
+        let cur = views.iter().position(|v| *v == self.view).unwrap_or(0);
+        let kx = self.anim.to(wid("set-pv-knob", 0, 0), cur as f32, T_LAYOUT);
+        c.fill_rrect(Rect::new(tabs.x + 2.0 + kx * seg, tabs.y + 2.0, seg, tabs.h - 4.0), 4.0, t.raised_hi);
+        for (i, v) in views.iter().enumerate() {
+            let col = if i == cur { t.accent } else { t.muted };
+            draw_icon(c, v.icon(), tabs.x + 2.0 + seg * (i as f32 + 0.5), tabs.y + tabs.h * 0.5, 10.0, col);
+        }
+        let (mx, my) = (main.x + main.w * 0.5, main.y + 16.0 + (main.h - 16.0) * 0.5);
+        if main.h > 40.0 {
+            c.fill_circle(mx, my, 18.0, t.raised.alpha(0.6));
+            draw_icon(c, self.view.icon(), mx, my, 18.0, t.muted);
+        }
+        c.set_clip(Some(prev));
+        c.stroke_rrect(f, 12.0, 1.0, t.hairline.alpha(1.8));
+    }
+
+    fn keys_tab(&mut self, c: &mut Canvas, input: &Input, body: Rect, foot: Rect, hint: &mut Option<String>) {
+        let t = self.theme;
+        const ROW: f32 = 31.0;
+        const HEAD: f32 = 28.0;
+        let cols = key_columns();
+        let content = cols.iter().map(|col| col.iter().map(|r| if matches!(r, KeyRow::Head(_)) { HEAD } else { ROW }).sum::<f32>()).fold(0.0, f32::max);
+        if input.inside && body.contains(input.x, input.y) && input.wheel != 0.0 {
+            self.prefs.scroll -= input.wheel * 48.0;
+        }
+        self.prefs.scroll = self.prefs.scroll.clamp(0.0, (content - body.h).max(0.0));
+        let gap = 28.0;
+        let col_w = ((body.w - gap) * 0.5).floor();
+        let prev = c.push_clip(Rect::new(body.x - 8.0, body.y, body.w + 16.0, body.h));
+        let conflict = self.prefs.conflict;
+        for (ci, col) in cols.iter().enumerate() {
+            let x = body.x + ci as f32 * (col_w + gap);
+            let mut y = body.y - self.prefs.scroll;
+            for row in col {
+                match *row {
+                    KeyRow::Head(name) => {
+                        self.section(c, x, y + 6.0, name);
+                        y += HEAD;
+                    }
+                    KeyRow::Item(s) => {
+                        let r = Rect::new(x, y, col_w, ROW - 4.0);
+                        if r.bottom() > body.y && r.y < body.bottom() {
+                            let visible = input.inside && body.contains(input.x, input.y);
+                            let input = if visible { input } else { &super::float::masked(input) };
+                            self.key_row(c, input, r, s, conflict, hint);
+                        }
+                        y += ROW;
+                    }
+                }
+            }
+        }
+        // Bords qui s'estompent quand la liste dépasse.
+        let fade = 24.0;
+        if self.prefs.scroll > 0.5 {
+            c.fill_rrect_vgrad(Rect::new(body.x - 8.0, body.y, body.w + 16.0, fade), 0.0, t.panel, t.panel.alpha(0.0));
+        }
+        if self.prefs.scroll < content - body.h - 0.5 {
+            c.fill_rrect_vgrad(Rect::new(body.x - 8.0, body.bottom() - fade, body.w + 16.0, fade), 0.0, t.panel.alpha(0.0), t.panel);
+        }
+        c.set_clip(Some(prev));
+
+        // Pied : conflit à régler, ou remise à zéro.
+        if let Some((s, combo, other)) = conflict {
+            let a = self.anim.to(wid("set-banner", 0, 0), 1.0, T_LAYOUT);
+            let cy = foot.y + foot.h * 0.5 + (1.0 - a) * 6.0;
+            draw_icon(c, Icon::Info, foot.x + 8.0, cy, 15.0, t.negative.alpha(a));
+            let x = foot.x + 24.0;
+            let kx = x + self.fonts.measure(self.f.mono, 11.0, &combo.label()) + 12.0;
+            self.keycap(c, kx, cy, &combo.label(), a);
+            let x = self.text(c, self.f.sans, 12.0, kx + 8.0, cy, "est déjà pris par", t.text2.alpha(a)) + kx + 14.0;
+            draw_icon(c, other.icon(), x + 8.0, cy, 14.0, t.text.alpha(a));
+            self.text(c, self.f.sans_med, 12.0, x + 22.0, cy, other.label(), t.text.alpha(a));
+            let mut bx = foot.right();
+            let buttons = [
+                (Icon::Close, "Annuler", "Garder les touches actuelles", 0),
+                (Icon::Check, "Remplacer", "Retirer la touche à l'autre action", 1),
+                (Icon::Swap, "Échanger", "L'autre action prend l'ancienne touche · Entrée", 2),
+            ];
+            for (icon, label, tip, k) in buttons {
+                let w = self.fonts.measure(self.f.sans_med, 12.0, label) + 40.0;
+                let br = Rect::new(bx - w, foot.y + 2.0, w, foot.h - 4.0);
+                bx -= w + 8.0;
+                let id = wid("set-conflict", k, 0);
+                if self.pill_button(c, input, id, br, icon, label, k == 2) {
+                    match k {
+                        0 => self.prefs.conflict = None,
+                        1 => self.bind(s, combo, false),
+                        _ => self.bind(s, combo, true),
+                    }
+                }
+                if self.hovered(input, id, br) {
+                    *hint = Some(tip.into());
+                }
+            }
+        } else {
+            self.anim.set(wid("set-banner", 0, 0), 0.0);
+            let custom = Shortcut::ALL.iter().any(|&s| !self.prefs.keymap.is_default(s));
+            let br = Rect::new(foot.x, foot.y + 2.0, 170.0, foot.h - 4.0);
+            let id = wid("set-reset-all", 0, 0);
+            let a = self.anim.to(id ^ 0x5649, custom as u8 as f32, T_HOVER);
+            if a > 0.01 {
+                let input = if custom { input } else { &super::float::masked(input) };
+                if self.pill_button(c, input, id, br, Icon::Reset, "Touches de FL Studio", false) && custom {
+                    self.prefs.keymap = Keymap::default();
+                    self.save_settings();
+                    self.toast("Raccourcis par défaut");
+                }
+                if self.hovered(input, id, br) {
+                    *hint = Some("Revenir à toutes les touches par défaut".into());
+                }
+            }
+        }
+    }
+
+    fn key_row(&mut self, c: &mut Canvas, input: &Input, r: Rect, s: Shortcut, conflict: Option<(Shortcut, Combo, Shortcut)>, hint: &mut Option<String>) {
+        let t = self.theme;
+        let i = s as usize;
+        let id = wid("set-key", i, 0);
+        let hov = self.hovered(input, id, r);
+        let hv = self.hover_anim(id, hov);
+        let capturing = self.prefs.capture == Some(s);
+        let involved = conflict.is_some_and(|(a, _, b)| a == s || b == s);
+        let flash = self.anim.to(wid("set-flash", i, 0), 0.0, 0.25);
+        // Une vue masquée garde sa touche, mais en retrait.
+        let dim = s.view().is_some_and(|v| !self.view_shown(v));
+        let alpha = if dim { 0.45 } else { 1.0 };
+        if hv > 0.01 || capturing || involved || flash > 0.01 {
+            let base = t.raised.alpha(hv.max(capturing as u8 as f32) * 0.8);
+            c.fill_rrect(r, 9.0, base.mix(t.accent.alpha(0.25), flash));
+        }
+        if involved {
+            c.stroke_rrect(r, 9.0, 1.0, t.negative.alpha(0.7));
+        }
+        let cy = r.y + r.h * 0.5;
+        draw_icon(c, s.icon(), r.x + 16.0, cy, 15.0, t.muted.mix(t.accent, hv.max(flash)).alpha(alpha));
+        self.text_fit(c, self.f.sans_med, 13.0, r.x + 34.0, cy, s.label(), r.w * 0.5, t.text2.mix(t.text, hv).alpha(alpha));
+
+        // La touche : un bouton ; clic pour en saisir une nouvelle.
+        let label = if capturing { "…".to_string() } else { self.key_label(s) };
+        let kw = (self.fonts.measure(self.f.mono, 11.0, &label) + 18.0).max(54.0);
+        let cap = Rect::new(r.right() - 6.0 - kw, cy - 11.0, kw, 22.0);
+        let cid = wid("set-cap", i, 0);
+        let chov = self.hovered(input, cid, cap);
+        let chv = self.hover_anim(cid, chov);
+        let pulse = if capturing { 0.6 + 0.4 * (self.time * 5.0).sin().abs() } else { 0.0 };
+        c.fill_rrect(cap, 6.0, t.bg_deep.mix(t.raised_hi, 0.5 + 0.5 * chv));
+        c.fill_rect(Rect::new(cap.x + 3.0, cap.bottom() - 1.0, cap.w - 6.0, 1.0), Color::rgba(0, 0, 0, 90));
+        c.stroke_rrect(cap, 6.0, 1.0 + pulse, t.hairline.mix(t.accent, pulse.max(chv * 0.6)));
+        let ink = if label.is_empty() { t.muted } else { t.text2.mix(t.text, chv) };
+        let shown = if label.is_empty() { "—" } else { label.as_str() };
+        self.text_center(c, self.f.mono, 11.0, cap.x + cap.w * 0.5, cy, shown, if capturing { t.accent } else { ink.alpha(alpha) });
+        if chov {
+            *hint = Some(if capturing { "Appuie sur la nouvelle combinaison · Échap annule".into() } else { format!("{} · clic : changer la touche", s.label()) });
+            if input.pressed {
+                self.prefs.capture = if capturing { None } else { Some(s) };
+                self.prefs.conflict = None;
+            }
+        }
+
+        // Au survol : retirer la touche, revenir à celle par défaut.
+        let mut bx = cap.x - 4.0;
+        let tools = [(Icon::Reset, !self.prefs.keymap.is_default(s), "Touche par défaut"), (Icon::Close, hov && self.prefs.keymap.get(s).is_some(), "Retirer la touche")];
+        for (k, (icon, show, tip)) in tools.into_iter().enumerate() {
+            let v = self.anim.to(wid("set-tool", i, k), show as u8 as f32, T_HOVER);
+            if v < 0.01 {
+                continue;
+            }
+            let br = Rect::new(bx - 24.0, cy - 12.0, 24.0, 24.0);
+            bx -= 26.0;
+            let tid = wid("set-tool-b", i, k);
+            let thov = self.hovered(input, tid, br) && show;
+            let thv = self.hover_anim(tid, thov);
+            if thv > 0.01 {
+                c.fill_rrect(br, 6.0, t.raised_hi.alpha(thv * v));
+            }
+            draw_icon(c, icon, br.x + 12.0, cy, 13.0, t.muted.mix(t.text, thv).alpha(v));
+            if thov {
+                *hint = Some(tip.into());
+                if input.pressed {
+                    match icon {
+                        Icon::Reset => {
+                            if let Some(d) = s.default_combo() {
+                                self.prefs.keymap.rebind(s, d, true);
+                            } else {
+                                self.prefs.keymap.set(s, None);
+                            }
+                        }
+                        _ => self.prefs.keymap.set(s, None),
+                    }
+                    self.anim.set(wid("set-flash", i, 0), 1.0);
+                    self.save_settings();
+                }
+            }
+        }
+        if hov && !chov && hint.is_none() && dim {
+            *hint = Some("Vue masquée : la touche reste en réserve".into());
+        }
+    }
+
+    /// Bouton pilule : pictogramme et mot.
+    fn pill_button(&mut self, c: &mut Canvas, input: &Input, id: u64, r: Rect, icon: Icon, label: &str, accent: bool) -> bool {
+        let t = self.theme;
+        let hov = self.hovered(input, id, r);
+        let hv = self.hover_anim(id, hov);
+        let press = self.anim.to(id ^ 0x5052, if hov && input.down { 0.95 } else { 1.0 }, T_PRESS);
+        let b = r.scale(press);
+        let fill = if accent { t.accent.mix(WHITE, 0.12 * hv) } else { t.raised.mix(t.raised_hi, hv) };
+        c.fill_rrect(b, b.h * 0.5, fill);
+        let ink = if accent { t.on_accent } else { t.text2.mix(t.text, hv) };
+        let cy = b.y + b.h * 0.5;
+        draw_icon(c, icon, b.x + 18.0, cy, 14.0, ink);
+        self.text(c, self.f.sans_med, 12.0, b.x + 32.0, cy, label, ink);
+        hov && input.pressed
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_round_trip() {
+        let mut ws = presets()[3].2.clone();
+        ws.browser = false;
+        ws.count_in = false;
+        let mut keymap = Keymap::default();
+        keymap.rebind(Shortcut::ViewSession, Combo::key(Key::F(8)), false);
+        keymap.set(Shortcut::TapTempo, None);
+        let text = to_json(&ws, &keymap, "Glace").pretty();
+        let (ws2, keymap2, theme) = from_json(&json::parse(&text).expect("JSON valide"));
+        assert_eq!(ws2, ws);
+        assert_eq!(keymap2, keymap);
+        assert_eq!(theme.as_deref(), Some("Glace"));
+    }
+
+    #[test]
+    fn loading_is_tolerant() {
+        // Vide : tout par défaut.
+        let (ws, keymap, theme) = from_json(&json::parse("{}").unwrap());
+        assert_eq!(ws, Workspace::default());
+        assert_eq!(keymap, Keymap::default());
+        assert_eq!(theme, None);
+        // Types faux, clés inconnues, aucune vue : on garde ce qui se lit.
+        let text = r#"{"views": {"rack": false, "piano": false, "playlist": false, "session": false, "mixer": false},
+            "bar": {"tap": false, "scale": "oui", "zzz": true}, "panel": 3, "keys": {"save": 12, "undo": "ctrl+u", "nope": "f1"}}"#;
+        let (ws, keymap, _) = from_json(&json::parse(text).unwrap());
+        assert_eq!(ws.views, [true; 5], "au moins une vue");
+        assert!(!ws.bar(Bar::Tap));
+        assert!(ws.bar(Bar::Scale));
+        assert!(ws.panel);
+        assert_eq!(keymap.get(Shortcut::Undo), Some(Combo::ctrl(Key::Char('u'))));
+        assert_eq!(keymap.get(Shortcut::Save), Shortcut::Save.default_combo());
+    }
+
+    #[test]
+    fn presets_are_distinct_and_keep_a_view() {
+        let p = presets();
+        for (i, (_, _, a)) in p.iter().enumerate() {
+            assert!(a.views.iter().any(|&v| v));
+            for (_, _, b) in &p[i + 1..] {
+                assert_ne!(a, b);
+            }
+        }
+        assert!(!p[2].2.view(View::Piano), "Sampling : sans piano roll");
+        assert!(p[3].2.view(View::Session) && !p[3].2.view(View::Rack), "Live : la session");
+    }
+
+    #[test]
+    fn key_columns_list_every_shortcut_once() {
+        let n: usize = key_columns().iter().map(|c| c.iter().filter(|r| matches!(r, KeyRow::Item(_))).count()).sum();
+        assert_eq!(n, Shortcut::ALL.len());
+    }
+}

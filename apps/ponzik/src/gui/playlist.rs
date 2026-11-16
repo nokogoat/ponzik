@@ -159,7 +159,7 @@ impl App {
                     }
                 }
             }
-            if hv > 0.01 && self.icon_button(c, input, wid("pl-pat-edit", p, 0), edit, Icon::Rack, false, ("Éditer", "F6")) {
+            if hv > 0.01 && self.icon_button(c, input, wid("pl-pat-edit", p, 0), edit, Icon::Rack, false, ("Éditer", &self.key_label(super::keymap::Shortcut::ViewRack))) {
                 self.select_pattern(p);
                 self.set_view(View::Rack);
             }
@@ -174,7 +174,8 @@ impl App {
         let (ax, ay) = add.center();
         draw_icon(c, Icon::Plus, ax, ay, 16.0, t.muted.mix(t.accent, hv));
         if hov {
-            self.set_tip("Nouveau pattern", "F4");
+            let key = self.key_label(super::keymap::Shortcut::NewPattern);
+            self.set_tip("Nouveau pattern", &key);
             self.set_cursor(Cursor::Hand);
             if input.pressed {
                 let p = self.project.add_pattern();

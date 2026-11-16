@@ -8,6 +8,7 @@ use ponzik_window::Key;
 
 use super::Input;
 use super::app::{Action, App, Popup, Rename, View};
+use super::keymap::Shortcut as S;
 use super::theme::*;
 use super::widgets::wid;
 
@@ -17,7 +18,8 @@ const VISIBLE: usize = 9;
 pub struct Item {
     pub title: String,
     pub category: &'static str,
-    pub shortcut: &'static str,
+    /// Touche actuelle de l'action (table des raccourcis), ou vide.
+    pub shortcut: String,
     pub action: Action,
 }
 
@@ -67,44 +69,56 @@ pub fn fuzzy_score(query: &str, text: &str) -> Option<i32> {
 impl App {
     fn palette_items(&self) -> Vec<Item> {
         let mut v = Vec::new();
-        let mut add = |title: String, category: &'static str, shortcut: &'static str, action: Action| {
+        let k = |s: S| self.key_label(s);
+        let mut add = |title: String, category: &'static str, shortcut: String, action: Action| {
             v.push(Item { title, category, shortcut, action });
         };
-        add("Lecture / arrêt".into(), "Transport", "Espace", Action::PlayStop);
-        add("Basculer pattern / morceau".into(), "Transport", "L", Action::ToggleMode);
-        add("Métronome".into(), "Transport", "Ctrl M", Action::ToggleMetronome);
-        add("Armer l'enregistrement".into(), "Transport", "R", Action::ToggleRecord);
-        add("Tap tempo".into(), "Transport", "T", Action::TapTempo);
+        let none = String::new;
+        add("Lecture / arrêt".into(), "Transport", k(S::PlayStop), Action::PlayStop);
+        add("Basculer pattern / morceau".into(), "Transport", k(S::ToggleMode), Action::ToggleMode);
+        add("Métronome".into(), "Transport", k(S::Metronome), Action::ToggleMetronome);
+        add("Armer l'enregistrement".into(), "Transport", k(S::Record), Action::ToggleRecord);
+        add("Tap tempo".into(), "Transport", k(S::TapTempo), Action::TapTempo);
         let count_in = if self.count_in { "Couper le pré-compte" } else { "Pré-compte d'une mesure avant l'enregistrement" };
-        add(count_in.into(), "Transport", "", Action::ToggleCountIn);
-        add("Clavier d'ordinateur musical".into(), "Transport", "Ctrl T", Action::ToggleTyping);
-        for (view, key) in [(View::Playlist, "F5"), (View::Rack, "F6"), (View::Piano, "F7"), (View::Mixer, "F9")] {
-            add(format!("Aller à : {}", view.label()), "Vue", key, Action::SetView(view));
+        add(count_in.into(), "Transport", none(), Action::ToggleCountIn);
+        add("Clavier d'ordinateur musical".into(), "Transport", k(S::TypingKeyboard), Action::ToggleTyping);
+        for view in self.shown_views() {
+            add(format!("Aller à : {}", view.label()), "Vue", k(S::for_view(view)), Action::SetView(view));
         }
-        add("Afficher ou masquer le navigateur".into(), "Vue", "Alt F8", Action::ToggleSidebar);
-        add("Afficher ou masquer les appareils".into(), "Vue", "", Action::TogglePanel);
-        add("Nouveau pattern".into(), "Pattern", "F4", Action::NewPattern);
-        add("Dupliquer le pattern".into(), "Pattern", "", Action::DuplicatePattern);
+        add("Afficher ou masquer le navigateur".into(), "Vue", k(S::ToggleBrowser), Action::ToggleSidebar);
+        add("Afficher ou masquer les appareils".into(), "Vue", k(S::TogglePanel), Action::TogglePanel);
+        // Réglages : une vue masquée se retrouve toujours ici.
+        add("Réglages : espace de travail".into(), "Réglages", k(S::Settings), Action::Popup(Popup::Settings { tab: 0 }));
+        add("Réglages : raccourcis clavier".into(), "Réglages", none(), Action::Popup(Popup::Settings { tab: 1 }));
+        for (i, (name, desc, _)) in super::settings::presets().into_iter().enumerate() {
+            add(format!("Profil : {name} · {}", desc.to_lowercase()), "Réglages", none(), Action::ApplyPreset(i));
+        }
+        for view in View::ALL {
+            let verb = if self.view_shown(view) { "Masquer" } else { "Afficher" };
+            add(format!("{verb} la vue {}", view.label()), "Réglages", none(), Action::ToggleViewShown(view));
+        }
+        add("Nouveau pattern".into(), "Pattern", k(S::NewPattern), Action::NewPattern);
+        add("Dupliquer le pattern".into(), "Pattern", none(), Action::DuplicatePattern);
         let cur = self.project.current_pattern;
         add(
             "Renommer le pattern".into(),
             "Pattern",
-            "",
+            none(),
             Action::Popup(Popup::Rename { target: Rename::Pattern(cur), text: self.project.patterns[cur].name.clone() }),
         );
-        add("Dupliquer la sélection de temps".into(), "Playlist", "Ctrl B", Action::DuplicateTime);
+        add("Dupliquer la sélection de temps".into(), "Playlist", "Ctrl B".into(), Action::DuplicateTime);
         if let Some(clip) = self.playlist.selected.filter(|&i| i < self.project.clips.len()) {
-            add("Rendre unique le clip sélectionné".into(), "Playlist", "", Action::MakeUnique(clip));
+            add("Rendre unique le clip sélectionné".into(), "Playlist", none(), Action::MakeUnique(clip));
         }
-        add("Couleur du pattern".into(), "Pattern", "", Action::Popup(Popup::PatternColor(cur)));
+        add("Couleur du pattern".into(), "Pattern", none(), Action::Popup(Popup::PatternColor(cur)));
         for (i, p) in self.project.patterns.iter().enumerate() {
-            add(format!("Pattern : {}", p.name), "Pattern", "", Action::SelectPattern(i));
+            add(format!("Pattern : {}", p.name), "Pattern", none(), Action::SelectPattern(i));
         }
         for (i, c) in self.project.channels.iter().enumerate() {
-            add(format!("Canal : {}", c.name), "Canal", "", Action::FocusChannel(i));
+            add(format!("Canal : {}", c.name), "Canal", none(), Action::FocusChannel(i));
         }
         for k in registry::instruments() {
-            add(format!("Ajouter {}", k.name), "Instrument", "", Action::AddInstrument(k.id, None));
+            add(format!("Ajouter {}", k.name), "Instrument", none(), Action::AddInstrument(k.id, None));
         }
         let track = self.focused_track();
         let group = self.group_for(track);
@@ -113,37 +127,37 @@ impl App {
             1 => format!("Envoyer {} vers un nouveau bus", self.project.tracks[track].name),
             n => format!("Grouper {n} pistes dans un bus"),
         };
-        add(title, "Mixer", "Ctrl G", Action::NewBus(group.clone()));
+        add(title, "Mixer", "Ctrl G".into(), Action::NewBus(group.clone()));
         for (kind, name, _) in ponzik_project::RETURN_EFFECTS {
             let from = (track != MASTER).then_some(track);
-            add(format!("Nouveau bus d'envoi : {name}"), "Mixer", "", Action::NewReturn(kind, from));
+            add(format!("Nouveau bus d'envoi : {name}"), "Mixer", String::new(), Action::NewReturn(kind, from));
         }
-        add("Nouveau VCA".into(), "Mixer", "", Action::NewVca(group));
+        add("Nouveau VCA".into(), "Mixer", String::new(), Action::NewVca(group));
         if self.project.tracks[track].kind == ponzik_project::TrackKind::Bus {
-            add(format!("Replier ou déplier {}", self.project.tracks[track].name), "Mixer", "", Action::ToggleFold(track));
+            add(format!("Replier ou déplier {}", self.project.tracks[track].name), "Mixer", String::new(), Action::ToggleFold(track));
         }
         for k in registry::effects() {
-            add(format!("{} sur {}", k.name, self.project.tracks[track].name), "Effet", "", Action::AddEffect(track, k.id));
+            add(format!("{} sur {}", k.name, self.project.tracks[track].name), "Effet", none(), Action::AddEffect(track, k.id));
         }
         if let Some(ch) = self.selected_channel()
             && let Some(slot) = (0..ponzik_engine::NOTE_FX_SLOTS).find(|&s| self.project.channels[ch].note_fx.get(s).is_none_or(Option::is_none))
         {
             for k in registry::note_fx() {
                 let title = format!("{} sur {}", k.name, self.project.channels[ch].name);
-                add(title, "Effet de notes", "", Action::AddNoteFx(ch, slot, k.id));
+                add(title, "Effet de notes", none(), Action::AddNoteFx(ch, slot, k.id));
             }
         }
-        add("Enregistrer".into(), "Fichier", "Ctrl S", Action::Save);
-        add("Ouvrir un projet".into(), "Fichier", "Ctrl O", Action::OpenMenu);
+        add("Enregistrer".into(), "Fichier", k(S::Save), Action::Save);
+        add("Ouvrir un projet".into(), "Fichier", k(S::Open), Action::OpenMenu);
         for path in super::compat::list_projects().into_iter().take(6) {
             let name = path.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
-            add(format!("Ouvrir : {name}"), "Récent", "", Action::Open(path));
+            add(format!("Ouvrir : {name}"), "Récent", none(), Action::Open(path));
         }
-        add("Nouveau projet".into(), "Fichier", "Ctrl N", Action::NewProject);
+        add("Nouveau projet".into(), "Fichier", k(S::NewProject), Action::NewProject);
         for (i, (name, _)) in ponzik_project::templates().into_iter().enumerate() {
-            add(format!("Nouveau projet : {name}"), "Modèle", "", Action::NewFromTemplate(i));
+            add(format!("Nouveau projet : {name}"), "Modèle", none(), Action::NewFromTemplate(i));
         }
-        add("Exporter en WAV 24 bits".into(), "Fichier", "Ctrl R", Action::Export);
+        add("Exporter en WAV 24 bits".into(), "Fichier", k(S::Export), Action::Export);
         {
             use ponzik_project::{BitDepth, ExportOptions, Normalize};
             let wav = ExportOptions::default();
@@ -161,29 +175,29 @@ impl App {
                 ),
             ];
             for (title, options) in exports {
-                add(title.into(), "Fichier", "", Action::ExportWith(options));
+                add(title.into(), "Fichier", none(), Action::ExportWith(options));
             }
         }
-        add("Exporter les pistes séparées (stems)".into(), "Fichier", "", Action::ExportStems);
-        add("Importer un fichier MIDI".into(), "Fichier", "", Action::ImportMidiMenu);
-        add("Exporter le pattern en MIDI".into(), "Fichier", "", Action::ExportMidi);
-        add("Enregistrer sous".into(), "Fichier", "Ctrl Maj S", Action::SaveAs);
+        add("Exporter les pistes séparées (stems)".into(), "Fichier", none(), Action::ExportStems);
+        add("Importer un fichier MIDI".into(), "Fichier", none(), Action::ImportMidiMenu);
+        add("Exporter le pattern en MIDI".into(), "Fichier", none(), Action::ExportMidi);
+        add("Enregistrer sous".into(), "Fichier", k(S::SaveAs), Action::SaveAs);
         add(
             "Renommer le projet".into(),
             "Fichier",
-            "",
+            none(),
             Action::Popup(Popup::Rename { target: Rename::Project, text: self.project.name.clone() }),
         );
         for (name, ticks, vel) in super::piano::HUMANIZE {
-            add(format!("Humaniser les notes : {}", name.to_lowercase()), "Piano roll", "", Action::Humanize(ticks, vel));
+            add(format!("Humaniser les notes : {}", name.to_lowercase()), "Piano roll", none(), Action::Humanize(ticks, vel));
         }
-        add("Annuler".into(), "Édition", "Ctrl Z", Action::Undo);
-        add("Rétablir".into(), "Édition", "Ctrl Y", Action::Redo);
-        add("Historique".into(), "Édition", "", Action::Popup(Popup::History));
-        add("Démo : groove house".into(), "Démo", "", Action::LoadDemo(0));
-        add("Démo : Amen rave (breakcore)".into(), "Démo", "", Action::LoadDemo(1));
+        add("Annuler".into(), "Édition", k(S::Undo), Action::Undo);
+        add("Rétablir".into(), "Édition", k(S::Redo), Action::Redo);
+        add("Historique".into(), "Édition", k(S::History), Action::Popup(Popup::History));
+        add("Démo : groove house".into(), "Démo", none(), Action::LoadDemo(0));
+        add("Démo : Amen rave (breakcore)".into(), "Démo", none(), Action::LoadDemo(1));
         for (i, th) in THEMES.iter().enumerate() {
-            add(format!("Thème : {}", th.name), "Thème", "", Action::SetTheme(i));
+            add(format!("Thème : {}", th.name), "Thème", none(), Action::SetTheme(i));
         }
         v
     }
@@ -280,11 +294,11 @@ impl App {
             let right = row.right() - 12.0;
             let mut x = right;
             if !item.shortcut.is_empty() {
-                let kw = self.fonts.measure(self.f.mono, 11.0, item.shortcut) + 14.0;
+                let kw = self.fonts.measure(self.f.mono, 11.0, &item.shortcut) + 14.0;
                 let cap = Rect::new(x - kw, row.y + 10.0, kw, 20.0);
                 c.fill_rrect(cap, 5.0, t.raised_hi);
                 c.fill_rect(Rect::new(cap.x + 3.0, cap.bottom() - 1.0, cap.w - 6.0, 1.0), Color::rgba(0, 0, 0, 90));
-                self.text_center(c, self.f.mono, 11.0, cap.x + cap.w * 0.5, cap.y + 10.0, item.shortcut, t.text2);
+                self.text_center(c, self.f.mono, 11.0, cap.x + cap.w * 0.5, cap.y + 10.0, &item.shortcut, t.text2);
                 x = cap.x - 12.0;
             }
             let cat_w = self.fonts.measure(self.f.sans, 11.0, item.category);

@@ -10,6 +10,7 @@ mod compat;
 mod devices;
 mod dnd;
 mod float;
+mod keymap;
 mod keys;
 mod mixer;
 mod notefx;
@@ -18,6 +19,7 @@ mod piano;
 mod playlist;
 mod rack;
 mod session;
+mod settings;
 mod sync;
 mod visuals;
 mod theme;
@@ -176,12 +178,16 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     for m in &app.midi_inputs {
         eprintln!("MIDI : {}", m.name());
     }
+    app.load_settings();
     app.start_autosave();
-    app.toast("Espace pour jouer · Ctrl+K pour tout trouver");
+    let (play, find) = (app.key_label(keymap::Shortcut::PlayStop), app.key_label(keymap::Shortcut::Palette));
+    app.toast(&format!("{play} pour jouer · {find} pour tout trouver"));
     eprintln!("Ponzik · {} · {} Hz · {}", window.backend_name(), config.sample_rate, output_name);
     let result = event_loop(&mut window, &mut app, &stream);
-    // Sortie normale (fermeture ou erreur rapportée) : le verrou de session est retiré.
+    // Sortie normale (fermeture ou erreur rapportée) : le verrou de session est retiré,
+    // les panneaux ouverts sont retenus pour la prochaine fois.
     app.close_autosave();
+    app.save_settings();
     result
 }
 
@@ -261,6 +267,12 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     let none = |_: &str| None;
     let (mut engine, handle) = project.build_engine(SR as f32, &none);
     let mut app = App::new(handle, project, SR);
+    // PONZIK_PRESET=n : profil d'espace de travail (0 Complet … 4 Minimal).
+    if let Some(i) = std::env::var("PONZIK_PRESET").ok().and_then(|v| v.parse().ok()) {
+        if let Some((_, _, ws)) = settings::presets().into_iter().nth(i) {
+            app.apply_workspace(ws, false);
+        }
+    }
     let view = match view {
         "piano" => View::Piano,
         "playlist" => View::Playlist,
@@ -268,7 +280,9 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
         "session" => View::Session,
         _ => View::Rack,
     };
-    app.set_view(view);
+    if app.view_shown(view) {
+        app.set_view(view);
+    }
     if view == View::Piano {
         app.focus = app::Focus::Channel(4);
     }

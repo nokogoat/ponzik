@@ -125,6 +125,8 @@ pub enum Icon {
     Bus,
     /// Deux faders liés : VCA.
     Vca,
+    /// Fenêtre découpée en zones : espace de travail et réglages.
+    Layout,
 }
 
 /// Dessine une icône au trait, dans un carré de `size` centré sur (`cx`, `cy`).
@@ -408,6 +410,12 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
             } else {
                 c.fill_rect(Rect::new(cx - 7.0 * s, cy + 1.5 * s, 14.0 * s, stroke), col);
             }
+        }
+        Icon::Layout => {
+            c.stroke_rrect(rr(-7.5, -6.5, 15.0, 13.0), 2.0 * s, stroke, col);
+            c.fill_rect(Rect::new(cx - 7.5 * s, cy - 3.0 * s, 15.0 * s, stroke), col);
+            c.fill_rect(Rect::new(cx - 2.5 * s, cy - 3.0 * s, stroke, 9.5 * s), col);
+            c.fill_rrect(rr(0.5, -0.2, 4.5, 3.6), 1.0 * s, col.alpha(0.6));
         }
         Icon::ChevronLeft => c.stroke_polyline(&[p(2.5, -5.0), p(-2.5, 0.0), p(2.5, 5.0)], stroke, col),
         Icon::ChevronRight => c.stroke_polyline(&[p(-2.5, -5.0), p(2.5, 0.0), p(-2.5, 5.0)], stroke, col),

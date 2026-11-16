@@ -24,6 +24,19 @@ pub fn projects_dir() -> PathBuf {
     music_dir().join("Ponzik")
 }
 
+/// Dossier des réglages : `$XDG_CONFIG_HOME/ponzik` (ou `~/.config/ponzik`) sous
+/// Linux, `%APPDATA%\Ponzik` sous Windows, `~/Library/Application Support/Ponzik` sous macOS.
+pub fn config_dir() -> PathBuf {
+    let var = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
+    if cfg!(windows) {
+        return var("APPDATA").unwrap_or_else(home).join("Ponzik");
+    }
+    if cfg!(target_os = "macos") {
+        return home().join("Library/Application Support/Ponzik");
+    }
+    var("XDG_CONFIG_HOME").unwrap_or_else(|| home().join(".config")).join("ponzik")
+}
+
 fn file_name(name: &str) -> String {
     let clean: String = name.chars().map(|c| if c.is_alphanumeric() || " -_".contains(c) { c } else { '_' }).collect();
     let clean = clean.trim();
