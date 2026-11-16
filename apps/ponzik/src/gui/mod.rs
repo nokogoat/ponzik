@@ -5,6 +5,7 @@
 #![allow(clippy::too_many_arguments)]
 
 mod app;
+mod assistant;
 mod automation;
 mod compat;
 mod devices;
@@ -407,6 +408,14 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
             }
         }
         app.commit("Effets de capture");
+    }
+    // PONZIK_LISTEN=s[,apply] : les assistants de mixage écoutent s secondes de
+    // lecture, puis appliquent leur suggestion.
+    if let Ok(spec) = std::env::var("PONZIK_LISTEN") {
+        let (secs, apply) = spec.split_once(',').map_or((spec.as_str(), false), |(s, a)| (s, a.trim() == "apply"));
+        if let Ok(secs) = secs.trim().parse::<f32>() {
+            app.screenshot_listen(&mut engine, secs, apply);
+        }
     }
     // PONZIK_MIXER=bus:1,2,3,4;fold;vca:2,5;sel:4,5;return:delay@3 : bus, repli du
     // dernier bus, VCA, sélection et retours d'effet créés pour la capture.

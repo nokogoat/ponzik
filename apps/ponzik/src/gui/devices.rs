@@ -131,6 +131,9 @@ pub(super) fn card_width(kind: &str, params: &'static [ParamInfo]) -> f32 {
     if kind == "drum_machine" {
         return super::notefx::DRUM_W;
     }
+    if kind == "mix_assistant" {
+        return super::assistant::WIDTH;
+    }
     let g = groups(params);
     if g.is_empty() {
         return 220.0;
@@ -353,6 +356,9 @@ impl App {
         if kind == "drum_machine" {
             self.drum_device(c, input, body, device, params);
             return;
+        }
+        if kind == "mix_assistant" {
+            return self.mix_assistant_device(c, input, body, device);
         }
         if params.is_empty() {
             self.text(c, self.f.sans, 12.0, body.x, body.y + 20.0, "Aucun réglage", t.muted);

@@ -19,11 +19,11 @@ const F_MIN: f32 = 20.0;
 const F_MAX: f32 = 20_000.0;
 
 /// Fréquence ↔ abscisse logarithmique dans `r`.
-fn x_of_freq(r: Rect, f: f32) -> f32 {
+pub(super) fn x_of_freq(r: Rect, f: f32) -> f32 {
     r.x + (f.max(F_MIN) / F_MIN).ln() / (F_MAX / F_MIN).ln() * r.w
 }
 
-fn freq_of_x(r: Rect, x: f32) -> f32 {
+pub(super) fn freq_of_x(r: Rect, x: f32) -> f32 {
     F_MIN * (F_MAX / F_MIN).powf(((x - r.x) / r.w).clamp(0.0, 1.0))
 }
 
@@ -32,7 +32,7 @@ fn db(mag: f32) -> f32 {
 }
 
 /// Grille fréquentielle : 100 Hz, 1 kHz, 10 kHz marquées, et lignes en dB.
-fn freq_grid(app: &mut App, c: &mut Canvas, r: Rect, db_range: f32, db_lines: &[f32]) {
+pub(super) fn freq_grid(app: &mut App, c: &mut Canvas, r: Rect, db_range: f32, db_lines: &[f32]) {
     let t = app.theme;
     let mid = r.y + r.h * 0.5;
     for f in [50.0, 100.0, 200.0, 500.0, 1_000.0, 2_000.0, 5_000.0, 10_000.0] {
@@ -55,7 +55,7 @@ fn freq_grid(app: &mut App, c: &mut Canvas, r: Rect, db_range: f32, db_lines: &[
 }
 
 /// Courbe remplie jusqu'à la ligne `base_y`.
-fn filled_curve(c: &mut Canvas, pts: &[(f32, f32)], base_y: f32, fill: ponzik_ui::Color, stroke: ponzik_ui::Color) {
+pub(super) fn filled_curve(c: &mut Canvas, pts: &[(f32, f32)], base_y: f32, fill: ponzik_ui::Color, stroke: ponzik_ui::Color) {
     filled_curve_width(c, pts, base_y, fill, stroke, 2.0);
 }
 
@@ -585,7 +585,7 @@ thread_local! {
 }
 
 /// « −1,0 » : une décimale, virgule et vrai signe moins.
-fn fmt_db1(d: f32) -> String {
+pub(super) fn fmt_db1(d: f32) -> String {
     let s = format!("{:.1}", d.abs()).replace('.', ",");
     if d < -0.05 { format!("−{s}") } else { s }
 }

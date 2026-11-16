@@ -801,6 +801,7 @@ impl App {
             super::sync::diff(&self.synced, &self.project, self.sample_rate as f32, &loader)
         };
         for cmd in cmds {
+            super::assistant::capture(&cmd);
             self.send(cmd);
         }
         self.synced = self.project.clone();
