@@ -789,6 +789,7 @@ impl Window {
             shm: None,
             shm_busy: false,
             shm_failed: false,
+            shm_image: (0, 0),
             cursor_font: 0,
             cursors: [0; CURSOR_SHAPES],
             cursor: None,

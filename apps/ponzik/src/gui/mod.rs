@@ -245,6 +245,62 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     result
 }
 
+/// Temps passé par phase (interface, rastérisation, envoi), cumulé puis
+/// affiché toutes les deux secondes avec `PONZIK_PROFILE=1`.
+struct Profile {
+    since: Instant,
+    frames: u32,
+    ui: Duration,
+    raster: Duration,
+    present: Duration,
+    worst: Duration,
+    dirty: f64,
+    ops: usize,
+}
+
+impl Profile {
+    fn new() -> Self {
+        Self {
+            since: Instant::now(),
+            frames: 0,
+            ui: Duration::ZERO,
+            raster: Duration::ZERO,
+            present: Duration::ZERO,
+            worst: Duration::ZERO,
+            dirty: 0.0,
+            ops: 0,
+        }
+    }
+
+    fn frame(&mut self, start: Instant, ui: Instant, raster: Instant, end: Instant, dirty: f64, ops: usize) {
+        self.frames += 1;
+        self.ui += ui - start;
+        self.raster += raster - ui;
+        self.present += end - raster;
+        self.worst = self.worst.max(end - start);
+        self.dirty += dirty;
+        self.ops += ops;
+        let span = self.since.elapsed();
+        if span >= Duration::from_secs(2) {
+            let n = self.frames.max(1) as f64;
+            let ms = |d: Duration| d.as_secs_f64() * 1000.0 / n;
+            let busy = (self.ui + self.raster + self.present).as_secs_f64() / span.as_secs_f64();
+            eprintln!(
+                "profile: {:.1} fps · ui {:.2} ms · raster {:.2} ms · present {:.2} ms · worst {:.2} ms · dirty {:.1} % · {} ops · thread {:.1} %",
+                n / span.as_secs_f64(),
+                ms(self.ui),
+                ms(self.raster),
+                ms(self.present),
+                self.worst.as_secs_f64() * 1000.0,
+                self.dirty * 100.0 / n,
+                self.ops / self.frames.max(1) as usize,
+                busy * 100.0,
+            );
+            *self = Self::new();
+        }
+    }
+}
+
 fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
     let (w, h) = window.size();
     let started = Instant::now();
@@ -258,6 +314,9 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
     let mut last_frame = Instant::now() - FRAME;
     // PONZIK_DEBUG_INPUT=1 : journal des événements et des ouvertures de menus.
     let debug_input = std::env::var_os("PONZIK_DEBUG_INPUT").is_some();
+    // PONZIK_PROFILE=1 : temps par phase de l'image, toutes les 2 s.
+    let mut profile = std::env::var_os("PONZIK_PROFILE").map(|_| Profile::new());
+    let mut expose = true;
 
     loop {
         // Au repos, on dort jusqu'au prochain événement ; sinon on vise 60 images/s
@@ -309,6 +368,10 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
             if ev == Event::CloseRequested {
                 return Ok(());
             }
+            // Fenêtre découverte ou redimensionnée : l'image entière est renvoyée.
+            if matches!(ev, Event::Redraw | Event::Resized { .. }) {
+                expose = true;
+            }
             dirty |= input.apply(&to_logical(ev, scale));
         }
         clicks.check(&mut input);
@@ -332,14 +395,28 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
             let dt = now.duration_since(last_frame).as_secs_f32();
             last_frame = now;
             let before = (app.popup.is_some(), app.rec.panel);
+            // Image suivie : l'interface est enregistrée, puis seules les zones
+            // qui ont changé sont rastérisées et envoyées à l'écran.
+            canvas.begin_frame();
             app.frame(&mut canvas, &input, dt);
+            let t_frame = Instant::now();
+            canvas.end_frame();
+            let t_raster = Instant::now();
             let after = (app.popup.is_some(), app.rec.panel);
             if debug_input && before != after {
                 eprintln!("[{:>8.3}] menu {} → {} · panneau micro {} → {} (pressed {}, released {})",
                     started.elapsed().as_secs_f64(), before.0, after.0, before.1, after.1, input.pressed, input.released);
             }
             window.set_cursor(app.cursor);
-            window.present(canvas.pixels(), w, h).map_err(|e| e.to_string())?;
+            if std::mem::take(&mut expose) {
+                window.present(canvas.pixels(), w, h).map_err(|e| e.to_string())?;
+            } else {
+                window.present_rects(canvas.pixels(), w, h, canvas.dirty_rects()).map_err(|e| e.to_string())?;
+            }
+            if let Some(p) = profile.as_mut() {
+                let area: usize = canvas.dirty_rects().iter().map(|d| (d.2 - d.0) * (d.3 - d.1)).sum();
+                p.frame(now, t_frame, t_raster, Instant::now(), area as f64 / (w as f64 * h as f64), canvas.recorded_ops());
+            }
             // Taille de l'interface changée pendant l'image : la suivante suit tout de suite.
             dirty = system_scale(Some(window)) * app.ui_scale() != scale;
         }
@@ -539,18 +616,41 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     }
     let mut audio = vec![0.0f32; 800 * 2];
     // ~1,6 s : la tête de lecture tombe sur un temps fort, les VU-mètres sont lancés.
-    let mut drawing = Duration::ZERO;
-    for _ in 0..96 {
+    // PONZIK_BENCH : temps moyen d'une image, complète puis suivie (seules les
+    // zones modifiées sont rastérisées, comme dans la fenêtre).
+    let bench = std::env::var_os("PONZIK_BENCH").is_some();
+    let (mut drawing, mut ui, mut raster, mut dirty) = (Duration::ZERO, Duration::ZERO, Duration::ZERO, 0.0);
+    for i in 0..96 {
         engine.process(&mut audio, 2);
         app.editors_tick();
         let t0 = Instant::now();
-        app.frame(&mut canvas, &input, 1.0 / 60.0);
-        drawing += t0.elapsed();
+        if bench && i >= 48 {
+            canvas.begin_frame();
+            app.frame(&mut canvas, &input, 1.0 / 60.0);
+            let t1 = Instant::now();
+            canvas.end_frame();
+            if i == 48 {
+                continue;
+            }
+            ui += t1 - t0;
+            raster += t1.elapsed();
+            dirty += canvas.dirty_rects().iter().map(|d| (d.2 - d.0) * (d.3 - d.1)).sum::<usize>() as f64 / (pw * ph) as f64;
+        } else {
+            app.frame(&mut canvas, &input, 1.0 / 60.0);
+            drawing += t0.elapsed();
+        }
     }
     app.editors.close_all();
-    // PONZIK_BENCH : temps de dessin moyen d'une image, pour comparer les échelles.
-    if std::env::var_os("PONZIK_BENCH").is_some() {
-        eprintln!("{view:?} · {pw}×{ph} (×{scale}) · {:.2} ms/image", drawing.as_secs_f64() * 1000.0 / 96.0);
+    if bench {
+        let ms = |d: Duration, n: f64| d.as_secs_f64() * 1000.0 / n;
+        eprintln!(
+            "{view:?} · {pw}×{ph} (×{scale}) · full {:.2} ms/image · tracked ui {:.2} + raster {:.2} ms · dirty {:.1} % · {} ops",
+            ms(drawing, 48.0),
+            ms(ui, 47.0),
+            ms(raster, 47.0),
+            dirty * 100.0 / 47.0,
+            canvas.recorded_ops()
+        );
     }
     let png = encode_png(canvas.pixels(), pw, ph);
     std::fs::write(path, png).map_err(|e| format!("{path}: {e}"))
