@@ -127,6 +127,9 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: &dyn Fn(&str
             cmds.push(Command::SetTrackOutput { track: t, output: b.output });
             routing = true;
         }
+        if a.vca != b.vca {
+            cmds.push(Command::SetTrackVca { track: t, vca: b.vca });
+        }
         for s in 0..SEND_SLOTS {
             if a.sends[s] != b.sends[s] {
                 let (target, amount) = b.sends[s];
@@ -226,6 +229,33 @@ mod tests {
         c.tracks[3].inserts[5] = None;
         let cmds = diff(&b, &c, 48_000.0, &none);
         assert!(cmds.iter().any(|c| matches!(c, Command::SetInsertSidechain { track: 3, slot: 5, key: None })));
+    }
+
+    #[test]
+    fn grouping_into_a_bus_reroutes_and_reorders() {
+        let a = demo_project();
+        let mut b = a.clone();
+        let bus = b.add_bus(&[1, 2]).unwrap();
+        let cmds = diff(&a, &b, 48_000.0, &none);
+        let outputs: Vec<(usize, usize)> = cmds
+            .iter()
+            .filter_map(|c| match c {
+                Command::SetTrackOutput { track, output } => Some((*track, *output)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(outputs, [(1, bus), (2, bus)]);
+        assert!(matches!(cmds.last(), Some(Command::SetRoutingOrder(_))));
+        // Replier le bus ne change rien au son.
+        let mut c = b.clone();
+        c.tracks[bus].folded = true;
+        assert!(diff(&b, &c, 48_000.0, &none).is_empty());
+        // Un VCA : une commande par piste pilotée, sans réordonner.
+        let mut d = c.clone();
+        let vca = d.add_vca(&[3, 4]).unwrap();
+        let cmds = diff(&c, &d, 48_000.0, &none);
+        assert_eq!(names(&cmds), ["SetTrackVca", "SetTrackVca"]);
+        assert!(matches!(cmds[0], Command::SetTrackVca { track: 3, vca: Some(v) } if v == vca));
     }
 
     #[test]
