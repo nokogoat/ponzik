@@ -150,6 +150,9 @@ impl PendingOutput {
         let handle = thread::Builder::new()
             .name("ponzik-audio".into())
             .spawn(move || {
+                // Le thread qui nourrit la carte passe avant tout le reste : sans
+                // priorité temps réel, la moindre charge fait sauter des blocs.
+                promote_current_thread();
                 let Self { pcm, channels, period } = self;
                 let mut buf = vec![0.0f32; period * channels];
                 while !flag.load(Ordering::Acquire) {
@@ -218,6 +221,7 @@ impl PendingInput {
         let handle = thread::Builder::new()
             .name("ponzik-capture".into())
             .spawn(move || {
+                promote_current_thread();
                 let Self { pcm, device_channels, period } = self;
                 let mut raw = vec![0.0f32; period * device_channels];
                 let mut stereo = vec![0.0f32; if device_channels == 1 { period * 2 } else { 0 }];
@@ -343,6 +347,35 @@ pub(crate) fn input_devices() -> Vec<DeviceInfo> {
         snd_device_name_free_hint(hints);
     }
     out
+}
+
+#[repr(C)]
+struct SchedParam {
+    sched_priority: c_int,
+}
+
+unsafe extern "C" {
+    fn pthread_self() -> usize;
+    fn pthread_setschedparam(thread: usize, policy: c_int, param: *const SchedParam) -> c_int;
+    fn sched_get_priority_min(policy: c_int) -> c_int;
+    fn sched_get_priority_max(policy: c_int) -> c_int;
+}
+
+/// `SCHED_FIFO` pour le thread courant si le système l'autorise
+/// (`RLIMIT_RTPRIO`, rtkit, `CAP_SYS_NICE`) ; sinon rien ne change.
+/// Un cran au-dessus des threads de calcul du moteur (70), sous PipeWire (80+).
+fn promote_current_thread() -> bool {
+    const SCHED_FIFO: c_int = 1;
+    // SAFETY: appels libc sur le thread courant ; en cas de refus (EPERM),
+    // l'ordonnancement reste celui d'origine.
+    unsafe {
+        let (lo, hi) = (sched_get_priority_min(SCHED_FIFO), sched_get_priority_max(SCHED_FIFO));
+        if lo < 0 || hi < lo {
+            return false;
+        }
+        let param = SchedParam { sched_priority: 72.clamp(lo, hi) };
+        pthread_setschedparam(pthread_self(), SCHED_FIFO, &param) == 0
+    }
 }
 
 /// Vrai si le périphérique s'ouvre vraiment en capture (JACK arrêté, carte
