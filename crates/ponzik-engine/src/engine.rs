@@ -28,6 +28,8 @@ pub const MAX_CHANNELS: usize = 128;
 /// Échantillons du master gardés pour l'oscilloscope (≈ 0,7 s à 24 kHz).
 const SCOPE_QUEUE: usize = 16_384;
 const SCOPE_DECIMATION: u32 = 2;
+/// Plus grande latence compensée par le mixer, en secondes.
+const MAX_LATENCY_SECONDS: f32 = 1.0;
 
 /// Ordres de l'interface au moteur. Les objets lourds (instruments, effets,
 /// séquences) sont préparés par l'interface ; ceux qu'ils remplacent repartent
@@ -142,6 +144,8 @@ struct SharedState {
     input_peak: PeakMeter,
     /// Pire charge DSP depuis la dernière lecture : temps de calcul / durée du bloc.
     load: AtomicU32,
+    /// Latence totale au master, en échantillons.
+    latency: AtomicU32,
 }
 
 /// Côté interface : envoie des commandes, lit l'état publié.
@@ -198,6 +202,17 @@ impl EngineHandle {
     /// Pire charge DSP (1.0 = le bloc a pris tout son temps réel) depuis le dernier appel.
     pub fn take_load(&self) -> f32 {
         f32::from_bits(self.state.load.swap(0, Ordering::Relaxed))
+    }
+
+    /// Latence totale au master, en échantillons : retard du chemin le plus lent
+    /// (inserts des pistes et du master), compensé sur tous les autres.
+    pub fn latency(&self) -> usize {
+        self.state.latency.load(Ordering::Relaxed) as usize
+    }
+
+    /// Latence totale au master, en secondes.
+    pub fn latency_seconds(&self) -> f32 {
+        self.latency() as f32 / self.sample_rate.max(1.0)
     }
 
     /// Échantillons mono du master (24 kHz) arrivés depuis le dernier appel.
@@ -299,13 +314,14 @@ impl Engine {
             track_peaks: (0..TRACKS).map(|_| PeakMeter::default()).collect(),
             input_peak: PeakMeter::default(),
             load: AtomicU32::new(0),
+            latency: AtomicU32::new(0),
         });
         let mut voices = Vec::with_capacity(MAX_AUDIO_VOICES);
         voices.resize(sequence.audio_clips.len().min(MAX_AUDIO_VOICES), AudioVoice::default());
         let engine = Engine {
             sample_rate,
             channels,
-            mixer: Mixer::new(MAX_BLOCK),
+            mixer: Mixer::new(MAX_BLOCK, (sample_rate.max(1.0) * MAX_LATENCY_SECONDS) as usize),
             sequence: Box::new(sequence),
             commands: rx,
             state: state.clone(),
@@ -428,6 +444,7 @@ impl Engine {
             done += n;
         }
         self.state.position.store(self.pos.to_bits(), Ordering::Relaxed);
+        self.state.latency.store(self.mixer.latency() as u32, Ordering::Relaxed);
         if frames > 0 {
             let budget = frames as f32 / self.sample_rate;
             let load = started.elapsed().as_secs_f32() / budget;
@@ -1201,6 +1218,23 @@ mod tests {
         let silent = measure(true);
         assert!(loud < 0.05, "clé jouée : {loud}");
         assert!((silent - 0.25).abs() < 0.03, "clé muette : {silent}");
+    }
+
+    #[test]
+    fn master_latency_is_published() {
+        let (mut engine, mut handle, _) = setup(&[]);
+        run(&mut engine, 256, 256);
+        assert_eq!(handle.latency(), 0);
+        let mut fx = crate::registry::create_effect("limiter").unwrap();
+        fx.set_sample_rate(SR);
+        let lat = fx.latency();
+        handle.send(Command::SetInsert { track: 1, slot: 0, effect: Some(fx) }).unwrap();
+        run(&mut engine, 256, 256);
+        assert_eq!(handle.latency(), lat);
+        assert!((handle.latency_seconds() - lat as f32 / SR).abs() < 1e-9);
+        handle.send(Command::SetInsertBypass { track: 1, slot: 0, bypass: true }).unwrap();
+        run(&mut engine, 256, 256);
+        assert_eq!(handle.latency(), 0);
     }
 
     #[test]

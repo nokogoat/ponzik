@@ -1,5 +1,14 @@
 //! Mixer à pistes fixes, comme FL Studio : la piste 0 est le master, chaque
 //! piste a ses effets en insert, son volume, son pan, une sortie et des envois.
+//!
+//! Compensation de latence (PDC) : au début de chaque bloc, le mixer lit la
+//! latence des inserts actifs ([`Effect::latency`]) et calcule, dans l'ordre de
+//! routage, quand le signal de chaque piste arrive (`arrival`) puis en ressort
+//! (`arrival + own`). L'entrée directe d'une piste (canaux, clips, écoute) est
+//! retardée de `arrival`, et chaque liaison (sortie, envoi, clé d'entrée
+//! latérale) du retard qui manque pour rejoindre le chemin le plus lent. Tout
+//! arrive ainsi aligné au master. Les lignes de retard sont allouées à la
+//! création ; elles ne sont écrites que lorsqu'un retard est demandé.
 
 use ponzik_dsp::util::balance_gains;
 
@@ -28,10 +37,14 @@ pub struct Track {
     pub sidechain: [Option<usize>; INSERT_SLOTS],
     pub(crate) l: Vec<f32>,
     pub(crate) r: Vec<f32>,
+    /// Retard de l'entrée directe (compensation).
+    input_delay: Delay,
+    /// Historique de la sortie post-fader, relu par les liaisons à compenser.
+    output_delay: Delay,
 }
 
 impl Track {
-    fn new(max_block: usize) -> Self {
+    fn new(max_block: usize, max_latency: usize) -> Self {
         Self {
             gain: 1.0,
             pan: 0.0,
@@ -43,6 +56,82 @@ impl Track {
             sidechain: [None; INSERT_SLOTS],
             l: vec![0.0; max_block],
             r: vec![0.0; max_block],
+            input_delay: Delay::new(max_block, max_latency),
+            output_delay: Delay::new(max_block, max_latency),
+        }
+    }
+
+    /// Latence cumulée des inserts actifs.
+    fn insert_latency(&self) -> usize {
+        let active = self.inserts.iter().zip(&self.bypass).filter(|(_, bypass)| !**bypass);
+        active.filter_map(|(fx, _)| fx.as_ref()).map(|fx| fx.latency()).sum()
+    }
+
+    /// Pistes qui reçoivent le signal de `idx` : sa sortie et ses envois actifs.
+    fn destinations(&self, idx: usize) -> impl Iterator<Item = usize> + '_ {
+        let output = if self.output < TRACKS && self.output != idx { self.output } else { MASTER };
+        let sends = self.sends.iter().filter(move |&&(t, amount)| amount > 0.0 && t < TRACKS && t != idx);
+        std::iter::once(output).chain(sends.map(|&(t, _)| t))
+    }
+}
+
+/// Ligne de retard stéréo de la compensation : on écrit un bloc, puis on le
+/// relit `d` échantillons dans le passé. L'historique non écrit (ligne au repos)
+/// est lu comme du silence.
+struct Delay {
+    l: Vec<f32>,
+    r: Vec<f32>,
+    /// Prochaine case écrite.
+    pos: usize,
+    /// Échantillons récents écrits sans interruption.
+    filled: usize,
+}
+
+impl Delay {
+    fn new(max_block: usize, max_latency: usize) -> Self {
+        // `vec!` de zéros : pages réservées mais pas touchées tant que la ligne dort.
+        let len = if max_latency == 0 { 0 } else { max_block + max_latency };
+        Self { l: vec![0.0; len], r: vec![0.0; len], pos: 0, filled: 0 }
+    }
+
+    /// Ligne au repos : l'historique est oublié.
+    fn forget(&mut self) {
+        self.filled = 0;
+    }
+
+    fn write(&mut self, l: &[f32], r: &[f32]) {
+        let len = self.l.len();
+        if len == 0 {
+            return;
+        }
+        for (&a, &b) in l.iter().zip(r) {
+            self.l[self.pos] = a;
+            self.r[self.pos] = b;
+            self.pos += 1;
+            if self.pos == len {
+                self.pos = 0;
+            }
+        }
+        self.filled = (self.filled + l.len()).min(len);
+    }
+
+    /// Les `n` derniers échantillons écrits, retardés de `d` (`d + n` ≤ longueur).
+    fn read(&self, d: usize, n: usize, mut f: impl FnMut(usize, f32, f32)) {
+        let len = self.l.len();
+        debug_assert!(d + n <= len);
+        let mut j = (self.pos + len - n - d) % len;
+        for i in 0..n {
+            // Âge de l'échantillon lu : 0 pour le dernier écrit.
+            let age = d + n - 1 - i;
+            if age < self.filled {
+                f(i, self.l[j], self.r[j]);
+            } else {
+                f(i, 0.0, 0.0);
+            }
+            j += 1;
+            if j == len {
+                j = 0;
+            }
         }
     }
 }
@@ -53,6 +142,19 @@ pub struct Mixer {
     pub order: Box<[usize]>,
     /// Clé muette, pour une piste clé pas encore traitée (ordre périmé).
     silence: Vec<f32>,
+    /// Clé d'entrée latérale retardée (compensation).
+    key_l: Vec<f32>,
+    key_r: Vec<f32>,
+    /// Plus grand retard compensable, en échantillons.
+    max_latency: usize,
+    /// Latence à l'entrée de chaque piste (chemin le plus lent qui y mène).
+    arrival: [usize; TRACKS],
+    /// Latence des inserts actifs de chaque piste.
+    own: [usize; TRACKS],
+    /// La sortie de la piste est relue en retard par au moins une liaison.
+    history: [bool; TRACKS],
+    /// Latence totale au master, inserts du master compris.
+    latency: usize,
 }
 
 /// Ordre par défaut : toutes les pistes vont directement au master.
@@ -104,12 +206,79 @@ fn pair(tracks: &mut [Track], a: usize, b: usize) -> (&mut Track, &mut Track) {
 }
 
 impl Mixer {
-    pub fn new(max_block: usize) -> Self {
+    /// `max_latency` : plus grand retard compensé, en échantillons (0 : pas de compensation).
+    pub fn new(max_block: usize, max_latency: usize) -> Self {
         Self {
-            tracks: (0..TRACKS).map(|_| Track::new(max_block)).collect(),
+            tracks: (0..TRACKS).map(|_| Track::new(max_block, max_latency)).collect(),
             order: default_order(),
             silence: vec![0.0; max_block],
+            key_l: vec![0.0; max_block],
+            key_r: vec![0.0; max_block],
+            max_latency,
+            arrival: [0; TRACKS],
+            own: [0; TRACKS],
+            history: [false; TRACKS],
+            latency: 0,
         }
+    }
+
+    /// Latence totale au master, en échantillons, mesurée au dernier bloc :
+    /// retard du chemin le plus lent, inserts du master compris.
+    pub fn latency(&self) -> usize {
+        self.latency
+    }
+
+    /// Retard qui manque à un signal de latence `have` pour rejoindre `want`.
+    fn gap(&self, want: usize, have: usize) -> usize {
+        want.saturating_sub(have).min(self.max_latency)
+    }
+
+    /// Latence de sortie de la piste (entrée + inserts).
+    fn out_latency(&self, idx: usize) -> usize {
+        self.arrival[idx] + self.own[idx]
+    }
+
+    /// Latences du bloc à venir, dans l'ordre de routage (sources avant destinations).
+    fn plan_latency(&mut self) {
+        self.arrival = [0; TRACKS];
+        self.own = [0; TRACKS];
+        self.history = [false; TRACKS];
+        let mut seen = [false; TRACKS];
+        for k in 0..self.order.len() {
+            let idx = self.order[k];
+            if idx == MASTER || idx >= TRACKS || seen[idx] {
+                continue;
+            }
+            seen[idx] = true;
+            let t = &self.tracks[idx];
+            self.own[idx] = t.insert_latency();
+            let out = self.out_latency(idx);
+            for dst in t.destinations(idx) {
+                self.arrival[dst] = self.arrival[dst].max(out);
+            }
+        }
+        self.own[MASTER] = self.tracks[MASTER].insert_latency();
+        seen[MASTER] = true;
+
+        // Une sortie n'est historisée que si une liaison la relit en retard.
+        for idx in (0..TRACKS).filter(|&t| seen[t]) {
+            let t = &self.tracks[idx];
+            if idx != MASTER {
+                let out = self.out_latency(idx);
+                self.history[idx] |= t.destinations(idx).any(|dst| self.gap(self.arrival[dst], out) > 0);
+            }
+            let mut at = self.arrival[idx];
+            for slot in 0..INSERT_SLOTS {
+                let Some(fx) = t.inserts[slot].as_ref().filter(|_| !t.bypass[slot]) else { continue };
+                if let Some(k) = t.sidechain[slot].filter(|&k| k < TRACKS && k != idx && k != MASTER)
+                    && self.gap(at, self.out_latency(k)) > 0
+                {
+                    self.history[k] = true;
+                }
+                at += fx.latency();
+            }
+        }
+        self.latency = self.out_latency(MASTER);
     }
 
     pub(crate) fn clear(&mut self, n: usize) {
@@ -127,13 +296,27 @@ impl Mixer {
 
     /// Inserts de la piste `idx` ; `ready[k]` : la piste `k` est déjà traitée dans ce bloc.
     fn run_inserts(&mut self, idx: usize, n: usize, ready: &[bool; TRACKS]) {
-        let Self { tracks, silence, .. } = self;
+        // Latence du signal de la piste à l'entrée de l'insert courant.
+        let mut at = self.arrival[idx];
         for slot in 0..INSERT_SLOTS {
-            let key = tracks[idx].sidechain[slot].filter(|&k| k < TRACKS && k != idx);
+            let key = self.tracks[idx].sidechain[slot].filter(|&k| k < TRACKS && k != idx);
+            let delay = key.map_or(0, |k| self.gap(at, self.out_latency(k)));
+            let Self { tracks, silence, key_l, key_r, .. } = self;
             let (t, key) = match key {
                 Some(k) => {
                     let (t, kt) = pair(tracks, idx, k);
-                    let key = if ready[k] { (&kt.l[..n], &kt.r[..n]) } else { (&silence[..n], &silence[..n]) };
+                    let key = if !ready[k] {
+                        (&silence[..n], &silence[..n])
+                    } else if delay > 0 {
+                        // Clé en avance sur le signal qu'elle pilote : on la retarde.
+                        kt.output_delay.read(delay, n, |i, l, r| {
+                            key_l[i] = l;
+                            key_r[i] = r;
+                        });
+                        (&key_l[..n], &key_r[..n])
+                    } else {
+                        (&kt.l[..n], &kt.r[..n])
+                    };
                     (t, Some(key))
                 }
                 None => (&mut tracks[idx], None),
@@ -142,6 +325,7 @@ impl Mixer {
                 continue;
             }
             let Some(fx) = t.inserts[slot].as_mut() else { continue };
+            at += fx.latency();
             if let Some((kl, kr)) = key {
                 fx.sidechain(kl, kr);
             }
@@ -149,8 +333,47 @@ impl Mixer {
         }
     }
 
+    /// Ajoute la sortie de `src` à `dst` (× `amount`), retardée pour rejoindre
+    /// le chemin le plus lent qui arrive à `dst`.
+    fn route(&mut self, src: usize, dst: usize, amount: f32, n: usize) {
+        let delay = self.gap(self.arrival[dst], self.out_latency(src));
+        let (s, d) = pair(&mut self.tracks, src, dst);
+        if delay == 0 {
+            for i in 0..n {
+                d.l[i] += s.l[i] * amount;
+                d.r[i] += s.r[i] * amount;
+            }
+        } else {
+            let Track { l, r, .. } = d;
+            s.output_delay.read(delay, n, |i, a, b| {
+                l[i] += a * amount;
+                r[i] += b * amount;
+            });
+        }
+    }
+
+    /// Retarde l'entrée directe de chaque piste (canaux, clips, écoute, métronome)
+    /// de la latence des pistes qui y arrivent.
+    fn delay_inputs(&mut self, n: usize) {
+        for idx in 0..TRACKS {
+            let delay = self.gap(self.arrival[idx], 0);
+            let Track { l, r, input_delay, .. } = &mut self.tracks[idx];
+            if delay == 0 {
+                input_delay.forget();
+                continue;
+            }
+            input_delay.write(&l[..n], &r[..n]);
+            input_delay.read(delay, n, |i, a, b| {
+                l[i] = a;
+                r[i] = b;
+            });
+        }
+    }
+
     /// Traite toutes les pistes ; le résultat est dans le master.
     pub(crate) fn process(&mut self, n: usize, meters: &[PeakMeter]) {
+        self.plan_latency();
+        self.delay_inputs(n);
         let mut ready = [false; TRACKS];
         for k in 0..self.order.len() {
             let idx = self.order[k];
@@ -167,23 +390,19 @@ impl Mixer {
                 t.r[i] *= gr;
             }
             meters[idx].record(peak(&t.l[..n]), peak(&t.r[..n]));
+            if self.history[idx] {
+                let Track { l, r, output_delay, .. } = t;
+                output_delay.write(&l[..n], &r[..n]);
+            } else {
+                t.output_delay.forget();
+            }
 
             let output = if t.output < TRACKS && t.output != idx { t.output } else { MASTER };
             let sends = t.sends;
-            {
-                let (src, dst) = pair(&mut self.tracks, idx, output);
-                for i in 0..n {
-                    dst.l[i] += src.l[i];
-                    dst.r[i] += src.r[i];
-                }
-            }
+            self.route(idx, output, 1.0, n);
             for (target, amount) in sends {
                 if amount > 0.0 && target < TRACKS && target != idx {
-                    let (src, dst) = pair(&mut self.tracks, idx, target);
-                    for i in 0..n {
-                        dst.l[i] += src.l[i] * amount;
-                        dst.r[i] += src.r[i] * amount;
-                    }
+                    self.route(idx, target, amount, n);
                 }
             }
         }
@@ -219,6 +438,8 @@ impl Mixer {
             for fx in t.inserts.iter_mut().flatten() {
                 fx.reset();
             }
+            t.input_delay.forget();
+            t.output_delay.forget();
         }
     }
 }
@@ -244,7 +465,7 @@ mod tests {
 
     #[test]
     fn routing_sends_and_master() {
-        let mut m = Mixer::new(8);
+        let mut m = Mixer::new(8, 1_024);
         let meters: Vec<PeakMeter> = (0..TRACKS).map(|_| PeakMeter::default()).collect();
         m.tracks[1].output = 2;
         m.tracks[1].sends[0] = (3, 0.5);
@@ -267,7 +488,7 @@ mod tests {
 
     /// Piste 1 (signal 0,1) compressée avec la piste 2 comme clé ; renvoie la crête de la piste 1.
     fn keyed_peak(key_level: f32) -> f32 {
-        let mut m = Mixer::new(256);
+        let mut m = Mixer::new(256, 4_800);
         let meters: Vec<PeakMeter> = (0..TRACKS).map(|_| PeakMeter::default()).collect();
         let mut fx = crate::registry::create_effect("compressor").unwrap();
         fx.set_param(0, -30.0);
@@ -315,5 +536,158 @@ mod tests {
         let mut own = vec![Vec::new(); 3];
         own[1] = vec![0, 1];
         assert!(routing_order(&own).is_none());
+    }
+
+    // --- Compensation de latence ---
+
+    const SR: f32 = 48_000.0;
+
+    fn meters() -> Vec<PeakMeter> {
+        (0..TRACKS).map(|_| PeakMeter::default()).collect()
+    }
+
+    fn limiter() -> Box<dyn Effect> {
+        let mut fx = crate::registry::create_effect("limiter").unwrap();
+        fx.set_sample_rate(SR);
+        fx
+    }
+
+    /// Ordre de routage déduit des sorties, envois et clés des pistes.
+    fn reorder(m: &mut Mixer) {
+        let mut edges = vec![Vec::new(); TRACKS];
+        for (idx, t) in m.tracks.iter().enumerate().skip(1) {
+            edges[idx].extend(t.destinations(idx));
+            for k in t.sidechain.iter().flatten() {
+                edges[*k].push(idx);
+            }
+        }
+        m.order = routing_order(&edges).unwrap();
+    }
+
+    /// Impulsion de 0,25 au premier échantillon des pistes `inputs` ; renvoie le master gauche.
+    fn impulse(m: &mut Mixer, inputs: &[usize], frames: usize, block: usize) -> Vec<f32> {
+        let meters = meters();
+        let mut out = Vec::new();
+        let mut first = true;
+        while out.len() < frames {
+            let n = block.min(frames - out.len());
+            m.clear(n);
+            if first {
+                for &t in inputs {
+                    m.input(t, n).0[0] = 0.25;
+                }
+                first = false;
+            }
+            m.process(n, &meters);
+            out.extend_from_slice(m.master(n).0);
+        }
+        out
+    }
+
+    /// Indice de la crête.
+    fn argmax(x: &[f32]) -> usize {
+        (0..x.len()).max_by(|&a, &b| x[a].abs().total_cmp(&x[b].abs())).unwrap()
+    }
+
+    #[test]
+    fn limited_and_dry_tracks_arrive_together() {
+        let lat = limiter().latency();
+        assert!(lat > 64, "l'anticipation dépasse un bloc : {lat}");
+        let mut m = Mixer::new(64, 4_800);
+        m.tracks[1].inserts[0] = Some(limiter());
+        reorder(&mut m);
+        let limited = impulse(&mut m, &[1], 2_000, 64);
+        let dry = impulse(&mut m, &[2], 2_000, 64);
+        assert_eq!(m.latency(), lat);
+        assert_eq!(argmax(&limited), lat);
+        assert_eq!(argmax(&dry), lat, "la piste sans limiteur est retardée d'autant");
+        assert!((dry[lat] - 0.25).abs() < 1e-6 && (limited[lat] - 0.25).abs() < 1e-6);
+        assert_eq!(dry.iter().filter(|s| **s != 0.0).count(), 1, "rien d'autre que l'impulsion");
+
+        // Limiteur contourné : plus de latence, plus de retard.
+        m.tracks[1].bypass[0] = true;
+        let dry = impulse(&mut m, &[2], 256, 64);
+        assert_eq!((m.latency(), argmax(&dry)), (0, 0));
+    }
+
+    #[test]
+    fn send_to_a_latent_bus_is_compensated() {
+        // Piste 1 → master en direct et envoi vers le bus 3 limité ; le direct attend le bus.
+        let lat = limiter().latency();
+        let mut m = Mixer::new(64, 4_800);
+        m.tracks[1].sends[0] = (3, 0.5);
+        m.tracks[3].inserts[0] = Some(limiter());
+        reorder(&mut m);
+        let out = impulse(&mut m, &[1], 2_000, 64);
+        assert_eq!(m.latency(), lat);
+        assert!((out[lat] - 0.375).abs() < 1e-6, "direct 0,25 + envoi 0,125 au même échantillon : {}", out[lat]);
+        assert_eq!(out.iter().filter(|s| **s != 0.0).count(), 1);
+    }
+
+    #[test]
+    fn chained_buses_add_their_latency() {
+        // Piste 1 limitée → bus 2 limité → master ; piste 3 sèche → master.
+        let lat = limiter().latency();
+        let mut m = Mixer::new(64, 4_800);
+        m.tracks[1].inserts[0] = Some(limiter());
+        m.tracks[1].output = 2;
+        m.tracks[2].inserts[0] = Some(limiter());
+        reorder(&mut m);
+        assert_eq!(argmax(&impulse(&mut m, &[1], 2_000, 64)), 2 * lat);
+        assert_eq!(argmax(&impulse(&mut m, &[3], 2_000, 64)), 2 * lat);
+        // L'entrée directe du bus 2 attend aussi la piste 1.
+        assert_eq!(argmax(&impulse(&mut m, &[2], 2_000, 64)), 2 * lat);
+        assert_eq!(m.latency(), 2 * lat);
+    }
+
+    /// Remplace le signal par la clé reçue.
+    struct KeyEcho([f32; 64], [f32; 64]);
+
+    impl crate::param::Params for KeyEcho {}
+
+    impl Effect for KeyEcho {
+        fn kind(&self) -> &'static str {
+            "key_echo"
+        }
+
+        fn set_sample_rate(&mut self, _: f32) {}
+
+        fn sidechain(&mut self, l: &[f32], r: &[f32]) {
+            self.0[..l.len()].copy_from_slice(l);
+            self.1[..r.len()].copy_from_slice(r);
+        }
+
+        fn process(&mut self, l: &mut [f32], r: &mut [f32]) {
+            l.copy_from_slice(&self.0[..l.len()]);
+            r.copy_from_slice(&self.1[..r.len()]);
+        }
+    }
+
+    #[test]
+    fn sidechain_key_is_aligned_with_the_keyed_signal() {
+        // Piste 1 : limiteur puis un insert piloté par la piste 2 (sèche) ; la clé
+        // doit arriver à l'insert en même temps que le signal limité.
+        let lat = limiter().latency();
+        let mut m = Mixer::new(64, 4_800);
+        m.tracks[1].inserts[0] = Some(limiter());
+        m.tracks[1].inserts[1] = Some(Box::new(KeyEcho([0.0; 64], [0.0; 64])));
+        m.tracks[1].sidechain[1] = Some(2);
+        reorder(&mut m);
+        let out = impulse(&mut m, &[2], 2_000, 64);
+        // Piste 2 au master (retardée de `lat`) + écho de la clé par la piste 1 (à `lat`).
+        assert!((out[lat] - 0.5).abs() < 1e-6, "{}", out[lat]);
+        assert_eq!(out.iter().filter(|s| **s != 0.0).count(), 1);
+    }
+
+    #[test]
+    fn without_latency_nothing_is_delayed() {
+        let mut m = Mixer::new(64, 4_800);
+        m.tracks[1].sends[0] = (3, 0.5);
+        m.tracks[1].output = 2;
+        reorder(&mut m);
+        let out = impulse(&mut m, &[1, 4], 128, 64);
+        assert!((out[0] - 0.625).abs() < 1e-6);
+        assert_eq!(m.latency(), 0);
+        assert!(m.tracks.iter().all(|t| t.input_delay.filled == 0 && t.output_delay.filled == 0));
     }
 }
