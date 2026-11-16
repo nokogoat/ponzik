@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use ponzik_dsp::loudness::LoudnessMeter;
+use ponzik_dsp::spectrum::SpectrumAnalyzer;
 use ponzik_engine::mixer::{MASTER, TRACKS};
 use ponzik_engine::registry;
 use ponzik_engine::{Command, EngineHandle, PlayMode, Sample, TICKS_PER_BAR, TICKS_PER_STEP};
@@ -19,6 +21,10 @@ use super::theme::*;
 use super::widgets::{Icon, TipState, draw_icon, wid};
 
 const SCOPE_LEN: usize = 8_192;
+/// Le moteur ne garde qu'un échantillon sur deux du master pour l'interface.
+const SCOPE_DECIMATION: u32 = 2;
+/// Taille de l'analyseur de spectre du master.
+const SPECTRUM_SIZE: usize = 4_096;
 /// Échantillons par paquet de crêtes des formes d'onde.
 pub const WAVE_BUCKET: usize = 256;
 const HISTORY_CAP: usize = 200;
@@ -365,6 +371,11 @@ pub struct App {
     pub track_meters: Vec<Meter>,
     pub scope: Vec<f32>,
     pub scope_at: usize,
+    /// Échantillons du master arrivés pendant cette image.
+    scope_new: Vec<f32>,
+    /// Sonie (BS.1770) et spectre du master, calculés sur le flux de l'oscilloscope.
+    pub loudness: LoudnessMeter,
+    pub spectrum: SpectrumAnalyzer,
     pub load: f32,
 
     pub anim: Anim,
@@ -476,6 +487,9 @@ impl App {
             track_meters: vec![Meter::default(); TRACKS],
             scope: vec![0.0; SCOPE_LEN],
             scope_at: 0,
+            scope_new: Vec::with_capacity(SCOPE_LEN),
+            loudness: master_loudness(sample_rate),
+            spectrum: master_spectrum(sample_rate),
             load: 0.0,
             anim: Anim::new(),
             drag: None,
@@ -1042,6 +1056,8 @@ impl App {
             self.send(Command::Locate(self.start_marker));
             self.playing = true;
             self.send(Command::Play);
+            // Nouvelle écoute : la sonie intégrée repart de zéro.
+            self.loudness.reset();
         }
     }
 
@@ -1213,11 +1229,17 @@ impl App {
         }
         let load = self.engine.take_load();
         self.load += (load - self.load) * (1.0 - (-dt / 0.4).exp());
-        let (scope, at) = (&mut self.scope, &mut self.scope_at);
+        let (scope, at, new) = (&mut self.scope, &mut self.scope_at, &mut self.scope_new);
+        new.clear();
         self.engine.drain_scope(|s| {
             scope[*at] = s;
             *at = (*at + 1) % SCOPE_LEN;
+            new.push(s);
         });
+        if !self.scope_new.is_empty() {
+            self.loudness.process(&[&self.scope_new]);
+            self.spectrum.push(&self.scope_new);
+        }
     }
 
     /// Position dans la boucle courante, en ticks.
@@ -2684,4 +2706,21 @@ fn scale_label(key: u8, scale: ScaleKind) -> String {
         ScaleKind::Blues => "blues",
     };
     format!("{} {mode}", key_name(key))
+}
+
+/// Sonie-mètre du master, sur le flux mono (moitié de la fréquence d'échantillonnage).
+/// Le flux est la moyenne (G + D) / 2 : pour un signal centré, son énergie est la
+/// moitié de la somme stéréo de BS.1770. Le poids 2 du canal rend la mesure stéréo.
+fn master_loudness(sample_rate: u32) -> LoudnessMeter {
+    let mut m = LoudnessMeter::new((sample_rate / SCOPE_DECIMATION) as f32, 1);
+    m.set_channel_weight(0, 2.0);
+    m
+}
+
+/// Analyseur du master : 4096 points, 75 % de recouvrement, pente de 4,5 dB/octave
+/// comme les analyseurs d'EQ (un mix équilibré paraît à plat).
+fn master_spectrum(sample_rate: u32) -> SpectrumAnalyzer {
+    let mut s = SpectrumAnalyzer::new((sample_rate / SCOPE_DECIMATION) as f32, SPECTRUM_SIZE, 0.75);
+    s.set_tilt(4.5);
+    s
 }

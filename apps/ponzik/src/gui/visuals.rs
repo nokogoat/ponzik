@@ -52,6 +52,10 @@ fn freq_grid(app: &mut App, c: &mut Canvas, r: Rect, db_range: f32, db_lines: &[
 
 /// Courbe remplie jusqu'à la ligne `base_y`.
 fn filled_curve(c: &mut Canvas, pts: &[(f32, f32)], base_y: f32, fill: ponzik_ui::Color, stroke: ponzik_ui::Color) {
+    filled_curve_width(c, pts, base_y, fill, stroke, 2.0);
+}
+
+fn filled_curve_width(c: &mut Canvas, pts: &[(f32, f32)], base_y: f32, fill: ponzik_ui::Color, stroke: ponzik_ui::Color, width: f32) {
     if pts.len() < 2 {
         return;
     }
@@ -61,7 +65,7 @@ fn filled_curve(c: &mut Canvas, pts: &[(f32, f32)], base_y: f32, fill: ponzik_ui
     let mut p = Path::new();
     p.polygon(&area);
     c.fill_path(&p, fill);
-    c.stroke_polyline(pts, 2.0, stroke);
+    c.stroke_polyline(pts, width, stroke);
 }
 
 /// Une poignée d'EQ : bande, paramètres liés, libellé.
@@ -84,7 +88,32 @@ const EQ_HANDLES: [Handle; 7] = [
 ];
 const EQ_RANGE: f32 = 20.0;
 
+/// Plage affichée du spectre du master (dB, pente comprise).
+const SPECTRUM_DB: (f32, f32) = (-90.0, 50.0);
+
 impl App {
+    /// Spectre du master, discret, rempli jusqu'au bas de `r`.
+    pub(super) fn draw_spectrum(&self, c: &mut Canvas, r: Rect, fill: ponzik_ui::Color, stroke: ponzik_ui::Color) {
+        // Le flux du master est sous-échantillonné : rien au-dessus de sa moitié.
+        let f_max = F_MAX.min(self.spectrum.bin_hz() * (self.spectrum.size() / 2) as f32);
+        let n = ((x_of_freq(r, f_max) - r.x) / 3.0).clamp(16.0, 256.0) as usize;
+        let mut bands = vec![0.0f32; n];
+        self.spectrum.bins(n, F_MIN, f_max, &mut bands);
+        let (lo, hi) = SPECTRUM_DB;
+        let pts: Vec<(f32, f32)> = bands
+            .iter()
+            .enumerate()
+            .map(|(i, &d)| {
+                let f = ponzik_dsp::spectrum::SpectrumAnalyzer::band_center(i, n, F_MIN, f_max);
+                (x_of_freq(r, f), r.bottom() - ((d - lo) / (hi - lo)).clamp(0.0, 1.0) * r.h)
+            })
+            .collect();
+        if pts.iter().all(|p| p.1 >= r.bottom() - 0.5) {
+            return;
+        }
+        filled_curve_width(c, &pts, r.bottom(), fill, stroke, 1.2);
+    }
+
     fn info(params: &[ParamInfo], id: u32) -> Option<&ParamInfo> {
         params.iter().find(|p| p.id == id)
     }
@@ -144,6 +173,10 @@ impl App {
                 (x, y_of(self.eq_response(device, params, freq_of_x(graph, x))))
             })
             .collect();
+        // EQ du master : le spectre de ce qui sort, en fond.
+        if let Device::Effect { track: ponzik_engine::mixer::MASTER, .. } = device {
+            self.draw_spectrum(c, graph, t.select.alpha(0.07), t.select.alpha(0.22));
+        }
         filled_curve(c, &pts, mid, t.accent.alpha(0.14), t.accent);
 
         // Poignées.

@@ -47,6 +47,12 @@ pub fn fmt_pan(pan: f32) -> String {
     }
 }
 
+/// « −9,8 » : une décimale, virgule et vrai signe moins.
+fn fmt_lufs(v: f32) -> String {
+    let s = format!("{:.1}", v.abs()).replace('.', ",");
+    if v < -0.05 { format!("−{s}") } else { s }
+}
+
 fn fmt_tick(d: f32) -> String {
     match d {
         d if d > 0.0 => format!("+{d:.0}"),
@@ -231,6 +237,9 @@ impl App {
             }
             y += 26.0;
         }
+        if tr == MASTER {
+            self.loudness_box(c, input, Rect::new(inner.x, sends_top, inner.w, 46.0));
+        }
         y = sends_top + 52.0;
 
         // Pan.
@@ -310,6 +319,41 @@ impl App {
             if shov {
                 self.set_tip("Solo", "");
             }
+        }
+    }
+
+    /// Sonie du master : intégrée en chiffres, court terme en barre (−36 à 0 LUFS),
+    /// le spectre en fond. Clic : la mesure repart de zéro.
+    fn loudness_box(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
+        let t = self.theme;
+        let id = wid("mx-lufs", 0, 0);
+        let hov = self.hovered(input, id, r);
+        let hv = self.hover_anim(id, hov);
+        c.fill_rrect(r, 8.0, t.well.mix(t.raised, hv * 0.4));
+        let prev = c.push_clip(r.inset(1.0));
+        self.draw_spectrum(c, r, t.select.alpha(0.07), t.select.alpha(0.22));
+        c.set_clip(Some(prev));
+        let (integrated, short) = (self.loudness.integrated(), self.loudness.short_term());
+        let fmt = |v: f32| if v.is_finite() { fmt_lufs(v) } else { "—".into() };
+        let big = fmt(integrated);
+        let x = self.text(c, self.f.mono_med, 15.0, r.x + 8.0, r.y + 15.0, &big, if integrated.is_finite() { t.text } else { t.muted });
+        self.text(c, self.f.sans, 10.0, r.x + 8.0 + x + 4.0, r.y + 16.0, "LUFS", t.muted);
+        // Court terme : une barre sous le chiffre, le repère à −14 LUFS (streaming).
+        let bar = Rect::new(r.x + 8.0, r.bottom() - 13.0, r.w - 16.0, 4.0);
+        c.fill_rrect(bar, 2.0, t.raised_hi);
+        let pos = |v: f32| ((v + 36.0) / 36.0).clamp(0.0, 1.0);
+        if short.is_finite() {
+            let w = (bar.w * pos(short)).max(4.0);
+            let col = if short > -6.0 { t.negative } else { t.accent };
+            c.fill_rrect(Rect::new(bar.x, bar.y, w, bar.h), 2.0, col);
+        }
+        c.fill_rect(Rect::new((bar.x + bar.w * pos(-14.0)).round(), bar.y - 2.0, 1.0, bar.h + 4.0), t.text2.alpha(0.7));
+        if hov {
+            let tip = format!("Sonie du master\nIntégrée {} · 3 s {}\nClic : remettre à zéro", fmt(integrated), fmt(short));
+            self.set_tip(&tip, "");
+        }
+        if hov && input.pressed {
+            self.loudness.reset();
         }
     }
 
