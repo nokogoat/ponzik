@@ -13,6 +13,15 @@
 //! sortie, pour une écoute de contrôle sans retard ajouté. Sous ALSA, la
 //! capture est lue directement par le thread de sortie ; sous WASAPI, son
 //! thread dépose les trames dans une file sans verrou relue par la sortie.
+//!
+//! Un pilote (module `backend`, voir `unsupported.rs` pour le squelette) fournit :
+//! `open_default` (sortie), `open_input` (entrée par identifiant),
+//! `input_devices`, `PendingOutput::start(Duplex)` qui appelle
+//! `Duplex::render` à chaque cycle avec le retard de sortie mesuré, et
+//! `attach`, qui transforme une entrée ouverte en `CaptureSource` relue par
+//! le thread de sortie. Le reste (file d'entrée, latences publiées, échange
+//! d'entrée à chaud) est commun : un pilote CoreAudio n'aurait qu'à lire son
+//! unité d'entrée dans son rappel de sortie, comme ALSA.
 
 use std::fmt;
 use std::sync::Arc;
