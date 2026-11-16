@@ -270,7 +270,7 @@ should guide the order.
 | V4-7 | **One-click vocal setup**: input picker, meter with clip warning, monitoring, a ready vocal chain (gate, EQ, de-esser, compressor, reverb send) | Turns FL's most common beginner problem into a 10-second task (Logic, Studio Pro, Nectar) | M | ui, engine (de-esser) | V4-3, V4-5 | ⬜ |
 | V4-8 | **Capture Automation**: a buffer of recent parameter moves turned into automation after the fact | Never lose a good gesture (Live 13); the automation twin of MIDI capture | M | engine, ui | V2-8 | ⬜ |
 | V4-9 | **Retroactive audio logger**: always-on buffer of the master and armed inputs, "save the last N minutes" | Recover a jam or a vocal idea that was not armed (FL 2026 Audio Logger) | M | engine, ui | – | ⬜ |
-| V4-10 | **MIDI output, external instruments and MIDI clock out** (ALSA rawmidi, WinMM out) | Ponzik is input-only: no hardware synths, no syncing drum machines | M | midi, engine, ui | – | ⬜ |
+| V4-10 | **MIDI output, external instruments and MIDI clock out** (ALSA rawmidi, WinMM out) | Ponzik is input-only: no hardware synths, no syncing drum machines | M | midi, engine, ui | – | ✅ |
 | V4-11 | **Control surfaces**: Mackie Control and HUI, controller templates for faders and transport | Studio users expect hardware faders and transport | M | midi, ui | V2-7, V4-10 | ⬜ |
 | V4-12 | **Key and chord detection**: from MIDI first, then audio (chromagram), feeding the project scale and chord tools | Find the key of a sample or an idea (Logic 12 Chord ID, Live) | M | dsp, project, ui | V1-3 | ⬜ |
 | V4-13 | **Note properties**: slide notes and portamento, per-note pan and fine pitch, CC event lanes | FL's slides and controller lanes are daily tools for 808s and leads | M | engine, project, ui (piano.rs) | – | ⬜ |
