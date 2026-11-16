@@ -259,10 +259,10 @@ impl Core {
             unsafe { ((*plugin).destroy)(plugin) };
             return Err(format!("initialization of \"{id}\" failed"));
         }
-        shared.attach(plugin);
         let params_ext = ext::<ClapPluginParams>(plugin, CLAP_EXT_PARAMS);
         let kind = crate::kind_for(path, id);
         let (kind, infos) = shared_infos(kind, plugin, params_ext);
+        shared.attach(plugin, infos.iter().map(|p| p.id).collect());
         let cookies = cookies(plugin, params_ext);
         let mut values: Vec<Param> = infos
             .iter()

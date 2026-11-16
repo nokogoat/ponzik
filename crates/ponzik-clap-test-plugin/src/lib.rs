@@ -6,7 +6,7 @@
 //! (`clap.timer-support`) dont le premier tick simule une édition du gain à
 //! 0,25 (gestes et valeur sortent au `process` suivant), et, sous Unix, un tube
 //! surveillé (`clap.posix-fd-support`) dont la lecture demande à l'hôte un
-//! redimensionnement à 420 × 260.
+//! redimensionnement à 420 × 260 et de relire les valeurs (`rescan`).
 //!
 //! Construire avec `cargo build -p ponzik-clap-test-plugin` avant
 //! `cargo test -p ponzik-clap`.
@@ -620,6 +620,11 @@ unsafe extern "C" fn on_fd(p: *const ClapPlugin, fd: i32, flags: u32) {
         if let Some(gui) = host_ext::<ClapHostGui>(t, CLAP_EXT_GUI) {
             // SAFETY : extension de l'hôte, appelée sur son thread principal.
             unsafe { (gui.request_resize)(t.host, GUI_REQUEST.0, GUI_REQUEST.1) };
+        }
+        // Comme après un preset chargé dans l'interface : l'hôte relit les valeurs.
+        if let Some(params) = host_ext::<ClapHostParams>(t, CLAP_EXT_PARAMS) {
+            // SAFETY : extension de l'hôte, appelée sur son thread principal.
+            unsafe { (params.rescan)(t.host, CLAP_PARAM_RESCAN_VALUES) };
         }
     }
     #[cfg(not(unix))]

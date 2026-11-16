@@ -207,6 +207,8 @@ pub struct ClapOutputEvents {
 pub const CLAP_EXT_PARAMS: &[u8] = b"clap.params\0";
 pub const CLAP_PARAM_IS_STEPPED: u32 = 1 << 0;
 pub const CLAP_PARAM_IS_HIDDEN: u32 = 1 << 2;
+/// `clap_host_params.rescan` : les valeurs ont changé (preset chargé).
+pub const CLAP_PARAM_RESCAN_VALUES: u32 = 1 << 0;
 
 #[repr(C)]
 pub struct ClapParamInfo {

@@ -56,6 +56,9 @@ struct State {
     fd: *const ClapPluginPosixFdSupport,
     has_gui: bool,
     open: bool,
+    params: *const ClapPluginParams,
+    /// Exposed parameters, read again after `rescan(CLAP_PARAM_RESCAN_VALUES)`.
+    ids: Vec<ClapId>,
 }
 
 /// State shared by the host callbacks, the instance (audio thread) and its editor (UI thread).
@@ -67,6 +70,8 @@ pub(crate) struct HostShared {
     out: Mutex<Consumer<OutMsg>>,
     /// `request_callback`: `on_main_thread` is due.
     callback: AtomicBool,
+    /// `clap.params` `rescan` with new values (preset loaded in the plugin).
+    rescan: AtomicBool,
 }
 
 // SAFETY: the plugin pointers are only used on the UI thread, under `state`.
@@ -105,17 +110,20 @@ impl HostShared {
                 fd: null(),
                 has_gui: false,
                 open: false,
+                params: null(),
+                ids: Vec::new(),
             }),
             run_loop: Mutex::new(RunLoop::new()),
             events: Mutex::new(Vec::new()),
             out: Mutex::new(rx),
             callback: AtomicBool::new(false),
+            rescan: AtomicBool::new(false),
         };
         (Arc::new(shared), tx)
     }
 
     /// The plugin is initialized: its extensions can be queried.
-    pub(crate) fn attach(&self, plugin: *const ClapPlugin) {
+    pub(crate) fn attach(&self, plugin: *const ClapPlugin, ids: Vec<ClapId>) {
         let ext = |id: &[u8]| {
             // SAFETY: initialized plugin, NUL-terminated id.
             unsafe { ((*plugin).get_extension)(plugin, id.as_ptr().cast()) }
@@ -129,6 +137,8 @@ impl HostShared {
         st.timer = ext(CLAP_EXT_TIMER_SUPPORT).cast();
         st.fd = ext(CLAP_EXT_POSIX_FD_SUPPORT).cast();
         st.has_gui = has_gui;
+        st.params = ext(CLAP_EXT_PARAMS).cast();
+        st.ids = ids;
     }
 
     /// The plugin is about to be destroyed: its interface goes first, and the
@@ -140,6 +150,7 @@ impl HostShared {
         st.gui = null();
         st.timer = null();
         st.fd = null();
+        st.params = null();
         st.has_gui = false;
         *lock(&self.run_loop) = RunLoop::new();
     }
@@ -294,7 +305,13 @@ unsafe extern "C" fn fd_unregister(host: *const ClapHost, fd: i32) -> bool {
     shared(host).is_some_and(|s| lock(&s.run_loop).remove_fd(fd))
 }
 
-unsafe extern "C" fn params_rescan(_: *const ClapHost, _: u32) {}
+unsafe extern "C" fn params_rescan(host: *const ClapHost, flags: u32) {
+    if flags & CLAP_PARAM_RESCAN_VALUES != 0
+        && let Some(s) = shared(host)
+    {
+        s.rescan.store(true, Ordering::Release);
+    }
+}
 
 unsafe extern "C" fn params_clear(_: *const ClapHost, _: ClapId, _: u32) {}
 
@@ -406,6 +423,16 @@ impl PluginEditor for ClapEditor {
                 unsafe {
                     if s.callback.swap(false, Ordering::AcqRel) {
                         ((*plugin).on_main_thread)(plugin);
+                    }
+                    if s.rescan.swap(false, Ordering::AcqRel)
+                        && let Some(params) = st.params.as_ref()
+                    {
+                        for &id in &st.ids {
+                            let mut v = 0.0;
+                            if (params.get_value)(plugin, id, &mut v) {
+                                out.push(EditorEvent::Param { id, value: v as f32 });
+                            }
+                        }
                     }
                     if let Some(timer) = st.timer.as_ref() {
                         let due = lock(&s.run_loop).due_timers(Instant::now());

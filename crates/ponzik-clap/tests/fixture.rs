@@ -153,8 +153,8 @@ fn editor_lifecycle_timers_and_fds() {
     // Size adjusted to the plugin's steps (10 px, at least 100 × 80).
     assert_eq!(ed.set_size(455, 50), Some((450, 80)));
 
-    // Pump: the readable pipe asks for a resize, the timer for an edit that
-    // comes out of the next `process`.
+    // Pump: the readable pipe asks for a resize and a rescan, the timer for an
+    // edit that comes out of the next `process`.
     std::thread::sleep(Duration::from_millis(5));
     let mut ev = Vec::new();
     ed.idle(&mut ev);
@@ -163,9 +163,16 @@ fn editor_lifecycle_timers_and_fds() {
     fx.process(&mut l, &mut r);
     ev.clear();
     ed.idle(&mut ev);
+    // The rescan asked along with the resize reads the values again (the edit
+    // has just been applied), then come the edit's gesture and value.
     assert_eq!(
         ev,
-        [EditorEvent::GestureBegin(7), EditorEvent::Param { id: 7, value: 0.25 }, EditorEvent::GestureEnd(7)]
+        [
+            EditorEvent::Param { id: 7, value: 0.25 },
+            EditorEvent::GestureBegin(7),
+            EditorEvent::Param { id: 7, value: 0.25 },
+            EditorEvent::GestureEnd(7)
+        ]
     );
     assert_eq!(fx.get_param(7), 0.25);
     assert!((l[0] - 0.125).abs() < 1e-6);
