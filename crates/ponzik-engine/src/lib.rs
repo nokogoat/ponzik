@@ -17,6 +17,7 @@ pub mod midi_out;
 pub mod mixer;
 pub mod note_fx;
 pub mod param;
+pub mod pool;
 pub mod rack;
 pub mod registry;
 pub mod ring;
@@ -31,6 +32,7 @@ pub use instrument::Instrument;
 pub use midi_out::{MidiOut, MidiOutEvent};
 pub use note_fx::{NoteBuffer, NoteEvent, NoteFx};
 pub use param::{ParamInfo, Params, Unit};
+pub use pool::{WorkerPool, default_worker_threads, promote_current_thread};
 pub use rack::{Channel, NOTE_FX_SLOTS};
 pub use sample::Sample;
 pub use sequence::{
