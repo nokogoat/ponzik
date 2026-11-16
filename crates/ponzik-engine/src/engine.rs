@@ -9,7 +9,8 @@ use crate::input::{InputConsumer, RecordBuffer};
 use crate::instrument::Instrument;
 use crate::meter::{PeakMeter, peak};
 use crate::mixer::{INSERT_SLOTS, MASTER, Mixer, SEND_SLOTS, TRACKS};
-use crate::rack::Channel;
+use crate::note_fx::NoteFx;
+use crate::rack::{Channel, NOTE_FX_SLOTS};
 use crate::ring::{self, Consumer, Producer};
 use crate::sequence::{AutoTarget, PPQ, PlayMode, SeqEvent, Sequence};
 
@@ -47,6 +48,11 @@ pub enum Command {
     SetChannelMute { channel: usize, muted: bool },
     SetChannelTrack { channel: usize, track: usize },
     SetInstrumentParam { channel: usize, id: u32, value: f32 },
+    /// Place (ou retire) un effet de notes, déjà réglé à la fréquence
+    /// d'échantillonnage ; le canal est coupé pour ne laisser aucune note pendue.
+    SetNoteFx { channel: usize, slot: usize, fx: Option<Box<dyn NoteFx>> },
+    SetNoteFxParam { channel: usize, slot: usize, id: u32, value: f32 },
+    /// Note jouée en direct ; passe par les effets de notes du canal.
     NoteOn { channel: usize, note: u8, velocity: f32 },
     NoteOff { channel: usize, note: u8 },
     SetTrackGain { track: usize, gain: f32 },
@@ -90,6 +96,8 @@ impl std::fmt::Debug for Command {
             Command::SetChannelMute { .. } => "SetChannelMute",
             Command::SetChannelTrack { .. } => "SetChannelTrack",
             Command::SetInstrumentParam { .. } => "SetInstrumentParam",
+            Command::SetNoteFx { .. } => "SetNoteFx",
+            Command::SetNoteFxParam { .. } => "SetNoteFxParam",
             Command::NoteOn { .. } => "NoteOn",
             Command::NoteOff { .. } => "NoteOff",
             Command::SetTrackGain { .. } => "SetTrackGain",
@@ -117,6 +125,7 @@ pub enum Garbage {
     Channel(Box<Channel>),
     Instrument(Box<dyn Instrument>),
     Effect(Box<dyn Effect>),
+    NoteFx(Box<dyn NoteFx>),
     Routing(Box<[usize]>),
     Input(Box<InputConsumer>),
     /// Enregistrement terminé : gardé à part par [`EngineHandle::take_recordings`].
@@ -274,6 +283,10 @@ impl Engine {
     pub fn new(sample_rate: f32, mut channels: Vec<Channel>, sequence: Sequence) -> (Engine, EngineHandle) {
         for ch in &mut channels {
             ch.instrument.set_sample_rate(sample_rate);
+            for fx in ch.note_fx.iter_mut().flatten() {
+                fx.set_sample_rate(sample_rate);
+                fx.set_tempo(120.0);
+            }
         }
         channels.reserve(MAX_CHANNELS.saturating_sub(channels.len()));
         let (tx, rx) = ring::channel(COMMAND_QUEUE);
@@ -478,8 +491,17 @@ impl Engine {
                 // Nouvelle ancre à la position courante : pas de saut.
                 self.anchor();
                 self.bpm = bpm;
-                self.mixer.set_tempo(bpm as f32);
+                self.set_tempo();
             }
+        }
+    }
+
+    /// Transmet le tempo courant aux effets synchronisés.
+    fn set_tempo(&mut self) {
+        let bpm = self.bpm as f32;
+        self.mixer.set_tempo(bpm);
+        for ch in &mut self.channels {
+            ch.set_tempo(bpm);
         }
     }
 
@@ -512,16 +534,21 @@ impl Engine {
                     && !ch.muted
                 {
                     let off_at = now + (ev.len.max(1) as f64 * spt).round().max(1.0) as u64;
-                    ch.trigger(ev.key, ev.vel, off_at);
+                    ch.trigger(now, ev.key, ev.vel, off_at);
                 }
+            }
+            for ch in &mut self.channels {
+                ch.flush(now);
             }
             // Jusqu'au prochain événement (début ou fin de note).
             let mut end = n;
             if let Some(ev) = self.events.get(next_event) {
                 end = end.min(offset_of(ev.tick).clamp(i + 1, n));
             }
-            if let Some(off) = self.channels.iter().filter_map(Channel::next_off).min() {
-                end = end.min((off.saturating_sub(self.clock) as usize).clamp(i + 1, n));
+            let next_off = self.channels.iter().filter_map(Channel::next_off).min();
+            let next_fx = self.channels.iter().filter_map(Channel::next_fx_event).min();
+            if let Some(at) = next_off.into_iter().chain(next_fx).min() {
+                end = end.min((at.saturating_sub(self.clock) as usize).clamp(i + 1, n));
             }
             self.render_channels(i, end - i);
             i = end;
@@ -735,7 +762,7 @@ impl Engine {
             Command::SetBpm(bpm) => {
                 self.anchor();
                 self.bpm = (bpm as f64).clamp(20.0, 999.0);
-                self.mixer.set_tempo(self.bpm as f32);
+                self.set_tempo();
             }
             Command::SetSequence(seq) => {
                 // Dans la capacité réservée : pas d'allocation.
@@ -796,14 +823,38 @@ impl Engine {
                     ch.instrument.set_param(id, value);
                 }
             }
+            Command::SetNoteFx { channel, slot, mut fx } => {
+                if let Some(f) = fx.as_mut() {
+                    f.set_tempo(self.bpm as f32);
+                }
+                if let Some(ch) = self.channels.get_mut(channel)
+                    && slot < NOTE_FX_SLOTS
+                {
+                    ch.silence();
+                    if let Some(old) = std::mem::replace(&mut ch.note_fx[slot], fx) {
+                        self.trash(Garbage::NoteFx(old));
+                    }
+                } else if let Some(f) = fx {
+                    self.trash(Garbage::NoteFx(f));
+                }
+            }
+            Command::SetNoteFxParam { channel, slot, id, value } => {
+                if let Some(Some(fx)) = self.channels.get_mut(channel).and_then(|ch| ch.note_fx.get_mut(slot)) {
+                    fx.set_param(id, value);
+                }
+            }
             Command::NoteOn { channel, note, velocity } => {
+                let now = self.clock;
                 if let Some(ch) = self.channels.get_mut(channel) {
-                    ch.instrument.note_on(note, velocity);
+                    ch.note_in(now, crate::note_fx::NoteEvent::on(note, velocity));
+                    ch.flush(now);
                 }
             }
             Command::NoteOff { channel, note } => {
+                let now = self.clock;
                 if let Some(ch) = self.channels.get_mut(channel) {
-                    ch.instrument.note_off(note);
+                    ch.note_in(now, crate::note_fx::NoteEvent::off(note));
+                    ch.flush(now);
                 }
             }
             Command::SetTrackGain { track, gain } => {
@@ -1046,6 +1097,59 @@ mod tests {
         // Une mesure = 384 ticks = 96 000 échantillons ; on en joue deux.
         run(&mut engine, 192_000, 480);
         assert_eq!(ons(&probe), [0, 96_000]);
+    }
+
+    fn note_fx(kind: &str) -> Option<Box<dyn NoteFx>> {
+        let mut fx = crate::registry::create_note_fx(kind).unwrap();
+        fx.set_sample_rate(SR);
+        Some(fx)
+    }
+
+    fn played(probe: &Probe, event: &str) -> Vec<(u8, u64)> {
+        probe.log.lock().unwrap().iter().filter(|e| e.0 == event).map(|e| (e.1, e.2)).collect()
+    }
+
+    #[test]
+    fn arpeggiator_is_sample_accurate_at_120_bpm() {
+        for block in [64, 333, 1024] {
+            let (mut engine, mut handle, probe) = setup(&[]);
+            // Accord do-mi-sol tenu toute la mesure, joué dans le désordre.
+            let mut p = Pattern::new(16 * TICKS_PER_STEP, 1);
+            p.notes[0] =
+                [67, 60, 64].map(|key| Note { start: 0, len: 16 * TICKS_PER_STEP, key, vel: 0.9 }).to_vec();
+            handle.send(Command::SetSequence(Box::new(Sequence { patterns: vec![p], ..Default::default() }))).unwrap();
+            handle.send(Command::SetNoteFx { channel: 0, slot: 0, fx: note_fx("arpeggiator") }).unwrap();
+            handle.send(Command::SetBpm(120.0)).unwrap();
+            handle.send(Command::Play).unwrap();
+            // Doubles croches à 120 BPM et 48 kHz : 6 000 échantillons, durée 50 %.
+            run(&mut engine, 6_000 * 6, block);
+            let keys = [60, 64, 67, 60, 64, 67];
+            let want: Vec<(u8, u64)> = keys.iter().enumerate().map(|(i, &k)| (k, i as u64 * 6_000)).collect();
+            assert_eq!(played(&probe, "on"), want, "bloc {block}");
+            let want: Vec<(u8, u64)> = keys.iter().enumerate().map(|(i, &k)| (k, i as u64 * 6_000 + 3_000)).collect();
+            assert_eq!(played(&probe, "off"), want, "bloc {block}");
+        }
+    }
+
+    #[test]
+    fn note_fx_chain_handles_live_notes_and_returns_garbage() {
+        let (mut engine, mut handle, probe) = setup(&[]);
+        handle.send(Command::SetNoteFx { channel: 0, slot: 1, fx: note_fx("chord") }).unwrap();
+        // Gamme avant l'accord : do♯ devient do, puis do majeur.
+        handle.send(Command::SetNoteFx { channel: 0, slot: 0, fx: note_fx("scale") }).unwrap();
+        handle.send(Command::NoteOn { channel: 0, note: 61, velocity: 1.0 }).unwrap();
+        run(&mut engine, 256, 256);
+        handle.send(Command::NoteOff { channel: 0, note: 61 }).unwrap();
+        run(&mut engine, 256, 256);
+        assert_eq!(played(&probe, "on"), [(60, 0), (64, 0), (67, 0)]);
+        assert_eq!(played(&probe, "off"), [(60, 256), (64, 256), (67, 256)]);
+
+        handle.send(Command::SetNoteFxParam { channel: 0, slot: 1, id: 0, value: 3.0 }).unwrap();
+        handle.send(Command::SetNoteFx { channel: 0, slot: 0, fx: None }).unwrap();
+        handle.send(Command::NoteOn { channel: 0, note: 61, velocity: 1.0 }).unwrap();
+        run(&mut engine, 256, 256);
+        assert_eq!(played(&probe, "on")[3..], [(61, 512), (68, 512)]);
+        assert!(matches!(handle.garbage.pop(), Some(Garbage::NoteFx(fx)) if fx.kind() == "scale"));
     }
 
     #[test]

@@ -28,7 +28,7 @@ pub use input::{InputConsumer, InputProducer, RecordBuffer, input_channel};
 pub use instrument::Instrument;
 pub use note_fx::{NoteBuffer, NoteEvent, NoteFx};
 pub use param::{ParamInfo, Params, Unit};
-pub use rack::Channel;
+pub use rack::{Channel, NOTE_FX_SLOTS};
 pub use sample::Sample;
 pub use sequence::{
     AudioClip, AutoPoint, AutoScope, AutoTarget, AutomationLane, Clip, Note, PPQ, Pattern, PlayMode, Sequence, SessionSlot,
