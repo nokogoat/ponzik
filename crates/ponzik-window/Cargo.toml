@@ -1,6 +1,6 @@
 [package]
 name = "ponzik-window"
-description = "Fenêtrage maison de Ponzik : protocole X11 direct sous Linux, Win32 sous Windows"
+description = "Fenêtrage maison de Ponzik : protocole X11 direct sous Linux, Win32 sous Windows, Cocoa sous macOS"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

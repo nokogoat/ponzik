@@ -4,6 +4,8 @@
 //!   ni de libxcb), avec MIT-SHM pour envoyer les images sans copie réseau.
 //!   Fonctionne aussi sous Wayland via XWayland.
 //! - Windows : Win32 (`user32` / `gdi32`).
+//! - macOS (expérimental) : Cocoa via le runtime Objective-C, image posée sur
+//!   le calque de la vue.
 //!
 //! La fenêtre affiche un tampon de pixels `0x00RRGGBB` fourni par l'appelant.
 
@@ -18,7 +20,11 @@ mod backend;
 #[path = "win32.rs"]
 mod backend;
 
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(target_os = "macos")]
+#[path = "cocoa.rs"]
+mod backend;
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 #[path = "unsupported.rs"]
 mod backend;
 
@@ -101,7 +107,8 @@ pub enum Event {
     /// Caractère saisi (disposition du clavier, majuscules et AltGr compris).
     Text(char),
     /// Touche physique enfoncée ou relâchée, par position (code evdev, identique
-    /// au code de balayage PC sous Windows) : indépendant de la disposition.
+    /// au code de balayage PC sous Windows, traduit depuis `kVK_*` sous macOS) :
+    /// indépendant de la disposition.
     Physical { code: u16, down: bool },
     FocusLost,
 }
@@ -119,7 +126,7 @@ impl fmt::Display for WindowError {
         match self {
             WindowError::NoDisplay(msg) => write!(f, "aucun affichage disponible : {msg}"),
             WindowError::Protocol(msg) => write!(f, "erreur du serveur graphique : {msg}"),
-            WindowError::UnsupportedPlatform => write!(f, "plateforme non supportée (Linux et Windows uniquement)"),
+            WindowError::UnsupportedPlatform => write!(f, "plateforme non supportée (Linux, Windows et macOS uniquement)"),
             WindowError::System(msg) => write!(f, "erreur système : {msg}"),
         }
     }
