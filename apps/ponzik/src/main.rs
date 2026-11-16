@@ -22,7 +22,8 @@ Usage :
   ponzik screenshot <sortie.png> [vue] [largeur hauteur]
                                            capture l'interface hors écran
                                            (vues : rack, piano, playlist, mixer, lab ;
-                                           PONZIK_SAMPLELAB=demo|<wav> ouvre l'Atelier)
+                                           PONZIK_SAMPLELAB=demo|<wav> ouvre l'Atelier ;
+                                           PONZIK_SCALE_UI=2 rend en 2× pour l'HiDPI)
   ponzik help                              affiche cette aide";
 
 fn main() -> ExitCode {

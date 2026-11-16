@@ -1526,7 +1526,7 @@ impl App {
         }
 
         let t = self.theme;
-        let (w, h) = (c.width() as f32, c.height() as f32);
+        let (w, h) = c.logical_size();
         c.set_clip(None);
         c.clear(t.bg);
 

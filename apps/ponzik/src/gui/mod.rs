@@ -134,6 +134,29 @@ impl Input {
     }
 }
 
+/// Événement de la fenêtre (pixels physiques) → coordonnées logiques de l'interface.
+fn to_logical(ev: Event, scale: f32) -> Event {
+    let l = |v: f32| v / scale;
+    match ev {
+        Event::MouseMove { x, y } => Event::MouseMove { x: l(x), y: l(y) },
+        Event::MouseDown { x, y, button, mods } => Event::MouseDown { x: l(x), y: l(y), button, mods },
+        Event::MouseUp { x, y, button } => Event::MouseUp { x: l(x), y: l(y), button },
+        Event::Wheel { x, y, delta, mods } => Event::Wheel { x: l(x), y: l(y), delta, mods },
+        other => other,
+    }
+}
+
+/// Échelle du système : `PONZIK_SCALE_UI` (pour essayer ou capturer en 2×),
+/// sinon celle que rapporte la fenêtre.
+fn system_scale(window: Option<&Window>) -> f32 {
+    std::env::var("PONZIK_SCALE_UI")
+        .ok()
+        .and_then(|v| v.trim().parse::<f32>().ok())
+        .filter(|s| s.is_finite() && *s > 0.0)
+        .map(|s| s.clamp(0.5, 4.0))
+        .unwrap_or_else(|| window.map_or(1.0, Window::scale_factor))
+}
+
 /// Repère les doubles-clics : deux pressions proches dans le temps et l'espace.
 #[derive(Default)]
 struct ClickTracker {
@@ -201,6 +224,8 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
     let (w, h) = window.size();
     let started = Instant::now();
     let mut canvas = Canvas::new(w as usize, h as usize);
+    let mut scale = system_scale(Some(window));
+    canvas.set_scale(scale);
     let mut input = Input::default();
     let mut clicks = ClickTracker::default();
     let mut events = Vec::new();
@@ -233,6 +258,14 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
         }
         window.poll_events(&mut events);
 
+        // Échelle de l'image : la souris immobile garde sa place à l'écran.
+        let k = system_scale(Some(window));
+        if k != scale {
+            (input.x, input.y) = (input.x * scale / k, input.y * scale / k);
+            scale = k;
+            canvas.set_scale(k);
+            dirty = true;
+        }
         input.begin_frame();
         if debug_input {
             for ev in &events {
@@ -245,7 +278,7 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
             if ev == Event::CloseRequested {
                 return Ok(());
             }
-            dirty |= input.apply(&ev);
+            dirty |= input.apply(&to_logical(ev, scale));
         }
         clicks.check(&mut input);
         dirty |= app.poll_midi();
@@ -257,6 +290,7 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
         let (w, h) = window.size();
         if (w as usize, h as usize) != (canvas.width(), canvas.height()) {
             canvas.resize(w as usize, h as usize);
+            canvas.set_scale(scale);
             dirty = true;
         }
         if dirty || app.needs_redraw() {
@@ -277,7 +311,8 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
     }
 }
 
-/// Rend l'interface hors écran, en pleine lecture, dans un PNG.
+/// Rend l'interface hors écran, en pleine lecture, dans un PNG. `width` × `height`
+/// est la taille logique ; avec `PONZIK_SCALE_UI=2`, l'image fait le double en pixels.
 pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result<(), String> {
     const SR: u32 = 48_000;
     // « bc-playlist » : la démo breakcore dans la vue playlist.
@@ -394,7 +429,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     if let Some(n) = std::env::var("PONZIK_FLOAT").ok().and_then(|v| v.parse().ok()) {
         app.screenshot_floats(n);
     }
-    let mut canvas = Canvas::new(width, height);
+    let scale = system_scale(None);
+    let (pw, ph) = ((width as f32 * scale).round() as usize, (height as f32 * scale).round() as usize);
+    let mut canvas = Canvas::new(pw, ph);
+    canvas.set_scale(scale);
     // PONZIK_HOVER=x,y : souris immobile à cet endroit (survols, infobulles).
     let mut input = Input::default();
     if let Some((x, y)) = std::env::var("PONZIK_HOVER").ok().and_then(|v| {
@@ -405,10 +443,44 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     }
     let mut audio = vec![0.0f32; 800 * 2];
     // ~1,6 s : la tête de lecture tombe sur un temps fort, les VU-mètres sont lancés.
+    let mut drawing = Duration::ZERO;
     for _ in 0..96 {
         engine.process(&mut audio, 2);
+        let t0 = Instant::now();
         app.frame(&mut canvas, &input, 1.0 / 60.0);
+        drawing += t0.elapsed();
     }
-    let png = encode_png(canvas.pixels(), width, height);
+    // PONZIK_BENCH : temps de dessin moyen d'une image, pour comparer les échelles.
+    if std::env::var_os("PONZIK_BENCH").is_some() {
+        eprintln!("{view:?} · {pw}×{ph} (×{scale}) · {:.2} ms/image", drawing.as_secs_f64() * 1000.0 / 96.0);
+    }
+    let png = encode_png(canvas.pixels(), pw, ph);
     std::fs::write(path, png).map_err(|e| format!("{path} : {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pointer_events_become_logical() {
+        let mods = Modifiers::default();
+        assert_eq!(to_logical(Event::MouseMove { x: 300.0, y: 150.0 }, 2.0), Event::MouseMove { x: 150.0, y: 75.0 });
+        assert_eq!(
+            to_logical(Event::MouseDown { x: 150.0, y: 30.0, button: MouseButton::Left, mods }, 1.5),
+            Event::MouseDown { x: 100.0, y: 20.0, button: MouseButton::Left, mods }
+        );
+        assert_eq!(
+            to_logical(Event::MouseUp { x: 9.0, y: 3.0, button: MouseButton::Right }, 0.75),
+            Event::MouseUp { x: 12.0, y: 4.0, button: MouseButton::Right }
+        );
+        // La molette garde ses crans ; seule la position change d'échelle.
+        assert_eq!(
+            to_logical(Event::Wheel { x: 40.0, y: 20.0, delta: -1.0, mods }, 2.0),
+            Event::Wheel { x: 20.0, y: 10.0, delta: -1.0, mods }
+        );
+        // Tailles de fenêtre et le reste : inchangés.
+        assert_eq!(to_logical(Event::Resized { width: 3200, height: 1920 }, 2.0), Event::Resized { width: 3200, height: 1920 });
+        assert_eq!(to_logical(Event::MouseMove { x: 7.0, y: 9.0 }, 1.0), Event::MouseMove { x: 7.0, y: 9.0 });
+    }
 }
