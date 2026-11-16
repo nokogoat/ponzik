@@ -59,6 +59,8 @@ It runs on Linux and Windows.
 
 You need a Rust toolchain (1.85 or newer, edition 2024). On Linux, the ALSA
 library is also required (`alsa-lib`, or `libasound2-dev` on Debian and Ubuntu).
+macOS (experimental): Xcode command line tools only; CoreAudio, CoreMIDI and Cocoa
+backends, not yet tested on real hardware.
 
 ```sh
 cargo run --release                                  # open the UI on the house demo
@@ -86,6 +88,7 @@ Environment variables:
 |---|---|---|---|
 | Linux | X11 protocol spoken directly, with MIT-SHM (Wayland through XWayland) | ALSA (works with PipeWire and PulseAudio) | ALSA rawmidi |
 | Windows | Win32 | WASAPI | WinMM |
+| macOS (experimental) | Cocoa through the Objective-C runtime | CoreAudio (AUHAL) | CoreMIDI |
 
 ## Architecture
 
