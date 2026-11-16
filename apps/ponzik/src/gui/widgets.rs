@@ -137,6 +137,8 @@ pub enum Icon {
     Normalize,
     /// Barres en dégradé : couleurs spectrales.
     Spectral,
+    /// Micro : entrée audio, panneau d'enregistrement.
+    Mic,
 }
 
 /// Dessine une icône au trait, dans un carré de `size` centré sur (`cx`, `cy`).
@@ -326,6 +328,12 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
             let mut half = Path::new();
             half.polygon(&[p(0.0, -6.5), p(4.6, -4.6), p(6.5, 0.0), p(4.6, 4.6), p(0.0, 6.5)]);
             c.fill_path(&half, col);
+        }
+        Icon::Mic => {
+            c.stroke_rrect(rr(-2.8, -7.5, 5.6, 10.0), 2.8 * s, stroke, col);
+            c.stroke_arc(cx, cy - 1.0 * s, 5.2 * s, 0.15, std::f32::consts::PI - 0.15, stroke, col);
+            c.stroke_polyline(&[p(0.0, 4.2), p(0.0, 7.5)], stroke, col);
+            c.stroke_polyline(&[p(-3.0, 7.5), p(3.0, 7.5)], stroke, col);
         }
         Icon::Key => {
             c.stroke_circle(cx - 3.5 * s, cy, 3.6 * s, stroke, col);

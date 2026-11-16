@@ -508,7 +508,7 @@ impl App {
             let arm = Rect::new(inner.right() - 18.0, inner.y + 2.0, 18.0, 18.0);
             let aid = wid("mx-arm", tr, 0);
             let ahov = self.hovered(input, aid, arm);
-            let armed = self.rec_track == Some(tr);
+            let armed = self.rec.is_armed(tr);
             let ahv = self.hover_anim(aid, ahov);
             let col = if armed { t.negative } else { t.muted.mix(t.text2, ahv) };
             if armed {
@@ -517,10 +517,13 @@ impl App {
                 draw_icon(c, Icon::Record, arm.x + 9.0, arm.y + 9.0, 13.0, col);
             }
             if ahov {
-                self.set_tip(if armed { "Désarmer" } else { "Armer l'enregistrement audio" }, "");
+                self.set_tip(if armed { "Disarm · right click: recording panel" } else { "Arm for audio recording · right click: recording panel" }, "");
             }
             if ahov && input.pressed {
                 self.toggle_arm(tr);
+            }
+            if ahov && input.right_pressed {
+                self.open_record_panel(Some((arm.x + 9.0, arm.bottom() + 6.0)));
             }
         }
         let num = if tr == MASTER { "M".to_string() } else { tr.to_string() };

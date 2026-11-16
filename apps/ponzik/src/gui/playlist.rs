@@ -301,7 +301,9 @@ impl App {
             None
         };
         if let Some((i, edge)) = hover_audio {
-            if input.pressed && self.drag.is_none() {
+            if input.pressed && input.mods.alt && self.drag.is_none() {
+                self.choose_take(i);
+            } else if input.pressed && self.drag.is_none() {
                 self.begin_drag(audio_id, input, 0.0);
                 let cl = &self.project.audio_clips[i];
                 let tick0 = tick_at(input.x);
@@ -549,11 +551,17 @@ impl App {
             }
             let hov = hover_audio.is_some_and(|(h, _)| h == i);
             let hv = self.hover_anim(wid("pl-aclip", i, 0), hov);
-            c.fill_rrect(r, 8.0, t.select.mix(t.panel, 0.78 - hv * 0.08));
-            c.fill_rect(Rect::new(r.x + 1.0, r.y + 1.0, r.w - 2.0, 18.0), t.select.mix(t.panel, 0.5).alpha(0.9));
+            // Prise de côté (muette) : estompée, le nom barré d'un « muted ».
+            let dim = if cl.muted { 0.45 } else { 1.0 };
+            c.fill_rrect(r, 8.0, t.select.mix(t.panel, 0.78 - hv * 0.08).alpha(dim));
+            c.fill_rect(Rect::new(r.x + 1.0, r.y + 1.0, r.w - 2.0, 18.0), t.select.mix(t.panel, 0.5).alpha(0.9 * dim));
             let prev_clip = c.push_clip(r);
             let name = std::path::Path::new(&cl.path).file_stem().map_or(String::new(), |n| n.to_string_lossy().into_owned());
-            self.text_fit(c, self.f.sans_med, 11.0, r.x + 8.0, r.y + 10.0, &name, r.w - 12.0, t.text);
+            let name = if cl.muted { format!("{name} · muted") } else { name };
+            self.text_fit(c, self.f.sans_med, 11.0, r.x + 8.0, r.y + 10.0, &name, r.w - 12.0, t.text.alpha(dim));
+            if hov && cl.take > 0 {
+                self.set_tip("Alt+click: play this take", "");
+            }
             let sr = self.samples.get(&cl.path).map_or(48_000.0, |s| s.sample_rate as f64);
             if let Some(peaks) = self.waveform(&cl.path) {
                 let mid = r.y + 22.0 + (r.h - 24.0) * 0.5;
@@ -573,7 +581,7 @@ impl App {
                         }
                     }
                     if hi > lo {
-                        c.fill_rect(Rect::new(px as f32, mid - hi * amp, 1.0, ((hi - lo) * amp).max(1.0)), t.text.alpha(0.6));
+                        c.fill_rect(Rect::new(px as f32, mid - hi * amp, 1.0, ((hi - lo) * amp).max(1.0)), t.text.alpha(0.6 * dim));
                     }
                 }
             }

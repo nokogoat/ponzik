@@ -422,7 +422,7 @@ pub struct App {
     pub mixer_sel: Vec<usize>,
     pub samples: HashMap<String, Arc<Sample>>,
     /// Crêtes (min, max) par paquets d'échantillons, pour dessiner les formes d'onde.
-    waveforms: HashMap<String, Arc<Vec<(f32, f32)>>>,
+    pub waveforms: HashMap<String, Arc<Vec<(f32, f32)>>>,
     /// Réponses d'effets déjà calculées, par réglages.
     pub responses: HashMap<String, Arc<Vec<f32>>>,
     pub sample_files: Vec<PathBuf>,
@@ -469,10 +469,8 @@ pub struct App {
     pub counting: f64,
     /// Instants (s) des derniers appuis de tap tempo.
     taps: Vec<f32>,
-    /// Entrée audio ouverte au premier armement, piste armée, nombre de prises.
-    pub input_stream: Option<ponzik_audio::InputStream>,
-    pub rec_track: Option<usize>,
-    takes: usize,
+    /// Enregistrement audio : entrée, pistes armées, prises, panneau.
+    pub rec: super::record::RecordState,
     /// Piste en solo (non enregistrée) : les autres sont coupées dans le moteur.
     pub solo: Option<usize>,
     /// État des colonnes de la vue Session (non enregistré).
@@ -598,9 +596,7 @@ impl App {
             typing_keyboard: false,
             session_cols: Default::default(),
             solo: None,
-            input_stream: None,
-            rec_track: None,
-            takes: 0,
+            rec: Default::default(),
             start_marker: 0.0,
             clipboard_notes: Vec::new(),
             clipboard_clip: None,
@@ -1127,98 +1123,6 @@ impl App {
         keep
     }
 
-    /// Arme ou désarme l'enregistrement audio d'une piste. L'entrée audio n'est
-    /// ouverte qu'au premier armement.
-    pub fn toggle_arm(&mut self, track: usize) {
-        if self.rec_track == Some(track) {
-            self.rec_track = None;
-            self.send(Command::Record { track, armed: false, buffer: None });
-            self.toast("Enregistrement audio désarmé");
-            return;
-        }
-        if self.input_stream.is_none() {
-            let input = match ponzik_audio::open_default_input() {
-                Ok(i) => i,
-                Err(e) => {
-                    self.toast(&e.to_string());
-                    return;
-                }
-            };
-            if input.config().sample_rate != self.sample_rate {
-                self.toast("Attention : l'entrée et la sortie n'ont pas la même fréquence");
-            }
-            let (mut producer, consumer) = ponzik_engine::input_channel(self.sample_rate as usize);
-            match input.start(move |data, ch| {
-                producer.push(data, ch);
-            }) {
-                Ok(stream) => self.input_stream = Some(stream),
-                Err(e) => {
-                    self.toast(&e.to_string());
-                    return;
-                }
-            }
-            self.send(Command::SetInput(Some(Box::new(consumer))));
-        }
-        self.arm(track);
-        let name = self.project.tracks[track].name.clone();
-        self.toast(&format!("{name} armée : lance la lecture pour enregistrer"));
-    }
-
-    fn arm(&mut self, track: usize) {
-        self.rec_track = Some(track);
-        let buffer = ponzik_engine::RecordBuffer::with_duration(300.0, self.sample_rate as f32);
-        self.send(Command::Record { track, armed: true, buffer: Some(Box::new(buffer)) });
-    }
-
-    /// Prises revenues du moteur : fichier WAV, clip audio à leur position, réarmement.
-    fn collect_takes(&mut self) {
-        let takes = self.engine.take_recordings();
-        if takes.is_empty() {
-            return;
-        }
-        for take in takes {
-            if take.len == 0 {
-                continue;
-            }
-            self.takes += 1;
-            let (track, start, sr) = (take.track, take.start_tick, take.sample_rate as u32);
-            let name = format!("{} prise {}", self.project.tracks[track].name, self.takes);
-            let sample = take.into_sample(name.clone());
-            let audio: Vec<f32> = sample.left.iter().zip(&sample.right).flat_map(|(&l, &r)| [l, r]).collect();
-            let path = compat::projects_dir().join("Enregistrements").join(format!("{name}.wav"));
-            if let Some(dir) = path.parent() {
-                let _ = std::fs::create_dir_all(dir);
-            }
-            if let Err(e) = ponzik_project::write_wav(&path, &audio, sr, ponzik_project::BitDepth::Pcm24) {
-                self.toast(&format!("{} : {e}", path.display()));
-                continue;
-            }
-            let key = path.to_string_lossy().into_owned();
-            let secs = sample.duration() as f64;
-            self.samples.insert(key.clone(), Arc::new(sample));
-            let ticks = (secs * self.project.bpm as f64 / 60.0 * ponzik_engine::PPQ as f64).round().max(1.0) as u32;
-            let lane = self.project.clips.iter().map(|c| c.lane + 1).chain(self.project.audio_clips.iter().map(|c| c.lane + 1)).max().unwrap_or(0);
-            self.project.audio_clips.push(ponzik_project::AudioClipDef {
-                path: key,
-                lane,
-                track,
-                start: start.max(0.0) as u32,
-                len: ticks,
-                offset: 0.0,
-                gain: 1.0,
-                fade_in: 0.002,
-                fade_out: 0.002,
-                take: 0,
-                muted: false,
-            });
-            self.commit("Enregistrer de l'audio");
-            self.toast(&format!("Prise enregistrée : {name} ({secs:.1} s)"));
-        }
-        if let Some(track) = self.rec_track {
-            self.arm(track);
-        }
-    }
-
     pub fn export_stems(&mut self) {
         let result = {
             let loader = self.sample_loader();
@@ -1486,7 +1390,7 @@ impl App {
 
     fn poll_engine(&mut self, dt: f32) {
         self.engine.collect_garbage();
-        self.collect_takes();
+        self.record_tick(dt);
         self.position = self.engine.position();
         // Tant que le moteur n'a pas reçu l'ordre de lecture, le pré-compte demandé reste affiché.
         let counting = self.engine.count_in();
@@ -1537,6 +1441,7 @@ impl App {
             || self.engine.audition_position().is_some()
             || self.track_meters.iter().any(Meter::active)
             || self.channel_meters.iter().any(Meter::active)
+            || self.rec.needs_redraw()
     }
 
     /// Raccourcis globaux, ceux de la table des touches (FL Studio par défaut).
@@ -1644,6 +1549,7 @@ impl App {
         };
         // Séparateurs et fenêtres flottantes : tailles des zones, et souris captée au-dessus.
         let (sb, pn, covered) = self.layout_begin(ui, w, h);
+        let covered = covered || self.record_covers(ui);
         let below;
         let under = if covered {
             below = super::float::masked(ui);
@@ -1662,6 +1568,7 @@ impl App {
         }
         self.top_bar(c, under, Rect::new(0.0, 0.0, w, TOP_BAR));
         self.float_layer(c, ui);
+        self.record_panel(c, ui, Rect::new(0.0, 0.0, w, h));
         if self.popup.is_none() {
             self.recovery_prompt(c, input, w);
         }
@@ -1709,7 +1616,7 @@ impl App {
 
         // Transport, centré ; l'espace de travail choisit ses éléments.
         let on = |b: Bar| self.bar_shown(b);
-        let widths = [(Bar::Mode, 142.0), (Bar::Pattern, 198.0), (Bar::Tap, 50.0), (Bar::Position, 138.0), (Bar::Scale, 134.0), (Bar::Metronome, 40.0), (Bar::Record, 40.0), (Bar::Keyboard, 40.0)];
+        let widths = [(Bar::Mode, 142.0), (Bar::Pattern, 198.0), (Bar::Tap, 50.0), (Bar::Position, 138.0), (Bar::Scale, 134.0), (Bar::Metronome, 40.0), (Bar::Record, 80.0), (Bar::Keyboard, 40.0)];
         let cluster = 46.0 + 54.0 + 120.0 - 4.0 + widths.iter().filter(|(b, _)| on(*b)).map(|(_, w)| w).sum::<f32>();
         let mut x = ((r.w - cluster) * 0.5).round().max(70.0 + wordmark + 24.0);
         let start = x;
@@ -1796,6 +1703,17 @@ impl App {
         }
         if self.bar_shown(Bar::Record) {
             self.record_button(c, input, Rect::new(x, cy - 18.0, 36.0, 36.0), &k_rec);
+            x += 40.0;
+            let mic = Rect::new(x, cy - 18.0, 36.0, 36.0);
+            if self.icon_button(c, input, wid("tb-input", 0, 0), mic, Icon::Mic, self.rec.panel, ("Recording panel: input, level, monitoring, latency", "")) {
+                self.toggle_record_panel((mic.x + mic.w * 0.5, mic.bottom() + 6.0));
+            }
+            // Témoin de niveau d'entrée sous l'icône, quand une piste est armée.
+            if !self.rec.armed.is_empty() {
+                let lv = self.rec.input_level();
+                let col = if self.rec.clipped { self.theme.negative } else { self.theme.accent };
+                c.fill_rrect(Rect::new(mic.x + 8.0, mic.bottom() - 5.0, (mic.w - 16.0) * lv, 2.0), 1.0, col);
+            }
             x += 40.0;
         }
         if self.bar_shown(Bar::Keyboard) {
@@ -2107,6 +2025,13 @@ impl App {
         c.fill_rrect(rec, 8.0, t.raised.alpha(rhv.max(on * 0.6)));
         let (rx0, ry0) = rec.center();
         let pulse = if self.record && self.playing { 0.75 + 0.25 * (self.time * 6.0).sin().abs() } else { 1.0 };
+        // Lueur : armé, elle respire ; en prise, elle bat.
+        if on > 0.01 {
+            let glow = on * if self.playing { pulse } else { 0.55 + 0.15 * (self.time * 2.0).sin() };
+            for k in 1..=3 {
+                c.fill_circle(rx0, ry0, 6.0 + 4.0 * k as f32, t.negative.alpha(0.07 * glow));
+            }
+        }
         c.fill_circle(rx0, ry0, 6.0, t.muted.mix(t.text2, rhv).mix(t.negative, on).alpha(pulse));
         // Anneau : pré-compte d'une mesure ; il se remplit pendant le décompte.
         let ci = self.anim.to(wid("tb-rec-ci", 0, 0), self.count_in as u8 as f32, T_HOVER);

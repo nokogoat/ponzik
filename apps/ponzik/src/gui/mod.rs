@@ -19,6 +19,7 @@ mod piano;
 mod playlist;
 mod rack;
 mod samplelab;
+mod record;
 mod session;
 mod settings;
 mod sync;
@@ -172,10 +173,14 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     let none = |_: &str| None;
     let (mut engine, handle) = project.build_engine(config.sample_rate as f32, &none);
     let output_name = output.device_name().to_string();
-    let stream = output.start(move |out, ch| engine.process(out, ch)).map_err(|e| e.to_string())?;
+    // Duplex : l'entrée, une fois branchée, arrive dans le même appel que la sortie.
+    let stream = output
+        .start_duplex(move |input, in_ch, out, ch| engine.process_duplex(input, in_ch, out, ch))
+        .map_err(|e| e.to_string())?;
 
     let mut window = Window::open("Ponzik", 1600, 960).map_err(|e| e.to_string())?;
     let mut app = App::new(handle, project, config.sample_rate);
+    app.set_output(stream);
     for m in &app.midi_inputs {
         eprintln!("MIDI : {}", m.name());
     }
@@ -184,7 +189,7 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     let (play, find) = (app.key_label(keymap::Shortcut::PlayStop), app.key_label(keymap::Shortcut::Palette));
     app.toast(&format!("{play} pour jouer · {find} pour tout trouver"));
     eprintln!("Ponzik · {} · {} Hz · {}", window.backend_name(), config.sample_rate, output_name);
-    let result = event_loop(&mut window, &mut app, &stream);
+    let result = event_loop(&mut window, &mut app);
     // Sortie normale (fermeture ou erreur rapportée) : le verrou de session est retiré,
     // les panneaux ouverts sont retenus pour la prochaine fois.
     app.close_autosave();
@@ -192,7 +197,7 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     result
 }
 
-fn event_loop(window: &mut Window, app: &mut App, stream: &ponzik_audio::OutputStream) -> Result<(), String> {
+fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
     let (w, h) = window.size();
     let started = Instant::now();
     let mut canvas = Canvas::new(w as usize, h as usize);
@@ -236,7 +241,7 @@ fn event_loop(window: &mut Window, app: &mut App, stream: &ponzik_audio::OutputS
         clicks.check(&mut input);
         dirty |= app.poll_midi();
         app.autosave_tick(started.elapsed().as_secs_f64());
-        if !stream.is_running() {
+        if app.rec.output.as_ref().is_some_and(|s| !s.is_running()) {
             return Err("le pilote audio s'est arrêté".into());
         }
 
@@ -360,6 +365,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // PONZIK_SAMPLELAB=demo|<wav> : ouvre l'Atelier sur un échantillon.
     if let Ok(spec) = std::env::var("PONZIK_SAMPLELAB") {
         app.screenshot_lab(&spec);
+    }
+    // PONZIK_RECORD=1 : piste armée et panneau d'enregistrement ; =takes : avec des prises
+    // en boucle ; =devices : la liste des entrées.
+    if let Ok(mode) = std::env::var("PONZIK_RECORD") {
+        app.screenshot_record(&mode);
     }
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {
