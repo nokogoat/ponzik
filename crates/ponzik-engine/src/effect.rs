@@ -1,3 +1,6 @@
+use std::any::Any;
+use std::sync::Arc;
+
 use crate::param::Params;
 
 /// Un effet audio inséré sur une piste du mixer : EQ, compresseur, réverb…
@@ -28,6 +31,13 @@ pub trait Effect: Params + Send {
     /// ni allocation ni verrou.
     fn latency(&self) -> usize {
         0
+    }
+
+    /// État partagé avec l'interface (analyse, indicateurs), écrit par le thread
+    /// audio sans verrou (atomiques). L'interface le récupère avant d'envoyer
+    /// l'effet au moteur, puis le lit en le convertissant au type concret.
+    fn shared(&self) -> Option<Arc<dyn Any + Send + Sync>> {
+        None
     }
 
     /// Traitement sur place d'un bloc stéréo (`left.len() == right.len()`).
