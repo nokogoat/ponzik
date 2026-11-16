@@ -281,8 +281,8 @@ should guide the order.
 | V4-18 | **Amp and cabinet simulator** with a visual of the amp's tone stack | Guitarists and bassists record direct (Live, Logic, Studio Pro 8) | M | dsp, engine, ui | V4-17 | ⬜ |
 | V4-19 | **ARA 2 hosting** | Melodyne and VocAlign inside the timeline (Logic, Cubase, Reaper, Live 13) | L | vst3, engine, ui | V3-14 | ⬜ |
 | V4-20 | **Crash-safe plugin scanning**: scan in a child process, quarantine list, rescan button | A broken plugin must never stop Ponzik from starting | M | clap, vst3, ui | – | ⬜ |
-| V4-21 | **Multi-core audio graph**: independent tracks processed in parallel on a worker pool, lock-free | The engine runs on one core; large projects need all of them | L | engine | – | ⬜ |
-| V4-22 | **Per-track and per-device CPU meter** | Find the plugin that eats the CPU instead of guessing (Reaper, FL) | S | engine, ui | – | ⬜ |
+| V4-21 | **Multi-core audio graph**: independent tracks processed in parallel on a worker pool, lock-free | The engine runs on one core; large projects need all of them | L | engine | – | ✅ channels and mixer tracks follow the routing DAG on a worker pool (`PONZIK_AUDIO_THREADS`), bit-identical to one thread |
+| V4-22 | **Per-track and per-device CPU meter** | Find the plugin that eats the CPU instead of guessing (Reaper, FL) | S | engine, ui | – | ✅ smoothed per track, insert and instrument; readouts in the mixer strip and device header |
 | V4-23 | **Multi-output plugins and multiple hardware inputs and outputs** | Drum plugins with separate outs, recording a band, external effects | M | engine, audio, clap, vst3 | – | ⬜ |
 | V4-24 | **Manual track delay** (± ms per mixer track) | Fix a late sample or a slow external instrument | S | engine, ui (mixer.rs) | – | ⬜ |
 | V4-25 | **Cue and pre-listen bus** on a second output | Preview clips and samples in headphones while the mix plays (Live, Bitwig) | M | engine, audio, ui | V4-23 | ⬜ |
