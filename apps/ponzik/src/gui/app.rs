@@ -7,6 +7,7 @@ use std::sync::Arc;
 use ponzik_engine::mixer::{MASTER, TRACKS};
 use ponzik_engine::registry;
 use ponzik_engine::{Command, EngineHandle, PlayMode, Sample, TICKS_PER_BAR, TICKS_PER_STEP};
+use ponzik_project::autosave::{self, Autosaver};
 use ponzik_project::{EffectDef, InstrumentDef, Project};
 use ponzik_ui::{Anim, Canvas, Color, FontId, Fonts, Rect, embedded};
 use ponzik_window::Key;
@@ -384,6 +385,10 @@ pub struct App {
     pub pan: Option<(u64, f32, f32, f32, f32)>,
     /// Catégorie affichée par le navigateur.
     pub sidebar_tab: usize,
+    /// Sauvegarde automatique (absente hors de l'interface, en capture par exemple).
+    autosaver: Option<Autosaver>,
+    /// Sauvegarde d'une session interrompue, proposée au démarrage : fichier, ligne de détail.
+    pub recovery: Option<(PathBuf, String)>,
 }
 
 impl App {
@@ -472,6 +477,84 @@ impl App {
             drops: Vec::new(),
             pan: None,
             sidebar_tab: 0,
+            autosaver: None,
+            recovery: None,
+        }
+    }
+
+    // --- Sauvegarde automatique ---
+
+    /// Cherche une session interrompue, puis ouvre la sauvegarde automatique
+    /// (toutes les deux minutes, dans le dossier des projets).
+    pub fn start_autosave(&mut self) {
+        let dir = compat::projects_dir();
+        self.recovery = autosave::recoverable(&dir).map(|path| {
+            let detail = recovery_detail(&path);
+            (path, detail)
+        });
+        match Autosaver::start(&dir, &self.project, 0.0) {
+            Ok(a) => self.autosaver = Some(a),
+            Err(e) => eprintln!("sauvegarde automatique : {e}"),
+        }
+    }
+
+    /// `now` : secondes depuis le démarrage.
+    pub fn autosave_tick(&mut self, now: f64) {
+        if let Some(a) = &mut self.autosaver
+            && let Err(e) = a.tick(&self.project, now)
+        {
+            eprintln!("sauvegarde automatique : {e}");
+        }
+    }
+
+    /// Fin normale : retire le verrou de session.
+    pub fn close_autosave(&mut self) {
+        if let Some(a) = self.autosaver.take()
+            && let Err(e) = a.close()
+        {
+            eprintln!("sauvegarde automatique : {e}");
+        }
+    }
+
+    fn mark_saved(&mut self) {
+        if let Some(a) = &mut self.autosaver {
+            a.mark_saved(&self.project);
+        }
+    }
+
+    /// Carte de reprise, en haut au centre, si une session a été interrompue.
+    fn recovery_rect(&self, w: f32) -> Option<Rect> {
+        self.recovery.as_ref().map(|_| Rect::new(((w - 300.0) * 0.5).round(), TOP_BAR + 12.0, 300.0, 56.0))
+    }
+
+    fn recovery_prompt(&mut self, c: &mut Canvas, input: &Input, w: f32) {
+        let (Some(r), Some((path, detail))) = (self.recovery_rect(w), self.recovery.clone()) else { return };
+        let t = self.theme;
+        let a = self.anim.to(wid("recover", 0, 0), 1.0, T_LAYOUT);
+        let r = r.translate(0.0, ((1.0 - a) * -8.0).round());
+        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, Color::rgba(0, 0, 0, (80.0 * a) as u8));
+        c.fill_rrect(r, 14.0, t.raised_hi.mix(t.panel, 0.4).alpha(a));
+        c.stroke_rrect(r, 14.0, 1.0, t.hairline.alpha(1.6 * a));
+        let cy = r.y + r.h * 0.5;
+        c.fill_circle(r.x + 28.0, cy, 16.0, t.accent.alpha(0.14 * a));
+        draw_icon(c, Icon::Reset, r.x + 28.0, cy, 16.0, t.accent.alpha(a));
+        self.text(c, self.f.sans_med, 14.0, r.x + 54.0, cy - 8.0, "Récupérer ?", t.text.alpha(a));
+        self.text_fit(c, self.f.sans, 11.0, r.x + 54.0, cy + 10.0, &detail, r.w - 54.0 - 88.0, t.muted.alpha(a));
+        let yes = Rect::new(r.right() - 82.0, cy - 17.0, 34.0, 34.0);
+        let no = Rect::new(r.right() - 44.0, cy - 17.0, 34.0, 34.0);
+        if self.icon_button(c, input, wid("recover-yes", 0, 0), yes, Icon::Check, true, ("Rouvrir la sauvegarde automatique", "")) {
+            self.recovery = None;
+            match compat::load_project(&path) {
+                Ok(p) => {
+                    self.replace_project(p, None);
+                    self.modified = true;
+                    self.toast("Projet récupéré · Ctrl+S pour l'enregistrer");
+                }
+                Err(e) => self.toast(&e),
+            }
+        }
+        if self.icon_button(c, input, wid("recover-no", 0, 0), no, Icon::Close, false, ("Ignorer", "")) {
+            self.recovery = None;
         }
     }
 
@@ -581,6 +664,7 @@ impl App {
         self.send(Command::Stop);
         self.playing = false;
         self.sync_engine();
+        self.mark_saved();
     }
 
     pub fn toast(&mut self, text: &str) {
@@ -1033,6 +1117,7 @@ impl App {
             Ok(()) => {
                 self.project_path = Some(path.clone());
                 self.modified = false;
+                self.mark_saved();
                 self.toast(&format!("Enregistré dans {}", path.display()));
             }
             Err(e) => self.toast(&e),
@@ -1226,7 +1311,8 @@ impl App {
 
         // Un menu ouvert capte la souris : le reste de l'écran ne réagit plus.
         let masked;
-        let ui = if self.popup.is_some() {
+        let over_card = self.recovery_rect(w).is_some_and(|r| r.contains(input.x, input.y));
+        let ui = if self.popup.is_some() || over_card {
             masked = Input {
                 inside: false,
                 pressed: false,
@@ -1250,6 +1336,9 @@ impl App {
             self.sidebar_area(c, ui, Rect::new(0.0, TOP_BAR, sb, h - TOP_BAR));
         }
         self.top_bar(c, ui, Rect::new(0.0, 0.0, w, TOP_BAR));
+        if self.popup.is_none() {
+            self.recovery_prompt(c, input, w);
+        }
         self.popup_layer(c, input, Rect::new(0.0, 0.0, w, h));
         self.toast_layer(c, dt, Rect::new(sb, TOP_BAR, w - sb, h - TOP_BAR - pn));
         self.dnd_layer(c, input);
@@ -2338,4 +2427,20 @@ impl App {
             y -= 48.0;
         }
     }
+}
+
+/// « Projet · il y a 3 min » : nom tiré du fichier de sauvegarde automatique
+/// (`<nom>-AAAAMMJJ-HHMMSS-mmm`) et son âge.
+fn recovery_detail(path: &std::path::Path) -> String {
+    let stem = path.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
+    let name = stem.char_indices().rev().nth(19).map_or(stem.as_str(), |(i, _)| &stem[..i]).to_string();
+    let age = std::fs::metadata(path).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).map(|d| d.as_secs());
+    let age = match age {
+        None => String::new(),
+        Some(s) if s < 60 => "à l'instant".into(),
+        Some(s) if s < 3_600 => format!("il y a {} min", s / 60),
+        Some(s) if s < 86_400 => format!("il y a {} h", s / 3_600),
+        Some(s) => format!("il y a {} j", s / 86_400),
+    };
+    if age.is_empty() { name } else { format!("{name} · {age}") }
 }

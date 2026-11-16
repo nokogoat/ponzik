@@ -166,9 +166,18 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     for m in &app.midi_inputs {
         eprintln!("MIDI : {}", m.name());
     }
+    app.start_autosave();
     app.toast("Espace pour jouer · Ctrl+K pour tout trouver");
-    let (w, h) = window.size();
     eprintln!("Ponzik · {} · {} Hz · {}", window.backend_name(), config.sample_rate, output_name);
+    let result = event_loop(&mut window, &mut app, &stream);
+    // Sortie normale (fermeture ou erreur rapportée) : le verrou de session est retiré.
+    app.close_autosave();
+    result
+}
+
+fn event_loop(window: &mut Window, app: &mut App, stream: &ponzik_audio::OutputStream) -> Result<(), String> {
+    let (w, h) = window.size();
+    let started = Instant::now();
     let mut canvas = Canvas::new(w as usize, h as usize);
     let mut input = Input::default();
     let mut clicks = ClickTracker::default();
@@ -202,6 +211,7 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
         }
         clicks.check(&mut input);
         dirty |= app.poll_midi();
+        app.autosave_tick(started.elapsed().as_secs_f64());
         if !stream.is_running() {
             return Err("le pilote audio s'est arrêté".into());
         }
@@ -263,6 +273,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     }
     let _ = Command::Play;
 
+    // PONZIK_RECOVER : montre la carte de reprise après un crash.
+    if std::env::var_os("PONZIK_RECOVER").is_some() {
+        app.recovery = Some((std::path::PathBuf::new(), "Démo · il y a 3 min".into()));
+    }
     let mut canvas = Canvas::new(width, height);
     // PONZIK_HOVER=x,y : souris immobile à cet endroit (survols, infobulles).
     let mut input = Input::default();

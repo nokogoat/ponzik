@@ -96,6 +96,8 @@ pub enum Icon {
     Info,
     Magnet,
     Columns,
+    /// Valider.
+    Check,
 }
 
 /// Dessine une icône au trait, dans un carré de `size` centré sur (`cx`, `cy`).
@@ -240,6 +242,7 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
                 c.stroke_rrect(rr(-7.0 + i as f32 * 5.0, -6.5, 4.0, 13.0), 1.2 * s, stroke * 0.85, col);
             }
         }
+        Icon::Check => c.stroke_polyline(&[p(-6.0, 0.5), p(-2.0, 4.5), p(6.0, -4.5)], stroke * 1.15, col),
         Icon::Play => {
             let mut path = Path::new();
             path.polygon(&[p(-4.0, -6.0), p(6.5, 0.0), p(-4.0, 6.0)]);
