@@ -1,10 +1,12 @@
 //! Export hors ligne : rendu du morceau ou d'un pattern, pistes séparées (stems),
-//! écriture WAV 16/24 bits (avec dither TPDF) ou flottant 32 bits.
+//! normalisation (crête ou sonie intégrée), écriture WAV 16 bits (dither TPDF),
+//! 24 bits ou flottant 32 bits.
 
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
 
+use ponzik_dsp::loudness::LoudnessMeter;
 use ponzik_dsp::noise::WhiteNoise;
 use ponzik_engine::{Command, PPQ, PlayMode, Sequence, TICKS_PER_BAR};
 
@@ -167,15 +169,120 @@ impl BitDepth {
     }
 }
 
-/// Écrit un WAV stéréo à partir d'échantillons entrelacés dans [-1, 1].
+/// Normalisation appliquée au rendu avant l'écriture.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Normalize {
+    Off,
+    /// Crête échantillon ramenée à ce niveau (dBFS).
+    Peak(f32),
+    /// Sonie intégrée ramenée à `lufs` ; le gain s'arrête avant que la crête
+    /// vraie ne dépasse `ceiling` (dBTP) : pas de limiteur, rien n'est écrêté.
+    Loudness { lufs: f32, ceiling: f32 },
+}
+
+/// Réglages d'un export WAV.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ExportOptions {
+    pub depth: BitDepth,
+    pub normalize: Normalize,
+    /// Dither TPDF avant la réduction en 16 bits (sans effet en 24 bits et en flottant).
+    pub dither: bool,
+}
+
+impl Default for ExportOptions {
+    fn default() -> Self {
+        Self { depth: BitDepth::Pcm24, normalize: Normalize::Off, dither: true }
+    }
+}
+
+/// Niveaux d'un rendu stéréo entrelacé.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Levels {
+    /// Crête échantillon, en dBFS.
+    pub peak: f32,
+    /// Crête vraie (suréchantillonnée ×4), en dBTP.
+    pub true_peak: f32,
+    /// Sonie intégrée BS.1770, en LUFS (−∞ pour un silence).
+    pub integrated: f32,
+}
+
+/// Mesure crête, crête vraie et sonie intégrée d'un rendu stéréo entrelacé.
+pub fn measure(samples: &[f32], sample_rate: u32) -> Levels {
+    let mut meter = LoudnessMeter::new(sample_rate.max(1) as f32, 2);
+    let (mut l, mut r) = (Vec::with_capacity(BLOCK), Vec::with_capacity(BLOCK));
+    for chunk in samples.chunks(2 * BLOCK) {
+        l.clear();
+        r.clear();
+        for f in chunk.chunks_exact(2) {
+            l.push(f[0]);
+            r.push(f[1]);
+        }
+        meter.process_stereo(&l, &r);
+    }
+    Levels { peak: meter.sample_peak(), true_peak: meter.true_peak(), integrated: meter.integrated() }
+}
+
+/// Gain (dB) qui amène `levels` à la normalisation voulue ; 0 pour un silence.
+pub fn normalize_gain(levels: Levels, mode: Normalize) -> f32 {
+    let gain = match mode {
+        Normalize::Off => 0.0,
+        Normalize::Peak(dbfs) => dbfs - levels.peak,
+        Normalize::Loudness { lufs, ceiling } => (lufs - levels.integrated).min(ceiling - levels.true_peak),
+    };
+    // Silence (crête à −200 dB, sonie à −∞) : rien à normaliser.
+    if gain.is_finite() && levels.peak > -150.0 { gain } else { 0.0 }
+}
+
+/// Normalise un rendu stéréo entrelacé sur place ; renvoie le gain appliqué (dB).
+pub fn normalize(samples: &mut [f32], sample_rate: u32, mode: Normalize) -> f32 {
+    if mode == Normalize::Off {
+        return 0.0;
+    }
+    let gain = normalize_gain(measure(samples, sample_rate), mode);
+    if gain != 0.0 {
+        let k = 10f32.powf(gain / 20.0);
+        samples.iter_mut().for_each(|s| *s *= k);
+    }
+    gain
+}
+
+/// Normalise puis écrit le rendu ; renvoie le gain de normalisation (dB).
+pub fn export_wav(
+    path: impl AsRef<Path>,
+    samples: &mut [f32],
+    sample_rate: u32,
+    options: ExportOptions,
+) -> io::Result<f32> {
+    let gain = normalize(samples, sample_rate, options.normalize);
+    let mut w = BufWriter::new(File::create(path)?);
+    encode_wav_with(&mut w, samples, sample_rate, options.depth, options.dither)?;
+    w.flush()?;
+    Ok(gain)
+}
+
+/// Écrit un WAV stéréo à partir d'échantillons entrelacés dans [-1, 1] (dither
+/// TPDF en 16 bits).
 pub fn write_wav(path: impl AsRef<Path>, samples: &[f32], sample_rate: u32, depth: BitDepth) -> io::Result<()> {
     let mut w = BufWriter::new(File::create(path)?);
     encode_wav(&mut w, samples, sample_rate, depth)?;
     w.flush()
 }
 
-/// Encode un WAV stéréo. 16 et 24 bits : dither TPDF de ±1 LSB (déterministe).
+/// Encode un WAV stéréo, avec dither TPDF en 16 bits.
 pub fn encode_wav(w: &mut impl Write, samples: &[f32], sample_rate: u32, depth: BitDepth) -> io::Result<()> {
+    encode_wav_with(w, samples, sample_rate, depth, true)
+}
+
+/// Encode un WAV stéréo. `dither` : en 16 bits, bruit TPDF de ±1 LSB
+/// (déterministe) ajouté avant l'arrondi, qui change la distorsion de
+/// quantification en un souffle constant à −96 dB. Le 24 bits est arrondi tel quel.
+pub fn encode_wav_with(
+    w: &mut impl Write,
+    samples: &[f32],
+    sample_rate: u32,
+    depth: BitDepth,
+    dither: bool,
+) -> io::Result<()> {
     const CHANNELS: u16 = 2;
     let bytes = (depth.bits() / 8) as usize;
     let data_len = u32::try_from(samples.len() * bytes)
@@ -210,7 +317,7 @@ pub fn encode_wav(w: &mut impl Write, samples: &[f32], sample_rate: u32, depth: 
     w.write_all(&data_len.to_le_bytes())?;
 
     let mut noise = WhiteNoise::new(0x5EED_D17E);
-    let mut tpdf = || 0.5 * (noise.next_sample() + noise.next_sample());
+    let mut tpdf = || if dither { 0.5 * (noise.next_sample() + noise.next_sample()) } else { 0.0 };
     let mut buf = Vec::with_capacity(BLOCK * 4);
     for chunk in samples.chunks(BLOCK) {
         buf.clear();
@@ -222,7 +329,7 @@ pub fn encode_wav(w: &mut impl Write, samples: &[f32], sample_rate: u32, depth: 
                     buf.extend_from_slice(&v.to_le_bytes());
                 }
                 BitDepth::Pcm24 => {
-                    let v = (s as f64 * 8_388_607.0 + tpdf() as f64).round().clamp(-8_388_608.0, 8_388_607.0) as i32;
+                    let v = (s as f64 * 8_388_607.0).round().clamp(-8_388_608.0, 8_388_607.0) as i32;
                     buf.extend_from_slice(&v.to_le_bytes()[..3]);
                 }
                 BitDepth::Float32 => buf.extend_from_slice(&s.to_le_bytes()),
@@ -425,6 +532,93 @@ mod tests {
         // Le dither conserve le niveau moyen d'un signal sous le LSB.
         let mean = pcm.iter().map(|&v| v as f64).sum::<f64>() / pcm.len() as f64;
         assert!((mean - 0.25).abs() < 0.03, "{mean}");
+    }
+
+    /// Sinus stéréo identique sur les deux canaux, à 997 Hz.
+    fn sine(amp: f32, secs: f32, sr: u32) -> Vec<f32> {
+        let n = (secs * sr as f32) as usize;
+        (0..n)
+            .flat_map(|k| {
+                let v = amp * (std::f32::consts::TAU * 997.0 * k as f32 / sr as f32).sin();
+                [v, v]
+            })
+            .collect()
+    }
+
+    #[test]
+    fn peak_normalization_hits_the_target() {
+        let mut audio = sine(0.25, 1.0, 48_000);
+        let gain = normalize(&mut audio, 48_000, Normalize::Peak(-1.0));
+        assert!((gain - (-1.0 - 20.0 * 0.25f32.log10())).abs() < 0.01, "{gain}");
+        let pk = peak(&audio);
+        assert!((20.0 * pk.log10() + 1.0).abs() < 0.01, "{pk}");
+        // Off : rien ne bouge.
+        let before = audio.clone();
+        assert_eq!(normalize(&mut audio, 48_000, Normalize::Off), 0.0);
+        assert_eq!(audio, before);
+    }
+
+    #[test]
+    fn loudness_normalization_hits_the_target() {
+        // Sinus à 1 kHz à −6 dBFS sur les deux canaux : environ −6 LUFS.
+        let mut audio = sine(0.5, 5.0, 48_000);
+        let before = measure(&audio, 48_000);
+        assert!((before.integrated - (-6.0)).abs() < 0.3, "{before:?}");
+        normalize(&mut audio, 48_000, Normalize::Loudness { lufs: -14.0, ceiling: -1.0 });
+        let after = measure(&audio, 48_000);
+        assert!((after.integrated + 14.0).abs() < 0.05, "{after:?}");
+        assert!(after.true_peak < -1.0);
+    }
+
+    #[test]
+    fn loudness_gain_stops_at_the_true_peak_ceiling() {
+        // −20 LUFS environ : viser 0 LUFS dépasserait 0 dBTP ; le plafond l'arrête à −1 dBTP.
+        let mut audio = sine(0.1, 3.0, 48_000);
+        let gain = normalize(&mut audio, 48_000, Normalize::Loudness { lufs: 0.0, ceiling: -1.0 });
+        assert!(gain > 15.0 && gain < 20.0, "{gain}");
+        let after = measure(&audio, 48_000);
+        assert!((after.true_peak + 1.0).abs() < 0.05, "{after:?}");
+        assert!(after.integrated < -1.0);
+    }
+
+    #[test]
+    fn silence_is_left_alone() {
+        let mut audio = vec![0.0; 48_000];
+        assert_eq!(normalize(&mut audio, 48_000, Normalize::Peak(-0.3)), 0.0);
+        assert_eq!(normalize(&mut audio, 48_000, Normalize::Loudness { lufs: -14.0, ceiling: -1.0 }), 0.0);
+        assert!(audio.iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn dither_only_in_16_bits_and_can_be_turned_off() {
+        let quiet = vec![0.25 / 32_767.0; 1_000];
+        let pcm16 = |dither| {
+            let mut buf = Vec::new();
+            encode_wav_with(&mut buf, &quiet, 48_000, BitDepth::Pcm16, dither).unwrap();
+            buf[44..].chunks(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect::<Vec<_>>()
+        };
+        // Sans dither, un signal sous le demi-LSB disparaît ; avec, il reste en moyenne.
+        assert!(pcm16(false).iter().all(|&v| v == 0));
+        assert!(pcm16(true).iter().any(|&v| v != 0));
+        // 24 bits : arrondi exact, sans bruit.
+        let mut buf = Vec::new();
+        encode_wav(&mut buf, &[0.5, -0.25], 48_000, BitDepth::Pcm24).unwrap();
+        let v: Vec<i32> = buf[44..].chunks(3).map(|c| i32::from_le_bytes([0, c[0], c[1], c[2]]) >> 8).collect();
+        assert_eq!(v, [(0.5f64 * 8_388_607.0).round() as i32, (-0.25f64 * 8_388_607.0).round() as i32]);
+    }
+
+    #[test]
+    fn export_normalizes_then_writes() {
+        let path = std::env::temp_dir().join(format!("ponzik-export-{}.wav", std::process::id()));
+        let mut audio = sine(0.5, 0.5, 48_000);
+        let options = ExportOptions { depth: BitDepth::Pcm16, normalize: Normalize::Peak(0.0), dither: true };
+        let gain = export_wav(&path, &mut audio, 48_000, options).unwrap();
+        assert!((gain - 6.02).abs() < 0.05, "{gain}");
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(bytes.len(), 44 + audio.len() * 2);
+        let max = bytes[44..].chunks(2).map(|c| i16::from_le_bytes([c[0], c[1]]).unsigned_abs()).max().unwrap();
+        assert!(max >= 32_700, "{max}");
+        std::fs::remove_file(&path).unwrap();
     }
 
     #[test]
