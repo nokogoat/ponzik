@@ -226,6 +226,8 @@ pub enum Action {
     /// Ouvre un pattern dans le Channel Rack.
     EditPattern(usize),
     DeleteClip(usize),
+    /// Recopie la sélection de temps de la playlist juste après elle.
+    DuplicateTime,
 }
 
 /// Ligne de menu : une icône (ou la couleur d'un pattern), un nom court, une
@@ -619,6 +621,11 @@ impl App {
             }
             "colors" => {
                 self.open_popup(Popup::PatternColor(0), Rect::new(330.0, 150.0, 0.0, 19.0));
+                return;
+            }
+            "duptime" => {
+                self.time_selection = Some((View::Playlist, 4 * TICKS_PER_BAR, 8 * TICKS_PER_BAR));
+                self.duplicate_time();
                 return;
             }
             "countin" => {
@@ -1307,7 +1314,7 @@ impl App {
     /// La sélection de temps fait boucler la lecture quand elle correspond au mode
     /// courant (piano roll en mode pattern, playlist en mode morceau). Ce n'est pas
     /// une modification du projet : pas d'étape d'annulation.
-    fn set_loop(&mut self, view: View, range: Option<(u32, u32)>) {
+    pub(super) fn set_loop(&mut self, view: View, range: Option<(u32, u32)>) {
         let applies = matches!((view, self.project.mode), (View::Piano, PlayMode::Pattern(_)) | (View::Playlist, PlayMode::Song));
         let range = if applies { range } else { None };
         if self.project.loop_range != range {
@@ -2630,7 +2637,7 @@ impl App {
                     self.commit("Effacer un clip");
                 }
             }
-
+            Action::DuplicateTime => self.duplicate_time(),
             Action::NewPattern => {
                 let p = self.project.add_pattern();
                 self.select_pattern(p);

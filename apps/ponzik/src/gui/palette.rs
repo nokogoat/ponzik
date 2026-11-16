@@ -91,6 +91,7 @@ impl App {
             "",
             Action::Popup(Popup::Rename { target: Rename::Pattern(cur), text: self.project.patterns[cur].name.clone() }),
         );
+        add("Dupliquer la sélection de temps".into(), "Playlist", "Ctrl B", Action::DuplicateTime);
         if let Some(clip) = self.playlist.selected.filter(|&i| i < self.project.clips.len()) {
             add("Rendre unique le clip sélectionné".into(), "Playlist", "", Action::MakeUnique(clip));
         }

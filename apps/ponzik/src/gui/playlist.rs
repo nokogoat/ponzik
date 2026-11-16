@@ -19,7 +19,7 @@ const PLAYLIST_HELP: &str = "Playlist
 Clic : poser le pattern choisi · bord : durée
 Clic droit : effacer · sur le titre : menu du clip
 Double-clic : éditer · Ctrl+B : dupliquer
-Règle : départ et boucle
+Règle : départ, boucle et sélection de temps
 Molette : défiler · Ctrl : zoom · milieu : glisser";
 /// Hauteur de la barre de titre d'un clip (clic droit : menu).
 const CLIP_TITLE: f32 = 19.0;
@@ -74,6 +74,27 @@ impl App {
             self.commit("Rendre unique");
             self.toast(&format!("Clip rendu unique : {name}"));
         }
+    }
+
+    /// Ctrl+B sur une sélection de temps : tout son contenu est recopié juste
+    /// après, et la sélection (et la boucle) avance d'autant pour enchaîner.
+    pub fn duplicate_time(&mut self) {
+        let Some((View::Playlist, a, b)) = self.time_selection else {
+            self.toast("Tire d'abord une sélection de temps dans la règle");
+            return;
+        };
+        let n = self.project.duplicate_time(a, b);
+        // Les clips ont pu être coupés : les indices ne tiennent plus.
+        self.playlist.selected = None;
+        let span = b - a;
+        self.time_selection = Some((View::Playlist, b, b + span));
+        self.set_loop(View::Playlist, Some((b, b + span)));
+        self.start_marker = b as f64;
+        self.commit("Dupliquer la sélection de temps");
+        let bars = span as f32 / TICKS_PER_BAR as f32;
+        let bars = if bars.fract() == 0.0 { format!("{bars:.0}") } else { format!("{bars:.2}").replace('.', ",") };
+        let s = if n > 1 { "s" } else { "" };
+        self.toast(&format!("{n} clip{s} dupliqué{s} · {bars} mes."));
     }
 
     pub(super) fn playlist_view(&mut self, c: &mut Canvas, input: &Input, header: Rect, body: Rect) {
@@ -226,6 +247,19 @@ impl App {
         // Règle : clic = marqueur de départ, glisser = sélection de temps.
         if let Some((a, b)) = self.ruler(c, input, View::Playlist, ruler, lanes_r, snap.min(96.0), &x_of, &tick_at) {
             self.playlist.selected = self.project.clips.iter().position(|cl| cl.start >= a && cl.start < b);
+        }
+        // Sélection de temps : son raccourci, affiché au bout dans la règle.
+        let sel = match self.time_selection {
+            Some((View::Playlist, a, b)) => Some((a, b)),
+            _ => None,
+        };
+        let shown = self.anim.to(wid("pl-tsel-key", 0, 0), sel.is_some() as u8 as f32, T_HOVER);
+        if let Some((a, b)) = sel {
+            let (xa, xb) = (x_of(a as f32), x_of(b as f32));
+            if xb - xa > 64.0 && shown > 0.01 {
+                self.keycap(c, xb - 6.0, ruler.y + ruler.h * 0.5, "Ctrl B", 0.8 * shown);
+            }
+            self.tip_zone(input, Rect::new(xa, ruler.y, xb - xa, ruler.h), "Sélection de temps\nCtrl+B : la recopier juste après", "Ctrl B");
         }
 
         // Clips.
@@ -407,6 +441,9 @@ impl App {
                             self.playlist.selected = Some(self.project.clips.len() - 1);
                             self.commit("Coller un clip");
                         }
+                    }
+                    Key::Char('b') if mods.ctrl && matches!(self.time_selection, Some((View::Playlist, _, _))) => {
+                        self.duplicate_time();
                     }
                     Key::Char('b') if mods.ctrl => {
                         if let Some(i) = sel {
