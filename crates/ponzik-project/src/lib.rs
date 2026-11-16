@@ -41,8 +41,9 @@ pub use templates::templates;
 /// Un instrument et l'état de ses paramètres.
 #[derive(Clone, Debug, PartialEq)]
 pub struct InstrumentDef {
-    /// Identifiant du registre natif, ou `clap:<chemin>#<id>` pour un plugin CLAP
-    /// (voir [`ponzik_clap::kind_for`]).
+    /// Identifiant du registre natif, `clap:<chemin>#<id>` pour un plugin CLAP
+    /// (voir [`ponzik_clap::kind_for`]) ou `vst3:<chemin>#<classe>` pour un
+    /// plugin VST 3 (voir [`ponzik_vst3::kind_for`]).
     pub kind: String,
     /// Valeurs qui diffèrent des défauts : (identifiant, valeur).
     pub params: Vec<(u32, f32)>,
@@ -74,7 +75,7 @@ impl InstrumentDef {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct EffectDef {
-    /// Comme [`InstrumentDef::kind`] : natif ou `clap:<chemin>#<id>`.
+    /// Comme [`InstrumentDef::kind`] : natif, `clap:…` ou `vst3:…`.
     pub kind: String,
     pub params: Vec<(u32, f32)>,
     pub bypass: bool,
@@ -384,11 +385,13 @@ impl Project {
 
     /// Crée l'instrument d'un canal, réglé et prêt à envoyer au moteur.
     ///
-    /// Un plugin CLAP introuvable ou défaillant est remplacé par Pulse (le projet
+    /// Un plugin CLAP ou VST 3 introuvable ou défaillant est remplacé par Pulse (le projet
     /// garde son identifiant d'origine).
     pub fn make_instrument(def: &InstrumentDef, sample_rate: f32, loader: SampleLoader) -> Box<dyn Instrument> {
         let created = if def.kind.starts_with(ponzik_clap::KIND_PREFIX) {
             ponzik_clap::instrument_from_kind(&def.kind).map_err(|e| eprintln!("CLAP : {e}")).ok()
+        } else if def.kind.starts_with(ponzik_vst3::KIND_PREFIX) {
+            ponzik_vst3::instrument_from_kind(&def.kind).map_err(|e| eprintln!("VST 3 : {e}")).ok()
         } else {
             registry::create_instrument(&def.kind)
         };
@@ -405,10 +408,12 @@ impl Project {
         inst
     }
 
-    /// `None` si l'identifiant est inconnu ou si le plugin CLAP ne se charge pas.
+    /// `None` si l'identifiant est inconnu ou si le plugin CLAP ou VST 3 ne se charge pas.
     pub fn make_effect(def: &EffectDef, sample_rate: f32, bpm: f32) -> Option<Box<dyn Effect>> {
         let mut fx = if def.kind.starts_with(ponzik_clap::KIND_PREFIX) {
             ponzik_clap::effect_from_kind(&def.kind).map_err(|e| eprintln!("CLAP : {e}")).ok()?
+        } else if def.kind.starts_with(ponzik_vst3::KIND_PREFIX) {
+            ponzik_vst3::effect_from_kind(&def.kind).map_err(|e| eprintln!("VST 3 : {e}")).ok()?
         } else {
             registry::create_effect(&def.kind)?
         };
@@ -595,6 +600,14 @@ mod tests {
     #[test]
     fn missing_clap_plugin_falls_back() {
         let kind = "clap:/introuvable/x.clap#com.exemple.synth";
+        let inst = Project::make_instrument(&InstrumentDef::new(kind), 48_000.0, &no_samples);
+        assert_eq!(inst.kind(), "pulse");
+        assert!(Project::make_effect(&EffectDef::new(kind), 48_000.0, 120.0).is_none());
+    }
+
+    #[test]
+    fn missing_vst3_plugin_falls_back() {
+        let kind = "vst3:/introuvable/x.vst3#0123456789ABCDEF0123456789ABCDEF";
         let inst = Project::make_instrument(&InstrumentDef::new(kind), 48_000.0, &no_samples);
         assert_eq!(inst.kind(), "pulse");
         assert!(Project::make_effect(&EffectDef::new(kind), 48_000.0, 120.0).is_none());

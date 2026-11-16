@@ -56,6 +56,7 @@ dependencies = [
  "ponzik-clap",
  "ponzik-dsp",
  "ponzik-engine",
+ "ponzik-vst3",
 ]
 
 [[package]]
