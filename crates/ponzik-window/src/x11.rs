@@ -578,6 +578,9 @@ fn intern_atom(stream: &mut UnixStream, name: &str) -> Result<u32, WindowError> 
     Ok(u32_at(&roundtrip(stream, r.finish())?, 8))
 }
 
+/// Taille d'une requête ShmPutImage, en octets.
+const SHM_PUT_IMAGE_LEN: usize = 40;
+
 struct Shm {
     seg: u32,
     addr: *mut u8,
@@ -597,6 +600,9 @@ pub(crate) struct Window {
     shm: Option<Shm>,
     shm_busy: bool,
     shm_failed: bool,
+    /// Taille de la dernière image complète copiée dans le segment : une image
+    /// partielle n'y copie que ses zones, le reste doit déjà être à jour.
+    shm_image: (u32, u32),
     /// Police « cursor » (0 tant qu'elle n'est pas ouverte), curseurs déjà créés
     /// (0 = pas encore) et forme appliquée à la fenêtre.
     cursor_font: u32,
@@ -686,6 +692,7 @@ impl Window {
             shm: None,
             shm_busy: false,
             shm_failed: false,
+            shm_image: (0, 0),
             cursor_font: 0,
             cursors: [0; CURSOR_SHAPES],
             cursor: None,
@@ -1062,6 +1069,18 @@ impl Window {
     }
 
     pub(crate) fn present(&mut self, pixels: &[u32], width: u32, height: u32) -> Result<(), WindowError> {
+        self.present_rects(pixels, width, height, None)
+    }
+
+    /// Envoie seulement les zones `rects` (x0, y0, x1, y1) de l'image, ou toute
+    /// l'image avec `None`. Le segment partagé garde le reste de l'image précédente.
+    pub(crate) fn present_rects(
+        &mut self,
+        pixels: &[u32],
+        width: u32,
+        height: u32,
+        rects: Option<&[(usize, usize, usize, usize)]>,
+    ) -> Result<(), WindowError> {
         if width == 0 || height == 0 {
             return Ok(());
         }
@@ -1069,6 +1088,16 @@ impl Window {
         if self.shm.as_ref().is_some_and(|s| s.size < bytes) {
             self.drop_shm();
             self.shm = self.create_shm(bytes + bytes / 4);
+            self.shm_image = (0, 0);
+        }
+        // Nouveau segment ou nouvelle taille : tout est envoyé.
+        let full = [(0, 0, width as usize, height as usize)];
+        let rects = match rects {
+            Some(r) if self.shm_image == (width, height) => r,
+            _ => &full[..],
+        };
+        if rects.is_empty() {
+            return Ok(());
         }
 
         // On attend que le serveur ait fini de lire l'image précédente.
@@ -1087,28 +1116,46 @@ impl Window {
         }
 
         if let (Some((seg, addr)), Some(major)) = (self.shm.as_ref().map(|s| (s.seg, s.addr)), self.shm_major) {
-            // SAFETY: le segment fait au moins `bytes` octets et le serveur a fini de le lire.
-            unsafe { std::ptr::copy_nonoverlapping(pixels.as_ptr().cast::<u8>(), addr, bytes) };
-            let mut r = Req::new(major, SHM_PUT_IMAGE);
-            r.u32(self.window)
-                .u32(self.gc)
-                .u16(width as u16)
-                .u16(height as u16)
-                .u16(0)
-                .u16(0)
-                .u16(width as u16)
-                .u16(height as u16)
-                .i16(0)
-                .i16(0)
-                .u8(self.setup.depth)
-                .u8(2) // ZPixmap
-                .u8(1) // ShmCompletion
-                .u8(0)
-                .u32(seg)
-                .u32(0);
-            let req = r.finish().to_vec();
+            let w = width as usize;
+            let mut reqs = Vec::with_capacity(rects.len() * SHM_PUT_IMAGE_LEN);
+            for &(x0, y0, x1, y1) in rects {
+                let (x1, y1) = (x1.min(w), y1.min(height as usize));
+                if x0 >= x1 || y0 >= y1 {
+                    continue;
+                }
+                for y in y0..y1 {
+                    let row = &pixels[y * w + x0..y * w + x1];
+                    // SAFETY: le segment fait au moins `bytes` octets (la ligne y est
+                    // dans l'image) et le serveur a fini de le lire.
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(row.as_ptr().cast::<u8>(), addr.add((y * w + x0) * 4), row.len() * 4)
+                    };
+                }
+                let mut r = Req::new(major, SHM_PUT_IMAGE);
+                r.u32(self.window)
+                    .u32(self.gc)
+                    .u16(width as u16)
+                    .u16(height as u16)
+                    .u16(x0 as u16)
+                    .u16(y0 as u16)
+                    .u16((x1 - x0) as u16)
+                    .u16((y1 - y0) as u16)
+                    .i16(x0 as i16)
+                    .i16(y0 as i16)
+                    .u8(self.setup.depth)
+                    .u8(2) // ZPixmap
+                    .u8(0) // ShmCompletion : posé plus bas sur la dernière zone
+                    .u8(0)
+                    .u32(seg)
+                    .u32(0);
+                reqs.extend_from_slice(r.finish());
+            }
+            let Some(last) = reqs.len().checked_sub(SHM_PUT_IMAGE_LEN) else { return Ok(()) };
+            // Le serveur prévient quand il a lu la dernière zone (send_event, octet 34).
+            reqs[last + 34] = 1;
             self.shm_busy = true;
-            return self.send(&req);
+            self.shm_image = (width, height);
+            return self.send(&reqs);
         }
 
         // Repli : PutImage par bandes qui tiennent dans une requête.

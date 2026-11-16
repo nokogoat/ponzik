@@ -178,6 +178,27 @@ impl Window {
         self.inner.present(pixels, width, height)
     }
 
+    /// Comme [`Window::present`], mais seules les zones `rects` (x0, y0, x1, y1,
+    /// bornes hautes exclues, en pixels physiques) ont changé depuis l'image
+    /// précédente. Sous X11, seules ces zones sont copiées et envoyées ; les autres
+    /// systèmes présentent toute l'image.
+    pub fn present_rects(
+        &mut self,
+        pixels: &[u32],
+        width: u32,
+        height: u32,
+        rects: &[(usize, usize, usize, usize)],
+    ) -> Result<(), WindowError> {
+        assert!(pixels.len() >= (width * height) as usize, "buffer too small");
+        if rects.is_empty() {
+            return Ok(());
+        }
+        #[cfg(target_os = "linux")]
+        return self.inner.present_rects(pixels, width, height, Some(rects));
+        #[cfg(not(target_os = "linux"))]
+        self.inner.present(pixels, width, height)
+    }
+
     /// Change la forme du curseur au-dessus de la zone cliente. Peu coûteux :
     /// rien n'est envoyé au système si la forme ne change pas.
     pub fn set_cursor(&mut self, cursor: Cursor) {
