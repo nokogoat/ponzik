@@ -5589,3 +5589,23 @@ msgstr "{} · 1 cible"
 
 msgid "{} · {} targets"
 msgstr "{} · {} cibles"
+
+# --- Plugin scan ---
+
+msgid "not a CLAP or VST 3 plugin"
+msgstr "pas un plugin CLAP ni VST 3"
+
+msgid "could not start the scan: {}"
+msgstr "impossible de lancer l'analyse : {}"
+
+msgid "did not answer within {} s: skipped"
+msgstr "pas de réponse en {} s : ignoré"
+
+msgid "crashed while loading (signal {})"
+msgstr "plantage au chargement (signal {})"
+
+msgid "crashed while loading (exit code {})"
+msgstr "plantage au chargement (code {})"
+
+msgid "the scan failed (exit code {})"
+msgstr "l'analyse a échoué (code {})"

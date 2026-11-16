@@ -94,22 +94,31 @@ pub fn search_paths() -> Vec<PathBuf> {
 }
 
 /// Toutes les classes audio des dossiers standard (les modules illisibles sont ignorés).
+///
+/// Charge chaque module dans ce processus : un plugin qui plante l'emporte.
+/// L'application passe plutôt par [`plugin_bundles`] et un processus par module.
 pub fn scan() -> Vec<PluginInfo> {
+    plugin_bundles().iter().filter_map(|f| scan_bundle(f).ok()).flatten().collect()
+}
+
+/// Paquets et fichiers `.vst3` des dossiers standard, sans doublon (liens
+/// compris). Les ponts comme yabridge (`~/.vst3/yabridge`) en font partie.
+pub fn plugin_bundles() -> Vec<PathBuf> {
     let mut found = Vec::new();
     for dir in search_paths() {
         collect(&dir, 0, &mut found);
     }
-    plugins_of(found)
+    dedup(found)
 }
 
 /// Classes audio des `.vst3` d'un dossier (récursif).
 pub fn scan_dir(dir: &Path) -> Vec<PluginInfo> {
     let mut found = Vec::new();
     collect(dir, 0, &mut found);
-    plugins_of(found)
+    dedup(found).iter().filter_map(|f| scan_bundle(f).ok()).flatten().collect()
 }
 
-fn plugins_of(mut bundles: Vec<PathBuf>) -> Vec<PluginInfo> {
+fn dedup(mut bundles: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut seen = Vec::new();
     bundles.retain(|f| {
         let c = f.canonicalize().unwrap_or_else(|_| f.clone());
@@ -117,7 +126,7 @@ fn plugins_of(mut bundles: Vec<PathBuf>) -> Vec<PluginInfo> {
         seen.push(c);
         new
     });
-    bundles.iter().filter_map(|f| scan_bundle(f).ok()).flatten().collect()
+    bundles
 }
 
 fn collect(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {

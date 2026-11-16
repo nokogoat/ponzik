@@ -73,22 +73,31 @@ pub fn search_paths() -> Vec<PathBuf> {
 }
 
 /// Tous les plugins des dossiers standard (les fichiers illisibles sont ignorés).
+///
+/// Charge chaque fichier dans ce processus : un plugin qui plante l'emporte.
+/// L'application passe plutôt par [`plugin_files`] et un processus par fichier.
 pub fn scan() -> Vec<PluginInfo> {
+    plugin_files().iter().filter_map(|f| scan_file(f).ok()).flatten().collect()
+}
+
+/// Fichiers `.clap` des dossiers standard, sans doublon (liens compris). Les
+/// ponts comme yabridge (`~/.clap/yabridge`) en font partie.
+pub fn plugin_files() -> Vec<PathBuf> {
     let mut files = Vec::new();
     for dir in search_paths() {
         collect(&dir, 0, &mut files);
     }
-    plugins_of(files)
+    dedup(files)
 }
 
 /// Plugins des fichiers `.clap` d'un dossier (récursif).
 pub fn scan_dir(dir: &Path) -> Vec<PluginInfo> {
     let mut files = Vec::new();
     collect(dir, 0, &mut files);
-    plugins_of(files)
+    dedup(files).iter().filter_map(|f| scan_file(f).ok()).flatten().collect()
 }
 
-fn plugins_of(mut files: Vec<PathBuf>) -> Vec<PluginInfo> {
+fn dedup(mut files: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut seen = Vec::new();
     files.retain(|f| {
         let c = f.canonicalize().unwrap_or_else(|_| f.clone());
@@ -96,7 +105,7 @@ fn plugins_of(mut files: Vec<PathBuf>) -> Vec<PluginInfo> {
         seen.push(c);
         new
     });
-    files.iter().filter_map(|f| scan_file(f).ok()).flatten().collect()
+    files
 }
 
 fn collect(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {

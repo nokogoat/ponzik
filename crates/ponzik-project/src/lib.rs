@@ -31,6 +31,7 @@ pub mod flp;
 pub mod json;
 pub mod library;
 pub mod midi_file;
+pub mod plugins;
 pub mod presets;
 pub mod rack;
 pub mod render;

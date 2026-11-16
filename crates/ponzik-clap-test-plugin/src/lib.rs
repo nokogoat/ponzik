@@ -53,7 +53,12 @@ static SINE_DESC: Shared<ClapPluginDescriptor> =
 #[unsafe(no_mangle)]
 pub static clap_entry: ClapPluginEntry = ClapPluginEntry { clap_version: CLAP_VERSION, init, deinit, get_factory };
 
+/// With `PONZIK_TEST_PLUGIN_CRASH` set, loading the plugin crashes the
+/// process: the host's scan must survive it.
 unsafe extern "C" fn init(_: *const c_char) -> bool {
+    if std::env::var_os("PONZIK_TEST_PLUGIN_CRASH").is_some() {
+        std::process::abort();
+    }
     true
 }
 

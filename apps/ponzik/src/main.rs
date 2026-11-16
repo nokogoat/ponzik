@@ -37,6 +37,10 @@ Usage:
 fn main() -> ExitCode {
     gui::init_language();
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // Internal: loads one plugin for the scan, in this throwaway process.
+    if args.first().is_some_and(|a| a == "scan-plugin") {
+        return scan_plugin(args.get(1).map(String::as_str));
+    }
     let result = match args.first().map(String::as_str) {
         None => gui::run(demo_project()),
         Some("breakcore") => gui::run(ponzik_project::demo_breakcore()),
@@ -57,6 +61,21 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// `ponzik scan-plugin <path>`: what the plugin file holds, on standard output
+/// (see `ponzik_project::plugins`). Run by the scan in a child process, so a
+/// plugin that crashes or hangs only takes this process down.
+fn scan_plugin(path: Option<&str>) -> ExitCode {
+    use std::io::Write;
+    let Some(path) = path else {
+        eprintln!("usage: ponzik scan-plugin <file.clap | bundle.vst3>");
+        return ExitCode::from(2);
+    };
+    let (out, ok) = ponzik_project::plugins::scan_child(std::path::Path::new(path));
+    let mut stdout = io::stdout().lock();
+    let _ = stdout.write_all(out.as_bytes()).and_then(|_| stdout.flush());
+    if ok { ExitCode::SUCCESS } else { ExitCode::from(2) }
 }
 
 fn play(seconds: Option<&str>) -> Result<(), String> {
