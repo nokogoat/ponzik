@@ -145,6 +145,29 @@ Les cinq à prendre en premier : **V1-1, V1-2, V1-3 puis V1-4, V1-7, V1-9.**
 
 ---
 
+## 4 bis. Signature Ponzik : la Pyramide (à faire une fois la parité atteinte)
+
+Un mode de création propre à Ponzik, qui donne son nom au logiciel : on
+construit un morceau **par étages, de la base vers la pointe**.
+
+- **Base** : le rythme et le grave (kick, basse, groove), la fondation qui tient tout.
+- **Étages du milieu** : l'harmonie (accords, nappes), puis les textures et percussions.
+- **Pointe** : la mélodie, les voix, les ornements, ce qui attire l'oreille.
+
+Idées de départ :
+- une vue en pyramide où chaque étage est une couche (canaux et patterns qui
+  lui appartiennent) ; l'étage suivant ne s'ouvre qu'avec une base qui sonne,
+  pour guider un débutant sans brider un pro ;
+- chaque étage propose des générateurs adaptés (grooves, basse qui suit les
+  accords, progressions, mélodies sur la gamme) et écoute les étages du dessous
+  (tonalité, accords, énergie) ;
+- la pyramide se « déroule » en arrangement : retirer ou ajouter des étages au
+  fil des sections donne intro, montée, drop, break ;
+- visuel : la pyramide s'illumine étage par étage pendant la lecture ; on peut
+  couper ou isoler un étage en un clic.
+
+Dépend de : gamme et accords (fait), générateurs MIDI (V2-18), sections (V2-9).
+
 ## 5. Plugins natifs à créer
 
 Les noms sont fonctionnels ; l'inspiration est entre parenthèses et ne doit pas
