@@ -2978,7 +2978,12 @@ impl App {
         }
 
         let (title, items) = self.menu_items(&state.kind);
-        let w = 260.0;
+        // Assez large pour le plus long libellé et sa valeur (jusqu'à 360 px).
+        let widest = items
+            .iter()
+            .map(|it| self.fonts.measure(self.f.sans_med, 13.0, &it.name) + self.fonts.measure(self.f.mono, 11.0, &it.detail))
+            .fold(0.0f32, f32::max);
+        let w = (widest + 84.0).clamp(260.0, 360.0);
         let row_h = 38.0;
         let seps = items.iter().filter(|i| i.sep).count() as f32 * 9.0;
         let h = (44.0 + items.len() as f32 * row_h + seps + 6.0).min(screen.h - 80.0);
