@@ -7,6 +7,7 @@ use ponzik_ui::{Canvas, Color, Rect};
 use ponzik_window::{Cursor, Key};
 
 use super::Input;
+use super::arrange::{ARRANGE_H, TEMPO_H};
 use super::app::{App, Popup, Rename, View};
 use super::dnd::DropTarget;
 use super::theme::*;
@@ -21,6 +22,7 @@ Click: place the chosen pattern · edge: length
 Right-click: erase · on the title: clip menu
 Double-click: edit · Ctrl+B: duplicate
 Ruler: start, loop and time selection
+Top lane: sections · under the ruler: tempo and meter
 Wheel: scroll · Ctrl: zoom · middle: pan");
 /// Hauteur de la barre de titre d'un clip (clic droit : menu).
 const CLIP_TITLE: f32 = 19.0;
@@ -92,8 +94,10 @@ impl App {
         self.set_loop(View::Playlist, Some((b, b + span)));
         self.start_marker = b as f64;
         self.commit(tr("Duplicate time selection"));
-        let bars = span as f32 / TICKS_PER_BAR as f32;
-        let bars = if bars.fract() == 0.0 { format!("{bars:.0}") } else { ponzik_i18n::num(bars as f64, 2) };
+        let map = self.project.tempo_map();
+        let (ba, bb) = (map.bar_beat(a as f64), map.bar_beat(b as f64));
+        let whole = ba.beat == 0 && bb.beat == 0 && ba.tick_in_beat == 0.0 && bb.tick_in_beat == 0.0;
+        let bars = if whole { (bb.bar - ba.bar).to_string() } else { ponzik_i18n::num(span as f64 / TICKS_PER_BAR as f64, 2) };
         self.toast(&tr_fmt_n!("{} clip duplicated · {} bars", "{} clips duplicated · {} bars", n, n, bars));
     }
 
@@ -107,7 +111,22 @@ impl App {
             self.anim.set(snap_key, i as f32);
         }
         draw_icon(c, Icon::Magnet, snap_box.x - 18.0, header.y + header.h * 0.5, 15.0, t.muted);
-        let snap = if self.anim.get(snap_key).unwrap_or(0.0) as usize == 0 { TICKS_PER_BAR } else { 96 } as f32;
+        // Snapping follows the time signature map: to bars, or to beats.
+        let bar_snap = self.anim.get(snap_key).unwrap_or(0.0) as usize == 0;
+        let map = self.project.tempo_map();
+        let snap_round = |t: f32| -> f32 {
+            let t = t.max(0.0) as f64;
+            (if bar_snap { map.snap_bar(t) } else { map.snap_beat(t) }) as f32
+        };
+        let snap_floor = |t: f32| -> f32 {
+            let bb = map.bar_beat(t.max(0.0) as f64);
+            if bar_snap { map.bar_start(bb.bar) as f32 } else { (t.max(0.0) as f64 - bb.tick_in_beat) as f32 }
+        };
+        // Grid unit at a tick (shortest clip length).
+        let unit = |t: f32| -> f32 {
+            let sig = map.sig_at(t as f64);
+            (if bar_snap { sig.bar_len() } else { sig.beat_len() }) as f32
+        };
         let help = Rect::new(snap_box.x - 74.0, header.y, 36.0, header.h);
         self.icon_button(c, input, wid("pl-help", 0, 0), help, Icon::Info, false, (tr(PLAYLIST_HELP), ""));
         // Hors mode morceau, la playlist ne joue pas : un bouton pour y passer.
@@ -186,8 +205,11 @@ impl App {
 
         // Ligne de temps.
         let area = Rect::new(inner.x + PALETTE_W, inner.y, inner.w - PALETTE_W, inner.h);
-        let ruler = Rect::new(area.x, area.y, area.w, RULER);
-        let lanes_r = Rect::new(area.x, area.y + RULER + 4.0, area.w, area.h - RULER - 4.0);
+        let arrange_r = Rect::new(area.x, area.y, area.w, ARRANGE_H);
+        let ruler = Rect::new(area.x, arrange_r.bottom(), area.w, RULER);
+        let tempo_r = Rect::new(area.x, ruler.bottom(), area.w, TEMPO_H);
+        let top = ARRANGE_H + RULER + TEMPO_H + 4.0;
+        let lanes_r = Rect::new(area.x, area.y + top, area.w, area.h - top);
         c.fill_rrect(Rect::new(area.x - 1.0, area.y, area.w + 1.0, area.h), 12.0, t.well);
         let lanes_used = self
             .project
@@ -233,24 +255,42 @@ impl App {
                 c.fill_rect(Rect::new(area.x, ly, area.w, LANE_H), t.panel.alpha(0.35));
             }
         }
-        let bar_first = (sx / TICKS_PER_BAR as f32).floor() as u32;
-        let bar_last = ((sx + area.w / ppt) / TICKS_PER_BAR as f32).ceil() as u32;
+        // Bars and beats of the time signature map.
         let song_end = self.project.song_len() as f32;
-        for b in bar_first..=bar_last {
-            let x = x_of((b * TICKS_PER_BAR) as f32).round();
+        let (view_a, view_b) = (sx.max(0.0) as f64, (sx + area.w / ppt) as f64);
+        if ppt * 48.0 >= 9.0 {
+            map.for_each_beat(view_a, view_b, |tick, down| {
+                if !down {
+                    let x = x_of(tick as f32).round();
+                    c.fill_rect(Rect::new(x, lanes_r.y, 1.0, lanes_r.h), t.hairline.alpha(0.45));
+                }
+            });
+        }
+        let mut bars = Vec::new();
+        map.for_each_bar(view_a, view_b, |b, tick| bars.push((b, tick)));
+        for (b, tick) in bars {
+            let x = x_of(tick as f32).round();
             let strong = b % 4 == 0;
             c.fill_rect(Rect::new(x, lanes_r.y, 1.0, lanes_r.h), t.hairline.alpha(if strong { 2.5 } else { 1.0 }));
             if self.playlist.zoom >= 28.0 || strong {
                 self.text(c, self.f.mono, 11.0, x + 6.0, ruler.y + 15.0, &(b + 1).to_string(), if strong { t.text2 } else { t.muted });
             }
         }
+        // Section starts, through the lanes.
+        for i in 0..self.project.markers.len() {
+            let x = x_of(self.project.markers[i].tick as f32).round();
+            c.fill_rect(Rect::new(x, lanes_r.y, 1.0, lanes_r.h), self.marker_color(i).alpha(0.45));
+        }
         let end_x = x_of(song_end);
         c.fill_rect(Rect::new(end_x.round(), ruler.y + 6.0, 2.0, area.h - 6.0), t.text2.alpha(0.5));
 
         // Règle : clic = marqueur de départ, glisser = sélection de temps.
-        if let Some((a, b)) = self.ruler(c, input, View::Playlist, ruler, lanes_r, snap.min(96.0), &x_of, &tick_at) {
+        let beat_snap = |t: f32| map.snap_beat(t.max(0.0) as f64) as f32;
+        if let Some((a, b)) = self.ruler(c, input, View::Playlist, ruler, lanes_r, &beat_snap, &x_of, &tick_at) {
             self.playlist.selected = self.project.clips.iter().position(|cl| cl.start >= a && cl.start < b);
         }
+        self.arrangement_lane(c, input, arrange_r, lanes_r, &map, &x_of, &tick_at);
+        self.tempo_lane(c, input, tempo_r, ppt, &x_of, &tick_at);
         // Sélection de temps : son raccourci, affiché au bout dans la règle.
         let sel = match self.time_selection {
             Some((View::Playlist, a, b)) => Some((a, b)),
@@ -281,7 +321,7 @@ impl App {
         // Dépôt d'un échantillon : sur la ligne visée, à la position aimantée.
         if self.dnd_active() && input.inside && clip_zone.contains(input.x, input.y) {
             let lane = lane_at(input.y) as usize;
-            let tick = ((tick_at(input.x) / snap).floor() * snap).max(0.0) as u32;
+            let tick = snap_floor(tick_at(input.x)) as u32;
             let x = x_of(tick as f32);
             // La zone part du point aimanté et contient toujours le curseur.
             let zone = Rect::new(x, lanes_r.y + lane as f32 * LANE_H + 2.0, (ppt * 96.0 * 4.0).max(input.x - x + 2.0), LANE_H - 4.0);
@@ -327,9 +367,8 @@ impl App {
         if self.is_dragging(audio_id) {
             match self.clip_drag {
                 Some(ClipDrag::AudioMove { clip, start, lane, tick0, lane0 }) if clip < self.project.audio_clips.len() => {
-                    let dt = ((tick_at(input.x) - tick0) / snap).round() * snap;
+                    let new_start = snap_round(start as f32 + tick_at(input.x) - tick0) as u32;
                     let cl = &mut self.project.audio_clips[clip];
-                    let new_start = (start as f32 + dt).max(0.0) as u32;
                     let new_lane = (lane as f32 + lane_at(input.y) - lane0).clamp(0.0, 63.0) as usize;
                     if (cl.start, cl.lane) != (new_start, new_lane) {
                         cl.start = new_start;
@@ -372,7 +411,7 @@ impl App {
                 }
                 None => {
                     let p = self.playlist.brush.min(self.project.patterns.len() - 1);
-                    let start = ((tick / snap).floor() * snap).max(0.0) as u32;
+                    let start = snap_floor(tick) as u32;
                     let len = self.project.patterns[p].len.max(96);
                     let clip = ClipDef { pattern: p, lane: lane as usize, start, len, offset: 0 };
                     self.project.clips.push(clip);
@@ -405,8 +444,7 @@ impl App {
         if self.is_dragging(grid_id) {
             match self.clip_drag {
                 Some(ClipDrag::Move { clip, orig, tick0, lane0 }) if clip < self.project.clips.len() => {
-                    let dt = ((tick_at(input.x) - tick0) / snap).round() * snap;
-                    let start = (orig.start as f32 + dt).max(0.0) as u32;
+                    let start = snap_round(orig.start as f32 + tick_at(input.x) - tick0) as u32;
                     let lane = (orig.lane as f32 + lane_at(input.y) - lane0).clamp(0.0, 63.0) as usize;
                     let cl = &mut self.project.clips[clip];
                     if (cl.start, cl.lane) != (start, lane) {
@@ -416,8 +454,8 @@ impl App {
                     }
                 }
                 Some(ClipDrag::Resize { clip, orig, tick0 }) if clip < self.project.clips.len() => {
-                    let dt = ((tick_at(input.x) - tick0) / snap).round() * snap;
-                    let len = (orig.len as f32 + dt).max(snap) as u32;
+                    let end = snap_round((orig.start + orig.len) as f32 + tick_at(input.x) - tick0);
+                    let len = (end - orig.start as f32).max(unit(orig.start as f32)) as u32;
                     if self.project.clips[clip].len != len {
                         self.project.clips[clip].len = len;
                         self.commit(tr("Clip length"));
@@ -454,7 +492,7 @@ impl App {
                     }
                     Key::Char('v') if mods.ctrl => {
                         if let Some(mut clip) = self.clipboard_clip {
-                            clip.start = ((self.start_marker as f32 / snap).round() * snap) as u32;
+                            clip.start = snap_round(self.start_marker as f32) as u32;
                             self.project.clips.push(clip);
                             self.playlist.selected = Some(self.project.clips.len() - 1);
                             self.commit(tr("Paste clip"));
@@ -473,6 +511,10 @@ impl App {
                         }
                     }
                     Key::Char('d') if mods.ctrl => self.playlist.selected = None,
+                    // 1–9: jump to that marker.
+                    Key::Char(d @ '1'..='9') if !mods.ctrl && !mods.alt && !mods.shift && !self.typing_keyboard => {
+                        self.jump_to_marker(d as usize - '1' as usize);
+                    }
                     _ => {}
                 }
             }
@@ -538,7 +580,6 @@ impl App {
         }
 
         // Clips audio, avec leur forme d'onde.
-        let bpm = self.project.bpm as f64;
         for (i, cl) in self.project.audio_clips.clone().iter().enumerate() {
             let r = Rect::new(
                 x_of(cl.start as f32) + 1.0,
@@ -571,7 +612,9 @@ impl App {
                 for px in x0..x1 {
                     let tick_a = tick_at(px as f32) as f64 - cl.start as f64;
                     let tick_b = tick_a + 1.0 / ppt as f64;
-                    let secs = |tk: f64| tk / ponzik_engine::PPQ as f64 * 60.0 / bpm + cl.offset;
+                    // Unwarped audio plays at its own speed: seconds through the tempo map.
+                    let at = map.secs_at(cl.start as f64);
+                    let secs = |tk: f64| map.secs_at(cl.start as f64 + tk) - at + cl.offset;
                     let (ba, bb) = ((secs(tick_a) * sr) as usize / super::app::WAVE_BUCKET, (secs(tick_b) * sr) as usize / super::app::WAVE_BUCKET);
                     let (mut lo, mut hi) = (0.0f32, 0.0f32);
                     for b in ba..=bb.max(ba) {
@@ -595,7 +638,7 @@ impl App {
         let auto_y = lanes_r.y + lanes as f32 * LANE_H + 4.0;
         if autos > 0 {
             c.fill_rect(Rect::new(area.x, auto_y - 3.0, area.w, 1.0), t.hairline.alpha(2.0));
-            self.automation_lanes(c, input, area, auto_y, &x_of, &tick_at, snap.min(96.0));
+            self.automation_lanes(c, input, area, auto_y, &x_of, &tick_at, 96.0);
         }
 
         // Tête de lecture.

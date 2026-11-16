@@ -5,6 +5,7 @@
 #![allow(clippy::too_many_arguments)]
 
 mod app;
+mod arrange;
 mod assistant;
 mod automation;
 mod compat;
@@ -450,6 +451,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // en boucle ; =devices : la liste des entrées.
     if let Ok(mode) = std::env::var("PONZIK_RECORD") {
         app.screenshot_record(&mode);
+    }
+    // PONZIK_ARRANGE=1|menu|sig: sections, a tempo ramp and a 3/4 section.
+    if let Ok(spec) = std::env::var("PONZIK_ARRANGE") {
+        app.screenshot_arrange(&spec);
     }
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {

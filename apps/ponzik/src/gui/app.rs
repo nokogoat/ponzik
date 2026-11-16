@@ -140,6 +140,11 @@ pub enum Popup {
     Settings { tab: usize },
     /// Right-click on a Drum Pads pad.
     PadMenu { channel: usize, pad: usize },
+    /// Right-click on an arrangement section.
+    MarkerMenu(usize),
+    MarkerColor(usize),
+    /// Time signature from this tick (tempo lane).
+    Signature(u32),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -152,6 +157,7 @@ pub enum Rename {
     Channel(usize),
     Pattern(usize),
     Track(usize),
+    Marker(usize),
 }
 
 /// Nom lisible d'un type d'appareil hors registre (plugin CLAP : son
@@ -221,6 +227,11 @@ pub enum Action {
     ExportStems,
     /// One WAV per arrangement section.
     ExportSections(ponzik_project::ExportOptions),
+    Marker(usize, super::arrange::MarkerOp),
+    /// Adds a marker at the playhead.
+    AddMarkerHere,
+    SetSignature(u32, u8, u8),
+    DeleteSignature(u32),
     LoadPreset(super::devices::Device, PathBuf),
     /// A factory preset of the device, by name.
     LoadFactoryPreset(super::devices::Device, &'static str),
@@ -480,6 +491,10 @@ pub struct App {
     melodic: HashMap<String, bool>,
     pub piano_drag: Option<super::piano::PianoDrag>,
     pub clip_drag: Option<super::playlist::ClipDrag>,
+    /// Gesture on the arrangement or tempo lane.
+    pub arrange_drag: Option<super::arrange::ArrangeDrag>,
+    /// Length of the count-in in progress, in ticks (one bar of the signature).
+    pub count_bar: f64,
     /// Note de pré-écoute à relâcher : (canal, note).
     pub preview: Option<(usize, u8)>,
     /// Notes tenues au clavier d'ordinateur ou au contrôleur.
@@ -614,6 +629,8 @@ impl App {
             melodic: HashMap::new(),
             piano_drag: None,
             clip_drag: None,
+            arrange_drag: None,
+            count_bar: TICKS_PER_BAR as f64,
             preview: None,
             held: Vec::new(),
             keyboard_octave: 4,
@@ -1222,8 +1239,10 @@ impl App {
     fn start_transport(&mut self) {
         self.playing = true;
         if self.record && self.count_in {
-            self.counting = TICKS_PER_BAR as f64;
-            self.send(Command::CountIn(TICKS_PER_BAR));
+            let bar = self.sig_here().bar_len();
+            self.count_bar = bar as f64;
+            self.counting = bar as f64;
+            self.send(Command::CountIn(bar));
         } else {
             self.send(Command::Play);
         }
@@ -1243,8 +1262,7 @@ impl App {
         self.anim.set(wid("tb-tap-flash", 0, 0), 1.0);
         if let Some(bpm) = tap_bpm(&self.taps) {
             let bpm = ((bpm * 10.0).round() / 10.0).clamp(40.0, 300.0);
-            if bpm != self.project.bpm {
-                self.project.bpm = bpm;
+            if self.set_tempo_here(bpm) {
                 self.commit(tr("Tempo"));
             }
         }
@@ -1285,14 +1303,14 @@ impl App {
         view: View,
         ruler: Rect,
         grid: Rect,
-        snap: f32,
+        snap: &dyn Fn(f32) -> f32,
         x_of: &dyn Fn(f32) -> f32,
         tick_at: &dyn Fn(f32) -> f32,
     ) -> Option<(u32, u32)> {
         let t = self.theme;
         let id = wid("ruler", view as usize, 0);
         let hov = self.hovered(input, id, ruler);
-        let snap_t = |x: f32| ((tick_at(x).max(0.0) / snap).round() * snap) as u32;
+        let snap_t = |x: f32| snap(tick_at(x).max(0.0)) as u32;
         let mut changed = None;
         if hov && input.pressed {
             self.begin_drag(id, input, snap_t(input.x) as f32);
@@ -1732,16 +1750,21 @@ impl App {
             x += 198.0;
         }
 
-        let bpm_text = ponzik_i18n::num(self.project.bpm as f64, 1);
+        // While the song plays, the tempo heard (ramps included); otherwise the one edited.
+        let heard = if self.playing && self.project.mode == PlayMode::Song {
+            self.project.tempo_map().bpm_at(self.position)
+        } else {
+            self.tempo_here() as f64
+        };
+        let bpm_text = ponzik_i18n::num(heard, 1);
         let bpm_r = Rect::new(x, cy - 18.0, 116.0, 36.0);
-        if let Some(bpm) = self.drag_field(c, input, wid("tb-bpm", 0, 0), bpm_r, self.project.bpm, 0.25, 1.0, &bpm_text, "BPM") {
+        if let Some(bpm) = self.drag_field(c, input, wid("tb-bpm", 0, 0), bpm_r, self.tempo_here(), 0.25, 1.0, &bpm_text, "BPM") {
             let bpm = ((bpm * 10.0).round() / 10.0).clamp(40.0, 300.0);
-            if bpm != self.project.bpm {
-                self.project.bpm = bpm;
+            if self.set_tempo_here(bpm) {
                 self.commit(tr("Tempo"));
             }
         }
-        self.tip_zone(input, bpm_r, tr("Tempo\nDrag or scroll · Shift: fine"), "");
+        self.tip_zone(input, bpm_r, tr("Tempo at the playhead\nDrag or scroll · Shift: fine"), "");
         x += 120.0;
         if self.bar_shown(Bar::Tap) {
             self.tap_button(c, input, Rect::new(x, cy - 18.0, 40.0, 36.0), &k_tap);
@@ -2038,17 +2061,29 @@ impl App {
         let (_, cy) = r.center();
         // Pendant le pré-compte : la mesure « -1 », comptée en rouge comme l'enregistrement.
         let counting = self.counting > 0.0;
-        let pos = if counting { (TICKS_PER_BAR as f64 - self.counting).max(0.0) } else { self.cycle_position() };
         let lit_col = if counting { t.negative } else { t.accent };
-        let beat_in_bar = ((pos % TICKS_PER_BAR as f64) / 96.0).floor() as usize;
-        for b in 0..4 {
-            let lit = self.playing && b == beat_in_bar;
+        // Bars and beats of the signature map (song) or of the first signature.
+        let map = self.project.tempo_map();
+        let view = if self.project.mode == PlayMode::Song { map.view() } else { map.head() };
+        let at = if counting {
+            let sig = self.sig_here();
+            let pos = (self.count_bar - self.counting).max(0.0);
+            let beat = (pos / sig.beat_len() as f64).floor();
+            ponzik_engine::BarBeat { bar: 0, beat: beat as u32, tick_in_beat: pos - beat * sig.beat_len() as f64, sig }
+        } else {
+            view.bar_beat(self.cycle_position())
+        };
+        let leds = (at.sig.num as usize).min(8);
+        let gap = if leds <= 4 { 11.0 } else { 44.0 / leds as f32 * 0.98 + 1.0 };
+        for b in 0..leds {
+            let lit = self.playing && b == at.beat as usize;
             let v = self.anim.to(wid("beat-led", b, 0), lit as u8 as f32, T_HEAD);
-            c.fill_circle(r.x + 14.0 + b as f32 * 11.0, cy, 3.0, t.raised_hi.mix(lit_col, v));
+            let rad = if leds <= 4 { 3.0 } else { 2.3 };
+            c.fill_circle(r.x + 14.0 + b as f32 * gap, cy, rad, t.raised_hi.mix(lit_col, v));
         }
-        let bar = if counting { "-1".to_string() } else { ((pos / TICKS_PER_BAR as f64).floor() as u32 + 1).to_string() };
-        let beat = beat_in_bar + 1;
-        let step = ((pos % 96.0) / TICKS_PER_STEP as f64).floor() as u32 + 1;
+        let bar = if counting { "-1".to_string() } else { (at.bar + 1).to_string() };
+        let beat = at.beat + 1;
+        let step = (at.tick_in_beat / TICKS_PER_STEP as f64).floor() as u32 + 1;
         let text = format!("{bar}.{beat}.{step}");
         let ink = if counting { t.negative } else if self.playing { t.text } else { t.text2 };
         self.text_right(c, self.f.mono_med, 15.0, r.right() - 12.0, cy, &text, ink);
@@ -2106,7 +2141,7 @@ impl App {
             let ring = t.muted.mix(t.negative, on).alpha(0.55 * ci);
             c.stroke_circle(rx0, ry0, 10.5, 1.2, ring);
             if self.counting > 0.0 {
-                let done = (1.0 - self.counting / TICKS_PER_BAR as f64).clamp(0.0, 1.0) as f32;
+                let done = (1.0 - self.counting / self.count_bar.max(1.0)).clamp(0.0, 1.0) as f32;
                 let a0 = -std::f32::consts::FRAC_PI_2;
                 let pts: Vec<(f32, f32)> = (0..=32)
                     .map(|k| a0 + done * std::f32::consts::TAU * k as f32 / 32.0)
@@ -2827,6 +2862,9 @@ impl App {
                 (tr_fmt!("Color · {}", p.patterns[pat].name.as_str()), v)
             }
             Popup::PadMenu { channel, pad } => self.pad_menu(*channel, *pad),
+            Popup::MarkerMenu(i) => self.marker_menu(*i),
+            Popup::MarkerColor(i) => self.marker_color_menu(*i),
+            Popup::Signature(tick) => self.signature_menu(*tick),
             Popup::Rename { .. } | Popup::Palette { .. } | Popup::Scale | Popup::Chord | Popup::Settings { .. } => (String::new(), Vec::new()),
         }
     }
@@ -3029,6 +3067,24 @@ impl App {
             }
             Action::ExportStems => self.export_stems(),
             Action::ExportSections(options) => self.export_sections(options),
+            Action::Marker(i, op) => self.marker_op(i, op),
+            Action::AddMarkerHere => {
+                let tick = self.project.tempo_map().snap_bar(self.playhead());
+                if self.project.markers.iter().any(|m| m.tick == tick) {
+                    self.toast(tr("There is already a marker on this bar"));
+                } else {
+                    self.add_marker_at(tick);
+                }
+            }
+            Action::SetSignature(tick, num, den) => {
+                self.project.set_signature(tick, num, den);
+                self.project.normalize_tempo();
+                self.commit(tr("Time signature"));
+            }
+            Action::DeleteSignature(tick) => {
+                self.project.signatures.retain(|s| s.tick != tick);
+                self.commit(tr("Delete time signature"));
+            }
             Action::ImportMidiMenu => self.open_popup(Popup::ImportMidi(compat::scan_midi()), anchor),
             Action::ImportFlpMenu => self.open_popup(Popup::ImportFlp(compat::scan_flp()), anchor),
             Action::ImportFlp(path) => self.import_flp(&path),
@@ -3137,6 +3193,13 @@ impl App {
             }
             Rename::Pattern(p) => self.project.patterns[p].name = text.into(),
             Rename::Track(t) => self.project.tracks[t].name = text.into(),
+            Rename::Marker(i) => {
+                if let Some(m) = self.project.markers.get_mut(i) {
+                    m.name = text.into();
+                    self.commit(tr("Rename marker"));
+                }
+                return;
+            }
         }
         self.commit(tr("Rename"));
     }

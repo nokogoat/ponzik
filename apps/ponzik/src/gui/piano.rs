@@ -817,7 +817,7 @@ impl App {
             }
         }
         let snap = self.piano.snap as f32;
-        if let Some((a, b)) = self.ruler(c, input, View::Piano, ruler, grid, snap, &x_of, &tick_at) {
+        if let Some((a, b)) = self.ruler(c, input, View::Piano, ruler, grid, &|t: f32| (t / snap).round() * snap, &x_of, &tick_at) {
             // La sélection de temps sélectionne aussi les notes qui y commencent.
             self.piano.selected = self
                 .notes(ch)

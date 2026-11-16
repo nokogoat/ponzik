@@ -115,6 +115,12 @@ impl App {
             Action::Popup(Popup::Rename { target: Rename::Pattern(cur), text: self.project.patterns[cur].name.clone() }),
         );
         add(tr("Duplicate time selection").into(), tr("Playlist"), "Ctrl B".into(), Action::DuplicateTime);
+        add(tr("Add a section marker at the playhead").into(), tr("Arrangement"), none(), Action::AddMarkerHere);
+        for (i, m) in self.project.markers.iter().enumerate() {
+            let key = if i < 9 { (i + 1).to_string() } else { String::new() };
+            add(tr_fmt!("Go to marker: {}", m.name.as_str()), tr("Arrangement"), key, Action::Marker(i, super::arrange::MarkerOp::Jump));
+            add(tr_fmt!("Loop section: {}", m.name.as_str()), tr("Arrangement"), none(), Action::Marker(i, super::arrange::MarkerOp::Loop));
+        }
         if let Some(clip) = self.playlist.selected.filter(|&i| i < self.project.clips.len()) {
             add(tr("Make the selected clip unique").into(), tr("Playlist"), none(), Action::MakeUnique(clip));
         }

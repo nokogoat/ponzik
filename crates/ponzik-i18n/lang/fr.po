@@ -584,8 +584,6 @@ msgstr "Jouer le morceau"
 msgid "Play the session"
 msgstr "Jouer la session"
 
-msgid "Tempo\nDrag or scroll · Shift: fine"
-msgstr "Tempo\nGlisser ou molette · Maj : fin"
 
 msgid "Position\nbar . beat . step"
 msgstr "Position\nmesure . temps . pas"
@@ -1736,8 +1734,6 @@ msgstr "Transposition"
 msgid "Nudge notes"
 msgstr "Décaler des notes"
 
-msgid "Playlist\nClick: place the chosen pattern · edge: length\nRight-click: erase · on the title: clip menu\nDouble-click: edit · Ctrl+B: duplicate\nRuler: start, loop and time selection\nWheel: scroll · Ctrl: zoom · middle: pan"
-msgstr "Playlist\nClic : poser le pattern choisi · bord : durée\nClic droit : effacer · sur le titre : menu du clip\nDouble-clic : éditer · Ctrl+B : dupliquer\nRègle : départ, boucle et sélection de temps\nMolette : défiler · Ctrl : zoom · milieu : glisser"
 
 msgid "Lime"
 msgstr "Lime"
@@ -5169,3 +5165,141 @@ msgstr "{} section exportée dans {}"
 
 msgid "{} sections exported to {}"
 msgstr "{} sections exportées dans {}"
+
+msgid "Add a section marker at the playhead"
+msgstr "Ajouter un marqueur de section à la tête de lecture"
+
+msgid "Add marker"
+msgstr "Ajouter un marqueur"
+
+msgid "Add tempo change"
+msgstr "Ajouter un changement de tempo"
+
+msgid "Arrangement"
+msgstr "Arrangement"
+
+msgid "Arrangement lane\nClick: add a section marker here"
+msgstr "Piste d'arrangement\nClic : ajouter un marqueur de section ici"
+
+msgid "Click to add a section marker (Intro, Verse, Chorus…)"
+msgstr "Cliquez pour ajouter un marqueur de section (intro, couplet, refrain…)"
+
+msgid "Copy · insert"
+msgstr "Copie · insertion"
+
+msgid "Copy · overwrite"
+msgstr "Copie · remplacement"
+
+msgid "Delete marker"
+msgstr "Supprimer le marqueur"
+
+msgid "Delete section"
+msgstr "Supprimer la section"
+
+msgid "Delete tempo change"
+msgstr "Supprimer le changement de tempo"
+
+msgid "Delete the marker"
+msgstr "Supprimer le marqueur"
+
+msgid "Delete the section"
+msgstr "Supprimer la section"
+
+msgid "Delete time signature"
+msgstr "Supprimer la signature rythmique"
+
+msgid "Duplicate section"
+msgstr "Dupliquer la section"
+
+msgid "Duplicate the section"
+msgstr "Dupliquer la section"
+
+msgid "Go to marker: {}"
+msgstr "Aller au marqueur : {}"
+
+msgid "Go to the marker"
+msgstr "Aller au marqueur"
+
+msgid "Inserts a copy right after it · Ctrl+drag the header to copy elsewhere"
+msgstr "Insère une copie juste après · Ctrl+glisser l'en-tête pour copier ailleurs"
+
+msgid "Instant tempo change"
+msgstr "Changement de tempo instantané"
+
+msgid "Keeps the content: the previous section grows"
+msgstr "Garde le contenu : la section précédente s'allonge"
+
+msgid "Loop section: {}"
+msgstr "Boucler la section : {}"
+
+msgid "Loop the section"
+msgstr "Boucler la section"
+
+msgid "Marker color"
+msgstr "Couleur du marqueur"
+
+msgid "Marker: {}"
+msgstr "Marqueur : {}"
+
+msgid "Move marker"
+msgstr "Déplacer le marqueur"
+
+msgid "Move section"
+msgstr "Déplacer la section"
+
+msgid "Move · insert"
+msgstr "Déplacement · insertion"
+
+msgid "Move · overwrite"
+msgstr "Déplacement · remplacement"
+
+msgid "Playlist\nClick: place the chosen pattern · edge: length\nRight-click: erase · on the title: clip menu\nDouble-click: edit · Ctrl+B: duplicate\nRuler: start, loop and time selection\nTop lane: sections · under the ruler: tempo and meter\nWheel: scroll · Ctrl: zoom · middle: pan"
+msgstr "Playlist\nClic : poser le pattern choisi · bord : durée\nClic droit : effacer · sur le titre : menu du clip\nDouble-clic : éditer · Ctrl+B : dupliquer\nRègle : départ, boucle et sélection de temps\nEn haut : sections · sous la règle : tempo et mesure\nMolette : défiler · Ctrl : zoom · milieu : glisser"
+
+msgid "Remove this change"
+msgstr "Retirer ce changement"
+
+msgid "Removes its clips and automation and closes the gap"
+msgstr "Retire ses clips et son automation et referme le trou"
+
+msgid "Rename marker"
+msgstr "Renommer le marqueur"
+
+msgid "Section · {}"
+msgstr "Section · {}"
+
+msgid "Sections\nClick: loop the section · double-click: add a marker\nHeader: drag to move the section (Ctrl: copy, Alt: overwrite)\nDouble-click the header: rename · edge: move the marker\nRight-click: section menu · 1–9: jump to a marker"
+msgstr "Sections\nClic : boucler la section · double-clic : ajouter un marqueur\nEn-tête : glisser pour déplacer la section (Ctrl : copier, Alt : remplacer)\nDouble-clic sur l'en-tête : renommer · bord : déplacer le marqueur\nClic droit : menu de la section · 1–9 : aller à un marqueur"
+
+msgid "Tempo at the playhead\nDrag or scroll · Shift: fine"
+msgstr "Tempo à la tête de lecture\nGlisser ou molette · Maj : fin"
+
+msgid "Tempo change"
+msgstr "Changement de tempo"
+
+msgid "Tempo lane\nClick: add a tempo change · drag a point: tempo and place\nDouble-click a point: ramp or instant · right-click: delete"
+msgstr "Piste de tempo\nClic : ajouter un changement de tempo · glisser un point : tempo et place\nDouble-clic sur un point : rampe ou instantané · clic droit : supprimer"
+
+msgid "Tempo ramp"
+msgstr "Rampe de tempo"
+
+msgid "The tempo automation lane is in use"
+msgstr "La courbe d'automation du tempo est utilisée"
+
+msgid "There is already a marker on this bar"
+msgstr "Il y a déjà un marqueur sur cette mesure"
+
+msgid "Time signature"
+msgstr "Signature rythmique"
+
+msgid "Time signature\nClick: change the meter from this bar"
+msgstr "Signature rythmique\nClic : changer la mesure à partir d'ici"
+
+msgid "Time signature · bar {}"
+msgstr "Signature rythmique · mesure {}"
+
+msgid "click"
+msgstr "clic"
+
+msgid "{} BPM"
+msgstr "{} BPM"
