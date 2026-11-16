@@ -41,7 +41,7 @@ fn changes_with(kind: &str, old: &[(u32, f32)], new: &[(u32, f32)], default: fn(
 }
 
 fn same_instrument(a: &InstrumentDef, b: &InstrumentDef) -> bool {
-    a.kind == b.kind && a.sample == b.sample
+    a.kind == b.kind && a.sample == b.sample && a.pads == b.pads
 }
 
 pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: &dyn Fn(&str) -> Option<Arc<Sample>>) -> Vec<Command> {

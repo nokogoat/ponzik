@@ -907,7 +907,7 @@ impl App {
         let paths: Vec<String> = project
             .channels
             .iter()
-            .filter_map(|c| c.instrument.sample.clone())
+            .flat_map(|c| c.instrument.sample_paths().cloned())
             .chain(project.audio_clips.iter().map(|c| c.path.clone()))
             .collect();
         for path in paths {

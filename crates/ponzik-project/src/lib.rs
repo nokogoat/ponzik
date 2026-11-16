@@ -56,11 +56,19 @@ pub struct InstrumentDef {
     pub params: Vec<(u32, f32)>,
     /// Fichier audio chargé (sampler).
     pub sample: Option<String>,
+    /// Pad instruments (Drum Pads): the files of each pad, one per velocity
+    /// layer, softest first. Empty for every other instrument.
+    pub pads: Vec<Vec<String>>,
 }
 
 impl InstrumentDef {
     pub fn new(kind: &str) -> Self {
-        Self { kind: kind.into(), params: Vec::new(), sample: None }
+        Self { kind: kind.into(), params: Vec::new(), sample: None, pads: Vec::new() }
+    }
+
+    /// Every audio file the instrument needs (sample and pad layers).
+    pub fn sample_paths(&self) -> impl Iterator<Item = &String> {
+        self.sample.iter().chain(self.pads.iter().flatten())
     }
 
     pub fn with(mut self, id: u32, value: f32) -> Self {
@@ -512,6 +520,13 @@ impl Project {
             && let Some(sample) = loader(path)
         {
             inst.set_sample(sample);
+        }
+        for (pad, layers) in def.pads.iter().enumerate() {
+            for (layer, path) in layers.iter().enumerate() {
+                if let Some(sample) = loader(path) {
+                    inst.set_pad_sample(pad, layer, Some(sample));
+                }
+            }
         }
         inst
     }
@@ -1002,6 +1017,24 @@ mod tests {
 
     fn no_samples(_: &str) -> Option<Arc<Sample>> {
         None
+    }
+
+    #[test]
+    fn drum_pads_get_their_pad_samples() {
+        let tone: Vec<f32> = (0..4_800).map(|i| (i as f32 * 0.05).sin() * 0.5).collect();
+        let sample = Arc::new(Sample { name: "t".into(), sample_rate: 48_000.0, left: tone.clone(), right: tone, markers: Vec::new() });
+        let loader = |path: &str| (path == "snare.wav").then(|| sample.clone());
+        let mut def = InstrumentDef::new("drum_pads");
+        def.pads = vec![Vec::new(), Vec::new(), vec!["snare.wav".into(), "missing.wav".into()]];
+        assert_eq!(def.sample_paths().count(), 2);
+        let mut inst = Project::make_instrument(&def, 48_000.0, &loader);
+        let (mut l, mut r) = (vec![0.0; 1_024], vec![0.0; 1_024]);
+        inst.note_on(36, 1.0);
+        inst.render(&mut l, &mut r);
+        assert!(l.iter().all(|&s| s == 0.0), "the kick pad is empty");
+        inst.note_on(38, 1.0);
+        inst.render(&mut l, &mut r);
+        assert!(l.iter().any(|s| s.abs() > 0.1), "the snare pad plays");
     }
 
     #[test]

@@ -9,6 +9,7 @@ use std::path::Path;
 use ponzik_i18n::{tr, tr_fmt};
 
 use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS, TRACKS};
+use ponzik_engine::instruments::drum_pads::{LAYERS, PADS as PAD_LIMIT};
 use ponzik_engine::{NOTE_FX_SLOTS, Note, PlayMode, TICKS_PER_BAR};
 
 use crate::json::{self, Json};
@@ -31,17 +32,28 @@ fn params_json(params: &[(u32, f32)]) -> Json {
     Json::Arr(params.iter().map(|&(id, v)| Json::Arr(vec![id.into(), v.into()])).collect())
 }
 
+fn instrument_json(i: &InstrumentDef) -> Json {
+    let mut pairs = vec![
+        ("kind", i.kind.as_str().into()),
+        ("params", params_json(&i.params)),
+        ("sample", i.sample.clone().into()),
+    ];
+    // Optional field: only pad instruments with at least one sample write it.
+    let used = i.pads.iter().rposition(|p| !p.is_empty()).map_or(0, |n| n + 1);
+    if used > 0 {
+        let pads = i.pads[..used]
+            .iter()
+            .map(|layers| Json::Arr(layers.iter().map(|p| p.as_str().into()).collect()))
+            .collect();
+        pairs.push(("pads", Json::Arr(pads)));
+    }
+    obj(pairs)
+}
+
 fn channel_json(c: &ChannelDef) -> Json {
     let mut pairs = vec![
         ("name", c.name.as_str().into()),
-        (
-            "instrument",
-            obj(vec![
-                ("kind", c.instrument.kind.as_str().into()),
-                ("params", params_json(&c.instrument.params)),
-                ("sample", c.instrument.sample.clone().into()),
-            ]),
-        ),
+        ("instrument", instrument_json(&c.instrument)),
         ("gain", c.gain.into()),
         ("pan", c.pan.into()),
         ("muted", c.muted.into()),
@@ -306,6 +318,16 @@ fn load_note_fx(v: Option<&Json>) -> Vec<Option<NoteFxDef>> {
         .collect()
 }
 
+/// Pad sample files: at most [`PAD_LIMIT`] pads of [`LAYERS`] layers; anything
+/// that is not a string is skipped.
+fn load_pads(v: Option<&Json>) -> Vec<Vec<String>> {
+    arr(v)
+        .iter()
+        .take(PAD_LIMIT)
+        .map(|layers| arr(Some(layers)).iter().filter_map(Json::as_str).take(LAYERS).map(String::from).collect())
+        .collect()
+}
+
 fn load_channel(v: &Json) -> ChannelDef {
     let inst = v.get("instrument");
     let field = |k| inst.and_then(|i| i.get(k));
@@ -315,6 +337,7 @@ fn load_channel(v: &Json) -> ChannelDef {
             kind: string_or(field("kind"), "pulse"),
             params: load_params(field("params")),
             sample: field("sample").and_then(Json::as_str).map(String::from),
+            pads: load_pads(field("pads")),
         },
         note_fx: load_note_fx(v.get("note_fx")),
         gain: gain(v.get("gain"), 0.8),
@@ -619,6 +642,37 @@ mod tests {
 
         let plain = demo_project();
         assert_eq!(load(&save(&plain)).unwrap(), plain);
+    }
+
+    #[test]
+    fn drum_pads_round_trip() {
+        let mut p = Project::empty();
+        let mut def = InstrumentDef::new("drum_pads");
+        def.set(ponzik_engine::instruments::drum_pads::pad_param(6, 11), 2.0);
+        def.pads = vec![vec!["kick.wav".into()], Vec::new(), vec!["snare soft.wav".into(), "snare \"hard\".wav".into()]];
+        p.add_channel("Pads", def, 36);
+        let text = save(&p);
+        assert!(text.contains("\"pads\""));
+        let back = load(&text).unwrap();
+        assert_eq!(back, p);
+        assert_eq!(save(&back), text);
+        // Trailing empty pads are not written, and come back empty.
+        p.channels[0].instrument.pads.push(Vec::new());
+        assert_eq!(save(&p), text);
+        // No pads field for other instruments.
+        assert!(!save(&demo_project()).contains("\"pads\""));
+    }
+
+    #[test]
+    fn malformed_pads_are_tolerated() {
+        let text = r#"{"format": "ponzik-project", "channels": [{"instrument": {"kind": "drum_pads",
+            "pads": [["a.wav", 3, null, "b.wav", "c.wav", "d.wav", "e.wav"], "oops", {"x": 1}]}}]}"#;
+        let p = load(text).unwrap();
+        let pads = &p.channels[0].instrument.pads;
+        assert_eq!(pads[0], ["a.wav", "b.wav", "c.wav", "d.wav"]);
+        assert!(pads[1].is_empty() && pads[2].is_empty());
+        let text = r#"{"format": "ponzik-project", "channels": [{"instrument": {"kind": "drum_pads", "pads": 7}}]}"#;
+        assert!(load(text).unwrap().channels[0].instrument.pads.is_empty());
     }
 
     #[test]
