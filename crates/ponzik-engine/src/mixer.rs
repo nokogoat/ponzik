@@ -9,6 +9,11 @@
 //! latérale) du retard qui manque pour rejoindre le chemin le plus lent. Tout
 //! arrive ainsi aligné au master. Les lignes de retard sont allouées à la
 //! création ; elles ne sont écrites que lorsqu'un retard est demandé.
+//!
+//! Bus et VCA : un bus est une piste ordinaire dans laquelle sortent d'autres
+//! pistes (ses inserts traitent leur somme). Un VCA ne fait passer aucun son :
+//! son volume (et son muet) multiplie celui des pistes qu'il pilote
+//! ([`Track::vca`]), automation comprise.
 
 use ponzik_dsp::util::balance_gains;
 
@@ -35,6 +40,9 @@ pub struct Track {
     /// passé à [`Effect::sidechain`] avant le traitement. Le routage doit la
     /// traiter avant cette piste (voir [`routing_order`]).
     pub sidechain: [Option<usize>; INSERT_SLOTS],
+    /// Piste VCA qui pilote le volume de celle-ci : son gain et son muet
+    /// s'appliquent en plus des siens.
+    pub vca: Option<usize>,
     pub(crate) l: Vec<f32>,
     pub(crate) r: Vec<f32>,
     /// Retard de l'entrée directe (compensation).
@@ -54,6 +62,7 @@ impl Track {
             inserts: std::array::from_fn(|_| None),
             bypass: [false; INSERT_SLOTS],
             sidechain: [None; INSERT_SLOTS],
+            vca: None,
             l: vec![0.0; max_block],
             r: vec![0.0; max_block],
             input_delay: Delay::new(max_block, max_latency),
@@ -382,9 +391,10 @@ impl Mixer {
             }
             self.run_inserts(idx, n, &ready);
             ready[idx] = true;
+            let vca = self.vca_gain(idx);
             let t = &mut self.tracks[idx];
             let (gl, gr) = balance_gains(t.pan);
-            let (gl, gr) = if t.muted { (0.0, 0.0) } else { (gl * t.gain, gr * t.gain) };
+            let (gl, gr) = if t.muted { (0.0, 0.0) } else { (gl * t.gain * vca, gr * t.gain * vca) };
             for i in 0..n {
                 t.l[i] *= gl;
                 t.r[i] *= gr;
@@ -418,6 +428,15 @@ impl Mixer {
             m.r[i] = if r.is_finite() { r.clamp(-1.0, 1.0) } else { 0.0 };
         }
         meters[MASTER].record(peak(&m.l[..n]), peak(&m.r[..n]));
+    }
+
+    /// Facteur du VCA qui pilote la piste (1 sans VCA, 0 s'il est muet).
+    fn vca_gain(&self, idx: usize) -> f32 {
+        match self.tracks[idx].vca.filter(|&v| v < TRACKS && v != idx && v != MASTER) {
+            Some(v) if self.tracks[v].muted => 0.0,
+            Some(v) => self.tracks[v].gain,
+            None => 1.0,
+        }
     }
 
     pub fn master(&self, n: usize) -> (&[f32], &[f32]) {
@@ -677,6 +696,87 @@ mod tests {
         // Piste 2 au master (retardée de `lat`) + écho de la clé par la piste 1 (à `lat`).
         assert!((out[lat] - 0.5).abs() < 1e-6, "{}", out[lat]);
         assert_eq!(out.iter().filter(|s| **s != 0.0).count(), 1);
+    }
+
+    #[test]
+    fn bus_sums_two_tracks_through_its_effect() {
+        // Pistes 1 et 2 → bus 5 (gain ½, Utilitaire à +6 dB) → master.
+        let mut m = Mixer::new(64, 4_800);
+        let mut util = crate::registry::create_effect("utility").unwrap();
+        util.set_sample_rate(SR);
+        let gain_id = (0..16).find(|&id| util.param_info(id).is_some_and(|p| p.name == "Gain")).unwrap();
+        util.set_param(gain_id, 6.0206);
+        m.tracks[5].inserts[0] = Some(util);
+        m.tracks[5].gain = 0.5;
+        m.tracks[1].output = 5;
+        m.tracks[2].output = 5;
+        m.tracks[2].gain = 0.5;
+        reorder(&mut m);
+        let pos = |t| m.order.iter().position(|&x| x == t).unwrap();
+        assert!(pos(1) < pos(5) && pos(2) < pos(5));
+        let meters = meters();
+        let mut out = 0.0;
+        for _ in 0..200 {
+            m.clear(64);
+            for t in [1, 2] {
+                let (l, r) = m.input(t, 64);
+                l.fill(0.2);
+                r.fill(0.2);
+            }
+            m.process(64, &meters);
+            out = m.master(64).0[63];
+        }
+        // (0,2 + 0,1) × 2 × ½ = 0,3.
+        assert!((out - 0.3).abs() < 1e-3, "{out}");
+        // Bus coupé : plus rien n'arrive au master.
+        m.tracks[5].muted = true;
+        m.clear(64);
+        m.input(1, 64).0.fill(0.2);
+        m.process(64, &meters);
+        assert_eq!(m.master(64).0[63], 0.0);
+    }
+
+    #[test]
+    fn latent_bus_effect_is_compensated_against_dry_tracks() {
+        // Pistes 1 et 2 → bus 4 limité ; piste 3 sèche au master : tout arrive ensemble.
+        let lat = limiter().latency();
+        let mut m = Mixer::new(64, 4_800);
+        m.tracks[1].output = 4;
+        m.tracks[2].output = 4;
+        m.tracks[4].inserts[0] = Some(limiter());
+        reorder(&mut m);
+        let out = impulse(&mut m, &[1, 2, 3], 2_000, 64);
+        assert_eq!(m.latency(), lat);
+        assert!((out[lat] - 0.75).abs() < 1e-6, "{}", out[lat]);
+        assert_eq!(out.iter().filter(|s| **s != 0.0).count(), 1);
+    }
+
+    #[test]
+    fn vca_scales_its_tracks_without_carrying_audio() {
+        let mut m = Mixer::new(8, 0);
+        let meters = meters();
+        m.tracks[1].vca = Some(6);
+        m.tracks[2].vca = Some(6);
+        m.tracks[6].gain = 0.25;
+        reorder(&mut m);
+        let run = |m: &mut Mixer| {
+            m.clear(8);
+            m.input(1, 8).0.fill(0.4);
+            m.input(2, 8).0.fill(0.4);
+            m.input(3, 8).0.fill(0.1);
+            m.process(8, &meters);
+            m.master(8).0[0]
+        };
+        // (0,4 + 0,4) × ¼ + 0,1 (piste 3 hors VCA).
+        assert!((run(&mut m) - 0.3).abs() < 1e-6);
+        assert_eq!(meters[6].take()[0], 0.0, "le VCA ne fait passer aucun son");
+        m.tracks[6].muted = true;
+        assert!((run(&mut m) - 0.1).abs() < 1e-6, "VCA muet : ses pistes se taisent");
+        // Un VCA qui se pilote lui-même ou le master est ignoré.
+        m.tracks[6].muted = false;
+        m.tracks[6].vca = Some(6);
+        m.tracks[3].vca = Some(MASTER);
+        assert!((run(&mut m) - 0.3).abs() < 1e-6);
     }
 
     #[test]

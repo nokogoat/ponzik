@@ -65,6 +65,8 @@ pub enum Command {
     SetTrackPan { track: usize, pan: f32 },
     SetTrackMute { track: usize, muted: bool },
     SetTrackOutput { track: usize, output: usize },
+    /// Piste VCA qui pilote le volume de `track`, ou aucune.
+    SetTrackVca { track: usize, vca: Option<usize> },
     SetTrackSend { track: usize, slot: usize, target: usize, amount: f32 },
     SetRoutingOrder(Box<[usize]>),
     SetInsert { track: usize, slot: usize, effect: Option<Box<dyn Effect>> },
@@ -111,6 +113,7 @@ impl std::fmt::Debug for Command {
             Command::SetTrackPan { .. } => "SetTrackPan",
             Command::SetTrackMute { .. } => "SetTrackMute",
             Command::SetTrackOutput { .. } => "SetTrackOutput",
+            Command::SetTrackVca { .. } => "SetTrackVca",
             Command::SetTrackSend { .. } => "SetTrackSend",
             Command::SetRoutingOrder(_) => "SetRoutingOrder",
             Command::SetInsert { .. } => "SetInsert",
@@ -942,6 +945,11 @@ impl Engine {
             Command::SetTrackOutput { track, output } => {
                 if let Some(t) = self.mixer.tracks.get_mut(track) {
                     t.output = output.min(TRACKS - 1);
+                }
+            }
+            Command::SetTrackVca { track, vca } => {
+                if let Some(t) = self.mixer.tracks.get_mut(track) {
+                    t.vca = vca.filter(|&v| v < TRACKS && v != track);
                 }
             }
             Command::SetTrackSend { track, slot, target, amount } => {
