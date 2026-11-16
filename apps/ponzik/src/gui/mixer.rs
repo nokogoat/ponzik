@@ -505,9 +505,11 @@ impl App {
         }
         let name = self.project.tracks[tr].name.clone();
         // Centré, ou entre la pastille et l'armement quand la gauche est occupée.
-        let (x0, x1) = if left > 0.0 { (inner.x + left, inner.right() - 20.0) } else { (inner.x + 2.0, inner.right() - 2.0) };
-        let label = self.fit(self.f.sans_med, 13.0, &name, x1 - x0);
-        self.text_center(c, self.f.sans_med, 13.0, (x0 + x1) * 0.5, inner.y + 10.0, &label, t.text);
+        // The arm button keeps its own corner: the name never runs under it.
+        let arm_w = if tr != MASTER && kind != TrackKind::Vca { 20.0 } else { 2.0 };
+        let (x0, x1) = if left > 0.0 { (inner.x + left, inner.right() - arm_w) } else { (inner.x + arm_w, inner.right() - arm_w) };
+        let (size, label) = self.fit_shrink(self.f.sans_med, 13.0, &name, x1 - x0);
+        self.text_center(c, self.f.sans_med, size, (x0 + x1) * 0.5, inner.y + 10.0, &label, t.text);
         // Armement de l'enregistrement audio.
         if tr != MASTER && kind != TrackKind::Vca {
             let arm = Rect::new(inner.right() - 18.0, inner.y + 2.0, 18.0, 18.0);

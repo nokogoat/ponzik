@@ -4804,6 +4804,9 @@ msgstr "Canal « {} »"
 msgid "Channel {}"
 msgstr "Canal {}"
 
+msgid "Click a slot to put a pattern in it, then click the clip to launch it on the next bar"
+msgstr "Clique une case pour y mettre un pattern, puis clique le clip pour le lancer à la mesure suivante"
+
 msgid "Choke group"
 msgstr "Groupe d'étouffement"
 

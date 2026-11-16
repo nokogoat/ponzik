@@ -234,5 +234,18 @@ impl App {
                 self.stop_column(k);
             }
         }
+
+        // Empty grid: one sentence on how to start, over the slots.
+        if self.project.session_grid.iter().all(|col| col.iter().all(Option::is_none)) {
+            let line = tr("Click a slot to put a pattern in it, then click the clip to launch it on the next bar");
+            let w = (self.fonts.measure(self.f.sans, 13.0, line) + 64.0).min(grid.w - 24.0);
+            let (cx, cy) = (grid.x + grid.w * 0.5, row_y(SESSION_SCENES / 2) - 3.0);
+            let card = Rect::new((cx - w * 0.5).round(), cy - 22.0, w.round(), 44.0);
+            c.fill_rrect(card, 12.0, t.raised);
+            c.stroke_rrect(card, 12.0, 1.0, t.hairline);
+            draw_icon(c, Icon::Plus, card.x + 22.0, cy, 14.0, t.accent);
+            let line = self.fit(self.f.sans, 13.0, line, card.w - 52.0);
+            self.text(c, self.f.sans, 13.0, card.x + 40.0, cy, &line, t.text2);
+        }
     }
 }

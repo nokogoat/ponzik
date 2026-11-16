@@ -826,7 +826,9 @@ impl App {
         // Vues.
         self.section(c, left.x, y, tr("Views"));
         y += 20.0;
-        let tile_w = card_w;
+        // Every view on one row, however many there are.
+        let n_views = View::ALL.len().max(1) as f32;
+        let tile_w = ((left.w - (n_views - 1.0) * gap) / n_views).floor();
         for (i, v) in View::ALL.into_iter().enumerate() {
             let r = Rect::new(left.x + i as f32 * (tile_w + gap), y, tile_w, 92.0);
             let key = self.key_label(Shortcut::for_view(v));

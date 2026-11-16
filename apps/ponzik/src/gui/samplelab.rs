@@ -1645,7 +1645,9 @@ impl App {
         let icon = if playing { Icon::Stop } else { Icon::Play };
         draw_icon(c, icon, px + if playing { 0.0 } else { 1.5 }, cy, 20.0 * press, t.on_accent);
         self.text(c, self.f.sans_med, 14.0, px + pr + 12.0, cy - 9.0, if playing { tr("Stop") } else { tr("Listen") }, t.text);
-        self.text(c, self.f.sans, 12.0, px + pr + 12.0, cy + 10.0, tr("or press Space"), t.muted);
+        // Stops short of the divider at x + 186.
+        let (size, sub) = self.fit_shrink(self.f.sans, 12.0, tr("or press Space"), r.x + 178.0 - (px + pr + 12.0));
+        self.text(c, self.f.sans, size, px + pr + 12.0, cy + 10.0, &sub, t.muted);
         if hov {
             self.set_tip(tr("Listen from the selected piece to the end\nClick a piece on the wave to hear only that piece"), tr("Space"));
             self.set_cursor(ponzik_window::Cursor::Hand);
