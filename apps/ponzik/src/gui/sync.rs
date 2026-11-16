@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use ponzik_engine::mixer::{INSERT_SLOTS, SEND_SLOTS, TRACKS};
-use ponzik_engine::{Command, Sample, registry};
+use ponzik_engine::{Command, NOTE_FX_SLOTS, Sample, registry};
 use ponzik_project::{InstrumentDef, Project};
 
 fn default_param(kind: &str, id: u32) -> f32 {
@@ -17,8 +17,16 @@ fn default_param(kind: &str, id: u32) -> f32 {
         .unwrap_or(0.0)
 }
 
+fn note_fx_default(kind: &str, id: u32) -> f32 {
+    registry::create_note_fx(kind).and_then(|f| f.param_info(id).map(|p| p.default)).unwrap_or(0.0)
+}
+
 /// Paramètres modifiés entre deux listes (identifiant, valeur).
 fn param_changes(kind: &str, old: &[(u32, f32)], new: &[(u32, f32)]) -> Vec<(u32, f32)> {
+    changes_with(kind, old, new, default_param)
+}
+
+fn changes_with(kind: &str, old: &[(u32, f32)], new: &[(u32, f32)], default: fn(&str, u32) -> f32) -> Vec<(u32, f32)> {
     let mut out: Vec<(u32, f32)> = new
         .iter()
         .filter(|(id, v)| old.iter().find(|(i, _)| i == id).is_none_or(|(_, o)| o != v))
@@ -26,7 +34,7 @@ fn param_changes(kind: &str, old: &[(u32, f32)], new: &[(u32, f32)]) -> Vec<(u32
         .collect();
     for (id, _) in old {
         if !new.iter().any(|(i, _)| i == id) {
-            out.push((*id, default_param(kind, *id)));
+            out.push((*id, default(kind, *id)));
         }
     }
     out
@@ -57,6 +65,21 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: &dyn Fn(&str
         } else {
             for (id, value) in param_changes(&b.instrument.kind, &a.instrument.params, &b.instrument.params) {
                 cmds.push(Command::SetInstrumentParam { channel: i, id, value });
+            }
+        }
+        for slot in 0..NOTE_FX_SLOTS {
+            let (x, y) = (a.note_fx.get(slot).and_then(Option::as_ref), b.note_fx.get(slot).and_then(Option::as_ref));
+            match (x, y) {
+                (Some(x), Some(y)) if x.kind == y.kind => {
+                    for (id, value) in changes_with(&y.kind, &x.params, &y.params, note_fx_default) {
+                        cmds.push(Command::SetNoteFxParam { channel: i, slot, id, value });
+                    }
+                }
+                (None, None) => {}
+                (_, y) => {
+                    let fx = y.and_then(|d| Project::make_note_fx(d, sample_rate, new.bpm));
+                    cmds.push(Command::SetNoteFx { channel: i, slot, fx });
+                }
             }
         }
         if a.gain != b.gain {
@@ -150,7 +173,7 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: &dyn Fn(&str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ponzik_project::demo_project;
+    use ponzik_project::{NoteFxDef, demo_project};
 
     fn none(_: &str) -> Option<Arc<Sample>> {
         None
@@ -203,5 +226,25 @@ mod tests {
         c.tracks[3].inserts[5] = None;
         let cmds = diff(&b, &c, 48_000.0, &none);
         assert!(cmds.iter().any(|c| matches!(c, Command::SetInsertSidechain { track: 3, slot: 5, key: None })));
+    }
+
+    #[test]
+    fn note_fx_edits_map_to_slot_commands() {
+        let a = demo_project();
+        let mut b = a.clone();
+        b.channels[1].note_fx = vec![None, Some(NoteFxDef::new("chord"))];
+        assert_eq!(names(&diff(&a, &b, 48_000.0, &none)), ["SetNoteFx"]);
+
+        let mut c = b.clone();
+        c.channels[1].note_fx[1].as_mut().unwrap().set(0, 2.0);
+        assert_eq!(names(&diff(&b, &c, 48_000.0, &none)), ["SetNoteFxParam"]);
+
+        // Retour au défaut : le paramètre est renvoyé avec sa valeur par défaut.
+        let cmds = diff(&c, &b, 48_000.0, &none);
+        assert!(matches!(cmds[..], [Command::SetNoteFxParam { channel: 1, slot: 1, id: 0, value }] if value == 1.0));
+
+        let mut d = c.clone();
+        d.channels[1].note_fx[1] = None;
+        assert!(matches!(diff(&c, &d, 48_000.0, &none)[..], [Command::SetNoteFx { channel: 1, slot: 1, fx: None }]));
     }
 }
