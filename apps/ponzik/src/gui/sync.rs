@@ -91,6 +91,10 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: &dyn Fn(&str
         if a.track != b.track {
             cmds.push(Command::SetChannelTrack { channel: i, track: b.track });
         }
+        // After the parameters: the set reads its base values from `new`.
+        if a.modulators != b.modulators || (!b.modulators.is_empty() && !same_instrument(&a.instrument, &b.instrument)) {
+            cmds.push(Command::SetChannelModulators { channel: i, mods: new.make_channel_mods(i) });
+        }
     }
     for i in n_old..n_new {
         cmds.push(Command::AddChannel(Box::new(new.make_channel(i, sample_rate, loader))));
@@ -140,8 +144,12 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: &dyn Fn(&str
         for slot in 0..INSERT_SLOTS {
             match (&a.inserts[slot], &b.inserts[slot]) {
                 (Some(x), Some(y)) if x.kind == y.kind => {
-                    for (id, value) in param_changes(&y.kind, &x.params, &y.params) {
-                        cmds.push(Command::SetEffectParam { track: t, slot, id, value });
+                    if y.kind == ponzik_project::rack::RACK {
+                        cmds.extend(ponzik_project::rack::rack_commands(t, slot, x, y, sample_rate, new.bpm));
+                    } else {
+                        for (id, value) in param_changes(&y.kind, &x.params, &y.params) {
+                            cmds.push(Command::SetEffectParam { track: t, slot, id, value });
+                        }
                     }
                     if x.bypass != y.bypass {
                         cmds.push(Command::SetInsertBypass { track: t, slot, bypass: y.bypass });
@@ -165,6 +173,14 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: &dyn Fn(&str
                     }
                 }
             }
+        }
+    }
+    // Modulators after the inserts they drive; a replaced insert takes them again.
+    for t in 0..TRACKS.min(old.tracks.len()).min(new.tracks.len()) {
+        let (a, b) = (&old.tracks[t], &new.tracks[t]);
+        let replaced = (0..INSERT_SLOTS).any(|s| a.inserts[s].as_ref().map(|f| &f.kind) != b.inserts[s].as_ref().map(|f| &f.kind));
+        if a.modulators != b.modulators || (replaced && !b.modulators.is_empty()) {
+            cmds.push(Command::SetTrackModulators { track: t, mods: new.make_track_mods(t) });
         }
     }
     if routing && let Some(order) = new.routing_order() {
@@ -256,6 +272,34 @@ mod tests {
         let cmds = diff(&c, &d, 48_000.0, &none);
         assert_eq!(names(&cmds), ["SetTrackVca", "SetTrackVca"]);
         assert!(matches!(cmds[0], Command::SetTrackVca { track: 3, vca: Some(v) } if v == vca));
+    }
+
+    #[test]
+    fn rack_and_modulator_edits_map_to_commands() {
+        use ponzik_engine::ModKind;
+        use ponzik_project::{EffectDef, ModulatorDef};
+        let mut a = demo_project();
+        let mut rack = EffectDef::new_rack();
+        rack.rack_insert(0, None, "eq");
+        a.tracks[3].inserts[6] = Some(rack);
+        let mut b = a.clone();
+        b.tracks[3].inserts[6].as_mut().unwrap().rack_insert(0, None, "delay");
+        assert_eq!(names(&diff(&a, &b, 48_000.0, &none)), ["SetRackUnit", "SetRackLayout"]);
+        let mut c = b.clone();
+        let mut lfo = ModulatorDef::new(ModKind::Lfo);
+        lfo.connect(6, 0, 0.5);
+        c.tracks[3].modulators.push(lfo);
+        let cmds = diff(&b, &c, 48_000.0, &none);
+        assert!(matches!(&cmds[..], [Command::SetTrackModulators { track: 3, mods: Some(_) }]));
+        // Moving the knob of a modulated parameter: just the parameter.
+        let mut d = c.clone();
+        d.tracks[3].inserts[6].as_mut().unwrap().set(0, 0.4);
+        assert_eq!(names(&diff(&c, &d, 48_000.0, &none)), ["SetEffectParam"]);
+        // Replacing the rack: the set follows.
+        let mut e = d.clone();
+        e.tracks[3].inserts[6] = Some(EffectDef::new("reverb"));
+        let n = names(&diff(&d, &e, 48_000.0, &none));
+        assert_eq!(n.last().map(String::as_str), Some("SetTrackModulators"));
     }
 
     #[test]
