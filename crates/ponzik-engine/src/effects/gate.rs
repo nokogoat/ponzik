@@ -1,6 +1,6 @@
 use ponzik_dsp::util::{db_to_gain, decay_coef};
 
-use super::{DEFAULT_SR, Values};
+use super::{DEFAULT_SR, KeyInput, Values};
 use crate::Effect;
 use crate::param::{ParamInfo, Params, Unit};
 
@@ -22,8 +22,11 @@ static PARAMS: [ParamInfo; 5] = [
 const HYSTERESIS: f32 = 0.63;
 
 /// Porte de bruit stéréo liée, avec maintien et atténuation réglable.
+///
+/// Avec une piste clé branchée, c'est la clé qui ouvre la porte.
 pub struct Gate {
     values: Values<5>,
+    key: KeyInput,
     sample_rate: f32,
     detector: f32,
     detector_release: f32,
@@ -38,6 +41,7 @@ impl Default for Gate {
     fn default() -> Self {
         let mut g = Self {
             values: Values::new(&PARAMS),
+            key: KeyInput::new(),
             sample_rate: DEFAULT_SR,
             detector: 0.0,
             detector_release: 0.0,
@@ -100,13 +104,19 @@ impl Effect for Gate {
         self.gain = self.floor();
     }
 
+    fn sidechain(&mut self, left: &[f32], right: &[f32]) {
+        self.key.store(left, right);
+    }
+
     fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let keyed = self.key.take();
         let open_at = db_to_gain(self.values.get(P_THRESHOLD));
         let close_at = open_at * HYSTERESIS;
         let hold = (self.values.get(P_HOLD) * self.sample_rate) as u32;
         let floor = self.floor();
-        for (l, r) in left.iter_mut().zip(right.iter_mut()) {
-            let level = l.abs().max(r.abs());
+        for (i, (l, r)) in left.iter_mut().zip(right.iter_mut()).enumerate() {
+            let (dl, dr) = if keyed { self.key.at(i) } else { (*l, *r) };
+            let level = dl.abs().max(dr.abs());
             self.detector = level.max(self.detector * self.detector_release);
             if self.detector >= open_at {
                 self.open = true;
@@ -155,6 +165,26 @@ mod tests {
         assert!((peak(&l[5_000..8_000]) - 0.01).abs() < 1e-3);
         // Ensuite atténué de 20 dB, pas coupé.
         assert!((peak(&l[20_000..]) - 0.001).abs() < 1e-4, "{}", peak(&l[20_000..]));
+    }
+
+    #[test]
+    fn key_opens_the_gate() {
+        let mut g = Gate::default();
+        g.set_param(P_THRESHOLD, -30.0);
+        // Signal faible, sous le seuil : seule la clé peut ouvrir.
+        let x = sine(200.0, 0.01, 256);
+        let run_keyed = |g: &mut Gate, key: &[f32]| {
+            let mut out = 0.0;
+            for _ in 0..400 {
+                let (mut l, mut r) = (x.clone(), x.clone());
+                g.sidechain(key, key);
+                g.process(&mut l, &mut r);
+                out = peak(&l);
+            }
+            out
+        };
+        assert!((run_keyed(&mut g, &sine(100.0, 0.5, 256)) - 0.01).abs() < 1e-4);
+        assert!(run_keyed(&mut g, &[0.0; 256]) < 1e-5);
     }
 
     #[test]

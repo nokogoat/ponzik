@@ -3,8 +3,8 @@
 
 use crate::effect::Effect;
 use crate::effects::{
-    AutoFilter, Bitcrusher, Chorus, Compressor, Delay, Eq, Gate, Imager, Limiter, Ott, Phaser, PitchShifter, Pompe,
-    Reverb, Saturator, Shimmer, Tranche, Transient, Utility,
+    AutoFilter, Bitcrusher, Chorus, Compressor, Delay, Ducker, Eq, Gate, Imager, Limiter, Ott, Phaser, PitchShifter,
+    Pompe, Reverb, Saturator, Shimmer, Tranche, Transient, Utility,
 };
 use crate::instrument::Instrument;
 use crate::instruments::{
@@ -159,6 +159,13 @@ pub fn effects() -> &'static [EffectKind] {
             category: "Dynamique",
             description: "Volume qui plonge à chaque temps, façon compression latérale, synchronisé au tempo",
             create: || Box::new(Pompe::default()),
+        },
+        EffectKind {
+            id: "ducker",
+            name: "Ducking",
+            category: "Dynamique",
+            description: "Baisse le volume quand la piste clé joue (entrée latérale), avec maintien et relâche",
+            create: || Box::new(Ducker::default()),
         },
         EffectKind {
             id: "transient",

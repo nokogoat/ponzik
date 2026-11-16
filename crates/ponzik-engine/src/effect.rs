@@ -17,6 +17,11 @@ pub trait Effect: Params + Send {
     /// Tempo courant, pour les effets synchronisés.
     fn set_tempo(&mut self, _bpm: f32) {}
 
+    /// Signal clé (entrée latérale) du bloc à venir, appelé juste avant `process`
+    /// quand une piste clé est branchée sur l'insert : même longueur que le bloc,
+    /// post-fader de la piste clé. Sans clé, n'est pas appelé.
+    fn sidechain(&mut self, _left: &[f32], _right: &[f32]) {}
+
     /// Traitement sur place d'un bloc stéréo (`left.len() == right.len()`).
     fn process(&mut self, left: &mut [f32], right: &mut [f32]);
 }

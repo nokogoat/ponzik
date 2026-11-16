@@ -78,11 +78,13 @@ pub struct EffectDef {
     pub kind: String,
     pub params: Vec<(u32, f32)>,
     pub bypass: bool,
+    /// Piste clé de l'entrée latérale (compresseur, porte, ducking…).
+    pub sidechain: Option<usize>,
 }
 
 impl EffectDef {
     pub fn new(kind: &str) -> Self {
-        Self { kind: kind.into(), params: Vec::new(), bypass: false }
+        Self { kind: kind.into(), params: Vec::new(), bypass: false, sidechain: None }
     }
 
     pub fn set(&mut self, id: u32, value: f32) {
@@ -370,6 +372,13 @@ impl Project {
                 out
             })
             .collect();
+        // Une piste clé passe avant la piste qui l'écoute (une clé hors limites est refusée).
+        let mut edges = edges;
+        for (i, t) in self.tracks.iter().enumerate() {
+            for key in t.inserts.iter().flatten().filter_map(|fx| fx.sidechain) {
+                edges.get_mut(key)?.push(i);
+            }
+        }
         routing_order(&edges)
     }
 
@@ -436,6 +445,7 @@ impl Project {
             for (slot, fx) in def.inserts.iter().enumerate() {
                 t.inserts[slot] = fx.as_ref().and_then(|d| Self::make_effect(d, sample_rate, self.bpm));
                 t.bypass[slot] = fx.as_ref().is_some_and(|d| d.bypass);
+                t.sidechain[slot] = fx.as_ref().and_then(|d| d.sidechain);
             }
         }
         if let Some(order) = self.routing_order() {
@@ -612,6 +622,53 @@ mod tests {
         p.tracks[1].output = 2;
         p.tracks[2].output = 1;
         assert!(p.routing_order().is_none());
+    }
+
+    fn keyed(kind: &str, key: usize) -> Option<EffectDef> {
+        Some(EffectDef { sidechain: Some(key), ..EffectDef::new(kind) })
+    }
+
+    #[test]
+    fn sidechain_orders_and_rejects_cycles() {
+        let mut p = Project::empty();
+        // La piste 3 compresse sur la clé de la piste 5 : 5 passe avant 3.
+        p.tracks[3].inserts[0] = keyed("compressor", 5);
+        let order = p.routing_order().unwrap();
+        let pos = |t| order.iter().position(|&x| x == t).unwrap();
+        assert!(pos(5) < pos(3));
+        // La piste 5 sort dans la 3 : passe toujours (5 avant 3).
+        p.tracks[5].output = 3;
+        assert!(p.routing_order().is_some());
+        // Mais si la 3 sort dans la 5, la clé forme une boucle.
+        p.tracks[5].output = MASTER;
+        p.tracks[3].output = 5;
+        assert!(p.routing_order().is_none());
+        p.tracks[3].output = MASTER;
+        // Boucle par deux clés croisées, par sa propre clé, par le master ou hors limites.
+        p.tracks[5].inserts[2] = keyed("gate", 3);
+        assert!(p.routing_order().is_none());
+        p.tracks[5].inserts[2] = keyed("gate", 5);
+        assert!(p.routing_order().is_none());
+        p.tracks[5].inserts[2] = keyed("gate", MASTER);
+        assert!(p.routing_order().is_none());
+        p.tracks[5].inserts[2] = keyed("gate", TRACKS);
+        assert!(p.routing_order().is_none());
+        // Le master peut écouter n'importe quelle piste.
+        p.tracks[5].inserts[2] = None;
+        p.tracks[MASTER].inserts[0] = keyed("ducker", 3);
+        assert!(p.routing_order().is_some());
+    }
+
+    #[test]
+    fn sidechain_reaches_the_engine() {
+        let mut p = Project::empty();
+        p.tracks[3].inserts[1] = keyed("ducker", 4);
+        let (mut engine, _) = p.build_engine(48_000.0, &no_samples);
+        let mixer = engine.mixer_mut();
+        assert_eq!(mixer.tracks[3].sidechain[1], Some(4));
+        assert_eq!(mixer.tracks[3].inserts[1].as_ref().map(|fx| fx.kind()), Some("ducker"));
+        let pos = |t| mixer.order.iter().position(|&x| x == t).unwrap();
+        assert!(pos(4) < pos(3));
     }
 
     fn audio(path: &str, start: u32, len: u32) -> AudioClipDef {

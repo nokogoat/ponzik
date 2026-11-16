@@ -87,11 +87,17 @@ fn track_json(t: &TrackDef) -> Json {
         .iter()
         .map(|fx| match fx {
             None => Json::Null,
-            Some(fx) => obj(vec![
-                ("kind", fx.kind.as_str().into()),
-                ("params", params_json(&fx.params)),
-                ("bypass", fx.bypass.into()),
-            ]),
+            Some(fx) => {
+                let mut pairs = vec![
+                    ("kind", fx.kind.as_str().into()),
+                    ("params", params_json(&fx.params)),
+                    ("bypass", fx.bypass.into()),
+                ];
+                if let Some(key) = fx.sidechain {
+                    pairs.push(("sidechain", key.into()));
+                }
+                obj(pairs)
+            }
         })
         .collect();
     obj(vec![
@@ -327,6 +333,7 @@ fn load_effect(v: &Json) -> Option<EffectDef> {
         kind: v.get("kind")?.as_str()?.to_string(),
         params: load_params(v.get("params")),
         bypass: bool_or(v.get("bypass"), false),
+        sidechain: index(v.get("sidechain"), TRACKS),
     })
 }
 
@@ -349,6 +356,11 @@ fn load_track(v: &Json, index: usize) -> TrackDef {
     }
     for (slot, fx) in arr(v.get("inserts")).iter().take(INSERT_SLOTS).enumerate() {
         t.inserts[slot] = load_effect(fx);
+        if let Some(fx) = &mut t.inserts[slot]
+            && fx.sidechain == Some(index)
+        {
+            fx.sidechain = None;
+        }
     }
     t
 }
@@ -467,10 +479,14 @@ pub fn load(text: &str) -> Result<Project, String> {
         }
     }
     if p.routing_order().is_none() {
-        // Routage en boucle : on renvoie tout au master plutôt que de refuser le fichier.
+        // Routage en boucle : on renvoie tout au master et on débranche les clés
+        // plutôt que de refuser le fichier.
         for t in &mut p.tracks {
             t.output = MASTER;
             t.sends = [(MASTER, 0.0); SEND_SLOTS];
+            for fx in t.inserts.iter_mut().flatten() {
+                fx.sidechain = None;
+            }
         }
     }
 
@@ -688,6 +704,43 @@ mod tests {
         let c = &p.audio_clips[0];
         assert_eq!((c.track, c.len, c.offset, c.gain, c.fade_in), (TRACKS - 1, 1, 0.0, 16.0, 0.0));
         assert_eq!(load(&save(&p)).unwrap(), p);
+    }
+
+    #[test]
+    fn sidechain_round_trips_and_is_validated() {
+        let mut p = demo_project();
+        let mut fx = EffectDef::new("compressor");
+        fx.sidechain = Some(7);
+        p.tracks[4].inserts[3] = Some(fx);
+        let text = save(&p);
+        let back = load(&text).unwrap();
+        assert_eq!(back.tracks[4].inserts[3].as_ref().unwrap().sidechain, Some(7));
+        assert_eq!(back, p);
+        assert_eq!(save(&back), text);
+        // Sans clé, pas de champ : les anciens fichiers restent identiques.
+        assert!(!save(&demo_project()).contains("sidechain"));
+
+        let text = r#"{
+          "format": "ponzik-project",
+          "tracks": [{}, {"inserts": [{"kind": "gate", "sidechain": 1}, {"kind": "gate", "sidechain": 99},
+                                      {"kind": "gate", "sidechain": 2}]},
+                     {"inserts": [{"kind": "ducker", "sidechain": 3}]}]
+        }"#;
+        let p = load(text).unwrap();
+        let keys = |t: usize| p.tracks[t].inserts.iter().flatten().map(|f| f.sidechain).collect::<Vec<_>>();
+        // Sa propre piste ou hors limites : débranchée ; la 2 écoute la 3 sans boucle.
+        assert_eq!(keys(1), [None, None, Some(2)]);
+        assert_eq!(keys(2), [Some(3)]);
+
+        // Boucle 1 ↔ 2 par les clés : tout est débranché.
+        let text = r#"{
+          "format": "ponzik-project",
+          "tracks": [{}, {"inserts": [{"kind": "gate", "sidechain": 2}]},
+                     {"inserts": [{"kind": "gate", "sidechain": 1}]}]
+        }"#;
+        let p = load(text).unwrap();
+        assert!(p.tracks.iter().flat_map(|t| t.inserts.iter().flatten()).all(|f| f.sidechain.is_none()));
+        assert!(p.routing_order().is_some());
     }
 
     #[test]

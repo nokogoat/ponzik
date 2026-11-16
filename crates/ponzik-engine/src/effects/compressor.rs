@@ -2,7 +2,7 @@ use ponzik_dsp::dynamics::EnvelopeFollower;
 use ponzik_dsp::smooth::Smoother;
 use ponzik_dsp::util::{db_to_gain, decay_coef, gain_to_db};
 
-use super::{DEFAULT_SR, Values};
+use super::{DEFAULT_SR, KeyInput, Values};
 use crate::Effect;
 use crate::param::{ParamInfo, Params, Unit};
 
@@ -40,8 +40,11 @@ fn gain_reduction(x: f32, threshold: f32, ratio: f32, knee: f32) -> f32 {
 }
 
 /// Compresseur stéréo lié, détection crête ou RMS, mix parallèle.
+///
+/// Avec une piste clé branchée, le détecteur écoute la clé au lieu du signal.
 pub struct Compressor {
     values: Values<8>,
+    key: KeyInput,
     sample_rate: f32,
     rms: EnvelopeFollower,
     attack: f32,
@@ -55,6 +58,7 @@ impl Default for Compressor {
     fn default() -> Self {
         let mut c = Self {
             values: Values::new(&PARAMS),
+            key: KeyInput::new(),
             sample_rate: DEFAULT_SR,
             rms: EnvelopeFollower::new(0.01, 0.01, DEFAULT_SR),
             attack: 0.0,
@@ -120,12 +124,19 @@ impl Effect for Compressor {
         self.mix.snap();
     }
 
+    fn sidechain(&mut self, left: &[f32], right: &[f32]) {
+        self.key.store(left, right);
+    }
+
     fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
         let v = &self.values;
         let (threshold, ratio, knee) = (v.get(P_THRESHOLD), v.get(P_RATIO), v.get(P_KNEE));
         let use_rms = v.index(P_DETECTOR) == 1;
-        for (l, r) in left.iter_mut().zip(right.iter_mut()) {
-            let level = if use_rms { self.rms.process(0.5 * (*l * *l + *r * *r)).sqrt() } else { l.abs().max(r.abs()) };
+        let keyed = self.key.take();
+        for (i, (l, r)) in left.iter_mut().zip(right.iter_mut()).enumerate() {
+            let (dl, dr) = if keyed { self.key.at(i) } else { (*l, *r) };
+            let level =
+                if use_rms { self.rms.process(0.5 * (dl * dl + dr * dr)).sqrt() } else { dl.abs().max(dr.abs()) };
             let target = gain_reduction(gain_to_db(level), threshold, ratio, knee);
             let coef = if target > self.reduction { self.attack } else { self.release };
             self.reduction = target + (self.reduction - target) * coef;
@@ -178,6 +189,32 @@ mod tests {
         let (half, _) = run_mono(&mut c, &sine(200.0, 1.0, 24_000));
         let (pf, ph) = (peak(&full[12_000..]), peak(&half[12_000..]));
         assert!(pf < 0.1 && (ph - (0.5 + 0.5 * pf)).abs() < 0.02, "{pf} {ph}");
+    }
+
+    #[test]
+    fn key_drives_the_detector() {
+        let mut c = Compressor::default();
+        c.set_param(P_THRESHOLD, -30.0);
+        c.set_param(P_RATIO, 20.0);
+        c.set_param(P_KNEE, 0.0);
+        let x = sine(200.0, 0.1, 256);
+        let run_keyed = |c: &mut Compressor, key: &[f32]| {
+            let mut out = 0.0;
+            for _ in 0..100 {
+                let (mut l, mut r) = (x.clone(), x.clone());
+                c.sidechain(key, key);
+                c.process(&mut l, &mut r);
+                out = peak(&l);
+            }
+            out
+        };
+        // Clé forte : le signal (−20 dB, au-dessus du seuil) est fortement réduit.
+        let loud = run_keyed(&mut c, &sine(100.0, 1.0, 256));
+        assert!(loud < 0.02, "{loud}");
+        // Clé silencieuse : il passe intact.
+        c.reset();
+        let quiet = run_keyed(&mut c, &[0.0; 256]);
+        assert!((quiet - 0.1).abs() < 1e-3, "{quiet}");
     }
 
     #[test]

@@ -22,6 +22,10 @@ pub struct Track {
     pub sends: [(usize, f32); SEND_SLOTS],
     pub inserts: [Option<Box<dyn Effect>>; INSERT_SLOTS],
     pub bypass: [bool; INSERT_SLOTS],
+    /// Piste clé (entrée latérale) de chaque insert : son signal post-fader est
+    /// passé à [`Effect::sidechain`] avant le traitement. Le routage doit la
+    /// traiter avant cette piste (voir [`routing_order`]).
+    pub sidechain: [Option<usize>; INSERT_SLOTS],
     pub(crate) l: Vec<f32>,
     pub(crate) r: Vec<f32>,
 }
@@ -36,6 +40,7 @@ impl Track {
             sends: [(MASTER, 0.0); SEND_SLOTS],
             inserts: std::array::from_fn(|_| None),
             bypass: [false; INSERT_SLOTS],
+            sidechain: [None; INSERT_SLOTS],
             l: vec![0.0; max_block],
             r: vec![0.0; max_block],
         }
@@ -46,6 +51,8 @@ pub struct Mixer {
     pub tracks: Vec<Track>,
     /// Ordre de traitement des pistes hors master (toute source avant sa destination).
     pub order: Box<[usize]>,
+    /// Clé muette, pour une piste clé pas encore traitée (ordre périmé).
+    silence: Vec<f32>,
 }
 
 /// Ordre par défaut : toutes les pistes vont directement au master.
@@ -54,7 +61,8 @@ pub fn default_order() -> Box<[usize]> {
 }
 
 /// Tri topologique du routage : `None` si une boucle existe.
-/// `edges[t]` liste les destinations de la piste `t` (sortie et envois).
+/// `edges[t]` liste les pistes à traiter après `t` : sa sortie, ses envois, et
+/// les pistes dont un insert prend `t` comme clé d'entrée latérale.
 pub fn routing_order(edges: &[Vec<usize>]) -> Option<Box<[usize]>> {
     let n = edges.len();
     let mut indegree = vec![0usize; n];
@@ -97,7 +105,11 @@ fn pair(tracks: &mut [Track], a: usize, b: usize) -> (&mut Track, &mut Track) {
 
 impl Mixer {
     pub fn new(max_block: usize) -> Self {
-        Self { tracks: (0..TRACKS).map(|_| Track::new(max_block)).collect(), order: default_order() }
+        Self {
+            tracks: (0..TRACKS).map(|_| Track::new(max_block)).collect(),
+            order: default_order(),
+            silence: vec![0.0; max_block],
+        }
     }
 
     pub(crate) fn clear(&mut self, n: usize) {
@@ -113,25 +125,41 @@ impl Mixer {
         (&mut t.l[..n], &mut t.r[..n])
     }
 
-    fn run_inserts(t: &mut Track, n: usize) {
-        for (slot, fx) in t.inserts.iter_mut().enumerate() {
-            if let Some(fx) = fx
-                && !t.bypass[slot]
-            {
-                fx.process(&mut t.l[..n], &mut t.r[..n]);
+    /// Inserts de la piste `idx` ; `ready[k]` : la piste `k` est déjà traitée dans ce bloc.
+    fn run_inserts(&mut self, idx: usize, n: usize, ready: &[bool; TRACKS]) {
+        let Self { tracks, silence, .. } = self;
+        for slot in 0..INSERT_SLOTS {
+            let key = tracks[idx].sidechain[slot].filter(|&k| k < TRACKS && k != idx);
+            let (t, key) = match key {
+                Some(k) => {
+                    let (t, kt) = pair(tracks, idx, k);
+                    let key = if ready[k] { (&kt.l[..n], &kt.r[..n]) } else { (&silence[..n], &silence[..n]) };
+                    (t, Some(key))
+                }
+                None => (&mut tracks[idx], None),
+            };
+            if t.bypass[slot] {
+                continue;
             }
+            let Some(fx) = t.inserts[slot].as_mut() else { continue };
+            if let Some((kl, kr)) = key {
+                fx.sidechain(kl, kr);
+            }
+            fx.process(&mut t.l[..n], &mut t.r[..n]);
         }
     }
 
     /// Traite toutes les pistes ; le résultat est dans le master.
     pub(crate) fn process(&mut self, n: usize, meters: &[PeakMeter]) {
+        let mut ready = [false; TRACKS];
         for k in 0..self.order.len() {
             let idx = self.order[k];
-            if idx == MASTER || idx >= TRACKS {
+            if idx == MASTER || idx >= TRACKS || ready[idx] {
                 continue;
             }
+            self.run_inserts(idx, n, &ready);
+            ready[idx] = true;
             let t = &mut self.tracks[idx];
-            Self::run_inserts(t, n);
             let (gl, gr) = balance_gains(t.pan);
             let (gl, gr) = if t.muted { (0.0, 0.0) } else { (gl * t.gain, gr * t.gain) };
             for i in 0..n {
@@ -160,8 +188,8 @@ impl Mixer {
             }
         }
 
+        self.run_inserts(MASTER, n, &ready);
         let m = &mut self.tracks[MASTER];
-        Self::run_inserts(m, n);
         let (gl, gr) = balance_gains(m.pan);
         let (gl, gr) = if m.muted { (0.0, 0.0) } else { (gl * m.gain, gr * m.gain) };
         for i in 0..n {
@@ -235,5 +263,57 @@ mod tests {
         assert!((m.master(4).0[0] - 0.4).abs() < 1e-6);
         assert_eq!(m.master(4).1[0], 0.0);
         assert_eq!(meters[2].take()[0], 0.2);
+    }
+
+    /// Piste 1 (signal 0,1) compressée avec la piste 2 comme clé ; renvoie la crête de la piste 1.
+    fn keyed_peak(key_level: f32) -> f32 {
+        let mut m = Mixer::new(256);
+        let meters: Vec<PeakMeter> = (0..TRACKS).map(|_| PeakMeter::default()).collect();
+        let mut fx = crate::registry::create_effect("compressor").unwrap();
+        fx.set_param(0, -30.0);
+        fx.set_param(1, 20.0);
+        fx.set_param(2, 0.0);
+        m.tracks[1].inserts[0] = Some(fx);
+        m.tracks[1].sidechain[0] = Some(2);
+        let mut edges = vec![Vec::new(); TRACKS];
+        for (t, e) in edges.iter_mut().enumerate().skip(1) {
+            e.push(MASTER);
+            let _ = t;
+        }
+        edges[2].push(1);
+        m.order = routing_order(&edges).unwrap();
+        let pos = |t| m.order.iter().position(|&x| x == t).unwrap();
+        assert!(pos(2) < pos(1), "la clé passe avant");
+        for _ in 0..100 {
+            m.clear(256);
+            m.input(1, 256).0.fill(0.1);
+            m.input(1, 256).1.fill(0.1);
+            m.input(2, 256).0.fill(key_level);
+            meters[1].take();
+            m.process(256, &meters);
+        }
+        meters[1].take()[0]
+    }
+
+    #[test]
+    fn sidechain_key_drives_the_compressor() {
+        let loud = keyed_peak(1.0);
+        assert!(loud < 0.02, "clé forte : {loud}");
+        let silent = keyed_peak(0.0);
+        assert!((silent - 0.1).abs() < 1e-4, "clé muette : {silent}");
+    }
+
+    #[test]
+    fn sidechain_cycle_is_rejected() {
+        let mut edges = vec![Vec::new(); 4];
+        edges[1] = vec![2];
+        edges[2] = vec![0];
+        // Un insert de la piste 1 écoute la piste 2, qui sort dans la 1 : boucle.
+        edges[2].push(1);
+        assert!(routing_order(&edges).is_none());
+        // Une piste ne peut pas être sa propre clé.
+        let mut own = vec![Vec::new(); 3];
+        own[1] = vec![0, 1];
+        assert!(routing_order(&own).is_none());
     }
 }

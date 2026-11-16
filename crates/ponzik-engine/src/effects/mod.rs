@@ -9,6 +9,7 @@ mod bitcrusher;
 mod chorus;
 mod compressor;
 mod delay;
+mod ducker;
 mod eq;
 mod gate;
 mod imager;
@@ -29,6 +30,7 @@ pub use bitcrusher::Bitcrusher;
 pub use chorus::Chorus;
 pub use compressor::Compressor;
 pub use delay::Delay;
+pub use ducker::Ducker;
 pub use eq::Eq;
 pub use gate::Gate;
 pub use imager::Imager;
@@ -135,6 +137,48 @@ impl ThreeBand {
         let (low, rest) = self.first.split(x);
         let (mid, high) = self.second.split(rest);
         [self.low_phase.process(low), mid, high]
+    }
+}
+
+/// Plus long bloc de clé gardé ; au-delà, le dernier échantillon est répété.
+pub(crate) const MAX_KEY_BLOCK: usize = 4_096;
+
+/// Signal clé reçu par [`crate::Effect::sidechain`], valable pour le seul bloc qui suit.
+#[derive(Clone, Debug)]
+pub(crate) struct KeyInput {
+    l: Vec<f32>,
+    r: Vec<f32>,
+    len: usize,
+    fresh: bool,
+}
+
+impl KeyInput {
+    pub fn new() -> Self {
+        Self { l: vec![0.0; MAX_KEY_BLOCK], r: vec![0.0; MAX_KEY_BLOCK], len: 0, fresh: false }
+    }
+
+    /// Copie la clé du bloc (sans allouer).
+    pub fn store(&mut self, left: &[f32], right: &[f32]) {
+        let n = left.len().min(right.len()).min(MAX_KEY_BLOCK);
+        self.l[..n].copy_from_slice(&left[..n]);
+        self.r[..n].copy_from_slice(&right[..n]);
+        self.len = n;
+        self.fresh = true;
+    }
+
+    /// Vrai si une clé a été reçue pour ce bloc ; la consomme.
+    pub fn take(&mut self) -> bool {
+        std::mem::replace(&mut self.fresh, false)
+    }
+
+    /// Échantillon `i` de la clé (le dernier au-delà de la fin, silence si vide).
+    #[inline]
+    pub fn at(&self, i: usize) -> (f32, f32) {
+        if self.len == 0 {
+            return (0.0, 0.0);
+        }
+        let i = i.min(self.len - 1);
+        (self.l[i], self.r[i])
     }
 }
 

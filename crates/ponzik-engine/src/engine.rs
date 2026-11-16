@@ -57,6 +57,10 @@ pub enum Command {
     SetRoutingOrder(Box<[usize]>),
     SetInsert { track: usize, slot: usize, effect: Option<Box<dyn Effect>> },
     SetInsertBypass { track: usize, slot: usize, bypass: bool },
+    /// Branche la piste clé d'un insert (`None` : débranche). L'interface doit
+    /// aussi envoyer le nouvel ordre de routage ([`Command::SetRoutingOrder`]) ;
+    /// une clé pas encore traitée dans le bloc est lue comme du silence.
+    SetInsertSidechain { track: usize, slot: usize, key: Option<usize> },
     SetEffectParam { track: usize, slot: usize, id: u32, value: f32 },
     SetMetronome(bool),
     /// Branche (ou débranche) l'entrée audio ; l'ancienne repart en [`Garbage::Input`].
@@ -96,6 +100,7 @@ impl std::fmt::Debug for Command {
             Command::SetRoutingOrder(_) => "SetRoutingOrder",
             Command::SetInsert { .. } => "SetInsert",
             Command::SetInsertBypass { .. } => "SetInsertBypass",
+            Command::SetInsertSidechain { .. } => "SetInsertSidechain",
             Command::SetEffectParam { .. } => "SetEffectParam",
             Command::SetMetronome(_) => "SetMetronome",
             Command::SetInput(_) => "SetInput",
@@ -853,6 +858,13 @@ impl Engine {
                     t.bypass[slot] = bypass;
                 }
             }
+            Command::SetInsertSidechain { track, slot, key } => {
+                if let Some(t) = self.mixer.tracks.get_mut(track)
+                    && slot < INSERT_SLOTS
+                {
+                    t.sidechain[slot] = key.filter(|&k| k < TRACKS && k != track);
+                }
+            }
             Command::SetEffectParam { track, slot, id, value } => {
                 if let Some(Some(fx)) = self.mixer.tracks.get_mut(track).and_then(|t| t.inserts.get_mut(slot)) {
                     fx.set_param(id, value);
@@ -1055,6 +1067,36 @@ mod tests {
         handle.send(Command::SetSequence(Box::default())).unwrap();
         engine.process(&mut buf, 2);
         assert!(handle.garbage.pop().is_some(), "l'ancienne séquence revient à l'interface");
+    }
+
+    #[test]
+    fn sidechain_compressor_follows_the_key_track() {
+        // Canal 0 → piste 1 (compressée), canal 1 → piste 2 (clé) ; chacun sort 0,25.
+        let measure = |key_muted: bool| {
+            let (mut engine, mut handle, _) = setup(&[]);
+            let key = Channel::new("clé", Box::new(Probe::default())).with_track(2);
+            handle.send(Command::AddChannel(Box::new(key))).unwrap();
+            handle.send(Command::SetChannelMute { channel: 1, muted: key_muted }).unwrap();
+            let mut fx = crate::registry::create_effect("compressor").unwrap();
+            fx.set_sample_rate(SR);
+            fx.set_param(0, -30.0);
+            fx.set_param(1, 20.0);
+            handle.send(Command::SetInsert { track: 1, slot: 0, effect: Some(fx) }).unwrap();
+            handle.send(Command::SetInsertSidechain { track: 1, slot: 0, key: Some(2) }).unwrap();
+            let mut edges = vec![vec![MASTER]; TRACKS];
+            edges[MASTER].clear();
+            edges[2].push(1);
+            let order = crate::mixer::routing_order(&edges).unwrap();
+            handle.send(Command::SetRoutingOrder(order)).unwrap();
+            run(&mut engine, 24_000, 256);
+            handle.take_track_peak(1);
+            run(&mut engine, 256, 256);
+            handle.take_track_peak(1)[0]
+        };
+        let loud = measure(false);
+        let silent = measure(true);
+        assert!(loud < 0.05, "clé jouée : {loud}");
+        assert!((silent - 0.25).abs() < 0.03, "clé muette : {silent}");
     }
 
     #[test]
