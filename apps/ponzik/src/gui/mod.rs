@@ -11,6 +11,7 @@ mod devices;
 mod dnd;
 mod keys;
 mod mixer;
+mod notefx;
 mod palette;
 mod piano;
 mod playlist;
@@ -265,6 +266,22 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     if let Ok(path) = std::env::var("PONZIK_TEST_WAV") {
         app.add_audio_clip(&path, None);
         app.add_sample_channel(&path);
+    }
+    // PONZIK_CHANNEL=n : canal choisi ; PONZIK_INSTRUMENT=type : son instrument ;
+    // PONZIK_NOTE_FX=arpeggiator,chord : ses effets de notes.
+    if let Some(ch) = std::env::var("PONZIK_CHANNEL").ok().and_then(|v| v.parse::<usize>().ok()) {
+        app.focus = app::Focus::Channel(ch.min(app.project.channels.len().saturating_sub(1)));
+    }
+    if let app::Focus::Channel(ch) = app.focus {
+        if let Ok(kind) = std::env::var("PONZIK_INSTRUMENT") {
+            app.project.channels[ch].instrument = ponzik_project::InstrumentDef::new(&kind);
+            app.commit("Instrument");
+        }
+        if let Ok(list) = std::env::var("PONZIK_NOTE_FX") {
+            for (slot, kind) in list.split(',').enumerate() {
+                app.add_note_fx(ch, slot, kind.trim());
+            }
+        }
     }
     if view == View::Session {
         app.launch_scene(0);

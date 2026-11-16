@@ -101,6 +101,14 @@ impl App {
         for k in registry::effects() {
             add(format!("{} sur {}", k.name, self.project.tracks[track].name), "Effet", "", Action::AddEffect(track, k.id));
         }
+        if let Some(ch) = self.selected_channel()
+            && let Some(slot) = (0..ponzik_engine::NOTE_FX_SLOTS).find(|&s| self.project.channels[ch].note_fx.get(s).is_none_or(Option::is_none))
+        {
+            for k in registry::note_fx() {
+                let title = format!("{} sur {}", k.name, self.project.channels[ch].name);
+                add(title, "Effet de notes", "", Action::AddNoteFx(ch, slot, k.id));
+            }
+        }
         add("Enregistrer".into(), "Fichier", "Ctrl S", Action::Save);
         add("Ouvrir un projet".into(), "Fichier", "Ctrl O", Action::OpenMenu);
         for path in super::compat::list_projects().into_iter().take(6) {

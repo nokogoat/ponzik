@@ -89,6 +89,8 @@ pub enum Popup {
     /// Choix d'un instrument : nouveau canal, ou remplacement de celui d'un canal.
     AddInstrument { replace: Option<usize> },
     AddEffect { track: usize },
+    /// Choix d'un effet de notes pour un emplacement d'un canal.
+    AddNoteFx { channel: usize, slot: usize },
     Patterns,
     OpenProject(Vec<PathBuf>),
     ChannelMenu(usize),
@@ -156,6 +158,8 @@ pub enum Action {
     None,
     AddInstrument(&'static str, Option<usize>),
     AddEffect(usize, &'static str),
+    /// Effet de notes : canal, emplacement, type.
+    AddNoteFx(usize, usize, &'static str),
     SelectPattern(usize),
     NewPattern,
     DuplicatePattern,
@@ -575,6 +579,7 @@ impl App {
                 };
                 Popup::Sidechain { track, slot }
             }
+            "notefx" => Popup::AddNoteFx { channel: self.selected_channel().unwrap_or(0), slot: 0 },
             "history" => {
                 for label in ["Poser une note", "Déplacer des notes", "Tempo", "Gamme", "Ajouter un effet"] {
                     self.project.bpm += 1.0;
@@ -2120,6 +2125,13 @@ impl App {
                 track_name(*track),
                 registry::effects().iter().map(|k| MenuItem::new(Icon::Effect, k.name, Action::AddEffect(*track, k.id)).tip(k.description)).collect(),
             ),
+            Popup::AddNoteFx { channel, slot } => (
+                "Effets de notes".into(),
+                registry::note_fx()
+                    .iter()
+                    .map(|k| MenuItem::new(super::notefx::icon(k.id), k.name, Action::AddNoteFx(*channel, *slot, k.id)).tip(k.description))
+                    .collect(),
+            ),
             Popup::Patterns => {
                 let mut v: Vec<MenuItem> = p
                     .patterns
@@ -2383,6 +2395,7 @@ impl App {
                 }
             }
             Action::AddEffect(track, kind) => self.add_effect(track, kind),
+            Action::AddNoteFx(channel, slot, kind) => self.add_note_fx(channel, slot, kind),
             Action::SelectPattern(i) => self.select_pattern(i),
             Action::NewPattern => {
                 let p = self.project.add_pattern();

@@ -104,6 +104,10 @@ pub enum Icon {
     Chord,
     /// Dé : humaniser.
     Dice,
+    /// Notes en escalier, une à une : arpégiateur.
+    Arpeggio,
+    /// Coups répétés de plus en plus faibles : répétition.
+    Repeat,
     /// Horloge : historique des modifications.
     History,
     /// Trois traits : menu principal.
@@ -273,6 +277,18 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
             c.stroke_rrect(rr(-6.5, -6.5, 13.0, 13.0), 3.0 * s, stroke, col);
             for (x, y) in [(-3.0, -3.0), (0.0, 0.0), (3.0, 3.0)] {
                 c.fill_circle(cx + x * s, cy + y * s, 1.4 * s.max(0.9), col);
+            }
+        }
+        Icon::Arpeggio => {
+            for i in 0..4 {
+                let (x, y) = (-7.0 + i as f32 * 3.8, 3.5 - i as f32 * 3.4);
+                c.fill_rrect(rr(x, y, 3.2, 3.0), 1.0 * s, col.alpha(0.55 + 0.15 * i as f32));
+            }
+        }
+        Icon::Repeat => {
+            for i in 0..4 {
+                let h = 13.0 - i as f32 * 3.0;
+                c.fill_rrect(rr(-7.0 + i as f32 * 3.8, 6.5 - h, 2.6, h), 1.0 * s, col.alpha(1.0 - 0.18 * i as f32));
             }
         }
         Icon::History => {

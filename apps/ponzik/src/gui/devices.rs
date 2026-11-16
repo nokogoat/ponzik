@@ -222,7 +222,7 @@ impl App {
                 card_width(&kind, params_of(&kind, inst))
             })
             .collect();
-        let total: f32 = widths.iter().sum::<f32>() + devices.len() as f32 * CARD_GAP + 120.0;
+        let total: f32 = widths.iter().sum::<f32>() + devices.len() as f32 * CARD_GAP + 120.0 + self.note_fx_lead();
         let over_header = input.inside && header.contains(input.x, input.y);
         let over_chain = input.inside && chain.contains(input.x, input.y);
         if (over_header || (over_chain && input.mods.shift)) && input.wheel != 0.0 {
@@ -243,7 +243,8 @@ impl App {
 
         self.drop_zone(input, chain, DropTarget::Track(track));
         let prev = c.push_clip(chain);
-        let mut x = chain.x - sx;
+        // Effets de notes du canal, avant l'instrument.
+        let mut x = self.note_fx_card(c, input, chain.x - sx, chain);
         for (d, w) in devices.iter().zip(widths) {
             let card = Rect::new(x, chain.y, w, chain.h);
             if card.right() > chain.x && card.x < chain.right() {
