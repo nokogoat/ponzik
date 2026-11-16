@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use ponzik_dsp::util::balance_gains;
 
+use crate::audition::Audition;
 use crate::effect::Effect;
 use crate::input::{InputConsumer, RecordBuffer};
 use crate::instrument::Instrument;
@@ -86,6 +87,9 @@ pub enum Command {
     /// transport rend le tampon en cours via [`Garbage::Recording`]. Un seul
     /// enregistrement à la fois ; `armed` sans tampon désarme.
     Record { track: usize, armed: bool, buffer: Option<Box<RecordBuffer>> },
+    /// Pré-écoute de l'Atelier, ajoutée à la sortie hors du mixer : remplace la
+    /// voix en cours (rendue en [`Garbage::Audition`]) ; `None` l'arrête en fondu.
+    Audition(Option<Box<Audition>>),
 }
 
 impl std::fmt::Debug for Command {
@@ -124,6 +128,7 @@ impl std::fmt::Debug for Command {
             Command::SetInput(_) => "SetInput",
             Command::SetMonitor { .. } => "SetMonitor",
             Command::Record { .. } => "Record",
+            Command::Audition(_) => "Audition",
         };
         f.write_str(name)
     }
@@ -140,6 +145,7 @@ pub enum Garbage {
     Input(Box<InputConsumer>),
     /// Enregistrement terminé : gardé à part par [`EngineHandle::take_recordings`].
     Recording(Box<RecordBuffer>),
+    Audition(Box<Audition>),
 }
 
 /// Ce que le moteur publie pour l'interface.
@@ -156,6 +162,8 @@ struct SharedState {
     load: AtomicU32,
     /// Latence totale au master, en échantillons.
     latency: AtomicU32,
+    /// Position de la pré-écoute en images de l'échantillon (bits d'un `f64`, −1 : rien).
+    audition: AtomicU64,
 }
 
 /// Côté interface : envoie des commandes, lit l'état publié.
@@ -223,6 +231,11 @@ impl EngineHandle {
     /// (inserts des pistes et du master), compensé sur tous les autres.
     pub fn latency(&self) -> usize {
         self.state.latency.load(Ordering::Relaxed) as usize
+    }
+
+    /// Position de la pré-écoute en images de l'échantillon, si elle joue.
+    pub fn audition_position(&self) -> Option<f64> {
+        Some(f64::from_bits(self.state.audition.load(Ordering::Relaxed))).filter(|p| *p >= 0.0)
     }
 
     /// Latence totale au master, en secondes.
@@ -300,6 +313,8 @@ pub struct Engine {
     recording: Option<Box<RecordBuffer>>,
     /// Enregistrement que la file de retour pleine n'a pas pu prendre ; réessayé au bloc suivant.
     returning: Option<Box<RecordBuffer>>,
+    /// Pré-écoute de l'Atelier.
+    audition: Option<Box<Audition>>,
 }
 
 /// État de lecture d'un clip audio entre deux blocs.
@@ -334,6 +349,7 @@ impl Engine {
             input_peak: PeakMeter::default(),
             load: AtomicU32::new(0),
             latency: AtomicU32::new(0),
+            audition: AtomicU64::new((-1f64).to_bits()),
         });
         let mut voices = Vec::with_capacity(MAX_AUDIO_VOICES);
         voices.resize(sequence.audio_clips.len().min(MAX_AUDIO_VOICES), AudioVoice::default());
@@ -370,6 +386,7 @@ impl Engine {
             monitor: None,
             recording: None,
             returning: None,
+            audition: None,
         };
         let handle = EngineHandle {
             commands: tx,
@@ -465,9 +482,18 @@ impl Engine {
             }
             self.process_chunk(n);
             let (l, r) = self.mixer.master(n);
-            write_interleaved(&mut out[done * channels..(done + n) * channels], channels, l, r);
+            let block = &mut out[done * channels..(done + n) * channels];
+            write_interleaved(block, channels, l, r);
+            if let Some(voice) = self.audition.as_mut()
+                && !voice.render_add(block, channels, self.sample_rate)
+                && let Some(done) = self.audition.take()
+            {
+                self.trash(Garbage::Audition(done));
+            }
             done += n;
         }
+        let heard = self.audition.as_ref().map_or(-1.0, |a| a.position());
+        self.state.audition.store(heard.to_bits(), Ordering::Relaxed);
         self.state.position.store(self.pos.to_bits(), Ordering::Relaxed);
         self.state.latency.store(self.mixer.latency() as u32, Ordering::Relaxed);
         self.state.count_in.store(self.count_in.to_bits(), Ordering::Relaxed);
@@ -1014,6 +1040,16 @@ impl Engine {
                     }
                     Some(rec) => self.trash(Garbage::Recording(rec)),
                     None => {}
+                }
+            }
+            Command::Audition(Some(voice)) => {
+                if let Some(old) = self.audition.replace(voice) {
+                    self.trash(Garbage::Audition(old));
+                }
+            }
+            Command::Audition(None) => {
+                if let Some(voice) = self.audition.as_mut() {
+                    voice.stop();
                 }
             }
         }
@@ -1688,5 +1724,23 @@ mod tests {
         let recs = handle.take_recordings();
         assert_eq!(recs.len(), 1);
         assert_eq!(recs[0].len, 0);
+    }
+
+    #[test]
+    fn audition_plays_outside_the_mixer() {
+        let (mut engine, mut handle) = Engine::new(SR, Vec::new(), Sequence::default());
+        let dc = Arc::new(Sample { name: "dc".into(), sample_rate: SR, left: vec![0.5; 4_800], right: vec![0.5; 4_800], markers: Vec::new() });
+        handle.send(Command::Audition(Some(Box::new(Audition::new(dc, 0, 4_800, None, 1.0))))).unwrap();
+        let mut buf = vec![0.0; 2 * 1_024];
+        engine.process(&mut buf, 2);
+        assert!((buf[2 * 1_000] - 0.5).abs() < 1e-4, "{}", buf[2_000]);
+        assert_eq!(handle.take_master_peak(), [0.0, 0.0], "pas dans le mixer");
+        assert!(handle.audition_position().is_some_and(|p| (p - 1_024.0).abs() < 1.0));
+        // Arrêt en fondu, puis la voix revient à l'interface.
+        handle.send(Command::Audition(None)).unwrap();
+        engine.process(&mut buf, 2);
+        assert_eq!(buf[2 * 1_000], 0.0);
+        assert_eq!(handle.audition_position(), None);
+        assert!(matches!(handle.garbage.pop(), Some(Garbage::Audition(_))));
     }
 }

@@ -5,6 +5,7 @@
 //! file sans verrou ([`ring`]) ; les objets remplacés lui reviennent par la file
 //! [`Garbage`] pour être libérés hors du thread audio.
 
+pub mod audition;
 pub mod effect;
 pub mod effects;
 pub mod input;

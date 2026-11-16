@@ -1,7 +1,7 @@
 //! Instruments natifs de Ponzik.
 
 mod bass303;
-mod common;
+pub(crate) mod common;
 mod drum_machine;
 mod drums;
 mod epiano;
