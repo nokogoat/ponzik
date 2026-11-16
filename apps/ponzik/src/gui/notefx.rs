@@ -617,13 +617,14 @@ fn group(params: &[ParamInfo], id: u32) -> &'static str {
 }
 
 impl App {
-    /// Éclat de chaque pad : 1 à la frappe, puis décroissance rapide.
-    fn pad_hits(&self, ch: usize) -> [f32; PADS] {
-        let mut out = [0.0f32; PADS];
-        let pad_of = |key: u8| key.checked_sub(FIRST_PAD_NOTE).map(usize::from).filter(|&p| p < PADS);
+    /// Éclat de chaque pad (notes 36 et suivantes) : la vélocité à la frappe,
+    /// puis décroissance rapide.
+    pub(super) fn pad_hits<const N: usize>(&self, ch: usize) -> [f32; N] {
+        let mut out = [0.0f32; N];
+        let pad_of = |key: u8| key.checked_sub(FIRST_PAD_NOTE).map(usize::from).filter(|&p| p < N);
         for h in self.held.iter().filter(|h| h.channel == ch) {
             if let Some(p) = pad_of(h.key) {
-                out[p] = 1.0;
+                out[p] = h.vel.max(0.3);
             }
         }
         if let Some((c, k)) = self.preview
@@ -683,7 +684,7 @@ impl App {
             return;
         };
         let sel = PAD.with(|p| p.borrow().get(&ch).copied()).unwrap_or(0);
-        let hits = self.pad_hits(ch);
+        let hits = self.pad_hits::<PADS>(ch);
         let find = |id: u32| params.iter().find(|p| p.id == id);
         let grid_y = body.y + 16.0;
         let sel_x = self.anim.to(wid("dm-sel-x", ch, 0), (sel % 4) as f32, T_LAYOUT);

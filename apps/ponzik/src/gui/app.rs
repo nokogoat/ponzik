@@ -138,6 +138,8 @@ pub enum Popup {
     PatternColor(usize),
     /// Réglages : espace de travail (0) ou raccourcis (1).
     Settings { tab: usize },
+    /// Right-click on a Drum Pads pad.
+    PadMenu { channel: usize, pad: usize },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -256,6 +258,8 @@ pub enum Action {
     SetLanguage(Option<ponzik_i18n::Lang>),
     /// Affiche ou masque une vue.
     ToggleViewShown(View),
+    /// Edit of a Drum Pads pad: channel, pad, operation.
+    Pad(usize, usize, super::pads::PadOp),
 }
 
 /// Ligne de menu : une icône (ou la couleur d'un pattern), un nom court, une
@@ -276,30 +280,30 @@ pub struct MenuItem {
 }
 
 impl MenuItem {
-    fn plain(name: &str, action: Action) -> Self {
+    pub(super) fn plain(name: &str, action: Action) -> Self {
         Self { icon: None, color: None, name: name.into(), detail: String::new(), tip: String::new(), sep: false, on: false, dim: false, action }
     }
 
-    fn new(icon: Icon, name: &str, action: Action) -> Self {
+    pub(super) fn new(icon: Icon, name: &str, action: Action) -> Self {
         Self { icon: Some(icon), ..Self::plain(name, action) }
     }
 
-    fn detail(mut self, d: String) -> Self {
+    pub(super) fn detail(mut self, d: String) -> Self {
         self.detail = d;
         self
     }
 
-    fn tip(mut self, t: &str) -> Self {
+    pub(super) fn tip(mut self, t: &str) -> Self {
         self.tip = t.into();
         self
     }
 
-    fn sep(mut self) -> Self {
+    pub(super) fn sep(mut self) -> Self {
         self.sep = true;
         self
     }
 
-    fn on(mut self, on: bool) -> Self {
+    pub(super) fn on(mut self, on: bool) -> Self {
         self.on = on;
         self
     }
@@ -2773,6 +2777,7 @@ impl App {
                 }
                 (tr_fmt!("Color · {}", p.patterns[pat].name.as_str()), v)
             }
+            Popup::PadMenu { channel, pad } => self.pad_menu(*channel, *pad),
             Popup::Rename { .. } | Popup::Palette { .. } | Popup::Scale | Popup::Chord | Popup::Settings { .. } => (String::new(), Vec::new()),
         }
     }
@@ -2966,6 +2971,7 @@ impl App {
             Action::ApplyPreset(i) => self.apply_profile(i),
             Action::SetLanguage(lang) => self.set_language(lang),
             Action::ToggleViewShown(v) => self.toggle_view_shown(v),
+            Action::Pad(channel, pad, op) => self.pad_action(channel, pad, op),
             Action::Automate(target, value) => self.create_automation(target, value),
             Action::SaveAs => {
                 let text = self.project.name.clone();

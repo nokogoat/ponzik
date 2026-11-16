@@ -53,6 +53,8 @@ pub enum DropTarget {
     Lane { lane: usize, tick: u32 },
     /// L'Atelier : l'échantillon s'y ouvre.
     Lab,
+    /// A Drum Pads pad; `add_layer` (Shift held) adds a velocity layer.
+    Pad { channel: usize, pad: usize, add_layer: bool },
 }
 
 pub struct Dnd {
@@ -81,7 +83,7 @@ impl App {
             (payload, target),
             (Payload::Instrument { .. }, DropTarget::Rack | DropTarget::Channel(_))
                 | (Payload::Effect { .. }, DropTarget::Channel(_) | DropTarget::Track(_) | DropTarget::Slot(..))
-                | (Payload::Sample(_), DropTarget::Rack | DropTarget::Channel(_) | DropTarget::Lane { .. } | DropTarget::Lab)
+                | (Payload::Sample(_), DropTarget::Rack | DropTarget::Channel(_) | DropTarget::Lane { .. } | DropTarget::Lab | DropTarget::Pad { .. })
         )
     }
 
@@ -182,6 +184,9 @@ impl App {
                 } else {
                     self.add_sample_channel(&path);
                 }
+            }
+            (Payload::Sample(path), DropTarget::Pad { channel, pad, add_layer }) => {
+                self.load_pad_sample(channel, pad, &path.to_string_lossy(), add_layer);
             }
             (Payload::Sample(path), DropTarget::Lab) => {
                 self.open_in_lab(&path.to_string_lossy(), super::samplelab::Source::Browser);

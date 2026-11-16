@@ -16,6 +16,7 @@ mod keys;
 mod midiout;
 mod mixer;
 mod notefx;
+mod pads;
 mod palette;
 mod piano;
 mod playlist;
@@ -371,6 +372,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
         if let Ok(kind) = std::env::var("PONZIK_INSTRUMENT") {
             app.project.channels[ch].instrument = ponzik_project::InstrumentDef::new(&kind);
             app.commit(tr("Instrument"));
+        }
+        // PONZIK_PADS=kit[,pad] : Drum Pads with the starter kit, pad n played.
+        if let Ok(spec) = std::env::var("PONZIK_PADS") {
+            app.screenshot_pads(ch, &spec);
         }
         if let Ok(list) = std::env::var("PONZIK_NOTE_FX") {
             for (slot, kind) in list.split(',').enumerate() {
