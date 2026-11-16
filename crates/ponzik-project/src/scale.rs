@@ -135,6 +135,43 @@ impl ScaleKind {
             .filter_map(|n| u8::try_from(n).ok().filter(|&n| n <= 127))
             .collect()
     }
+
+    /// Accord de forme `kind` posé sur `root`, ramené dans la gamme : chaque
+    /// intervalle devient un nombre de degrés (tierce = 2, quinte = 4…) et la
+    /// qualité de l'accord vient de la gamme (sur Ré en Do majeur, une
+    /// « septième » donne Ré mineur 7). Gamme chromatique : l'accord tel quel.
+    pub fn shaped_chord(self, key: u8, root: u8, kind: ChordKind) -> Vec<u8> {
+        if self == Self::Chromatic {
+            return chord(root, kind);
+        }
+        let steps = self.intervals();
+        let n = steps.len() as i32;
+        let rel = i32::from(self.snap(key, root)) - i32::from(key % 12);
+        let degree = steps.iter().position(|&s| i32::from(s) == rel.rem_euclid(12)).unwrap_or(0) as i32;
+        let base = i32::from(key % 12) + 12 * rel.div_euclid(12);
+        let mut notes: Vec<u8> = kind
+            .intervals()
+            .iter()
+            .map(|&i| degree + n * i32::from(i / 12) + degree_steps(i % 12))
+            .map(|d| base + 12 * d.div_euclid(n) + i32::from(steps[d.rem_euclid(n) as usize]))
+            .filter_map(|v| u8::try_from(v).ok().filter(|&v| v <= 127))
+            .collect();
+        notes.dedup();
+        notes
+    }
+}
+
+/// Degrés de gamme qui correspondent à un intervalle (moins d'une octave).
+fn degree_steps(semitones: u8) -> i32 {
+    match semitones {
+        0 => 0,
+        1 | 2 => 1,
+        3 | 4 => 2,
+        5 => 3,
+        6..=8 => 4,
+        9 => 5,
+        _ => 6,
+    }
 }
 
 /// Type d'accord, défini par ses intervalles depuis la fondamentale.
@@ -259,6 +296,28 @@ mod tests {
 
     fn project(key: u8, scale: ScaleKind) -> Project {
         Project { key, scale, ..Project::empty() }
+    }
+
+    #[test]
+    fn shaped_chords_follow_the_scale() {
+        let c = ScaleKind::Major;
+        // Ré en Do majeur : la « septième » est Ré mineur 7, la triade Ré mineur.
+        assert_eq!(c.shaped_chord(0, 62, ChordKind::Major7), vec![62, 65, 69, 72]);
+        assert_eq!(c.shaped_chord(0, 62, ChordKind::Major), vec![62, 65, 69]);
+        // Si : triade diminuée ; un accord majeur demandé reste dans la gamme.
+        assert_eq!(c.shaped_chord(0, 71, ChordKind::Major), vec![71, 74, 77]);
+        // Note hors gamme : collée d'abord ; quinte à vide avec son octave.
+        assert!(c.shaped_chord(0, 61, ChordKind::Power).iter().all(|&n| c.contains(0, n)));
+        assert_eq!(c.shaped_chord(0, 60, ChordKind::Power), vec![60, 67, 72]);
+        // La mineur, add9 sur la tonique.
+        assert_eq!(ScaleKind::Minor.shaped_chord(9, 57, ChordKind::Add9), vec![57, 60, 64, 59 + 12]);
+        // Pentatonique : tout reste dans la gamme.
+        let p = ScaleKind::PentatonicMinor;
+        for k in ChordKind::ALL {
+            assert!(p.shaped_chord(4, 64, k).iter().all(|&n| p.contains(4, n)), "{k:?}");
+        }
+        // Chromatique : l'accord tel quel.
+        assert_eq!(ScaleKind::Chromatic.shaped_chord(0, 61, ChordKind::Minor), chord(61, ChordKind::Minor));
     }
 
     #[test]

@@ -60,6 +60,31 @@ pub fn chord_name(kind: ChordKind) -> &'static str {
     }
 }
 
+/// Forme d'accord quand une gamme est fixée : la qualité vient de la gamme,
+/// seul le nombre de notes et leur empilement comptent.
+pub const SCALE_SHAPES: [(Option<ChordKind>, &str, &str); 6] = [
+    (None, "Triade", "3"),
+    (Some(ChordKind::Major7), "Septième", "7"),
+    (Some(ChordKind::Add9), "Add 9", "add9"),
+    (Some(ChordKind::Sus2), "Sus 2", "sus2"),
+    (Some(ChordKind::Sus4), "Sus 4", "sus4"),
+    (Some(ChordKind::Power), "Quinte", "5"),
+];
+
+/// Forme (nom, symbole) d'un type d'accord une fois ramené dans la gamme.
+pub fn scale_shape(kind: Option<ChordKind>) -> (&'static str, &'static str) {
+    use ChordKind as K;
+    let i = match kind {
+        None | Some(K::Major | K::Minor | K::Diminished | K::Augmented) => 0,
+        Some(K::Add9 | K::MinorAdd9) => 2,
+        Some(K::Sus2) => 3,
+        Some(K::Sus4) => 4,
+        Some(K::Power) => 5,
+        Some(_) => 1,
+    };
+    (SCALE_SHAPES[i].1, SCALE_SHAPES[i].2)
+}
+
 /// Symbole court ; « M » pour l'accord majeur, « b5 » à la place de « ♭5 »
 /// (les polices embarquées n'ont pas ♭).
 pub fn chord_symbol(kind: ChordKind) -> &'static str {
@@ -87,16 +112,8 @@ impl App {
 
     /// Notes que le tampon d'accord pose sur `root` (au moins `root`).
     fn chord_at(&self, root: u8) -> Vec<u8> {
-        let notes = match self.piano.chord {
-            Some(kind) => ponzik_project::chord(root, kind),
-            None if self.project.scale == ScaleKind::Chromatic => ponzik_project::chord(root, ChordKind::Major),
-            None => {
-                let root = self.project.snap(root);
-                let rel = root as i32 - (self.project.key % 12) as i32;
-                let degree = self.project.scale.intervals().iter().position(|&i| i as i32 == rel.rem_euclid(12)).unwrap_or(0);
-                self.project.diatonic_chord(degree, 3, rel.div_euclid(12) - 1)
-            }
-        };
+        let kind = self.piano.chord.unwrap_or(ChordKind::Major);
+        let notes = self.project.scale.shaped_chord(self.project.key, root, kind);
         if notes.is_empty() { vec![root] } else { notes }
     }
 
@@ -180,13 +197,18 @@ impl App {
         let chv = self.hover_anim(cid, chov);
         let on = self.anim.to(cid ^ 0x4f4e, stamp as u8 as f32, T_HOVER);
         c.fill_rrect(chip, 8.0, t.raised.mix(t.raised_hi, chv).alpha(0.5 + 0.5 * on.max(chv)));
-        let label = self.piano.chord.map_or("Gamme", chord_symbol);
+        let in_scale = self.project.scale != ScaleKind::Chromatic;
+        let label = if in_scale { scale_shape(self.piano.chord).1 } else { self.piano.chord.map_or("M", chord_symbol) };
         let (kx, ky) = chip.center();
         self.text_center(c, self.f.sans_med, 12.0, kx - 5.0, ky, label, t.muted.mix(t.text, on.max(chv * 0.6)));
         draw_icon(c, Icon::ChevronDown, chip.right() - 10.0, ky, 9.0, t.muted);
         if chov {
-            let name = self.piano.chord.map_or("Accord de la gamme", chord_name);
-            self.set_tip(&format!("Type d'accord\n{name}"), "");
+            let tip = if in_scale {
+                format!("Accord · {}\nSuit la gamme du projet", scale_shape(self.piano.chord).0)
+            } else {
+                format!("Accord · {}", self.piano.chord.map_or("Majeur", chord_name))
+            };
+            self.set_tip(&tip, "");
         }
         if chov && input.pressed {
             self.open_popup(Popup::Chord, chip);
