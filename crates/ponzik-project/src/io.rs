@@ -163,6 +163,8 @@ pub fn save(project: &Project) -> String {
         ("name", project.name.as_str().into()),
         ("bpm", project.bpm.into()),
         ("swing", project.swing.into()),
+        ("key", project.key.into()),
+        ("scale", project.scale.id().into()),
         ("mode", mode),
         ("current_pattern", project.current_pattern.into()),
         ("channels", Json::Arr(project.channels.iter().map(channel_json).collect())),
@@ -442,6 +444,9 @@ pub fn load(text: &str) -> Result<Project, String> {
     p.name = string_or(root.get("name"), &p.name);
     p.bpm = f32_or(root.get("bpm"), p.bpm).clamp(20.0, 999.0);
     p.swing = f32_or(root.get("swing"), 0.0).clamp(0.0, 1.0);
+    // Gamme : champs facultatifs, une valeur inconnue revient à la gamme chromatique.
+    p.key = (u32_or(root.get("key"), 0) % 12) as u8;
+    p.scale = root.get("scale").and_then(Json::as_str).and_then(crate::ScaleKind::from_id).unwrap_or_default();
 
     p.channels = arr(root.get("channels")).iter().map(load_channel).collect();
     let n = p.channels.len();
@@ -702,5 +707,20 @@ mod tests {
         assert!(e.contains("version 2") && e.contains("mettez Ponzik à jour"), "{e}");
         let e = load("{\n  \"format\": \"ponzik-project\",\n  \"bpm\": 12O\n}").unwrap_err();
         assert!(e.contains("illisible") && e.contains("ligne 3"), "{e}");
+    }
+
+    #[test]
+    fn key_and_scale_round_trip() {
+        let mut p = demo_project();
+        p.key = 9;
+        p.scale = crate::ScaleKind::HarmonicMinor;
+        let text = save(&p);
+        assert!(text.contains("\"scale\": \"harmonic_minor\""));
+        assert_eq!(load(&text).unwrap(), p);
+        // Champs absents, inconnus ou hors limites : valeurs par défaut.
+        let p = load(r#"{"format": "ponzik-project", "key": 14, "scale": "lune"}"#).unwrap();
+        assert_eq!((p.key, p.scale), (2, crate::ScaleKind::Chromatic));
+        let p = load(r#"{"format": "ponzik-project", "key": -3, "scale": 4}"#).unwrap();
+        assert_eq!((p.key, p.scale), (0, crate::ScaleKind::Chromatic));
     }
 }

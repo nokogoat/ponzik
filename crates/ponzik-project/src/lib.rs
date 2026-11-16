@@ -25,6 +25,7 @@ pub mod io;
 pub mod json;
 pub mod midi_file;
 pub mod render;
+pub mod scale;
 
 pub use breakcore::demo_breakcore;
 pub use demo::demo_project;
@@ -32,6 +33,7 @@ pub use history::History;
 pub use io::{load, load_from_file, save, save_to_file};
 pub use midi_file::{MidiFile, MidiTrack, import_midi, read_smf, write_smf};
 pub use render::{BitDepth, RenderMode, render_song, render_stems, write_wav};
+pub use scale::{ChordKind, ScaleKind, chord};
 
 /// Un instrument et l'état de ses paramètres.
 #[derive(Clone, Debug, PartialEq)]
@@ -190,6 +192,9 @@ pub struct Project {
     pub name: String,
     pub bpm: f32,
     pub swing: f32,
+    /// Tonalité (0 = do … 11 = si) et mode de la gamme du projet.
+    pub key: u8,
+    pub scale: ScaleKind,
     pub channels: Vec<ChannelDef>,
     pub patterns: Vec<PatternDef>,
     pub clips: Vec<ClipDef>,
@@ -224,6 +229,8 @@ impl Project {
             name: "Sans titre".into(),
             bpm: 120.0,
             swing: 0.0,
+            key: 0,
+            scale: ScaleKind::Chromatic,
             channels: Vec::new(),
             patterns: vec![PatternDef { name: "Pattern 1".into(), len: TICKS_PER_BAR, notes: Vec::new(), color: 0 }],
             clips: Vec::new(),
