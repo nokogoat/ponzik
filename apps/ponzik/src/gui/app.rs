@@ -187,6 +187,8 @@ pub enum Action {
     ToggleRecord,
     /// Pré-compte d'une mesure avant l'enregistrement.
     ToggleCountIn,
+    /// Horloge MIDI sur un port de sortie.
+    ToggleMidiClock(usize),
     /// Un appui de tap tempo.
     TapTempo,
     ToggleTyping,
@@ -486,6 +488,7 @@ pub struct App {
     pub time_selection: Option<(View, u32, u32)>,
     pub midi_inputs: Vec<ponzik_midi::MidiInput>,
     midi_events: Vec<ponzik_midi::MidiEvent>,
+    pub midi_out: super::midiout::MidiOutState,
     pub tips: TipState,
     /// Glisser-déposer depuis le navigateur, et les zones de dépôt de l'image.
     pub dnd: Option<super::dnd::Dnd>,
@@ -603,6 +606,7 @@ impl App {
             time_selection: None,
             midi_inputs: ponzik_midi::open_all_inputs(),
             midi_events: Vec::new(),
+            midi_out: Default::default(),
             tips: TipState::default(),
             dnd: None,
             drops: Vec::new(),
@@ -2865,6 +2869,7 @@ impl App {
             }
             Action::ToggleRecord => self.record = !self.record,
             Action::ToggleCountIn => self.toggle_count_in(),
+            Action::ToggleMidiClock(port) => self.toggle_midi_clock(port),
             Action::TapTempo => self.tap_tempo(),
             Action::ToggleTyping => self.toggle_typing_keyboard(),
             Action::SetView(v) => self.set_view(v),

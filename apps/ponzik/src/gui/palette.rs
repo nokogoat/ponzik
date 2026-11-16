@@ -82,6 +82,9 @@ impl App {
         let count_in = if self.count_in { "Couper le pré-compte" } else { "Pré-compte d'une mesure avant l'enregistrement" };
         add(count_in.into(), "Transport", none(), Action::ToggleCountIn);
         add("Clavier d'ordinateur musical".into(), "Transport", k(S::TypingKeyboard), Action::ToggleTyping);
+        for (title, port) in self.midi_out_palette() {
+            add(title, "MIDI", none(), Action::ToggleMidiClock(port));
+        }
         for view in self.shown_views() {
             add(format!("Aller à : {}", view.label()), "Vue", k(S::for_view(view)), Action::SetView(view));
         }

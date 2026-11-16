@@ -13,6 +13,7 @@ mod dnd;
 mod float;
 mod keymap;
 mod keys;
+mod midiout;
 mod mixer;
 mod notefx;
 mod palette;
@@ -205,6 +206,7 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     let mut window = Window::open("Ponzik", 1600, 960).map_err(|e| e.to_string())?;
     let mut app = App::new(handle, project, config.sample_rate);
     app.set_output(stream);
+    app.start_midi_out();
     for m in &app.midi_inputs {
         eprintln!("MIDI : {}", m.name());
     }
