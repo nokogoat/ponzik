@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use crate::{Cursor, Event, WindowError};
+use crate::{Cursor, Event, NativeHandle, PluginWindowOptions, WindowError};
+
+pub(crate) type PluginWindow = Window;
 
 pub(crate) struct Window;
 
@@ -23,4 +25,16 @@ impl Window {
     pub(crate) fn backend_name(&self) -> &'static str {
         "none"
     }
+    pub(crate) fn native_handle(&self) -> NativeHandle {
+        NativeHandle::None
+    }
+    pub(crate) fn open_plugin(_: &PluginWindowOptions) -> Result<Self, WindowError> {
+        Err(WindowError::UnsupportedPlatform)
+    }
+    pub(crate) fn set_plugin_size(&mut self, _: u32, _: u32) {}
+    pub(crate) fn set_resizable(&mut self, _: bool) {}
+    pub(crate) fn position(&mut self) -> Option<(i32, i32)> {
+        None
+    }
+    pub(crate) fn poll_plugin_events(&mut self, _: &mut Vec<Event>) {}
 }

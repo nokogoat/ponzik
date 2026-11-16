@@ -14,7 +14,10 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::{Cursor, Event, Key, Modifiers, MouseButton, WindowError};
+use crate::{Cursor, Event, Key, Modifiers, MouseButton, NativeHandle, PluginWindowOptions, WindowError};
+
+/// A plugin window is a plain window of its own connection.
+pub(crate) type PluginWindow = Window;
 
 unsafe extern "C" {
     fn shmget(key: c_int, size: usize, flags: c_int) -> c_int;
@@ -30,9 +33,11 @@ const IPC_RMID: c_int = 0;
 const OP_CREATE_WINDOW: u8 = 1;
 const OP_CHANGE_WINDOW_ATTRIBUTES: u8 = 2;
 const OP_MAP_WINDOW: u8 = 8;
+const OP_CONFIGURE_WINDOW: u8 = 12;
 const OP_INTERN_ATOM: u8 = 16;
 const OP_CHANGE_PROPERTY: u8 = 18;
 const OP_GET_PROPERTY: u8 = 20;
+const OP_TRANSLATE_COORDINATES: u8 = 40;
 const OP_GET_INPUT_FOCUS: u8 = 43;
 const OP_OPEN_FONT: u8 = 45;
 const OP_CREATE_GC: u8 = 55;
@@ -50,6 +55,12 @@ const ATOM_WM_NAME: u32 = 39;
 const ATOM_WM_NORMAL_HINTS: u32 = 40;
 const ATOM_WM_SIZE_HINTS: u32 = 41;
 const ATOM_WM_CLASS: u32 = 67;
+const ATOM_WM_TRANSIENT_FOR: u32 = 68;
+const ATOM_WINDOW: u32 = 33;
+
+/// Events of a plugin window: only its own geometry (the plugin's child
+/// window takes the input).
+const PLUGIN_EVENT_MASK: u32 = 0x2_0000; // StructureNotify
 
 const EVENT_MASK: u32 = 0x1 // KeyPress
     | 0x2 // KeyRelease
@@ -595,6 +606,38 @@ pub(crate) struct Window {
     scale: f32,
     resource_manager: u32,
     resources_changed: bool,
+    /// Plugin window: `_NET_FRAME_EXTENTS` atom (0 for the main window) and
+    /// whether the user may resize it.
+    frame_extents: u32,
+    resizable: bool,
+}
+
+/// `WM_NORMAL_HINTS` of a plugin window: position given by the user (so the
+/// window manager keeps it), fixed size unless resizable.
+fn plugin_hints(position: Option<(i32, i32)>, size: (u32, u32), resizable: bool) -> Vec<u8> {
+    let mut hints = [0u32; 18];
+    if let Some((x, y)) = position {
+        hints[0] |= 1 | 4; // USPosition | PPosition
+        hints[1] = x as u32;
+        hints[2] = y as u32;
+    }
+    hints[3] = size.0;
+    hints[4] = size.1;
+    if !resizable {
+        hints[0] |= 16 | 32; // PMinSize | PMaxSize
+        hints[5] = size.0;
+        hints[6] = size.1;
+        hints[7] = size.0;
+        hints[8] = size.1;
+    }
+    hints.iter().flat_map(|v| v.to_le_bytes()).collect()
+}
+
+/// ConfigureWindow limited to the size.
+fn resize_req(window: u32, width: u32, height: u32) -> Vec<u8> {
+    let mut r = Req::new(OP_CONFIGURE_WINDOW, 0);
+    r.u32(window).u16(0x4 | 0x8).u16(0).u32(width.max(1)).u32(height.max(1));
+    r.finish().to_vec()
 }
 
 impl Window {
@@ -644,6 +687,8 @@ impl Window {
             scale,
             resource_manager,
             resources_changed: false,
+            frame_extents: 0,
+            resizable: true,
             setup,
         };
         win.window = win.alloc_id();
@@ -704,6 +749,136 @@ impl Window {
             win.shm = win.create_shm(size);
         }
         Ok(win)
+    }
+
+    /// Plain top-level window on its own connection, for a plugin editor.
+    pub(crate) fn open_plugin(o: &PluginWindowOptions) -> Result<Self, WindowError> {
+        let (mut stream, setup) = connect()?;
+        let wm_protocols = intern_atom(&mut stream, "WM_PROTOCOLS")?;
+        let wm_delete = intern_atom(&mut stream, "WM_DELETE_WINDOW")?;
+        let net_wm_name = intern_atom(&mut stream, "_NET_WM_NAME")?;
+        let utf8_string = intern_atom(&mut stream, "UTF8_STRING")?;
+        let frame_extents = intern_atom(&mut stream, "_NET_FRAME_EXTENTS")?;
+        let resource_manager = intern_atom(&mut stream, "RESOURCE_MANAGER")?;
+        let resources = roundtrip(&mut stream, &get_property_req(setup.root, resource_manager))?;
+        let scale = system_scale(property_value(&resources));
+        let size = (o.width.clamp(1, 16_384), o.height.clamp(1, 16_384));
+        let keymap = Keymap { min_keycode: setup.min_keycode, per_keycode: 1, syms: Vec::new() };
+        let mut win = Window {
+            rx: mpsc::channel().1,
+            stream,
+            pending: VecDeque::new(),
+            next_id: 1,
+            window: 0,
+            gc: 0,
+            size,
+            shm_major: None,
+            shm: None,
+            shm_busy: false,
+            shm_failed: false,
+            cursor_font: 0,
+            cursors: [0; CURSOR_SHAPES],
+            cursor: None,
+            scale,
+            resource_manager,
+            resources_changed: false,
+            frame_extents,
+            resizable: o.resizable,
+            setup,
+        };
+        win.window = win.alloc_id();
+        let (x, y) = o.position.unwrap_or((0, 0));
+        let mut r = Req::new(OP_CREATE_WINDOW, win.setup.depth);
+        r.u32(win.window)
+            .u32(win.setup.root)
+            .i16(x.clamp(i16::MIN as i32, i16::MAX as i32) as i16)
+            .i16(y.clamp(i16::MIN as i32, i16::MAX as i32) as i16)
+            .u16(size.0 as u16)
+            .u16(size.1 as u16)
+            .u16(0)
+            .u16(1) // InputOutput
+            .u32(win.setup.root_visual)
+            .u32(0x2 | 0x800) // BackPixel | EventMask
+            .u32(BACKGROUND)
+            .u32(PLUGIN_EVENT_MASK);
+        win.send(r.finish())?;
+        let ascii: String = o.title.chars().map(|c| if c.is_ascii() { c } else { '?' }).collect();
+        win.set_property(ATOM_WM_NAME, ATOM_STRING, 8, ascii.as_bytes())?;
+        win.set_property(net_wm_name, utf8_string, 8, o.title.as_bytes())?;
+        win.set_property(ATOM_WM_CLASS, ATOM_STRING, 8, b"ponzik-plugin\0Ponzik\0")?;
+        win.set_property(wm_protocols, ATOM_ATOM, 32, &wm_delete.to_le_bytes())?;
+        if let Some(NativeHandle::X11(owner)) = o.owner {
+            win.set_property(ATOM_WM_TRANSIENT_FOR, ATOM_WINDOW, 32, &owner.to_le_bytes())?;
+        }
+        win.set_property(ATOM_WM_NORMAL_HINTS, ATOM_WM_SIZE_HINTS, 32, &plugin_hints(o.position, size, o.resizable))?;
+        let mut r = Req::new(OP_MAP_WINDOW, 0);
+        r.u32(win.window);
+        win.send(r.finish())?;
+
+        let (tx, rx) = mpsc::channel();
+        win.rx = rx;
+        let reader = win.stream.try_clone().map_err(io_err)?;
+        let ctx = ReaderCtx { keymap, root: win.setup.root, resource_manager, wm_protocols, wm_delete, shm_event: None };
+        thread::Builder::new()
+            .name("ponzik-x11-plugin".into())
+            .spawn(move || reader_loop(reader, tx, ctx))
+            .map_err(|e| WindowError::System(format!("thread X11 : {e}")))?;
+        // The window must exist on the server before the plugin parents to it.
+        win.sync()?;
+        Ok(win)
+    }
+
+    pub(crate) fn native_handle(&self) -> NativeHandle {
+        NativeHandle::X11(self.window)
+    }
+
+    pub(crate) fn set_plugin_size(&mut self, width: u32, height: u32) {
+        let size = (width.clamp(1, 16_384), height.clamp(1, 16_384));
+        if size == self.size {
+            return;
+        }
+        self.size = size;
+        if !self.resizable {
+            let hints = plugin_hints(None, size, false);
+            let _ = self.set_property(ATOM_WM_NORMAL_HINTS, ATOM_WM_SIZE_HINTS, 32, &hints);
+        }
+        let _ = self.send(&resize_req(self.window, size.0, size.1));
+    }
+
+    pub(crate) fn set_resizable(&mut self, resizable: bool) {
+        if resizable != self.resizable {
+            self.resizable = resizable;
+            let hints = plugin_hints(None, self.size, resizable);
+            let _ = self.set_property(ATOM_WM_NORMAL_HINTS, ATOM_WM_SIZE_HINTS, 32, &hints);
+        }
+    }
+
+    /// Frame corner: client origin on the root, minus the decorations
+    /// (`_NET_FRAME_EXTENTS`, when the window manager sets it).
+    pub(crate) fn position(&mut self) -> Option<(i32, i32)> {
+        let mut r = Req::new(OP_TRANSLATE_COORDINATES, 0);
+        r.u32(self.window).u32(self.setup.root).i16(0).i16(0);
+        let req = r.finish().to_vec();
+        let reply = self.request(&req).ok()?;
+        if reply.len() < 16 {
+            return None;
+        }
+        let (mut x, mut y) = (i16_at(&reply, 12) as i32, i16_at(&reply, 14) as i32);
+        if self.frame_extents != 0
+            && let Ok(ext) = self.request(&get_property_req(self.window, self.frame_extents))
+        {
+            let v = property_value(&ext);
+            if v.len() >= 16 {
+                x -= u32_at(v, 0) as i32;
+                y -= u32_at(v, 8) as i32;
+            }
+        }
+        Some((x, y))
+    }
+
+    pub(crate) fn poll_plugin_events(&mut self, out: &mut Vec<Event>) {
+        self.drain();
+        out.extend(self.pending.drain(..).filter(|e| matches!(e, Event::CloseRequested | Event::Resized { .. })));
     }
 
     fn alloc_id(&mut self) -> u32 {
@@ -1086,6 +1261,22 @@ mod tests {
         reply[16..20].copy_from_slice(&11u32.to_le_bytes());
         reply.extend_from_slice(b"Xft.dpi:192\0");
         assert_eq!(property_value(&reply), b"Xft.dpi:192");
+    }
+
+    #[test]
+    fn plugin_hints_lock_the_size_unless_resizable() {
+        let words = |b: Vec<u8>| -> Vec<u32> { b.chunks_exact(4).map(|c| u32_at(c, 0)).collect() };
+        let fixed = words(plugin_hints(Some((10, -5)), (800, 600), false));
+        assert_eq!(fixed.len(), 18);
+        assert_eq!(fixed[0], 1 | 4 | 16 | 32);
+        assert_eq!((fixed[1] as i32, fixed[2] as i32), (10, -5));
+        assert_eq!(&fixed[5..9], &[800, 600, 800, 600]);
+        let free = words(plugin_hints(None, (800, 600), true));
+        assert_eq!(free[0], 0);
+        let req = resize_req(0x42, 300, 0);
+        assert_eq!(&req[..4], &[OP_CONFIGURE_WINDOW, 0, 5, 0]);
+        assert_eq!((u32_at(&req, 4), u16_at(&req, 8)), (0x42, 0xc));
+        assert_eq!((u32_at(&req, 12), u32_at(&req, 16)), (300, 1));
     }
 
     #[test]

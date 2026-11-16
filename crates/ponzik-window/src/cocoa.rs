@@ -20,7 +20,7 @@ use std::ffi::{CStr, CString, c_char, c_void};
 use std::ptr::{null, null_mut};
 use std::time::Duration;
 
-use crate::{Cursor, Event, Key, Modifiers, MouseButton, WindowError};
+use crate::{Cursor, Event, Key, Modifiers, MouseButton, NativeHandle, PluginWindowOptions, WindowError};
 
 type Id = *mut c_void;
 type Sel = *const c_void;
@@ -254,6 +254,11 @@ thread_local! {
     static CURSOR: Cell<Cursor> = const { Cell::new(Cursor::Arrow) };
     /// La souris survole la zone cliente.
     static INSIDE: Cell<bool> = const { Cell::new(false) };
+}
+
+thread_local! {
+    /// Events of the plugin windows, by `NSWindow`.
+    static PLUGIN_QUEUE: RefCell<Vec<(usize, Event)>> = const { RefCell::new(Vec::new()) };
 }
 
 fn push(ev: Event) {
@@ -724,6 +729,20 @@ extern "C" fn window_did_become_key(_: Id, _: Sel, _: Id) {
     push(Event::Redraw);
 }
 
+extern "C" fn plugin_should_close(_: Id, _: Sel, window: Id) -> Bool {
+    PLUGIN_QUEUE.with(|q| q.borrow_mut().push((window as usize, Event::CloseRequested)));
+    NO
+}
+
+extern "C" fn plugin_did_resize(_: Id, _: Sel, notification: Id) {
+    if let Some((window, view)) = delegate_view(notification) {
+        // SAFETY: vue vivante ; taille en points, l'unité des éditeurs de plugins.
+        let bounds = unsafe { msg_rect(view, c"bounds") };
+        let (width, height) = (bounds.size.width.round().max(1.0) as u32, bounds.size.height.round().max(1.0) as u32);
+        PLUGIN_QUEUE.with(|q| q.borrow_mut().push((window as usize, Event::Resized { width, height })));
+    }
+}
+
 // ---------------------------------------------------------------- classes
 
 #[cfg(target_arch = "aarch64")]
@@ -812,6 +831,165 @@ fn delegate_class() -> Result<Class, WindowError> {
             (c"windowDidBecomeKey:", ev(window_did_become_key), v),
         ],
     )
+}
+
+fn plugin_delegate_class() -> Result<Class, WindowError> {
+    type Event3 = extern "C" fn(Id, Sel, Id);
+    define_class(
+        c"PonzikPluginWindowDelegate",
+        c"NSObject",
+        &[
+            (
+                c"windowShouldClose:",
+                plugin_should_close as extern "C" fn(Id, Sel, Id) -> Bool as *const c_void,
+                BOOL_OBJ_TYPES,
+            ),
+            (c"windowDidResize:", plugin_did_resize as Event3 as *const c_void, c"v@:@"),
+        ],
+    )
+}
+
+// ---------------------------------------------------------------- fenêtre de plugin
+
+fn plugin_style(resizable: bool) -> usize {
+    let style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable;
+    if resizable { style | NSWindowStyleMaskResizable } else { style }
+}
+
+/// Window holding a plugin view; sizes are in points, as for the plugins.
+pub(crate) struct PluginWindow {
+    window: Id,
+    view: Id,
+    delegate: Id,
+    /// Window this one is a child of (stays above it).
+    parent: Id,
+    size: (u32, u32),
+}
+
+impl PluginWindow {
+    pub(crate) fn open_plugin(o: &PluginWindowOptions) -> Result<Self, WindowError> {
+        let _pool = Pool::new();
+        // SAFETY: appels AppKit sur le thread principal ; objets alloués gardés par la structure.
+        unsafe {
+            let delegate_cls = plugin_delegate_class()?;
+            let size = NSSize { width: f64::from(o.width.max(1)), height: f64::from(o.height.max(1)) };
+            let rect = NSRect { origin: NSPoint::default(), size };
+            let window: Id = msg(class(c"NSWindow"), c"alloc", ());
+            let window: Id = msg(
+                window,
+                c"initWithContentRect:styleMask:backing:defer:",
+                (rect, plugin_style(o.resizable), NSBackingStoreBuffered, NO),
+            );
+            if window.is_null() {
+                return Err(WindowError::System("NSWindow creation refused".into()));
+            }
+            let () = msg(window, c"setReleasedWhenClosed:", (NO,));
+            let () = msg(window, c"setTitle:", (ns_string(&o.title),));
+            let delegate: Id = msg(delegate_cls, c"alloc", ());
+            let delegate: Id = msg(delegate, c"init", ());
+            let () = msg(window, c"setDelegate:", (delegate,));
+            let view: Id = msg(class(c"NSView"), c"alloc", ());
+            let view: Id = msg(view, c"initWithFrame:", (rect,));
+            let () = msg(window, c"setContentView:", (view,));
+            match o.position {
+                Some((x, y)) => {
+                    let () = msg(window, c"setFrameTopLeftPoint:", (NSPoint { x: f64::from(x), y: f64::from(y) },));
+                }
+                None => {
+                    let () = msg(window, c"center", ());
+                }
+            }
+            let mut parent: Id = null_mut();
+            if let Some(NativeHandle::Cocoa(owner)) = o.owner {
+                parent = msg(owner as Id, c"window", ());
+                if !parent.is_null() {
+                    let () = msg(parent, c"addChildWindow:ordered:", (window, 1isize));
+                }
+            }
+            let () = msg(window, c"makeKeyAndOrderFront:", (null_mut::<c_void>(),));
+            Ok(PluginWindow { window, view, delegate, parent, size: (o.width, o.height) })
+        }
+    }
+
+    pub(crate) fn native_handle(&self) -> NativeHandle {
+        NativeHandle::Cocoa(self.view as usize)
+    }
+
+    pub(crate) fn size(&self) -> (u32, u32) {
+        self.size
+    }
+
+    pub(crate) fn scale_factor(&self) -> f32 {
+        // SAFETY: fenêtre vivante.
+        let backing: f64 = unsafe { msg(self.window, c"backingScaleFactor", ()) };
+        if backing > 0.0 { backing as f32 } else { 1.0 }
+    }
+
+    pub(crate) fn set_plugin_size(&mut self, width: u32, height: u32) {
+        if (width, height) == self.size {
+            return;
+        }
+        self.size = (width, height);
+        let size = NSSize { width: f64::from(width.max(1)), height: f64::from(height.max(1)) };
+        // SAFETY: fenêtre vivante.
+        unsafe {
+            let () = msg(self.window, c"setContentSize:", (size,));
+        }
+    }
+
+    pub(crate) fn set_resizable(&mut self, resizable: bool) {
+        // SAFETY: fenêtre vivante.
+        unsafe {
+            let () = msg(self.window, c"setStyleMask:", (plugin_style(resizable),));
+        }
+    }
+
+    /// Top-left corner of the frame, in desktop coordinates (origin bottom-left).
+    pub(crate) fn position(&mut self) -> Option<(i32, i32)> {
+        // SAFETY: fenêtre vivante.
+        let f = unsafe { msg_rect(self.window, c"frame") };
+        Some((f.origin.x.round() as i32, (f.origin.y + f.size.height).round() as i32))
+    }
+
+    pub(crate) fn poll_plugin_events(&mut self, out: &mut Vec<Event>) {
+        let me = self.window as usize;
+        PLUGIN_QUEUE.with(|q| {
+            q.borrow_mut().retain(|&(w, ev)| {
+                if w != me {
+                    return true;
+                }
+                match ev {
+                    Event::Resized { width, height } if (width, height) == self.size => {}
+                    Event::Resized { width, height } => {
+                        self.size = (width, height);
+                        out.push(ev);
+                    }
+                    _ => out.push(ev),
+                }
+                false
+            });
+        });
+    }
+}
+
+impl Drop for PluginWindow {
+    fn drop(&mut self) {
+        let _pool = Pool::new();
+        let me = self.window as usize;
+        PLUGIN_QUEUE.with(|q| q.borrow_mut().retain(|&(w, _)| w != me));
+        // SAFETY: objets créés par `open_plugin`, libérés une seule fois.
+        unsafe {
+            if !self.parent.is_null() {
+                let () = msg(self.parent, c"removeChildWindow:", (self.window,));
+            }
+            let () = msg(self.window, c"setDelegate:", (null_mut::<c_void>(),));
+            let () = msg(self.window, c"orderOut:", (null_mut::<c_void>(),));
+            let () = msg(self.window, c"close", ());
+            for obj in [self.view, self.delegate, self.window] {
+                let () = msg(obj, c"release", ());
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------- fenêtre
@@ -1063,6 +1241,15 @@ impl Window {
         if INSIDE.get() {
             apply_cursor();
         }
+    }
+
+    pub(crate) fn native_handle(&self) -> NativeHandle {
+        NativeHandle::Cocoa(self.view as usize)
+    }
+
+    /// Buffer pixels per point: 1, or the screen's factor with `PONZIK_RETINA=1`.
+    pub(crate) fn scale_factor(&self) -> f32 {
+        SCALE.get() as f32
     }
 
     pub(crate) fn backend_name(&self) -> &'static str {

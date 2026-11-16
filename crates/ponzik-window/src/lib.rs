@@ -188,4 +188,87 @@ impl Window {
     pub fn backend_name(&self) -> &'static str {
         self.inner.backend_name()
     }
+
+    /// Native handle, to make other windows its transients.
+    pub fn native_handle(&self) -> NativeHandle {
+        self.inner.native_handle()
+    }
 }
+
+/// Native handle of a window.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeHandle {
+    /// X11 window id.
+    X11(u32),
+    /// `HWND`.
+    Win32(usize),
+    /// `NSView*` (the window's content view).
+    Cocoa(usize),
+    None,
+}
+
+/// How to open a [`PluginWindow`].
+#[derive(Clone, Debug)]
+pub struct PluginWindowOptions {
+    pub title: String,
+    /// Client area, in the platform's window units (pixels on X11 and Win32,
+    /// points on macOS), the unit plugin editors use.
+    pub width: u32,
+    pub height: u32,
+    /// Top-left corner of the frame on the desktop (as given by
+    /// [`PluginWindow::position`]); `None` lets the system place it.
+    pub position: Option<(i32, i32)>,
+    /// Window to stay above (`WM_TRANSIENT_FOR`, owned window, child window).
+    pub owner: Option<NativeHandle>,
+    pub resizable: bool,
+}
+
+/// Plain top-level window hosting a foreign view: a plugin editor creates its
+/// own child inside [`PluginWindow::handle`]. Nothing is drawn by Ponzik; only
+/// closing and resizing are reported.
+pub struct PluginWindow {
+    inner: backend::PluginWindow,
+}
+
+impl PluginWindow {
+    pub fn open(options: &PluginWindowOptions) -> Result<Self, WindowError> {
+        Ok(Self { inner: backend::PluginWindow::open_plugin(options)? })
+    }
+
+    /// Parent to give the plugin (X11 window, `HWND`, `NSView*`).
+    pub fn handle(&self) -> NativeHandle {
+        self.inner.native_handle()
+    }
+
+    /// Client area size, in the units of [`PluginWindowOptions::width`].
+    pub fn size(&self) -> (u32, u32) {
+        self.inner.size()
+    }
+
+    /// System scale (1 = 96 dpi), for the plugin's own scaling.
+    pub fn scale_factor(&self) -> f32 {
+        self.inner.scale_factor()
+    }
+
+    /// Resizes the client area (the plugin asked for it); no `Resized` event
+    /// comes back for this size.
+    pub fn set_size(&mut self, width: u32, height: u32) {
+        self.inner.set_plugin_size(width, height);
+    }
+
+    /// Lets the user resize the window, or locks it to its current size.
+    pub fn set_resizable(&mut self, resizable: bool) {
+        self.inner.set_resizable(resizable);
+    }
+
+    /// Top-left corner of the frame on the desktop, to reopen the window there.
+    pub fn position(&mut self) -> Option<(i32, i32)> {
+        self.inner.position()
+    }
+
+    /// `CloseRequested` and `Resized` (by the user) since the last call.
+    pub fn poll_events(&mut self, out: &mut Vec<Event>) {
+        self.inner.poll_plugin_events(out);
+    }
+}
+

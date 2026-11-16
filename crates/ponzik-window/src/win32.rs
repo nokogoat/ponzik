@@ -7,7 +7,7 @@ use std::ffi::c_void;
 use std::ptr::{null, null_mut};
 use std::time::Duration;
 
-use crate::{Cursor, Event, Key, Modifiers, MouseButton, WindowError};
+use crate::{Cursor, Event, Key, Modifiers, MouseButton, NativeHandle, PluginWindowOptions, WindowError};
 
 type HANDLE = *mut c_void;
 type HWND = HANDLE;
@@ -137,6 +137,9 @@ unsafe extern "system" {
     fn ScreenToClient(hwnd: HWND, pt: *mut POINT) -> i32;
     fn TrackMouseEvent(tme: *mut TRACKMOUSEEVENT) -> i32;
     fn GetKeyState(vk: i32) -> i16;
+    fn GetWindowRect(hwnd: HWND, rect: *mut RECT) -> i32;
+    fn GetWindowLongPtrW(hwnd: HWND, index: i32) -> isize;
+    fn SetWindowLongPtrW(hwnd: HWND, index: i32, value: isize) -> isize;
 }
 
 #[link(name = "kernel32")]
@@ -219,6 +222,12 @@ const WM_MOUSELEAVE: u32 = 0x02A3;
 const WM_DPICHANGED: u32 = 0x02E0;
 
 const MIN_SIZE: (i32, i32) = (960, 640);
+const WS_CLIPCHILDREN: u32 = 0x0200_0000;
+const WS_THICKFRAME: u32 = 0x0004_0000;
+const WS_MAXIMIZEBOX: u32 = 0x0001_0000;
+const GWL_STYLE: i32 = -16;
+const SWP_FRAMECHANGED: u32 = 0x20;
+const SWP_NOSIZE: u32 = 0x1;
 
 thread_local! {
     static QUEUE: RefCell<Vec<Event>> = const { RefCell::new(Vec::new()) };
@@ -227,6 +236,11 @@ thread_local! {
     static CURSOR: Cell<HANDLE> = const { Cell::new(null_mut()) };
     /// Points par pouce du moniteur de la fenêtre (96 = échelle 1).
     static DPI: Cell<u32> = const { Cell::new(BASE_DPI) };
+}
+
+thread_local! {
+    /// Events of the plugin windows, by window.
+    static PLUGIN_QUEUE: RefCell<Vec<(HWND, Event)>> = const { RefCell::new(Vec::new()) };
 }
 
 fn push(ev: Event) {
@@ -405,6 +419,177 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
     0
 }
 
+/// Plugin windows only report closing and resizing; the plugin's child window
+/// takes the input.
+unsafe extern "system" fn plugin_wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
+    let push = |ev| PLUGIN_QUEUE.with(|q| q.borrow_mut().push((hwnd, ev)));
+    match msg {
+        WM_CLOSE => push(Event::CloseRequested),
+        WM_SIZE if w != 1 => push(Event::Resized { width: (l & 0xffff) as u32, height: ((l >> 16) & 0xffff) as u32 }),
+        // SAFETY: message of this window.
+        _ => return unsafe { DefWindowProcW(hwnd, msg, w, l) },
+    }
+    0
+}
+
+fn plugin_style(resizable: bool) -> u32 {
+    let style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
+    if resizable { style } else { style & !(WS_THICKFRAME | WS_MAXIMIZEBOX) }
+}
+
+/// Frame size for a client area of `w` × `h` physical pixels.
+fn plugin_outer(w: u32, h: u32, style: u32, dpi: u32) -> (i32, i32) {
+    let mut r = RECT { left: 0, top: 0, right: w as i32, bottom: h as i32 };
+    // SAFETY: RECT valide.
+    unsafe { AdjustWindowRectExForDpi(&mut r, style, 0, 0, dpi) };
+    (r.right - r.left, r.bottom - r.top)
+}
+
+pub(crate) struct PluginWindow {
+    hwnd: HWND,
+    size: (u32, u32),
+    resizable: bool,
+}
+
+impl PluginWindow {
+    pub(crate) fn open_plugin(o: &PluginWindowOptions) -> Result<Self, WindowError> {
+        let class_name = wide("PonzikPluginWindow");
+        let title = wide(&o.title);
+        let owner = match o.owner {
+            Some(NativeHandle::Win32(h)) => h as HWND,
+            _ => null_mut(),
+        };
+        // SAFETY: séquence standard RegisterClass / CreateWindow ; chaînes vivantes pendant l'appel.
+        unsafe {
+            let instance = GetModuleHandleW(null());
+            let class = WNDCLASSEXW {
+                cbSize: size_of::<WNDCLASSEXW>() as u32,
+                style: 0,
+                lpfnWndProc: plugin_wndproc,
+                cbClsExtra: 0,
+                cbWndExtra: 0,
+                hInstance: instance,
+                hIcon: null_mut(),
+                hCursor: LoadCursorW(null_mut(), IDC_ARROW as *const u16),
+                hbrBackground: null_mut(),
+                lpszMenuName: null(),
+                lpszClassName: class_name.as_ptr(),
+                hIconSm: null_mut(),
+            };
+            RegisterClassExW(&class);
+            let style = plugin_style(o.resizable);
+            let dpi = if owner.is_null() { BASE_DPI } else { GetDpiForWindow(owner).max(1) };
+            let (ow, oh) = plugin_outer(o.width, o.height, style, dpi);
+            let (x, y) = o.position.unwrap_or((CW_USEDEFAULT, CW_USEDEFAULT));
+            // Owned window: always above its owner, minimized with it.
+            let hwnd = CreateWindowExW(
+                0,
+                class_name.as_ptr(),
+                title.as_ptr(),
+                style,
+                x,
+                y,
+                ow,
+                oh,
+                owner,
+                null_mut(),
+                instance,
+                null_mut(),
+            );
+            if hwnd.is_null() {
+                return Err(WindowError::System("CreateWindowExW failed".into()));
+            }
+            let dark: i32 = 1;
+            DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, (&dark as *const i32).cast(), 4);
+            ShowWindow(hwnd, SW_SHOW);
+            Ok(PluginWindow { hwnd, size: (o.width, o.height), resizable: o.resizable })
+        }
+    }
+
+    pub(crate) fn native_handle(&self) -> NativeHandle {
+        NativeHandle::Win32(self.hwnd as usize)
+    }
+
+    pub(crate) fn size(&self) -> (u32, u32) {
+        self.size
+    }
+
+    pub(crate) fn scale_factor(&self) -> f32 {
+        // SAFETY: fenêtre vivante.
+        let dpi = unsafe { GetDpiForWindow(self.hwnd) };
+        if dpi == 0 { 1.0 } else { dpi as f32 / BASE_DPI as f32 }
+    }
+
+    pub(crate) fn set_plugin_size(&mut self, width: u32, height: u32) {
+        if (width, height) == self.size {
+            return;
+        }
+        self.size = (width, height);
+        // SAFETY: fenêtre vivante.
+        unsafe {
+            let (ow, oh) = plugin_outer(width, height, plugin_style(self.resizable), GetDpiForWindow(self.hwnd).max(1));
+            SetWindowPos(self.hwnd, null_mut(), 0, 0, ow, oh, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+    }
+
+    pub(crate) fn set_resizable(&mut self, resizable: bool) {
+        if resizable == self.resizable {
+            return;
+        }
+        self.resizable = resizable;
+        // SAFETY: fenêtre vivante ; le cadre est recalculé par SWP_FRAMECHANGED.
+        unsafe {
+            let keep = GetWindowLongPtrW(self.hwnd, GWL_STYLE) as u32 & !plugin_style(true);
+            SetWindowLongPtrW(self.hwnd, GWL_STYLE, (keep | plugin_style(resizable)) as isize);
+            SetWindowPos(self.hwnd, null_mut(), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_NOSIZE);
+        }
+    }
+
+    pub(crate) fn position(&mut self) -> Option<(i32, i32)> {
+        let mut r = RECT::default();
+        // SAFETY: fenêtre vivante, RECT local.
+        (unsafe { GetWindowRect(self.hwnd, &mut r) } != 0).then_some((r.left, r.top))
+    }
+
+    pub(crate) fn poll_plugin_events(&mut self, out: &mut Vec<Event>) {
+        // SAFETY: pompe de messages du thread ; les messages de la fenêtre
+        // principale passent par sa procédure et restent dans sa file.
+        unsafe {
+            let mut msg = std::mem::zeroed::<MSG>();
+            while PeekMessageW(&mut msg, null_mut(), 0, 0, PM_REMOVE) != 0 {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        }
+        let hwnd = self.hwnd;
+        PLUGIN_QUEUE.with(|q| {
+            q.borrow_mut().retain(|&(h, ev)| {
+                if h != hwnd {
+                    return true;
+                }
+                match ev {
+                    Event::Resized { width, height } if (width, height) == self.size => {}
+                    Event::Resized { width, height } => {
+                        self.size = (width, height);
+                        out.push(ev);
+                    }
+                    _ => out.push(ev),
+                }
+                false
+            });
+        });
+    }
+}
+
+impl Drop for PluginWindow {
+    fn drop(&mut self) {
+        let hwnd = self.hwnd;
+        PLUGIN_QUEUE.with(|q| q.borrow_mut().retain(|&(h, _)| h != hwnd));
+        // SAFETY: fenêtre créée par ce thread.
+        unsafe { DestroyWindow(hwnd) };
+    }
+}
+
 pub(crate) struct Window {
     hwnd: HWND,
     size: (u32, u32),
@@ -560,6 +745,10 @@ impl Window {
 
     pub(crate) fn backend_name(&self) -> &'static str {
         "Win32 · GDI"
+    }
+
+    pub(crate) fn native_handle(&self) -> NativeHandle {
+        NativeHandle::Win32(self.hwnd as usize)
     }
 }
 
