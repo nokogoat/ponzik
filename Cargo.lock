@@ -63,5 +63,12 @@ name = "ponzik-ui"
 version = "0.1.0"
 
 [[package]]
+name = "ponzik-vst3"
+version = "0.1.0"
+dependencies = [
+ "ponzik-engine",
+]
+
+[[package]]
 name = "ponzik-window"
 version = "0.1.0"
