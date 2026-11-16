@@ -205,6 +205,8 @@ struct Core {
     midi_dialect: bool,
     held: u128,
     steady_time: i64,
+    /// Latence annoncée par `clap.latency`, lue à l'activation.
+    latency: usize,
     active: bool,
     processing: bool,
     // Détruits après le plugin (ordre de déclaration).
@@ -294,6 +296,7 @@ impl Core {
             midi_dialect: prefers_midi(plugin),
             held: 0,
             steady_time: 0,
+            latency: 0,
             active: false,
             processing: false,
             _host: host,
@@ -305,6 +308,15 @@ impl Core {
         self.stop();
         // SAFETY : plugin initialisé et inactif.
         self.active = unsafe { ((*self.plugin).activate)(self.plugin, sample_rate as f64, 1, MAX_BLOCK as u32) };
+        self.latency = 0;
+        if self.active {
+            let ext = ext::<ClapPluginLatency>(self.plugin, CLAP_EXT_LATENCY);
+            // SAFETY : extension renvoyée par le plugin, pointeur vérifié ; plugin
+            // actif et appel depuis le thread principal, comme l'exige `clap.latency`.
+            if let Some(ext) = unsafe { ext.as_ref() } {
+                self.latency = unsafe { (ext.get)(self.plugin) } as usize;
+            }
+        }
     }
 
     fn stop(&mut self) {
@@ -567,6 +579,12 @@ impl Effect for ClapEffect {
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.0.set_sample_rate(sample_rate);
+    }
+
+    /// Lue à l'activation : un changement demandé ensuite par le plugin
+    /// (`request_restart`) n'est pas suivi.
+    fn latency(&self) -> usize {
+        self.0.latency
     }
 
     fn reset(&mut self) {

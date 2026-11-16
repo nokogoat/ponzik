@@ -71,7 +71,10 @@ fn gain_param_halves_the_level() {
     assert_eq!(params.len(), 1);
     assert_eq!((params[0].id, params[0].name, params[0].min, params[0].max), (7, "Gain", 0.0, 2.0));
     assert_eq!(fx.get_param(7), 1.0);
+    assert_eq!(fx.latency(), 0, "inactif : latence inconnue");
     fx.set_sample_rate(SR);
+    // `clap.latency` du banc d'essai (`GAIN_LATENCY`), lue à l'activation.
+    assert_eq!(fx.latency(), 64);
 
     let input: Vec<f32> = (0..512).map(|i| (i as f32 * 0.05).sin()).collect();
     let (mut l, mut r) = (input.clone(), input.clone());

@@ -1,7 +1,7 @@
 //! Sous-ensemble de l'ABI C de CLAP 1.x, recopié à la main depuis les en-têtes
 //! officiels (`entry.h`, `plugin-factory.h`, `plugin.h`, `host.h`, `process.h`,
 //! `events.h`, `audio-buffer.h`, `ext/params.h`, `ext/audio-ports.h`,
-//! `ext/note-ports.h`). Les noms suivent ceux du C, en casse Rust.
+//! `ext/note-ports.h`, `ext/latency.h`). Les noms suivent ceux du C, en casse Rust.
 
 use std::ffi::{c_char, c_void};
 
@@ -269,4 +269,14 @@ pub struct ClapPluginNotePorts {
         is_input: bool,
         info: *mut ClapNotePortInfo,
     ) -> bool,
+}
+
+// --- ext/latency.h ---------------------------------------------------------
+
+pub const CLAP_EXT_LATENCY: &[u8] = b"clap.latency\0";
+
+/// Latence du plugin, en échantillons ; lue sur le thread principal, plugin actif.
+#[repr(C)]
+pub struct ClapPluginLatency {
+    pub get: unsafe extern "C" fn(plugin: *const ClapPlugin) -> u32,
 }

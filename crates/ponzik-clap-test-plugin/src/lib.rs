@@ -215,9 +215,21 @@ unsafe extern "C" fn get_extension(p: *const ClapPlugin, id: *const c_char) -> *
         &PARAMS as *const ClapPluginParams as *const c_void
     } else if id == CLAP_EXT_NOTE_PORTS && instrument {
         &NOTE_PORTS as *const ClapPluginNotePorts as *const c_void
+    } else if id == CLAP_EXT_LATENCY && !instrument {
+        &LATENCY as *const ClapPluginLatency as *const c_void
     } else {
         null()
     }
+}
+
+/// Latence annoncée par le gain : seulement déclarée (le signal n'est pas
+/// retardé), pour vérifier que l'hôte la lit.
+pub const GAIN_LATENCY: u32 = 64;
+
+static LATENCY: ClapPluginLatency = ClapPluginLatency { get: latency_get };
+
+unsafe extern "C" fn latency_get(_: *const ClapPlugin) -> u32 {
+    GAIN_LATENCY
 }
 
 fn copy_name(dst: &mut [c_char], src: &CStr) {
