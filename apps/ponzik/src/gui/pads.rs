@@ -389,14 +389,14 @@ impl App {
             let (col, row) = (pad % 4, 3 - pad / 4);
             Rect::new(r.x + col as f32 * (PAD_W + PAD_GAP), r.y + row as f32 * (pad_h + PAD_GAP), PAD_W, pad_h)
         };
-        for pad in 0..PADS {
+        for (pad, &hit) in hits.iter().enumerate() {
             let pr = rect_of(pad);
             let id = wid("pads-pad", ch, pad);
             let hov = self.hovered(input, id, pr);
             let hv = self.hover_anim(id, hov);
             let flash_id = wid("pads-flash", ch, pad);
             let cur = self.anim.get(flash_id).unwrap_or(0.0);
-            let glow = if hits[pad] > cur { hits[pad] } else { self.anim.to(flash_id, hits[pad], T_FLASH) };
+            let glow = if hit > cur { hit } else { self.anim.to(flash_id, hit, T_FLASH) };
             self.anim.set(flash_id, glow);
             let press = self.anim.to(id ^ 0x5052, if hov && input.down { 0.95 } else { 1.0 }, T_PRESS);
             let layers: Vec<String> = self.pad_layers(ch, pad).to_vec();
