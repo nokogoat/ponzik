@@ -337,7 +337,7 @@ impl App {
         if self.rec.is_armed(track) {
             self.rec.armed.retain(|&(t, _)| t != track);
             self.send(Command::SetMonitor { track, source: None });
-            self.toast(&format!("{name} disarmed"));
+            self.toast(&tr_fmt!("{} disarmed", name));
             return;
         }
         let first = self.rec.armed.is_empty();
@@ -500,12 +500,12 @@ impl App {
         }
         let track = rec.track.min(TRACKS - 1);
         let track_name = self.project.tracks[track].name.clone();
-        let dir = if self.rec.demo { std::env::temp_dir().join("ponzik-takes") } else { compat::projects_dir().join("Enregistrements") };
+        let dir = if self.rec.demo { std::env::temp_dir().join("ponzik-takes") } else { compat::projects_dir().join("Recordings") };
         let _ = std::fs::create_dir_all(&dir);
         let (name, path) = loop {
             let n = self.rec.counts.entry(track_name.clone()).or_insert(0);
             *n += 1;
-            let name = format!("{track_name} take {n}");
+            let name = tr_fmt!("{} take {}", track_name, *n);
             let path = dir.join(format!("{}.wav", file_safe(&name)));
             if !path.exists() || self.rec.demo {
                 break (name, path);
@@ -647,7 +647,8 @@ impl App {
             c.fill_circle(r.x + 13.0, cy, 6.0, t.accent.alpha(0.18 * onv));
         }
         c.fill_circle(r.x + 13.0, cy, 3.0, t.muted.mix(t.accent, onv));
-        self.text_fit(c, self.f.sans_med, 12.0, r.x + 23.0, cy, label, r.w - 28.0, t.text2.mix(t.text, onv.max(hv * 0.5)));
+        let (size, label) = self.fit_shrink(self.f.sans_med, 12.0, label, r.w - 28.0);
+        self.text(c, self.f.sans_med, size, r.x + 23.0, cy, &label, t.text2.mix(t.text, onv.max(hv * 0.5)));
         if hov {
             self.set_tip(tip, "");
         }
@@ -687,7 +688,8 @@ impl App {
         c.fill_circle(inner.x + 8.0, hy, 6.0, armed_col.alpha(pulse));
         self.text(c, self.f.sans_med, 16.0, inner.x + 24.0, hy, tr("Recording"), t.text);
         let status = match (recording, self.rec.armed.len()) {
-            (true, _) => tr("Recording").to_string(),
+            (true, 1) => tr_fmt!("Taking {}", self.project.tracks[self.rec.armed[0].0].name),
+            (true, n) => tr_fmt!("Taking {} tracks", n),
             (false, 0) => tr("No track armed").to_string(),
             (false, 1) => tr_fmt!("{} armed", self.project.tracks[self.rec.armed[0].0].name),
             (false, n) => tr_fmt!("{} tracks armed", n),
@@ -700,7 +702,7 @@ impl App {
 
         // Entrée : périphérique et source.
         let mut y = inner.y + 40.0;
-        self.text(c, self.f.sans, 11.0, inner.x, y + 6.0, tr("INPUT"), t.muted);
+        self.text(c, self.f.sans, 11.0, inner.x, y + 6.0, tr("Input"), t.muted);
         y += 16.0;
         let dev_r = Rect::new(inner.x, y, inner.w, 34.0);
         let did = wid("rec-device", 0, 0);
@@ -760,7 +762,7 @@ impl App {
         // Gain et traitements d'entrée.
         let gain = self.rec.settings.strip.gain_db;
         let gain_r = Rect::new(inner.x, y, 132.0, 40.0);
-        let text = format!("{gain:+.1}");
+        let text = ponzik_i18n::localize_number(format!("{gain:+.1}"));
         if let Some(v) = self.drag_field(c, input, wid("rec-gain", 0, 0), gain_r, gain, 0.1, 0.5, &text, "dB") {
             let mut s = self.rec.settings.clone();
             s.strip.gain_db = (v * 2.0).round() / 2.0;
@@ -796,7 +798,7 @@ impl App {
         y += 52.0;
 
         // Écoute.
-        self.text(c, self.f.sans, 11.0, inner.x, y + 6.0, tr("MONITORING"), t.muted);
+        self.text(c, self.f.sans, 11.0, inner.x, y + 6.0, tr("Monitoring"), t.muted);
         y += 16.0;
         let half = (inner.w - 8.0) * 0.5;
         let s = self.rec.settings.clone();
@@ -827,13 +829,13 @@ impl App {
         let s = self.rec.settings.clone();
         let fmt = [tr("24-bit"), tr("32-bit float")];
         let ftips: [(&str, &str); 2] = [(tr("24-bit PCM WAV at the device rate"), ""), (tr("32-bit float WAV at the device rate"), "")];
-        let fr = Rect::new(inner.x, y, 168.0, 32.0);
+        let fr = Rect::new(inner.x, y, 152.0, 32.0);
         if let Some(i) = self.segmented_tips(c, input, wid("rec-format", 0, 0), fr, &fmt, &ftips, s.float as usize) {
             let mut n = s.clone();
             n.float = i == 1;
             self.set_record_settings(n);
         }
-        let pw = (inner.w - 176.0 - 6.0) * 0.5;
+        let pw = (inner.w - fr.w - 8.0 - 6.0) * 0.5;
         let punch_r = Rect::new(fr.right() + 8.0, y, pw, 32.0);
         let punch_tip = if self.project.loop_range.is_some() {
             tr("Punch in/out\nKeep only what falls inside the time selection")
@@ -899,7 +901,7 @@ impl App {
         self.text_center(c, self.f.sans, 9.0, (za + zb) * 0.5, bars.bottom() + 34.0, tr("sweet spot"), t.muted);
         // Crête en dBFS.
         let peak_db = to_db(self.rec.hold[0]);
-        let readout = if peak_db <= METER_FLOOR { "-inf".to_string() } else { format!("{peak_db:.1}") };
+        let readout = if peak_db <= METER_FLOOR { "-inf".to_string() } else { ponzik_i18n::localize_number(format!("{peak_db:.1}")) };
         self.text(c, self.f.mono_med, 13.0, r.x + 12.0, r.bottom() - 14.0, &readout, t.text);
         self.text(c, self.f.sans, 10.0, r.x + 12.0 + self.fonts.measure(self.f.mono_med, 13.0, &readout) + 4.0, r.bottom() - 14.0, tr("dBFS peak"), t.muted);
         // Témoin de saturation, verrouillé jusqu'au clic.
@@ -933,7 +935,7 @@ impl App {
         let hear = lat.round_trip() + if self.rec.settings.low_latency { 0 } else { mix };
         let hear_ms = Latency::ms(hear, sr);
         let open = self.rec.input.is_some() || self.rec.demo;
-        let big = if open { format!("{hear_ms:.1} ms") } else { "--".to_string() };
+        let big = if open { tr_fmt!("{:.1} ms", hear_ms) } else { "--".to_string() };
         let col = if !open {
             t.muted
         } else if hear_ms <= 12.0 {
@@ -955,13 +957,14 @@ impl App {
             tr("noticeable: lower the buffer")
         };
         self.text(c, self.f.sans, 11.0, r.x + 12.0, r.y + 62.0, verdict, col.alpha(0.85));
-        let detail = format!(
+        let detail = tr_fmt!(
             "out {:.1}  in {:.1}  mix {:.1}",
             Latency::ms(lat.output, sr),
             Latency::ms(lat.input, sr),
             Latency::ms(mix, sr)
         );
-        self.text_fit(c, self.f.mono, 10.0, r.x + 12.0, r.y + 84.0, &detail, r.w * 0.52 - 16.0, t.text2);
+        let (size, detail) = self.fit_shrink(self.f.mono, 10.0, &detail, r.w * 0.52 - 16.0);
+        self.text(c, self.f.mono, size, r.x + 12.0, r.y + 84.0, &detail, t.text2);
         self.tip_zone(
             input,
             Rect::new(r.x, r.y, r.w * 0.5, r.h),
@@ -974,7 +977,7 @@ impl App {
         self.text(c, self.f.sans, 11.0, x, r.y + 16.0, tr("Take offset"), t.muted);
         let off_r = Rect::new(x, r.y + 26.0, r.right() - x - 12.0, 32.0);
         let off = self.rec.settings.offset_ms;
-        let text = format!("{off:+.1}");
+        let text = ponzik_i18n::localize_number(format!("{off:+.1}"));
         if let Some(v) = self.drag_field(c, input, wid("rec-offset", 0, 0), off_r, off, 0.1, 0.1, &text, "ms") {
             let mut s = self.rec.settings.clone();
             s.offset_ms = ((v * 10.0).round() / 10.0).clamp(-200.0, 200.0);
