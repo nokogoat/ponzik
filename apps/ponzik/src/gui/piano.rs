@@ -1,7 +1,7 @@
 //! Piano roll : notes du canal sélectionné dans le pattern courant.
 
 use ponzik_engine::{Note, PlayMode, TICKS_PER_BAR, TICKS_PER_STEP};
-use ponzik_project::ScaleKind;
+use ponzik_project::{ChordKind, ScaleKind};
 use ponzik_ui::{Canvas, Rect};
 use ponzik_window::Key;
 
@@ -37,6 +37,36 @@ fn is_black(key: u8) -> bool {
     matches!(key % 12, 1 | 3 | 6 | 8 | 10)
 }
 
+pub fn chord_name(kind: ChordKind) -> &'static str {
+    match kind {
+        ChordKind::Major => "Majeur",
+        ChordKind::Minor => "Mineur",
+        ChordKind::Diminished => "Diminué",
+        ChordKind::Augmented => "Augmenté",
+        ChordKind::Sus2 => "Sus 2",
+        ChordKind::Sus4 => "Sus 4",
+        ChordKind::Power => "Quinte",
+        ChordKind::Major7 => "Majeur 7",
+        ChordKind::Minor7 => "Mineur 7",
+        ChordKind::Dominant7 => "Septième",
+        ChordKind::HalfDiminished7 => "Demi-diminué",
+        ChordKind::Diminished7 => "Diminué 7",
+        ChordKind::MinorMajor7 => "Mineur maj. 7",
+        ChordKind::Add9 => "Add 9",
+        ChordKind::MinorAdd9 => "Mineur add 9",
+    }
+}
+
+/// Symbole court ; « M » pour l'accord majeur, « b5 » à la place de « ♭5 »
+/// (les polices embarquées n'ont pas ♭).
+pub fn chord_symbol(kind: ChordKind) -> &'static str {
+    match kind {
+        ChordKind::Major => "M",
+        ChordKind::HalfDiminished7 => "m7b5",
+        k => k.symbol(),
+    }
+}
+
 impl App {
     fn piano_channel(&self) -> Option<usize> {
         self.selected_channel().or_else(|| (!self.project.channels.is_empty()).then_some(0))
@@ -50,6 +80,27 @@ impl App {
             notes.resize(n, Vec::new());
         }
         &mut notes[ch]
+    }
+
+    /// Notes que le tampon d'accord pose sur `root` (au moins `root`).
+    fn chord_at(&self, root: u8) -> Vec<u8> {
+        let notes = match self.piano.chord {
+            Some(kind) => ponzik_project::chord(root, kind),
+            None if self.project.scale == ScaleKind::Chromatic => ponzik_project::chord(root, ChordKind::Major),
+            None => {
+                let root = self.project.snap(root);
+                let rel = root as i32 - (self.project.key % 12) as i32;
+                let degree = self.project.scale.intervals().iter().position(|&i| i as i32 == rel.rem_euclid(12)).unwrap_or(0);
+                self.project.diatonic_chord(degree, 3, rel.div_euclid(12) - 1)
+            }
+        };
+        if notes.is_empty() { vec![root] } else { notes }
+    }
+
+    /// Hauteurs posées par un clic sur `key` : collée à la gamme si demandé, en accord si le tampon est actif.
+    fn stamp_keys(&self, key: u8) -> Vec<u8> {
+        let root = if self.piano.scale_snap { self.project.snap(key) } else { key };
+        if self.piano.chord_stamp { self.chord_at(root) } else { vec![root] }
     }
 
     fn notes(&self, ch: usize) -> &[Note] {
@@ -105,6 +156,37 @@ impl App {
             if input.double {
                 self.open_popup(Popup::Rename { target: Rename::Channel(ch), text: name.clone() }, chan_box);
             }
+        }
+
+        // Gamme et accords : coller à la gamme, tampon d'accord et son type.
+        let scaled = self.project.scale != ScaleKind::Chromatic;
+        let mut hx = chan_box.right() + 12.0;
+        let tip = if scaled { ("Coller à la gamme", "") } else { ("Coller à la gamme\nChoisis d'abord une gamme, en haut", "") };
+        if self.icon_button(c, input, wid("pr-scale", 0, 0), Rect::new(hx, header.y, 36.0, header.h), Icon::Scale, self.piano.scale_snap, tip) {
+            self.piano.scale_snap = !self.piano.scale_snap;
+        }
+        hx += 40.0;
+        let stamp = self.piano.chord_stamp;
+        if self.icon_button(c, input, wid("pr-chord", 0, 0), Rect::new(hx, header.y, 36.0, header.h), Icon::Chord, stamp, ("Poser des accords\nUn clic : un accord entier", "")) {
+            self.piano.chord_stamp = !stamp;
+        }
+        hx += 38.0;
+        let chip = Rect::new(hx, header.y + 4.0, 64.0, header.h - 8.0);
+        let cid = wid("pr-chord-kind", 0, 0);
+        let chov = self.hovered(input, cid, chip);
+        let chv = self.hover_anim(cid, chov);
+        let on = self.anim.to(cid ^ 0x4f4e, stamp as u8 as f32, T_HOVER);
+        c.fill_rrect(chip, 8.0, t.raised.mix(t.raised_hi, chv).alpha(0.5 + 0.5 * on.max(chv)));
+        let label = self.piano.chord.map_or("Gamme", chord_symbol);
+        let (kx, ky) = chip.center();
+        self.text_center(c, self.f.sans_med, 12.0, kx - 5.0, ky, label, t.muted.mix(t.text, on.max(chv * 0.6)));
+        draw_icon(c, Icon::ChevronDown, chip.right() - 10.0, ky, 9.0, t.muted);
+        if chov {
+            let name = self.piano.chord.map_or("Accord de la gamme", chord_name);
+            self.set_tip(&format!("Type d'accord\n{name}"), "");
+        }
+        if chov && input.pressed {
+            self.open_popup(Popup::Chord, chip);
         }
 
         let snap_box = Rect::new(header.right() - 236.0, header.y, 236.0, header.h);
@@ -269,14 +351,16 @@ impl App {
                 None => {
                     let snap = self.piano.snap as f32;
                     let start = ((tick / snap).floor() * snap).max(0.0) as u32;
-                    let note = Note { start, len: self.piano.last_len.max(1), key: key as u8, vel: 0.8 };
+                    let len = self.piano.last_len.max(1);
+                    let keys = self.stamp_keys(key as u8);
                     let notes = self.notes_mut(ch);
-                    notes.push(note);
-                    let i = notes.len() - 1;
-                    self.piano.selected = vec![i];
-                    self.preview_note(ch, note.key);
-                    self.piano_drag = Some(PianoDrag::Move { orig: vec![(i, note)], tick0: tick, key0: key });
-                    self.commit("Poser une note");
+                    let base = notes.len();
+                    notes.extend(keys.iter().map(|&k| Note { start, len, key: k, vel: 0.8 }));
+                    let orig: Vec<(usize, Note)> = (base..notes.len()).map(|i| (i, notes[i])).collect();
+                    self.piano.selected = (base..base + keys.len()).collect();
+                    self.preview_note(ch, keys[0]);
+                    self.piano_drag = Some(PianoDrag::Move { orig, tick0: tick, key0: key });
+                    self.commit(if keys.len() > 1 { "Poser un accord" } else { "Poser une note" });
                 }
             }
         }
@@ -297,8 +381,10 @@ impl App {
                     let min_start = orig.iter().map(|(_, n)| n.start).min().unwrap_or(0) as f32;
                     let dt = dt.max(-min_start);
                     let mut moved_key = None;
+                    let scale_snap = self.piano.scale_snap;
                     for &(i, n) in &orig {
                         let key = (n.key as f32 + dk).clamp(0.0, 127.0) as u8;
+                        let key = if scale_snap && dk != 0.0 { self.project.snap(key) } else { key };
                         if let Some(dst) = self.notes_mut(ch).get_mut(i) {
                             *dst = Note { start: (n.start as f32 + dt) as u32, key, ..n };
                         }
@@ -370,6 +456,18 @@ impl App {
             }
             if melodic_labels && r.w > 30.0 {
                 self.text(c, self.f.mono_med, 10.0, r.x + 5.0, r.y + r.h * 0.5, &note_name(n.key), t.on_accent);
+            }
+        }
+
+        // Fantôme de ce qu'un clic poserait, quand la gamme ou le tampon d'accord s'en mêlent.
+        if over_grid && hover_note.is_none() && self.drag.is_none() && (self.piano.chord_stamp || self.piano.scale_snap) && !input.mods.ctrl {
+            let snap = self.piano.snap as f32;
+            let start = ((tick_at(input.x) / snap).floor() * snap).max(0.0);
+            let w = (self.piano.last_len.max(1) as f32 * zoom).max(4.0);
+            for k in self.stamp_keys(key_at(input.y) as u8) {
+                let r = Rect::new(x_of(start), y_of(k as f32) + 1.0, w, KEY_H - 2.0);
+                c.fill_rrect(r, 4.0, t.accent.alpha(0.12));
+                c.stroke_rrect(r, 4.0, 1.0, t.accent.alpha(0.6));
             }
         }
 

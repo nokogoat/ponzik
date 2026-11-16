@@ -8,7 +8,7 @@ use ponzik_engine::mixer::{MASTER, TRACKS};
 use ponzik_engine::registry;
 use ponzik_engine::{Command, EngineHandle, PlayMode, Sample, TICKS_PER_BAR, TICKS_PER_STEP};
 use ponzik_project::autosave::{self, Autosaver};
-use ponzik_project::{EffectDef, InstrumentDef, Project, ScaleKind};
+use ponzik_project::{ChordKind, EffectDef, InstrumentDef, Project, ScaleKind};
 use ponzik_ui::{Anim, Canvas, Color, FontId, Fonts, Rect, embedded};
 use ponzik_window::Key;
 
@@ -106,6 +106,8 @@ pub enum Popup {
     Templates,
     /// Tonalité et gamme du projet.
     Scale,
+    /// Type d'accord posé par le tampon du piano roll.
+    Chord,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -178,6 +180,8 @@ pub enum Action {
     ExportMidi,
     AssignSession(usize, usize, usize),
     RemoveAutomation(ponzik_engine::AutoTarget),
+    /// Accord du tampon : un type, ou `None` pour l'accord de la gamme.
+    SetChord(Option<ChordKind>),
     SetParamValue(ponzik_engine::AutoTarget, f32),
 }
 
@@ -191,12 +195,14 @@ pub struct MenuItem {
     pub tip: String,
     /// Filet de séparation au-dessus.
     pub sep: bool,
+    /// Choix actuel, mis en évidence.
+    pub on: bool,
     pub action: Action,
 }
 
 impl MenuItem {
     fn plain(name: &str, action: Action) -> Self {
-        Self { icon: None, color: None, name: name.into(), detail: String::new(), tip: String::new(), sep: false, action }
+        Self { icon: None, color: None, name: name.into(), detail: String::new(), tip: String::new(), sep: false, on: false, action }
     }
 
     fn new(icon: Icon, name: &str, action: Action) -> Self {
@@ -215,6 +221,11 @@ impl MenuItem {
 
     fn sep(mut self) -> Self {
         self.sep = true;
+        self
+    }
+
+    fn on(mut self, on: bool) -> Self {
+        self.on = on;
         self
     }
 }
@@ -291,6 +302,11 @@ pub struct PianoState {
     pub last_len: u32,
     pub selected: Vec<usize>,
     pub fitted_for: Option<(usize, usize)>,
+    /// Les notes posées ou déplacées collent à la gamme du projet.
+    pub scale_snap: bool,
+    /// Un clic pose un accord entier : de ce type, ou celui de la gamme (`None`).
+    pub chord_stamp: bool,
+    pub chord: Option<ChordKind>,
 }
 
 pub struct PlaylistState {
@@ -433,6 +449,9 @@ impl App {
                 last_len: TICKS_PER_STEP,
                 selected: Vec::new(),
                 fitted_for: None,
+                scale_snap: false,
+                chord_stamp: false,
+                chord: None,
             },
             playlist: PlaylistState { scroll_x: 0.0, zoom: 44.0, brush: 0, selected: None },
             sidebar_scroll: 0.0,
@@ -496,6 +515,15 @@ impl App {
         let kind = match name {
             "templates" => Popup::Templates,
             "scale" => Popup::Scale,
+            "stamp" => {
+                self.piano.chord_stamp = true;
+                self.piano.scale_snap = true;
+                return;
+            }
+            "chord" => {
+                self.piano.chord_stamp = true;
+                Popup::Chord
+            }
             _ => return,
         };
         self.open_popup(kind, Rect::new(60.0, 8.0, 0.0, TOP_BAR - 12.0));
@@ -2001,7 +2029,7 @@ impl App {
                     .iter()
                     .enumerate()
                     .map(|(i, pat)| {
-                        let mut it = MenuItem::plain(&pat.name, Action::SelectPattern(i)).detail(bars(pat.len));
+                        let mut it = MenuItem::plain(&pat.name, Action::SelectPattern(i)).detail(bars(pat.len)).on(i == p.current_pattern);
                         it.color = Some(super::playlist::pattern_color(i));
                         it
                     })
@@ -2130,6 +2158,21 @@ impl App {
                     })
                     .collect(),
             ),
+            Popup::Chord => {
+                let cur = self.piano.chord;
+                let mut v = vec![
+                    MenuItem::new(Icon::Scale, "Gamme", Action::SetChord(None))
+                        .tip("L'accord de la gamme du projet sur la note cliquée")
+                        .on(cur.is_none()),
+                ];
+                for (i, kind) in ChordKind::ALL.into_iter().enumerate() {
+                    let it = MenuItem::plain(super::piano::chord_name(kind), Action::SetChord(Some(kind)))
+                        .detail(super::piano::chord_symbol(kind).into())
+                        .on(cur == Some(kind));
+                    v.push(if i == 0 { it.sep() } else { it });
+                }
+                ("Accord".into(), v)
+            }
             Popup::Rename { .. } | Popup::Palette { .. } | Popup::Scale => (String::new(), Vec::new()),
         }
     }
@@ -2295,6 +2338,10 @@ impl App {
             Action::AssignSession(col, row, p) => {
                 self.project.session_grid[col][row] = Some(p);
                 self.commit("Remplir une case");
+            }
+            Action::SetChord(kind) => {
+                self.piano.chord = kind;
+                self.piano.chord_stamp = true;
             }
             Action::RemoveAutomation(target) => {
                 self.project.automation.retain(|a| a.target != target);
@@ -2496,7 +2543,7 @@ impl App {
             let id = wid("popup-row", i, 0);
             let hov = input.inside && row.contains(input.x, input.y) && r.contains(input.x, input.y);
             let hv = self.hover_anim(id, hov);
-            let current = matches!(state.kind, Popup::Patterns) && i == self.project.current_pattern;
+            let current = it.on;
             if hv > 0.01 || current {
                 c.fill_rrect(row, 9.0, t.raised.mix(t.raised_hi, hv * 0.6).alpha(hv.max(current as u8 as f32 * 0.7)));
             }
