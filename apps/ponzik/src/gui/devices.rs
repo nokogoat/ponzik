@@ -124,7 +124,7 @@ fn transfer_kind(kind: &str) -> bool {
     matches!(kind, "compressor" | "limiter" | "gate" | "saturator")
 }
 
-fn card_width(kind: &str, params: &'static [ParamInfo]) -> f32 {
+pub(super) fn card_width(kind: &str, params: &'static [ParamInfo]) -> f32 {
     if kind == "eq" {
         return EQ_W;
     }
@@ -157,7 +157,7 @@ pub fn device_target(device: Device, id: u32) -> ponzik_engine::AutoTarget {
 }
 
 impl App {
-    fn device_kind(&self, d: Device) -> (String, bool) {
+    pub(super) fn device_kind(&self, d: Device) -> (String, bool) {
         match d {
             Device::Instrument(ch) => (self.project.channels[ch].instrument.kind.clone(), true),
             Device::Effect { track, slot } => {
@@ -205,22 +205,15 @@ impl App {
             self.text(c, self.f.sans, 12.0, x + 20.0, header.y + 14.0, &out, t.muted);
         }
 
-        let mut devices = Vec::new();
-        if let Focus::Channel(ch) = self.focus
-            && ch < self.project.channels.len()
-        {
-            devices.push(Device::Instrument(ch));
-        }
-        for slot in 0..INSERT_SLOTS {
-            if self.project.tracks[track].inserts[slot].is_some() {
-                devices.push(Device::Effect { track, slot });
-            }
-        }
+        let devices = self.panel_devices();
 
         let chain = Rect::new(r.x + PAD, header.bottom() + 8.0, r.w - 2.0 * PAD, r.bottom() - header.bottom() - 8.0 - 12.0);
         let widths: Vec<f32> = devices
             .iter()
             .map(|&d| {
+                if self.layout.floating(d) {
+                    return super::float::PLACEHOLDER_W;
+                }
                 let (kind, inst) = self.device_kind(d);
                 card_width(&kind, params_of(&kind, inst))
             })
@@ -251,7 +244,11 @@ impl App {
         for (d, w) in devices.iter().zip(widths) {
             let card = Rect::new(x, chain.y, w, chain.h);
             if card.right() > chain.x && card.x < chain.right() {
-                self.device_card(c, input, card, *d);
+                if self.layout.floating(*d) {
+                    self.float_placeholder(c, input, card, *d);
+                } else {
+                    self.device_card(c, input, card, *d, false);
+                }
             }
             x += w + CARD_GAP;
         }
@@ -273,7 +270,25 @@ impl App {
         c.set_clip(Some(prev));
     }
 
-    fn device_card(&mut self, c: &mut Canvas, input: &Input, card: Rect, device: Device) {
+    /// Appareils du panneau : l'instrument du canal sélectionné, puis les effets de sa piste.
+    pub(super) fn panel_devices(&self) -> Vec<Device> {
+        let track = self.focused_track();
+        let mut devices = Vec::new();
+        if let Focus::Channel(ch) = self.focus
+            && ch < self.project.channels.len()
+        {
+            devices.push(Device::Instrument(ch));
+        }
+        for slot in 0..INSERT_SLOTS {
+            if self.project.tracks[track].inserts[slot].is_some() {
+                devices.push(Device::Effect { track, slot });
+            }
+        }
+        devices
+    }
+
+    /// Carte d'un appareil dans `card`, au panneau ou dans une fenêtre (`floating`).
+    pub(super) fn device_card(&mut self, c: &mut Canvas, input: &Input, card: Rect, device: Device, floating: bool) {
         let t = self.theme;
         c.fill_rrect(card, 14.0, t.panel);
         c.stroke_rrect(card, 14.0, 1.0, t.hairline);
@@ -296,7 +311,7 @@ impl App {
             }
         };
         c.fill_rrect(Rect::new(head.x + 12.0, head.y + 12.0, 3.0, 12.0), 1.5, if bypass { t.muted } else { color });
-        let title_w = if matches!(device, Device::Effect { .. }) { head.w - 130.0 } else { head.w - 70.0 };
+        let title_w = if matches!(device, Device::Effect { .. }) { head.w - 158.0 } else { head.w - 98.0 };
         self.text_fit(c, self.f.sans_med, 13.0, head.x + 22.0, head.y + 18.0, &name, title_w, if bypass { t.muted } else { t.text });
 
         // Presets de l'appareil.
@@ -305,6 +320,13 @@ impl App {
         if self.icon_button(c, input, wid("fx-preset", device_key(device), 0), preset, Icon::Preset, false, ("Presets", "")) {
             self.open_popup(Popup::Presets { device, kind: kind.clone() }, preset);
         }
+        // Fenêtre : détacher ou réancrer ; l'en-tête se tire comme une barre de titre.
+        let float = Rect::new(preset.x - 28.0, preset.y, 26.0, 26.0);
+        let (icon, tip) = if floating { (Icon::Dock, "Réancrer") } else { (Icon::Detach, "Détacher dans une fenêtre") };
+        if self.icon_button(c, input, wid("fx-float", device_key(device), 0), float, icon, false, (tip, "")) {
+            if floating { self.dock(device) } else { self.detach(device, Some(card)) }
+        }
+        self.float_grip(input, Rect::new(head.x, head.y, float.x - head.x - 2.0, head.h), card, device, floating);
 
         if let Device::Effect { track, slot } = device {
             let power = Rect::new(head.right() - 60.0, head.y + 5.0, 26.0, 26.0);

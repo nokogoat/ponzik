@@ -481,6 +481,8 @@ pub struct App {
     pub recovery: Option<(PathBuf, String)>,
     /// Place de la pastille de gamme, où s'ouvre son menu.
     scale_anchor: Rect,
+    /// Tailles des zones et fenêtres d'appareil flottantes (non enregistrées).
+    pub layout: super::float::Layout,
 }
 
 impl App {
@@ -583,6 +585,7 @@ impl App {
             autosaver: None,
             recovery: None,
             scale_anchor: Rect::new(0.0, 0.0, 0.0, 0.0),
+            layout: Default::default(),
         }
     }
 
@@ -1568,9 +1571,6 @@ impl App {
         c.set_clip(None);
         c.clear(t.bg);
 
-        let sb = self.anim.to(wid("sidebar", 0, 0), if self.sidebar { SIDEBAR } else { 0.0 }, T_LAYOUT).round();
-        let pn = self.anim.to(wid("panel", 0, 0), if self.panel { PANEL } else { 0.0 }, T_LAYOUT).round();
-
         // Un menu ouvert capte la souris : le reste de l'écran ne réagit plus.
         let masked;
         let over_card = self.recovery_rect(w).is_some_and(|r| r.contains(input.x, input.y));
@@ -1588,16 +1588,26 @@ impl App {
         } else {
             input
         };
+        // Séparateurs et fenêtres flottantes : tailles des zones, et souris captée au-dessus.
+        let (sb, pn, covered) = self.layout_begin(ui, w, h);
+        let below;
+        let under = if covered {
+            below = super::float::masked(ui);
+            &below
+        } else {
+            ui
+        };
 
         let main = Rect::new(sb, TOP_BAR, w - sb, h - TOP_BAR - pn);
-        self.main_area(c, ui, main);
+        self.main_area(c, under, main);
         if pn > 1.0 {
-            self.panel_area(c, ui, Rect::new(sb, h - pn, w - sb, pn));
+            self.panel_area(c, under, Rect::new(sb, h - pn, w - sb, pn));
         }
         if sb > 1.0 {
-            self.sidebar_area(c, ui, Rect::new(0.0, TOP_BAR, sb, h - TOP_BAR));
+            self.sidebar_area(c, under, Rect::new(0.0, TOP_BAR, sb, h - TOP_BAR));
         }
-        self.top_bar(c, ui, Rect::new(0.0, 0.0, w, TOP_BAR));
+        self.top_bar(c, under, Rect::new(0.0, 0.0, w, TOP_BAR));
+        self.float_layer(c, ui);
         if self.popup.is_none() {
             self.recovery_prompt(c, input, w);
         }
@@ -2085,7 +2095,8 @@ impl App {
         c.fill_rect(r, t.bg_deep);
         c.fill_rect(Rect::new(r.x, r.y, r.w, 1.0), t.hairline);
         let prev = c.push_clip(r);
-        self.device_panel(c, input, Rect::new(r.x, r.y + 1.0, r.w, PANEL - 1.0));
+        let h = self.layout.panel_open.max(r.h);
+        self.device_panel(c, input, Rect::new(r.x, r.y + 1.0, r.w, h - 1.0));
         c.set_clip(Some(prev));
     }
 
@@ -2130,8 +2141,9 @@ impl App {
         c.fill_rect(r, t.bg_deep);
         c.fill_rect(Rect::new(r.right() - 1.0, r.y, 1.0, r.h), t.hairline);
         let prev = c.push_clip(r);
-        let inner_x = r.right() - SIDEBAR + 12.0;
-        let w = SIDEBAR - 24.0;
+        let full = self.layout.sidebar_open.max(r.w);
+        let inner_x = r.right() - full + 12.0;
+        let w = full - 24.0;
 
         // Recherche : filtre instruments, effets et échantillons.
         let field = Rect::new(inner_x, r.y + 12.0, w, 36.0);

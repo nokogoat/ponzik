@@ -116,6 +116,10 @@ pub enum Icon {
     Theme,
     /// Clé : entrée latérale d'un effet.
     Key,
+    /// Fenêtre et flèche qui en sort : détacher un appareil.
+    Detach,
+    /// Flèche qui rentre dans le panneau du bas : réancrer.
+    Dock,
 }
 
 /// Dessine une icône au trait, dans un carré de `size` centré sur (`cx`, `cy`).
@@ -311,6 +315,17 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
             c.stroke_polyline(&[p(0.1, 0.0), p(7.5, 0.0)], stroke, col);
             c.stroke_polyline(&[p(4.2, 0.0), p(4.2, 3.2)], stroke, col);
             c.stroke_polyline(&[p(6.8, 0.0), p(6.8, 2.6)], stroke, col);
+        }
+        Icon::Detach => {
+            c.stroke_polyline(&[p(-1.0, -6.5), p(-7.0, -6.5), p(-7.0, 6.5), p(6.5, 6.5), p(6.5, 1.0)], stroke, col);
+            c.stroke_polyline(&[p(-1.5, 1.5), p(6.5, -6.5)], stroke, col);
+            c.stroke_polyline(&[p(1.5, -6.5), p(6.5, -6.5), p(6.5, -1.5)], stroke, col);
+        }
+        Icon::Dock => {
+            c.stroke_rrect(rr(-7.0, -6.5, 14.0, 13.0), 2.0 * s, stroke, col);
+            c.fill_rect(rr(-7.0, 2.5, 14.0, 4.0), col.alpha(0.55));
+            c.stroke_polyline(&[p(0.0, -4.5), p(0.0, 0.5)], stroke, col);
+            c.stroke_polyline(&[p(-3.0, -2.0), p(0.0, 1.0), p(3.0, -2.0)], stroke, col);
         }
         Icon::Check => c.stroke_polyline(&[p(-6.0, 0.5), p(-2.0, 4.5), p(6.0, -4.5)], stroke * 1.15, col),
         Icon::Play => {

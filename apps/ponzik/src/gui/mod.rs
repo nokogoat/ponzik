@@ -9,6 +9,7 @@ mod automation;
 mod compat;
 mod devices;
 mod dnd;
+mod float;
 mod keys;
 mod mixer;
 mod notefx;
@@ -322,6 +323,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {
         app.screenshot_popup(&name);
+    }
+    // PONZIK_FLOAT=n : détache les n premiers appareils du panneau dans des fenêtres.
+    if let Some(n) = std::env::var("PONZIK_FLOAT").ok().and_then(|v| v.parse().ok()) {
+        app.screenshot_floats(n);
     }
     let mut canvas = Canvas::new(width, height);
     // PONZIK_HOVER=x,y : souris immobile à cet endroit (survols, infobulles).
