@@ -9,6 +9,7 @@ use crate::effects::{
 use crate::effects::BusComp;
 use crate::effects::CharDelay;
 use crate::effects::MasterLimiter;
+use crate::effects::CharSaturation;
 use crate::instrument::Instrument;
 use crate::instruments::{
     Bass303, DrumKind, DrumSynth, EPiano, FmSynth, Granular, Kick, Pluck, Pulse, Sampler, Slicer, WaveSynth,
@@ -282,6 +283,13 @@ pub fn effects() -> &'static [EffectKind] {
             category: "Espace",
             description: "Écho de bande, analogique ou numérique : saturation et filtres dans la boucle, pleurage, ping-pong",
             create: || Box::new(CharDelay::default()),
+        },
+        EffectKind {
+            id: "char_saturation",
+            name: "Saturation à caractère",
+            category: "Saturation",
+            description: "Lampe, bande, transistor ou redresseur, sur tout le spectre ou trois bandes, avec ton et mix",
+            create: || Box::new(CharSaturation::default()),
         },
     ]
 }
