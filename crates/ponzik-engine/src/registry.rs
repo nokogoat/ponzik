@@ -1,5 +1,5 @@
-//! Registre des instruments et effets natifs : création par identifiant
-//! (chargement de projet, menus du navigateur).
+//! Registre des instruments, effets et effets de notes natifs : création par
+//! identifiant (chargement de projet, menus du navigateur).
 
 use crate::effect::Effect;
 use crate::effects::{
@@ -10,6 +10,7 @@ use crate::instrument::Instrument;
 use crate::instruments::{
     Bass303, DrumKind, DrumSynth, EPiano, FmSynth, Granular, Kick, Pluck, Pulse, Sampler, Slicer, WaveSynth,
 };
+use crate::note_fx::{Arpeggiator, Chord, Humanizer, NoteFx, Repeat, ScaleSnap};
 
 pub struct InstrumentKind {
     pub id: &'static str,
@@ -25,6 +26,13 @@ pub struct EffectKind {
     pub category: &'static str,
     pub description: &'static str,
     pub create: fn() -> Box<dyn Effect>,
+}
+
+pub struct NoteFxKind {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    pub create: fn() -> Box<dyn NoteFx>,
 }
 
 pub fn instruments() -> &'static [InstrumentKind] {
@@ -254,12 +262,56 @@ pub fn effects() -> &'static [EffectKind] {
     ]
 }
 
+/// Effets de notes, placés avant l'instrument d'un canal.
+pub fn note_fx() -> &'static [NoteFxKind] {
+    &[
+        NoteFxKind {
+            id: "arpeggiator",
+            name: "Arpégiateur",
+            description: "Joue les notes tenues une à une, synchronisé au tempo, sur une à quatre octaves",
+            create: || Box::new(Arpeggiator::default()),
+        },
+        NoteFxKind {
+            id: "chord",
+            name: "Accord",
+            description: "Ajoute jusqu'à quatre notes à chaque note jouée : préréglages ou intervalles libres",
+            create: || Box::new(Chord::default()),
+        },
+        NoteFxKind {
+            id: "scale",
+            name: "Gamme",
+            description: "Ramène les notes sur une gamme, ou écarte celles qui n'en sont pas",
+            create: || Box::new(ScaleSnap::default()),
+        },
+        NoteFxKind {
+            id: "random",
+            name: "Aléatoire",
+            description: "Probabilité de jouer, vélocité et retard aléatoires pour humaniser",
+            create: || Box::new(Humanizer::default()),
+        },
+        NoteFxKind {
+            id: "repeat",
+            name: "Répétition",
+            description: "Rejoue chaque note à la cadence choisie, tenue ou un nombre fixe de coups",
+            create: || Box::new(Repeat::default()),
+        },
+    ]
+}
+
 pub fn instrument_kind(id: &str) -> Option<&'static InstrumentKind> {
     instruments().iter().find(|k| k.id == id)
 }
 
 pub fn effect_kind(id: &str) -> Option<&'static EffectKind> {
     effects().iter().find(|k| k.id == id)
+}
+
+pub fn note_fx_kind(id: &str) -> Option<&'static NoteFxKind> {
+    note_fx().iter().find(|k| k.id == id)
+}
+
+pub fn create_note_fx(id: &str) -> Option<Box<dyn NoteFx>> {
+    note_fx_kind(id).map(|k| (k.create)())
 }
 
 pub fn create_instrument(id: &str) -> Option<Box<dyn Instrument>> {
@@ -282,6 +334,9 @@ mod tests {
         for k in effects() {
             assert_eq!((k.create)().kind(), k.id);
         }
+        for k in note_fx() {
+            assert_eq!((k.create)().kind(), k.id);
+        }
     }
 
     #[test]
@@ -296,6 +351,9 @@ mod tests {
             check((k.create)().params());
         }
         for k in effects() {
+            check((k.create)().params());
+        }
+        for k in note_fx() {
             check((k.create)().params());
         }
     }
