@@ -1,16 +1,20 @@
 //! Effets de notes du canal (arpège, accord, gamme, hasard, répétition) : une
 //! carte avant l'instrument, quatre emplacements et, pour l'effet choisi, un
-//! visuel calculé par l'effet lui-même.
+//! visuel calculé par l'effet lui-même. Et la boîte à rythmes : huit pads qui
+//! s'allument quand ils jouent.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use ponzik_engine::{NOTE_FX_SLOTS, NoteBuffer, NoteEvent, NoteFx, PPQ, ParamInfo, TICKS_PER_BAR, Unit, registry};
+use ponzik_engine::{
+    NOTE_FX_SLOTS, Note, NoteBuffer, NoteEvent, NoteFx, PPQ, ParamInfo, PlayMode, TICKS_PER_BAR, Unit, registry,
+};
 use ponzik_project::{NoteFxDef, Project};
 use ponzik_ui::{Canvas, Rect};
 
 use super::Input;
 use super::app::{App, Popup};
+use super::devices::{Device, device_target};
 use super::theme::*;
 use super::widgets::{Icon, draw_icon, wid};
 
@@ -29,6 +33,8 @@ const CARD_GAP: f32 = 10.0;
 thread_local! {
     /// Emplacement d'effet de notes affiché, par canal.
     static SELECTED: RefCell<HashMap<usize, usize>> = RefCell::new(HashMap::new());
+    /// Pad de boîte à rythmes affiché, par canal.
+    static PAD: RefCell<HashMap<usize, usize>> = RefCell::new(HashMap::new());
 }
 
 /// Pictogramme d'un type d'effet de notes.
@@ -562,6 +568,163 @@ impl App {
             let lit = phase.is_some_and(|p| p >= start as f64 && p < end as f64);
             let col = if lit { t.accent_hot } else { t.accent.alpha(0.5 + 0.5 * vel) };
             c.fill_rrect(Rect::new(x0, bars.bottom() - h, (x1 - x0 - 1.0).max(2.0), h), 2.5, col);
+        }
+    }
+}
+
+// --- Boîte à rythmes ---
+
+const PADS: usize = 8;
+/// Note du premier pad (General MIDI).
+const FIRST_PAD_NOTE: u8 = 36;
+const PAD_NAMES: [&str; PADS] =
+    ["Kick", "Cerclage", "Caisse", "Clap", "Charl. ouv.", "Tom grave", "Charl. fer.", "Tom aigu"];
+const PAD_W: f32 = 66.0;
+const PAD_H: f32 = 62.0;
+const PAD_GAP: f32 = 8.0;
+const PADS_W: f32 = 4.0 * PAD_W + 3.0 * PAD_GAP;
+/// Largeur de la carte de la boîte à rythmes.
+pub const DRUM_W: f32 = 28.0 + PADS_W + GAP + 3.0 * CELL_W;
+
+/// Groupe (nom du pad) d'un paramètre.
+fn group(params: &[ParamInfo], id: u32) -> &'static str {
+    params.iter().find(|p| p.id == id).map_or("", |p| p.group)
+}
+
+impl App {
+    /// Éclat de chaque pad : 1 à la frappe, puis décroissance rapide.
+    fn pad_hits(&self, ch: usize) -> [f32; PADS] {
+        let mut out = [0.0f32; PADS];
+        let pad_of = |key: u8| key.checked_sub(FIRST_PAD_NOTE).map(usize::from).filter(|&p| p < PADS);
+        for h in self.held.iter().filter(|h| h.channel == ch) {
+            if let Some(p) = pad_of(h.key) {
+                out[p] = 1.0;
+            }
+        }
+        if let Some((c, k)) = self.preview
+            && c == ch
+            && let Some(p) = pad_of(k)
+        {
+            out[p] = 1.0;
+        }
+        if !self.playing {
+            return out;
+        }
+        let secs_per_tick = 60.0 / (self.project.bpm.max(1.0) as f64 * PPQ as f64);
+        let mut scan = |notes: &[Note], local: f64| {
+            for n in notes {
+                let dt = local - n.start as f64;
+                if let Some(p) = pad_of(n.key)
+                    && (0.0..PPQ as f64).contains(&dt)
+                {
+                    out[p] = out[p].max((-(dt * secs_per_tick) / 0.12).exp() as f32 * n.vel.max(0.3));
+                }
+            }
+        };
+        let pattern_notes = |p: usize| self.project.patterns.get(p).and_then(|p| p.notes.get(ch));
+        match self.project.mode {
+            PlayMode::Pattern(p) => {
+                if let Some(notes) = pattern_notes(p) {
+                    scan(notes, self.cycle_position());
+                }
+            }
+            PlayMode::Song => {
+                for clip in &self.project.clips {
+                    let local = self.position - clip.start as f64;
+                    if (0.0..clip.len as f64).contains(&local)
+                        && let Some(notes) = pattern_notes(clip.pattern)
+                    {
+                        scan(notes, local + clip.offset as f64);
+                    }
+                }
+            }
+            PlayMode::Session => {}
+        }
+        out
+    }
+
+    /// Carte de la boîte à rythmes : huit pads (clic : choisir et écouter) et
+    /// les réglages du pad choisi.
+    pub(super) fn drum_device(
+        &mut self,
+        c: &mut Canvas,
+        input: &Input,
+        body: Rect,
+        device: Device,
+        params: &'static [ParamInfo],
+    ) {
+        let t = self.theme;
+        let Device::Instrument(ch) = device else {
+            return;
+        };
+        let sel = PAD.with(|p| p.borrow().get(&ch).copied()).unwrap_or(0);
+        let hits = self.pad_hits(ch);
+        let find = |id: u32| params.iter().find(|p| p.id == id);
+        let grid_y = body.y + 16.0;
+        let sel_x = self.anim.to(wid("dm-sel-x", ch, 0), (sel % 4) as f32, T_LAYOUT);
+        let sel_y = self.anim.to(wid("dm-sel-y", ch, 0), (sel / 4) as f32, T_LAYOUT);
+        for pad in 0..PADS {
+            let r = Rect::new(
+                body.x + (pad % 4) as f32 * (PAD_W + PAD_GAP),
+                grid_y + (pad / 4) as f32 * (PAD_H + PAD_GAP),
+                PAD_W,
+                PAD_H,
+            );
+            let id = wid("dm-pad", ch, pad);
+            let hov = self.hovered(input, id, r);
+            let hv = self.hover_anim(id, hov);
+            let flash_id = wid("dm-flash", ch, pad);
+            let cur = self.anim.get(flash_id).unwrap_or(0.0);
+            let glow = if hits[pad] > cur { hits[pad] } else { self.anim.to(flash_id, hits[pad], T_FLASH) };
+            self.anim.set(flash_id, glow);
+            let press = self.anim.to(id ^ 0x5052, if hov && input.down { 0.94 } else { 1.0 }, T_PRESS);
+            let base = t.pad_a.mix(t.raised_hi, hv * 0.6);
+            c.fill_rrect(r.scale(press), 10.0, base.mix(t.accent, glow * 0.85));
+            // Niveau du pad : un filet en bas.
+            if let Some(level) = find(pad as u32 * 3 + 2) {
+                let n = level.to_norm(self.param_value(device, level));
+                let lr = Rect::new(r.x + 8.0, r.bottom() - 9.0, (r.w - 16.0) * n, 3.0);
+                c.fill_rrect(lr, 1.5, t.text2.mix(t.on_accent, glow).alpha(0.55));
+            }
+            let label = self.short_label(self.f.sans_med, 11.0, PAD_NAMES[pad], r.w - 12.0);
+            let ink = t.text2.mix(t.text, glow).mix(t.on_accent, (glow - 0.5) * 2.0);
+            self.text(c, self.f.sans_med, 11.0, r.x + 8.0, r.y + 14.0, &label, ink);
+            if hov {
+                self.set_tip(&format!("{}\nClic : choisir et écouter", group(params, pad as u32 * 3)), "");
+                if input.pressed {
+                    PAD.with(|p| p.borrow_mut().insert(ch, pad));
+                    self.preview_note(ch, FIRST_PAD_NOTE + pad as u8);
+                }
+            }
+        }
+        let ring = Rect::new(body.x + sel_x * (PAD_W + PAD_GAP), grid_y + sel_y * (PAD_H + PAD_GAP), PAD_W, PAD_H);
+        c.stroke_rrect(ring.inset(-2.0), 12.0, 1.5, t.select);
+
+        // Réglages : le pad choisi en haut, le général en bas.
+        let px = body.x + PADS_W + GAP;
+        c.fill_rect(Rect::new(px - GAP * 0.5, body.y + 20.0, 1.0, body.h - 28.0), t.hairline);
+        self.text(c, self.f.sans_med, 11.0, px + 4.0, body.y + 6.0, group(params, sel as u32 * 3), t.muted);
+        let cells: Vec<(usize, usize, u32)> = (0..3)
+            .map(|k| (k, 0, sel as u32 * 3 + k as u32))
+            .chain([(0, 1, PADS as u32 * 3), (1, 1, PADS as u32 * 3 + 1)])
+            .collect();
+        for (col, row, pid) in cells {
+            let Some(p) = find(pid) else { continue };
+            let cell = Rect::new(px + col as f32 * CELL_W, body.y + 16.0 + row as f32 * CELL_H, CELL_W, CELL_H);
+            let v = self.param_value(device, p);
+            if let Some(nv) = self.knob(c, input, wid("prm", ch, p.id as usize), cell, p, v) {
+                self.set_param_value(device, p, nv);
+            }
+            let target = device_target(device, p.id);
+            if input.right_pressed && input.inside && cell.contains(input.x, input.y) && self.drag.is_none() {
+                self.open_popup(
+                    Popup::Param { target, value: v, default: p.default },
+                    Rect::new(input.x, input.y, 0.0, 0.0),
+                );
+            }
+            if self.is_automated(target) {
+                c.fill_circle(cell.right() - 10.0, cell.y + 6.0, 3.0, t.select);
+            }
         }
     }
 }

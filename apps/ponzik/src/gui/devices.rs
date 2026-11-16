@@ -128,6 +128,9 @@ fn card_width(kind: &str, params: &'static [ParamInfo]) -> f32 {
     if kind == "eq" {
         return EQ_W;
     }
+    if kind == "drum_machine" {
+        return super::notefx::DRUM_W;
+    }
     let g = groups(params);
     if g.is_empty() {
         return 220.0;
@@ -323,6 +326,10 @@ impl App {
         let body = Rect::new(card.x + 14.0, head.bottom() + 2.0, card.w - 28.0, card.h - head.h - 8.0);
         if kind == "eq" {
             self.eq_device(c, input, body, device, params);
+            return;
+        }
+        if kind == "drum_machine" {
+            self.drum_device(c, input, body, device, params);
             return;
         }
         if params.is_empty() {
