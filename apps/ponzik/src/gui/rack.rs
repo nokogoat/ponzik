@@ -48,6 +48,7 @@ impl App {
             }
         };
         if changed {
+            self.anim.set(wid("pad-pop", ch, step), 0.0);
             self.commit("Pas");
         }
     }
@@ -329,6 +330,9 @@ impl App {
         let hv = self.hover_anim(wid("pad", ch, i), hov);
         let headv = self.anim.to(wid("pad-head", ch, i), (head == Some(i)) as u8 as f32, T_HEAD);
         let flash = self.anim.to(wid("pad-flash", ch, i), 0.0, T_FLASH);
+        // Pas qui vient d'être posé ou effacé : petit rebond, ou empreinte qui s'éteint.
+        let pid = wid("pad-pop", ch, i);
+        let pop = if self.anim.get(pid).is_some() { self.anim.to(pid, 1.0, 0.08) } else { 1.0 };
         let muted = self.project.channels[ch].muted;
         let radius = (pad.w * 0.18).clamp(4.0, 8.0);
         match note {
@@ -343,6 +347,12 @@ impl App {
                 }
                 top = top.mix(t.accent_hot, (flash * 0.85 + hv * 0.18).min(1.0));
                 bottom = bottom.mix(t.accent_hot, (flash * 0.55 + hv * 0.1).min(1.0));
+                if pop < 1.0 {
+                    let grow = 2.0 + pop * 7.0;
+                    c.stroke_rrect(pad.inset(-grow), radius + grow, 1.5, t.accent.alpha((1.0 - pop) * 0.7));
+                    top = top.mix(WHITE, (1.0 - pop) * 0.45);
+                }
+                let pad = pad.inset(-(1.0 - pop) * 2.0);
                 c.fill_rrect_vgrad(pad, radius, top, bottom);
                 c.fill_rect(Rect::new(pad.x + radius, pad.y + 1.0, pad.w - 2.0 * radius, 1.0), WHITE.alpha(0.3));
                 if melodic && pad.w >= 26.0 && n.key != self.project.channels[ch].root_note {
@@ -354,6 +364,9 @@ impl App {
             None => {
                 let base = if (i / 4) % 2 == 0 { t.pad_a } else { t.pad_b };
                 c.fill_rrect(pad, radius, base.mix(t.raised_hi, hv * 0.8).mix(t.pad_head, headv * 0.6));
+                if pop < 1.0 {
+                    c.fill_rrect(pad.inset(pop * pad.h * 0.3), radius, t.accent.alpha(0.5 * (1.0 - pop)));
+                }
             }
         }
     }

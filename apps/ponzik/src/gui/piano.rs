@@ -106,6 +106,11 @@ pub fn scale_shape(kind: Option<ChordKind>) -> (&'static str, &'static str) {
 /// Case du choix d'accord : type (`None` : triade de la gamme), libellé, nom complet.
 type ChordChoice = (Option<ChordKind>, &'static str, &'static str);
 
+/// Identifiant de l'animation d'une note posée (hauteur, début).
+fn pop_id(key: u8, start: u32) -> u64 {
+    wid("pr-pop", usize::from(key), start as usize)
+}
+
 /// Libellés des renversements.
 const INVERSIONS: [&str; 4] = ["Fond.", "1er", "2e", "3e"];
 
@@ -565,6 +570,9 @@ impl App {
                     let base = notes.len();
                     notes.extend(keys.iter().map(|&k| Note { start, len, key: k, vel: 0.8 }));
                     let orig: Vec<(usize, Note)> = (base..notes.len()).map(|i| (i, notes[i])).collect();
+                    for &k in &keys {
+                        self.anim.set(pop_id(k, start), 0.0);
+                    }
                     self.piano.selected = (base..base + keys.len()).collect();
                     self.preview_note(ch, keys[0]);
                     self.piano_drag = Some(PianoDrag::Move { orig, tick0: tick, key0: key });
@@ -574,7 +582,8 @@ impl App {
         }
         // Clic droit maintenu : efface les notes balayées.
         if over_grid && input.right_down && let Some((i, _)) = hover_note {
-            self.notes_mut(ch).remove(i);
+            let gone = self.notes_mut(ch).remove(i);
+            self.piano.erased.push((gone, self.time));
             self.piano.selected.clear();
             self.commit("Effacer des notes");
         }
@@ -644,6 +653,12 @@ impl App {
             }
         }
 
+        // Rangée survolée : un léger bandeau guide l'œil vers la hauteur visée.
+        if over_grid && self.drag.is_none() {
+            let row = Rect::new(grid.x, y_of(key_at(input.y)), grid.w, KEY_H);
+            c.fill_rect(row, t.text.alpha(0.035));
+        }
+
         // Notes du canal.
         let melodic_labels = KEY_H >= 14.0;
         for (i, n) in self.notes(ch).to_vec().into_iter().enumerate() {
@@ -652,30 +667,72 @@ impl App {
                 continue;
             }
             let selected = self.piano.selected.contains(&i);
-            let hov = hover_note.is_some_and(|(h, _)| h == i);
+            let hov = hover_note.is_some_and(|(h, _)| h == i) && self.drag.is_none();
+            let hv = self.hover_anim(wid("pr-note", i, 0), hov);
+            // Note qui vient d'être posée : éclat bref et onde qui s'élargit.
+            let pid = pop_id(n.key, n.start);
+            let pop = if self.anim.get(pid).is_some() { self.anim.to(pid, 1.0, 0.09) } else { 1.0 };
+            if pop < 1.0 {
+                let grow = 2.0 + pop * 9.0;
+                c.stroke_rrect(r.inset(-grow), 4.0 + grow, 1.5, t.accent.alpha((1.0 - pop) * 0.8));
+            }
+            if hv > 0.01 {
+                c.fill_rrect(r.inset(-2.5), 6.0, t.accent.alpha(0.18 * hv));
+            }
             let base = t.accent_deep.mix(t.accent, 0.4 + 0.6 * n.vel);
-            let fill = if selected { base.mix(t.accent_hot, 0.35) } else { base.mix(t.accent_hot, hov as u8 as f32 * 0.15) };
-            c.fill_rrect(r, 4.0, fill);
+            let fill = if selected { base.mix(t.accent_hot, 0.35) } else { base.mix(t.accent_hot, 0.3 * hv) };
+            let fill = fill.mix(WHITE, (1.0 - pop) * 0.55);
+            let body = r.inset(-(1.0 - pop) * 1.5);
+            c.fill_rrect(body, 4.0, fill);
             if selected {
                 c.stroke_rrect(r, 4.0, 1.5, t.select);
+            } else if hv > 0.01 {
+                c.stroke_rrect(r, 4.0, 1.0, t.text.alpha(0.6 * hv));
             }
+            // Bord droit survolé : poignée de durée et flèches.
             if hover_note.is_some_and(|(h, e)| h == i && e) {
-                c.fill_rrect(Rect::new(r.right() - 4.0, r.y + 3.0, 2.0, r.h - 6.0), 1.0, t.on_accent.alpha(0.6));
+                c.fill_rrect(Rect::new(r.right() - 4.0, r.y + 2.0, 3.0, r.h - 4.0), 1.5, t.on_accent.alpha(0.85));
+                let (ax, ay) = (r.right() + 7.0, r.y + r.h * 0.5);
+                let mut arrows = ponzik_ui::Path::new();
+                arrows.polygon(&[(ax - 3.0, ay), (ax + 1.0, ay - 3.5), (ax + 1.0, ay + 3.5)]);
+                arrows.polygon(&[(ax + 9.0, ay), (ax + 5.0, ay - 3.5), (ax + 5.0, ay + 3.5)]);
+                c.fill_path(&arrows, t.text.alpha(0.8));
             }
             if melodic_labels && r.w > 30.0 {
                 self.text(c, self.f.mono_med, 10.0, r.x + 5.0, r.y + r.h * 0.5, &note_name(n.key), t.on_accent);
             }
         }
+        if let Some((i, edge)) = hover_note
+            && self.drag.is_none()
+        {
+            let n = self.notes(ch)[i];
+            let what = if edge { "Durée · glisser" } else { "Glisser : déplacer · clic droit : effacer" };
+            self.set_tip(&format!("{} · {}", note_name(n.key), what), "");
+        }
 
-        // Fantôme de ce qu'un clic poserait, quand la gamme ou le tampon d'accord s'en mêlent.
-        if over_grid && hover_note.is_none() && self.drag.is_none() && (self.piano.chord_stamp || self.piano.scale_snap) && !input.mods.ctrl {
+        // Notes effacées : elles rétrécissent et s'éteignent.
+        let now = self.time;
+        self.piano.erased.retain(|&(_, at)| now - at < 0.22);
+        if !self.piano.erased.is_empty() {
+            self.anim.set(wid("pr-erase", 0, 0), now);
+        }
+        for &(n, at) in &self.piano.erased {
+            let k = ((now - at) / 0.22).clamp(0.0, 1.0);
+            let r = Rect::new(x_of(n.start as f32), y_of(n.key as f32) + 1.0, (n.len as f32 * zoom).max(4.0), KEY_H - 2.0);
+            let shrink = r.inset(k * r.h * 0.35);
+            c.fill_rrect(shrink, 4.0, t.negative.mix(t.accent, 0.3).alpha(0.7 * (1.0 - k)));
+        }
+
+        // Fantôme de ce qu'un clic poserait : une note, ou l'accord du tampon.
+        if over_grid && hover_note.is_none() && self.drag.is_none() && !input.mods.ctrl {
             let snap = self.piano.snap as f32;
             let start = ((tick_at(input.x) / snap).floor() * snap).max(0.0);
             let w = (self.piano.last_len.max(1) as f32 * zoom).max(4.0);
+            let strong = self.piano.chord_stamp || self.piano.scale_snap;
             for k in self.stamp_keys(key_at(input.y) as u8) {
                 let r = Rect::new(x_of(start), y_of(k as f32) + 1.0, w, KEY_H - 2.0);
-                c.fill_rrect(r, 4.0, t.accent.alpha(0.12));
-                c.stroke_rrect(r, 4.0, 1.0, t.accent.alpha(0.6));
+                c.fill_rrect(r, 4.0, t.accent.alpha(if strong { 0.12 } else { 0.07 }));
+                c.stroke_rrect(r, 4.0, 1.0, t.accent.alpha(if strong { 0.6 } else { 0.35 }));
             }
         }
 

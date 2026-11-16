@@ -364,6 +364,8 @@ pub struct PianoState {
     /// Renversement de l'accord posé (0 = fondamental).
     pub chord_inv: u8,
     pub voicing: ponzik_project::Voicing,
+    /// Notes effacées à l'instant (note, heure) : elles s'évanouissent.
+    pub erased: Vec<(ponzik_engine::Note, f32)>,
 }
 
 pub struct PlaylistState {
@@ -524,6 +526,7 @@ impl App {
                 chord: None,
                 chord_inv: 0,
                 voicing: ponzik_project::Voicing::Close,
+                erased: Vec::new(),
             },
             playlist: PlaylistState { scroll_x: 0.0, zoom: 44.0, brush: 0, selected: None },
             sidebar_scroll: 0.0,
