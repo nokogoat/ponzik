@@ -702,10 +702,11 @@ impl App {
                 self.text(c, self.f.mono_med, 10.0, r.x + 5.0, r.y + r.h * 0.5, &note_name(n.key), t.on_accent);
             }
         }
+        // L'index peut viser une note effacée par le clic droit de cette image.
         if let Some((i, edge)) = hover_note
             && self.drag.is_none()
+            && let Some(&n) = self.notes(ch).get(i)
         {
-            let n = self.notes(ch)[i];
             let what = if edge { "Durée · glisser" } else { "Glisser : déplacer · clic droit : effacer" };
             self.set_tip(&format!("{} · {}", note_name(n.key), what), "");
         }
