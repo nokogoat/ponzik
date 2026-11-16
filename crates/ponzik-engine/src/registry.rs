@@ -9,6 +9,7 @@ use crate::effects::{
 use crate::effects::BusComp;
 use crate::effects::CharDelay;
 use crate::effects::MasterLimiter;
+use crate::effects::MixAssistant;
 use crate::effects::CharSaturation;
 use crate::effects::Lofi;
 use crate::effects::VintageVerb;
@@ -314,6 +315,13 @@ pub fn effects() -> &'static [EffectKind] {
             category: "Espace",
             description: "Salle, plaque ou nuage de diffusion, modulation riche, queues jusqu'à une minute et gel",
             create: || Box::new(VintageVerb::default()),
+        },
+        EffectKind {
+            id: "mix_assistant",
+            name: "Mix Assistant",
+            category: "Mixing",
+            description: "Listens to the track and suggests a high-pass, EQ, de-esser, compressor, saturation, width and level per source type; nothing changes until you apply",
+            create: || Box::new(MixAssistant::default()),
         },
     ]
 }
