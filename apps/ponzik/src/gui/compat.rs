@@ -157,6 +157,27 @@ pub fn import_midi(project: &mut Project, path: &Path) -> Result<usize, String> 
     Ok(ponzik_project::import_midi(project, &file, &name))
 }
 
+/// FL Studio projects in the usual folders (FL's own project folder included).
+pub fn scan_flp() -> Vec<PathBuf> {
+    let h = home();
+    let mut out = Vec::new();
+    let fl = h.join("Documents").join("Image-Line").join("FL Studio").join("Projects");
+    for root in [projects_dir(), fl, music_dir(), h.join("Téléchargements"), h.join("Downloads")] {
+        walk_ext(&root, 0, &["flp"], &mut out);
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Converts an FL Studio project; samples are looked up next to it too.
+pub fn import_flp(path: &Path) -> Result<(Project, ponzik_project::ImportReport), String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("{} : {e}", path.display()))?;
+    let name = path.file_stem().map_or("FL Studio".to_string(), |s| s.to_string_lossy().into_owned());
+    let dir = path.parent();
+    ponzik_project::import_flp(&bytes, &name, &|raw| ponzik_project::resolve_sample(raw, dir))
+}
+
 pub fn export_midi(project: &Project, pattern: usize) -> Result<PathBuf, String> {
     let dir = projects_dir().join("Exports");
     std::fs::create_dir_all(&dir).map_err(|e| format!("{} : {e}", dir.display()))?;

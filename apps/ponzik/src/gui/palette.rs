@@ -183,6 +183,8 @@ impl App {
         }
         add("Exporter les pistes séparées (stems)".into(), "Fichier", none(), Action::ExportStems);
         add("Importer un fichier MIDI".into(), "Fichier", none(), Action::ImportMidiMenu);
+        add("Import an FL Studio project (.flp)".into(), "Fichier", none(), Action::ImportFlpMenu);
+        add("Show the FL Studio import report".into(), "Fichier", none(), Action::Popup(Popup::ImportReport));
         add("Exporter le pattern en MIDI".into(), "Fichier", none(), Action::ExportMidi);
         add("Enregistrer sous".into(), "Fichier", k(S::SaveAs), Action::SaveAs);
         add(

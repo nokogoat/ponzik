@@ -105,6 +105,10 @@ pub enum Popup {
     Palette { query: String, selected: usize },
     /// Fichiers MIDI à importer.
     ImportMidi(Vec<PathBuf>),
+    /// FL Studio projects to import.
+    ImportFlp(Vec<PathBuf>),
+    /// Report of the last FL Studio import.
+    ImportReport,
     /// Presets d'un appareil : enregistrer, ou charger un preset existant.
     Presets { device: super::devices::Device, kind: String },
     /// Choix du pattern d'une case vide de la vue Session.
@@ -214,6 +218,8 @@ pub enum Action {
     LoadPreset(super::devices::Device, PathBuf),
     ImportMidiMenu,
     ImportMidi(PathBuf),
+    ImportFlpMenu,
+    ImportFlp(PathBuf),
     ExportMidi,
     AssignSession(usize, usize, usize),
     RemoveAutomation(ponzik_engine::AutoTarget),
@@ -405,6 +411,8 @@ pub struct App {
     last_edit: Option<(String, f32)>,
     pub modified: bool,
     pub project_path: Option<PathBuf>,
+    /// Rows of the last FL Studio import report (text, continuation of the previous row).
+    pub import_report: Vec<(String, bool)>,
 
     pub view: View,
     pub focus: Focus,
@@ -534,6 +542,7 @@ impl App {
             last_edit: None,
             modified: false,
             project_path: None,
+            import_report: Vec::new(),
             view: View::Rack,
             focus: Focus::Channel(0),
             sidebar: true,
@@ -1361,11 +1370,28 @@ impl App {
     }
 
     pub fn open_file(&mut self, path: PathBuf) {
+        if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("flp")) {
+            return self.import_flp(&path);
+        }
         match compat::load_project(&path) {
             Ok(p) => {
                 let name = p.name.clone();
                 self.replace_project(p, Some(path));
                 self.toast(&format!("{name} ouvert"));
+            }
+            Err(e) => self.toast(&e),
+        }
+    }
+
+    /// Opens an FL Studio project as a new, unsaved Ponzik project.
+    pub fn import_flp(&mut self, path: &std::path::Path) {
+        match compat::import_flp(path) {
+            Ok((p, report)) => {
+                self.replace_project(p, None);
+                self.import_report = report.rows(46);
+                self.toast(&report.summary());
+                let anchor = Rect::new(12.0, TOP_BAR, 0.0, 0.0);
+                self.open_popup(Popup::ImportReport, anchor);
             }
             Err(e) => self.toast(&e),
         }
@@ -2563,6 +2589,35 @@ impl App {
                 };
                 ("Importer du MIDI".into(), items)
             }
+            Popup::ImportFlp(files) => {
+                let items = if files.is_empty() {
+                    vec![MenuItem::new(Icon::Folder, "No FL Studio project found", Action::None)
+                        .tip(&compat::projects_dir().display().to_string())]
+                } else {
+                    files
+                        .iter()
+                        .map(|f| {
+                            let name = f.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
+                            let dir = f.parent().map_or(String::new(), |d| d.display().to_string());
+                            MenuItem::new(Icon::Folder, &name, Action::ImportFlp(f.clone())).tip(&dir)
+                        })
+                        .collect()
+                };
+                ("Import an FL Studio project".into(), items)
+            }
+            Popup::ImportReport => {
+                let items = if self.import_report.is_empty() {
+                    vec![MenuItem::plain("No FL Studio import yet", Action::None)]
+                } else {
+                    let rows = self.import_report.iter().enumerate();
+                    rows.map(|(i, (text, more))| {
+                        let row = MenuItem::plain(text, Action::None).dim(*more);
+                        if !more && i > 0 { row.sep() } else { row }
+                    })
+                    .collect()
+                };
+                ("FL Studio import report".into(), items)
+            }
             Popup::Presets { device, kind } => {
                 let save = Popup::Rename { target: Rename::Preset(*device), text: String::new() };
                 let mut v = vec![MenuItem::new(Icon::Save, "Enregistrer…", Action::Popup(save)).tip("Les réglages actuels, sous un nom")];
@@ -2640,6 +2695,7 @@ impl App {
                         MenuItem::new(Icon::Export, "Exporter en WAV", Action::Export).detail(key(S::Export)).sep(),
                         MenuItem::new(Icon::Columns, "Exporter les pistes", Action::ExportStems).tip("Un WAV par piste du mixer"),
                         MenuItem::new(Icon::Piano, "Importer du MIDI", Action::ImportMidiMenu).sep(),
+                        MenuItem::new(Icon::Folder, "Import an FL Studio project", Action::ImportFlpMenu),
                         MenuItem::new(Icon::Piano, "Exporter en MIDI", Action::ExportMidi).tip("Le pattern actuel"),
                         MenuItem::new(Icon::Play, "Démo house", Action::LoadDemo(0)).sep(),
                         MenuItem::new(Icon::Play, "Démo breakcore", Action::LoadDemo(1)),
@@ -2912,6 +2968,8 @@ impl App {
             }
             Action::ExportStems => self.export_stems(),
             Action::ImportMidiMenu => self.open_popup(Popup::ImportMidi(compat::scan_midi()), anchor),
+            Action::ImportFlpMenu => self.open_popup(Popup::ImportFlp(compat::scan_flp()), anchor),
+            Action::ImportFlp(path) => self.import_flp(&path),
             Action::ImportMidi(path) => match compat::import_midi(&mut self.project, &path) {
                 Ok(p) => {
                     self.select_pattern(p);
