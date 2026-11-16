@@ -6,7 +6,7 @@ use ponzik_dsp::util::balance_gains;
 
 use crate::audition::Audition;
 use crate::effect::Effect;
-use crate::input::{InputConsumer, RecordBuffer};
+use crate::input::{CALIBRATION_CLICKS, InputChain, InputConsumer, InputSource, InputStrip, RecordBuffer, calibration_click, deinterleave};
 use crate::instrument::Instrument;
 use crate::meter::{PeakMeter, peak};
 use crate::mixer::{INSERT_SLOTS, MASTER, Mixer, SEND_SLOTS, TRACKS};
@@ -23,6 +23,8 @@ const MAX_AUDIO_VOICES: usize = 4_096;
 /// Fondu minimal des clips audio, en secondes.
 const MIN_FADE: f32 = 0.002;
 const COMMAND_QUEUE: usize = 4_096;
+/// Pistes enregistrées en même temps, au plus.
+pub const MAX_RECORDINGS: usize = 8;
 const GARBAGE_QUEUE: usize = 1_024;
 const MAX_EVENTS: usize = 8_192;
 pub const MAX_CHANNELS: usize = 128;
@@ -80,16 +82,29 @@ pub enum Command {
     SetMetronome(bool),
     /// Branche (ou débranche) l'entrée audio ; l'ancienne repart en [`Garbage::Input`].
     SetInput(Option<Box<InputConsumer>>),
-    /// Écoute de l'entrée en direct, ajoutée à l'entrée de la piste (avant ses inserts).
-    SetMonitor { track: Option<usize> },
-    /// Arme l'enregistrement de l'entrée dans `buffer`, préalloué par l'interface ;
-    /// il n'est rempli que transport lancé. Désarmer, réarmer ou arrêter le
-    /// transport rend le tampon en cours via [`Garbage::Recording`]. Un seul
-    /// enregistrement à la fois ; `armed` sans tampon désarme.
+    /// Écoute de l'entrée en direct sur une piste (`None` : coupée), ajoutée à
+    /// son entrée avant ses inserts.
+    SetMonitor { track: usize, source: Option<InputSource> },
+    /// Écoute à faible latence : sur le trajet des pistes écoutées jusqu'au
+    /// master, les inserts qui anticipent (latence non nulle) sont court-circuités
+    /// et la compensation de latence ne retarde plus le signal écouté.
+    SetLowLatencyMonitoring(bool),
+    /// Tranche d'entrée : gain, coupe-bas, porte.
+    SetInputStrip(InputStrip),
+    /// Arme l'enregistrement de l'entrée sur `track` dans `buffer`, préalloué
+    /// par l'interface (sa source dit quels canaux garder) ; il n'est rempli que
+    /// transport lancé. Désarmer, réarmer la piste ou arrêter le transport rend
+    /// le tampon via [`Garbage::Recording`]. Jusqu'à [`MAX_RECORDINGS`] pistes à
+    /// la fois ; `armed` sans tampon désarme la piste.
     Record { track: usize, armed: bool, buffer: Option<Box<RecordBuffer>> },
     /// Pré-écoute de l'Atelier, ajoutée à la sortie hors du mixer : remplace la
     /// voix en cours (rendue en [`Garbage::Audition`]) ; `None` l'arrête en fondu.
     Audition(Option<Box<Audition>>),
+    /// Calibrage de la latence : le moteur joue des clics
+    /// ([`crate::input::CALIBRATION_CLICKS`]) directement sur la sortie et
+    /// enregistre l'entrée brute dans `buffer`, rendu plein via
+    /// [`Garbage::Calibration`]. `None` interrompt un calibrage en cours.
+    Calibrate(Option<Box<RecordBuffer>>),
 }
 
 impl std::fmt::Debug for Command {
@@ -127,8 +142,11 @@ impl std::fmt::Debug for Command {
             Command::SetMetronome(_) => "SetMetronome",
             Command::SetInput(_) => "SetInput",
             Command::SetMonitor { .. } => "SetMonitor",
+            Command::SetLowLatencyMonitoring(_) => "SetLowLatencyMonitoring",
+            Command::SetInputStrip(_) => "SetInputStrip",
             Command::Record { .. } => "Record",
             Command::Audition(_) => "Audition",
+            Command::Calibrate(_) => "Calibrate",
         };
         f.write_str(name)
     }
@@ -146,6 +164,8 @@ pub enum Garbage {
     /// Enregistrement terminé : gardé à part par [`EngineHandle::take_recordings`].
     Recording(Box<RecordBuffer>),
     Audition(Box<Audition>),
+    /// Calibrage terminé : gardé à part par [`EngineHandle::take_calibration`].
+    Calibration(Box<RecordBuffer>),
 }
 
 /// Ce que le moteur publie pour l'interface.
@@ -158,6 +178,10 @@ struct SharedState {
     channel_peaks: Vec<PeakMeter>,
     track_peaks: Vec<PeakMeter>,
     input_peak: PeakMeter,
+    /// L'entrée a saturé depuis la dernière lecture.
+    input_clip: AtomicBool,
+    /// Gain de la porte d'entrée (bits d'un `f32`, 1 : ouverte).
+    input_gate: AtomicU32,
     /// Pire charge DSP depuis la dernière lecture : temps de calcul / durée du bloc.
     load: AtomicU32,
     /// Latence totale au master, en échantillons.
@@ -175,6 +199,7 @@ pub struct EngineHandle {
     /// Les boîtes envoyées par l'interface lui reviennent telles quelles.
     #[allow(clippy::vec_box)]
     recordings: Vec<Box<RecordBuffer>>,
+    calibration: Option<Box<RecordBuffer>>,
     sample_rate: f32,
 }
 
@@ -222,6 +247,17 @@ impl EngineHandle {
         self.state.input_peak.take()
     }
 
+    /// Vrai si l'entrée a saturé depuis le dernier appel (convertisseur à fond ou
+    /// gain d'entrée trop fort).
+    pub fn take_input_clip(&self) -> bool {
+        self.state.input_clip.swap(false, Ordering::Relaxed)
+    }
+
+    /// Gain courant de la porte d'entrée (1 : ouverte ou désactivée).
+    pub fn input_gate(&self) -> f32 {
+        f32::from_bits(self.state.input_gate.load(Ordering::Relaxed))
+    }
+
     /// Pire charge DSP (1.0 = le bloc a pris tout son temps réel) depuis le dernier appel.
     pub fn take_load(&self) -> f32 {
         f32::from_bits(self.state.load.swap(0, Ordering::Relaxed))
@@ -253,10 +289,18 @@ impl EngineHandle {
     /// Libère les objets que le moteur a remplacés ; les enregistrements sont mis de côté.
     pub fn collect_garbage(&mut self) {
         while let Some(g) = self.garbage.pop() {
-            if let Garbage::Recording(rec) = g {
-                self.recordings.push(rec);
+            match g {
+                Garbage::Recording(rec) => self.recordings.push(rec),
+                Garbage::Calibration(rec) => self.calibration = Some(rec),
+                _ => {}
             }
         }
+    }
+
+    /// Calibrage terminé (ou interrompu) depuis le dernier appel.
+    pub fn take_calibration(&mut self) -> Option<Box<RecordBuffer>> {
+        self.collect_garbage();
+        self.calibration.take()
     }
 
     /// Enregistrements terminés depuis le dernier appel (tampons vides compris).
@@ -307,12 +351,18 @@ pub struct Engine {
     input: Option<Box<InputConsumer>>,
     input_l: Vec<f32>,
     input_r: Vec<f32>,
-    /// Piste qui reçoit l'entrée en direct.
-    monitor: Option<usize>,
-    /// Enregistrement armé.
-    recording: Option<Box<RecordBuffer>>,
-    /// Enregistrement que la file de retour pleine n'a pas pu prendre ; réessayé au bloc suivant.
-    returning: Option<Box<RecordBuffer>>,
+    strip: InputChain,
+    /// Écoute de l'entrée, piste par piste.
+    monitor: [Option<InputSource>; TRACKS],
+    low_latency: bool,
+    /// Enregistrements armés, une piste chacun.
+    recordings: [Option<Box<RecordBuffer>>; MAX_RECORDINGS],
+    /// Calibrage en cours : entrée brute, et trames écoulées depuis son début.
+    calibration: Option<Box<RecordBuffer>>,
+    cal_clock: usize,
+    /// Prises et calibrages que la file de retour pleine n'a pas pu prendre ;
+    /// réessayés au bloc suivant (capacité réservée, jamais dépassée).
+    returning: Vec<Garbage>,
     /// Pré-écoute de l'Atelier.
     audition: Option<Box<Audition>>,
 }
@@ -347,6 +397,8 @@ impl Engine {
             channel_peaks: (0..MAX_CHANNELS).map(|_| PeakMeter::default()).collect(),
             track_peaks: (0..TRACKS).map(|_| PeakMeter::default()).collect(),
             input_peak: PeakMeter::default(),
+            input_clip: AtomicBool::new(false),
+            input_gate: AtomicU32::new(1f32.to_bits()),
             load: AtomicU32::new(0),
             latency: AtomicU32::new(0),
             audition: AtomicU64::new((-1f64).to_bits()),
@@ -383,9 +435,13 @@ impl Engine {
             input: None,
             input_l: vec![0.0; MAX_BLOCK],
             input_r: vec![0.0; MAX_BLOCK],
-            monitor: None,
-            recording: None,
-            returning: None,
+            strip: InputChain::new(sample_rate),
+            monitor: [None; TRACKS],
+            low_latency: false,
+            recordings: std::array::from_fn(|_| None),
+            calibration: None,
+            cal_clock: 0,
+            returning: Vec::with_capacity(2 * MAX_RECORDINGS + 2),
             audition: None,
         };
         let handle = EngineHandle {
@@ -394,6 +450,7 @@ impl Engine {
             scope: scope_rx,
             garbage: trash_rx,
             recordings: Vec::new(),
+            calibration: None,
             sample_rate,
         };
         (engine, handle)
@@ -419,37 +476,66 @@ impl Engine {
     }
 
     fn trash(&mut self, g: Garbage) {
-        // File pleine : l'objet est libéré ici, en dernier recours ; un
-        // enregistrement est gardé pour le bloc suivant s'il y a de la place.
-        if let Err(Garbage::Recording(rec)) = self.garbage.push(g)
-            && self.returning.is_none()
+        // File pleine : l'objet est libéré ici, en dernier recours ; une prise
+        // ou un calibrage est gardé pour le bloc suivant s'il y a de la place.
+        if let Err(g @ (Garbage::Recording(_) | Garbage::Calibration(_))) = self.garbage.push(g)
+            && self.returning.len() < self.returning.capacity()
         {
-            self.returning = Some(rec);
+            self.returning.push(g);
         }
     }
 
-    /// Rend l'enregistrement en cours à l'interface.
-    fn finish_recording(&mut self) {
-        if let Some(rec) = self.recording.take() {
-            self.trash(Garbage::Recording(rec));
+    /// Rend à l'interface l'enregistrement de `track`, ou tous (`None`).
+    fn finish_recording(&mut self, track: Option<usize>) {
+        for k in 0..MAX_RECORDINGS {
+            if self.recordings[k].as_ref().is_some_and(|r| track.is_none_or(|t| r.track == t))
+                && let Some(rec) = self.recordings[k].take()
+            {
+                self.trash(Garbage::Recording(rec));
+            }
         }
     }
 
     /// Remplit `out` (entrelacé, `channels` canaux) — appelé par le thread audio.
     pub fn process(&mut self, out: &mut [f32], channels: usize) {
-        self.run(out, channels, false);
+        self.run(out, channels, false, &[], 0);
+    }
+
+    /// Duplex intégral : comme [`Engine::process`], avec l'entrée captée dans le
+    /// même cycle (`input` entrelacée, `in_channels` canaux, autant de trames
+    /// que `out` ; 0 canal : pas d'entrée, la file de [`Command::SetInput`]
+    /// sert alors). L'écoute n'ajoute ainsi aucun retard au pilote.
+    pub fn process_duplex(&mut self, input: &[f32], in_channels: usize, out: &mut [f32], channels: usize) {
+        self.run(out, channels, false, input, in_channels);
     }
 
     /// Comme [`Engine::process`], mais s'arrête pile à la fin de la boucle du
     /// morceau au lieu de reboucler (export) ; renvoie le nombre d'images écrites,
     /// le reste de `out` n'est pas touché.
     pub fn process_to_loop_end(&mut self, out: &mut [f32], channels: usize) -> usize {
-        self.run(out, channels, true)
+        self.run(out, channels, true, &[], 0)
     }
 
-    fn run(&mut self, out: &mut [f32], channels: usize, stop_at_end: bool) -> usize {
+    /// Pistes dont la latence est réduite : celles écoutées et leur trajet jusqu'au master.
+    fn plan_monitoring(&mut self) {
+        let mut reduced = [false; TRACKS];
+        if self.low_latency {
+            for t in (0..TRACKS).filter(|&t| self.monitor[t].is_some()) {
+                let mut cur = t;
+                while !reduced[cur] {
+                    reduced[cur] = true;
+                    let out = self.mixer.tracks[cur].output;
+                    cur = if cur == MASTER { MASTER } else if out < TRACKS && out != cur { out } else { MASTER };
+                }
+            }
+        }
+        self.mixer.reduced = reduced;
+    }
+
+    fn run(&mut self, out: &mut [f32], channels: usize, stop_at_end: bool, input: &[f32], in_channels: usize) -> usize {
         let started = Instant::now();
         self.drain_commands();
+        self.plan_monitoring();
         let channels = channels.max(1);
         let frames = out.len() / channels;
         let mut done = 0;
@@ -480,7 +566,8 @@ impl Engine {
                 let left = (self.count_in * self.spt() - 1e-6).ceil().max(1.0) as usize;
                 n = n.min(left);
             }
-            self.process_chunk(n);
+            let direct = if in_channels > 0 { input.get(done * in_channels..).unwrap_or(&[]) } else { &[] };
+            self.process_chunk(n, direct, in_channels);
             let (l, r) = self.mixer.master(n);
             let block = &mut out[done * channels..(done + n) * channels];
             write_interleaved(block, channels, l, r);
@@ -498,6 +585,7 @@ impl Engine {
         self.state.latency.store(self.mixer.latency() as u32, Ordering::Relaxed);
         self.state.count_in.store(self.count_in.to_bits(), Ordering::Relaxed);
         self.state.playing.store(self.playing, Ordering::Relaxed);
+        self.state.input_gate.store(self.strip.gate_gain().to_bits(), Ordering::Relaxed);
         if frames > 0 {
             let budget = frames as f32 / self.sample_rate;
             let load = started.elapsed().as_secs_f32() / budget;
@@ -575,7 +663,7 @@ impl Engine {
         }
     }
 
-    fn process_chunk(&mut self, n: usize) {
+    fn process_chunk(&mut self, n: usize, input: &[f32], in_channels: usize) {
         let spt = self.spt();
         let pos_start = self.pos;
         if self.playing {
@@ -625,9 +713,10 @@ impl Engine {
         }
 
         self.render_audio_clips(pos_start, n, spt);
-        self.capture_input(pos_start, n);
+        self.capture_input(input, in_channels, pos_start, n, spt);
         self.metronome_click(pos_start, n, spt);
         self.mixer.process(n, &self.state.track_peaks);
+        self.calibration_clicks(n);
         self.feed_scope(n);
         self.clock += n as u64;
         if self.playing {
@@ -709,28 +798,86 @@ impl Engine {
         }
     }
 
-    /// Lit l'entrée : crête, écoute sur la piste choisie, enregistrement si armé et en lecture.
-    fn capture_input(&mut self, pos_start: f64, n: usize) {
-        let Some(input) = self.input.as_mut() else { return };
+    /// Lit l'entrée (directe en duplex, sinon la file) : calibrage sur l'entrée
+    /// brute, tranche d'entrée, crête, écoute des pistes, puis prises si le
+    /// transport tourne.
+    fn capture_input(&mut self, direct: &[f32], in_channels: usize, pos_start: f64, n: usize, spt: f64) {
         let (l, r) = (&mut self.input_l[..n], &mut self.input_r[..n]);
-        input.read(l, r);
+        if in_channels > 0 {
+            deinterleave(direct, in_channels, l, r);
+        } else if let Some(input) = self.input.as_mut() {
+            input.read(l, r);
+        } else {
+            return;
+        }
+        if let Some(cal) = self.calibration.as_mut() {
+            cal.write(l, r);
+            if cal.is_full()
+                && let Some(cal) = self.calibration.take()
+            {
+                self.trash(Garbage::Calibration(cal));
+            }
+        }
+        let (l, r) = (&mut self.input_l[..n], &mut self.input_r[..n]);
+        if self.strip.process(l, r) {
+            self.state.input_clip.store(true, Ordering::Relaxed);
+        }
         self.state.input_peak.record(peak(l), peak(r));
-        if let Some(track) = self.monitor {
+        for track in 0..TRACKS {
+            let Some(source) = self.monitor[track] else { continue };
+            let (sl, sr) = source.pick(&self.input_l[..n], &self.input_r[..n]);
             let (tl, tr) = self.mixer.input(track, n);
             for k in 0..n {
-                tl[k] += l[k];
-                tr[k] += r[k];
+                tl[k] += sl[k];
+                tr[k] += sr[k];
             }
         }
-        if self.playing
-            && let Some(rec) = self.recording.as_mut()
-        {
+        if !self.playing {
+            return;
+        }
+        // Bloc dans la continuité du précédent ? Sinon (boucle, saut), la prise le note.
+        let contiguous = (pos_start - self.audio_next).abs() < 1e-6;
+        // Une prise qui commence lit la latence du mixer tel qu'il est maintenant
+        // (inserts tout juste changés compris), pas celle du bloc précédent.
+        if self.recordings.iter().flatten().any(|r| r.len == 0) {
+            self.mixer.plan_latency();
+        }
+        let latency = self.mixer.latency();
+        for rec in self.recordings.iter_mut().flatten() {
             if rec.len == 0 {
                 rec.start_tick = pos_start;
+                rec.mix_latency = latency;
+                rec.samples_per_tick = spt;
+                rec.jumps.clear();
+            } else if !contiguous {
+                rec.jump(pos_start);
             }
+            let (sl, sr) = rec.source.pick(&self.input_l[..n], &self.input_r[..n]);
             // Tampon plein : on cesse d'écrire, il sera rendu au désarmement.
-            rec.write(l, r);
+            rec.write(sl, sr);
         }
+    }
+
+    /// Clics du calibrage, joués après le mixer : ni compensation ni effets.
+    fn calibration_clicks(&mut self, n: usize) {
+        let Some(cal) = self.calibration.as_ref() else {
+            self.cal_clock = 0;
+            return;
+        };
+        let sr = cal.sample_rate;
+        let start = self.cal_clock;
+        let (l, r) = self.mixer.master_mut(n);
+        for &at in &CALIBRATION_CLICKS {
+            let at = (at * sr) as usize;
+            for k in 0..n {
+                if let Some(i) = (start + k).checked_sub(at) {
+                    let s = calibration_click(i, sr);
+                    l[k] += s;
+                    r[k] += s;
+                }
+            }
+        }
+        self.cal_clock += n;
     }
 
     fn render_channels(&mut self, offset: usize, len: usize) {
@@ -808,8 +955,9 @@ impl Engine {
     }
 
     fn drain_commands(&mut self) {
-        if let Some(rec) = self.returning.take() {
-            self.trash(Garbage::Recording(rec));
+        for _ in 0..self.returning.len() {
+            let g = self.returning.remove(0);
+            self.trash(g);
         }
         while let Some(cmd) = self.commands.pop() {
             self.apply(cmd);
@@ -848,7 +996,7 @@ impl Engine {
                 self.playing = false;
                 self.silence_all();
                 self.mixer.reset_effects();
-                self.finish_recording();
+                self.finish_recording(None);
             }
             Command::Locate(tick) => {
                 self.pos = tick.max(0.0);
@@ -1028,15 +1176,27 @@ impl Engine {
                     self.trash(Garbage::Input(old));
                 }
             }
-            Command::SetMonitor { track } => self.monitor = track.map(|t| t.min(TRACKS - 1)),
+            Command::SetMonitor { track, source } => {
+                if let Some(m) = self.monitor.get_mut(track) {
+                    *m = source;
+                }
+            }
+            Command::SetLowLatencyMonitoring(on) => self.low_latency = on,
+            Command::SetInputStrip(strip) => self.strip.set(strip),
             Command::Record { track, armed, buffer } => {
-                self.finish_recording();
+                let track = track.min(TRACKS - 1);
+                self.finish_recording(Some(track));
                 match buffer {
                     Some(mut rec) if armed => {
                         rec.len = 0;
-                        rec.track = track.min(TRACKS - 1);
+                        rec.track = track;
                         rec.sample_rate = self.sample_rate;
-                        self.recording = Some(rec);
+                        rec.jumps.clear();
+                        match self.recordings.iter_mut().find(|r| r.is_none()) {
+                            Some(slot) => *slot = Some(rec),
+                            // Plus de place : le tampon repart vide.
+                            None => self.trash(Garbage::Recording(rec)),
+                        }
                     }
                     Some(rec) => self.trash(Garbage::Recording(rec)),
                     None => {}
@@ -1050,6 +1210,17 @@ impl Engine {
             Command::Audition(None) => {
                 if let Some(voice) = self.audition.as_mut() {
                     voice.stop();
+                }
+            }
+            Command::Calibrate(buffer) => {
+                if let Some(old) = self.calibration.take() {
+                    self.trash(Garbage::Calibration(old));
+                }
+                if let Some(mut cal) = buffer {
+                    cal.len = 0;
+                    cal.sample_rate = self.sample_rate;
+                    self.cal_clock = 0;
+                    self.calibration = Some(cal);
                 }
             }
         }
@@ -1090,7 +1261,7 @@ fn write_interleaved(out: &mut [f32], channels: usize, left: &[f32], right: &[f3
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::input::{InputProducer, input_channel};
+    use crate::input::{CALIBRATION_SECONDS, InputProducer, input_channel, measure_round_trip, take_slices};
     use crate::sample::Sample;
     use crate::sequence::{AudioClip, AutoPoint, AutoScope, AutomationLane, Clip, Note, Pattern, TICKS_PER_STEP};
     use std::sync::Mutex;
@@ -1638,7 +1809,7 @@ mod tests {
     #[test]
     fn monitor_sums_input_into_track() {
         let (mut engine, mut handle, mut tx) = setup_input();
-        handle.send(Command::SetMonitor { track: Some(2) }).unwrap();
+        handle.send(Command::SetMonitor { track: 2, source: Some(InputSource::Stereo) }).unwrap();
         assert_eq!(tx.push(&[0.5; 256], 1), 256);
         let mut buf = vec![0.0; 2 * 256];
         engine.process(&mut buf, 2);
@@ -1648,7 +1819,7 @@ mod tests {
         assert!(buf.iter().all(|&s| s == 0.5));
 
         // Sans écoute : le niveau d'entrée reste mesuré, la piste se tait.
-        handle.send(Command::SetMonitor { track: None }).unwrap();
+        handle.send(Command::SetMonitor { track: 2, source: None }).unwrap();
         tx.push(&[0.25; 256], 1);
         engine.process(&mut buf, 2);
         assert_eq!(handle.take_input_peak(), [0.25, 0.25]);
@@ -1742,5 +1913,166 @@ mod tests {
         assert_eq!(buf[2 * 1_000], 0.0);
         assert_eq!(handle.audition_position(), None);
         assert!(matches!(handle.garbage.pop(), Some(Garbage::Audition(_))));
+    }
+
+    fn limiter() -> Box<dyn Effect> {
+        let mut fx = crate::registry::create_effect("limiter").unwrap();
+        fx.set_sample_rate(SR);
+        fx
+    }
+
+    /// Indice de la crête.
+    fn argmax(x: &[f32]) -> usize {
+        (0..x.len()).max_by(|&a, &b| x[a].abs().total_cmp(&x[b].abs())).unwrap()
+    }
+
+    /// Sortie gauche en duplex, l'entrée étant une impulsion de 0,25 à la première trame.
+    fn duplex_impulse(engine: &mut Engine, frames: usize) -> Vec<f32> {
+        let mut left = Vec::new();
+        let mut out = vec![0.0; 2 * 64];
+        while left.len() < frames {
+            let mut input = vec![0.0f32; 2 * 64];
+            if left.is_empty() {
+                input[..2].fill(0.25);
+            }
+            engine.process_duplex(&input, 2, &mut out, 2);
+            left.extend(out.iter().step_by(2));
+        }
+        left
+    }
+
+    #[test]
+    fn low_latency_monitoring_skips_lookahead_and_compensation() {
+        let (mut engine, mut handle, _) = setup(&[]);
+        let lat = limiter().latency();
+        assert!(lat > 64);
+        handle.send(Command::SetChannelMute { channel: 0, muted: true }).unwrap();
+        handle.send(Command::SetInsert { track: 2, slot: 0, effect: Some(limiter()) }).unwrap();
+        handle.send(Command::SetInsert { track: 3, slot: 0, effect: Some(limiter()) }).unwrap();
+        handle.send(Command::SetMonitor { track: 2, source: Some(InputSource::Stereo) }).unwrap();
+        // Compensation complète : la voix revient avec l'anticipation du limiteur.
+        let out = duplex_impulse(&mut engine, 4_000);
+        assert_eq!(argmax(&out), lat);
+        assert_eq!(handle.latency(), lat);
+        // Faible latence : la voix ressort dans le même cycle, sans compensation.
+        handle.send(Command::SetLowLatencyMonitoring(true)).unwrap();
+        let out = duplex_impulse(&mut engine, 4_000);
+        assert_eq!(argmax(&out), 0);
+        assert!((out[0] - 0.25).abs() < 1e-6, "{}", out[0]);
+        assert_eq!(handle.latency(), lat, "la piste 3 et son limiteur restent compensés");
+        // Retour à la normale.
+        handle.send(Command::SetLowLatencyMonitoring(false)).unwrap();
+        assert_eq!(argmax(&duplex_impulse(&mut engine, 4_000)), lat);
+    }
+
+    #[test]
+    fn duplex_input_is_recorded_dry_from_each_source() {
+        let (mut engine, mut handle, _) = setup(&[]);
+        handle.send(Command::SetChannelMute { channel: 0, muted: true }).unwrap();
+        handle.send(Command::SetInsert { track: 2, slot: 0, effect: Some(limiter()) }).unwrap();
+        handle.send(Command::SetMonitor { track: 2, source: Some(InputSource::Left) }).unwrap();
+        let left_buf = RecordBuffer::for_source(InputSource::Left, 1.0, SR);
+        let right_buf = RecordBuffer::for_source(InputSource::Right, 1.0, SR);
+        handle.send(Command::Record { track: 2, armed: true, buffer: Some(Box::new(left_buf)) }).unwrap();
+        handle.send(Command::Record { track: 4, armed: true, buffer: Some(Box::new(right_buf)) }).unwrap();
+        handle.send(Command::Play).unwrap();
+        let data = ramp(1_000);
+        let mut out = vec![0.0; 2 * 1_000];
+        engine.process_duplex(&data, 2, &mut out, 2);
+        handle.send(Command::Stop).unwrap();
+        engine.process(&mut [], 2);
+        let mut recs = handle.take_recordings();
+        recs.sort_by_key(|r| r.track);
+        assert_eq!(recs.len(), 2);
+        let left: Vec<f32> = data.iter().step_by(2).copied().collect();
+        let right: Vec<f32> = data.iter().skip(1).step_by(2).copied().collect();
+        assert_eq!((recs[0].track, recs[0].is_mono(), recs[0].len), (2, true, 1_000));
+        assert_eq!(recs[0].left[..1_000], left[..], "prise sèche : ni limiteur ni retard");
+        assert_eq!((recs[1].track, recs[1].len), (4, 1_000));
+        assert_eq!(recs[1].left[..1_000], right[..]);
+    }
+
+    #[test]
+    fn loop_recording_marks_each_pass_and_aligns_takes() {
+        let (mut engine, mut handle, _) = setup(&[]);
+        handle.send(Command::SetChannelMute { channel: 0, muted: true }).unwrap();
+        let seq = Sequence { mode: PlayMode::Song, loop_range: Some((96, 192)), ..Default::default() };
+        handle.send(Command::SetSequence(Box::new(seq))).unwrap();
+        // Un limiteur ailleurs : la compensation retarde ce qu'on entend.
+        handle.send(Command::SetInsert { track: 3, slot: 0, effect: Some(limiter()) }).unwrap();
+        handle.send(Command::Locate(48.0)).unwrap();
+        let rec = RecordBuffer::with_duration(2.0, SR);
+        handle.send(Command::Record { track: 1, armed: true, buffer: Some(Box::new(rec)) }).unwrap();
+        handle.send(Command::Play).unwrap();
+        // 250 trames par tick : pré-roll de 144 ticks jusqu'à la fin de boucle,
+        // puis des tours de 96 ticks (24 000 trames).
+        let input = vec![0.1f32; 2 * 128];
+        let mut out = vec![0.0; 2 * 128];
+        for _ in 0..508 {
+            engine.process_duplex(&input, 2, &mut out, 2);
+        }
+        handle.send(Command::Stop).unwrap();
+        engine.process(&mut [], 2);
+        let recs = handle.take_recordings();
+        let rec = &recs[0];
+        assert_eq!((rec.len, rec.start_tick, rec.samples_per_tick), (508 * 128, 48.0, 250.0));
+        assert_eq!(rec.mix_latency, limiter().latency());
+        assert_eq!(rec.jumps, [(36_000, 96.0), (60_000, 96.0)]);
+        // 480 trames d'aller-retour du pilote en plus de la compensation.
+        let shift = rec.mix_latency + 480;
+        let takes = take_slices(rec.len, rec.start_tick, &rec.jumps, shift, rec.samples_per_tick, None, 1);
+        assert_eq!(takes.len(), 3);
+        assert_eq!(takes[0].tick, 48.0 - shift as f64 / 250.0);
+        assert_eq!((takes[1].from, takes[1].to - takes[1].from, takes[1].tick), (36_000 + shift, 24_000, 96.0));
+        assert_eq!((takes[2].from, takes[2].tick), (60_000 + shift, 96.0));
+    }
+
+    #[test]
+    fn calibration_measures_a_simulated_loopback() {
+        let (mut engine, mut handle, _) = setup(&[]);
+        handle.send(Command::SetChannelMute { channel: 0, muted: true }).unwrap();
+        let cal = RecordBuffer::with_duration(CALIBRATION_SECONDS, SR);
+        handle.send(Command::Calibrate(Some(Box::new(cal)))).unwrap();
+        // Câble de bouclage : ce qui sort revient à l'entrée 1 234 trames plus tard.
+        let delay = 1_234;
+        let mut line: std::collections::VecDeque<f32> = std::iter::repeat_n(0.0, 2 * delay).collect();
+        let mut out = vec![0.0; 2 * 128];
+        let mut cal = None;
+        for _ in 0..2_000 {
+            let input: Vec<f32> = line.drain(..2 * 128).collect();
+            engine.process_duplex(&input, 2, &mut out, 2);
+            line.extend(&out);
+            cal = handle.take_calibration();
+            if cal.is_some() {
+                break;
+            }
+        }
+        let cal = cal.expect("calibrage rendu");
+        assert!(cal.is_full());
+        assert_eq!(measure_round_trip(&cal.left[..cal.len], SR), Some(delay));
+        // Plus de clics une fois le calibrage terminé.
+        engine.process_duplex(&[0.0; 2 * 128], 2, &mut out, 2);
+        assert!(out.iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn rearming_a_track_returns_its_take_and_others_keep_recording() {
+        let (mut engine, mut handle, mut tx) = setup_input();
+        for track in [1, 2] {
+            let buffer = Some(Box::new(RecordBuffer::new(4_800, SR)));
+            handle.send(Command::Record { track, armed: true, buffer }).unwrap();
+        }
+        handle.send(Command::Play).unwrap();
+        tx.push(&ramp(256), 2);
+        run(&mut engine, 256, 256);
+        handle.send(Command::Record { track: 1, armed: false, buffer: None }).unwrap();
+        tx.push(&ramp(256), 2);
+        run(&mut engine, 256, 256);
+        let recs = handle.take_recordings();
+        assert_eq!(recs.iter().map(|r| (r.track, r.len)).collect::<Vec<_>>(), [(1, 256)]);
+        handle.send(Command::Stop).unwrap();
+        engine.process(&mut [], 2);
+        let recs = handle.take_recordings();
+        assert_eq!(recs.iter().map(|r| (r.track, r.len)).collect::<Vec<_>>(), [(2, 512)]);
     }
 }

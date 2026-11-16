@@ -24,8 +24,8 @@ pub mod sequence;
 pub mod wav;
 
 pub use effect::Effect;
-pub use engine::{Command, Engine, EngineHandle, Garbage, MAX_CHANNELS};
-pub use input::{InputConsumer, InputProducer, RecordBuffer, input_channel};
+pub use engine::{Command, Engine, EngineHandle, Garbage, MAX_CHANNELS, MAX_RECORDINGS};
+pub use input::{InputConsumer, InputProducer, InputSource, InputStrip, RecordBuffer, TakeSlice, input_channel};
 pub use instrument::Instrument;
 pub use note_fx::{NoteBuffer, NoteEvent, NoteFx};
 pub use param::{ParamInfo, Params, Unit};

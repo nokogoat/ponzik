@@ -70,8 +70,12 @@ impl Track {
         }
     }
 
-    /// Latence cumulée des inserts actifs.
-    fn insert_latency(&self) -> usize {
+    /// Latence cumulée des inserts actifs ; `reduced` : ceux qui anticipent
+    /// sont court-circuités (écoute à faible latence), donc sans latence.
+    fn insert_latency(&self, reduced: bool) -> usize {
+        if reduced {
+            return 0;
+        }
         let active = self.inserts.iter().zip(&self.bypass).filter(|(_, bypass)| !**bypass);
         active.filter_map(|(fx, _)| fx.as_ref()).map(|fx| fx.latency()).sum()
     }
@@ -164,6 +168,9 @@ pub struct Mixer {
     history: [bool; TRACKS],
     /// Latence totale au master, inserts du master compris.
     latency: usize,
+    /// Écoute à faible latence : pistes dont les inserts qui anticipent sont
+    /// court-circuités et dont le signal n'est pas retardé par la compensation.
+    pub(crate) reduced: [bool; TRACKS],
 }
 
 /// Ordre par défaut : toutes les pistes vont directement au master.
@@ -228,6 +235,7 @@ impl Mixer {
             own: [0; TRACKS],
             history: [false; TRACKS],
             latency: 0,
+            reduced: [false; TRACKS],
         }
     }
 
@@ -248,7 +256,7 @@ impl Mixer {
     }
 
     /// Latences du bloc à venir, dans l'ordre de routage (sources avant destinations).
-    fn plan_latency(&mut self) {
+    pub(crate) fn plan_latency(&mut self) {
         self.arrival = [0; TRACKS];
         self.own = [0; TRACKS];
         self.history = [false; TRACKS];
@@ -260,13 +268,13 @@ impl Mixer {
             }
             seen[idx] = true;
             let t = &self.tracks[idx];
-            self.own[idx] = t.insert_latency();
+            self.own[idx] = t.insert_latency(self.reduced[idx]);
             let out = self.out_latency(idx);
             for dst in t.destinations(idx) {
                 self.arrival[dst] = self.arrival[dst].max(out);
             }
         }
-        self.own[MASTER] = self.tracks[MASTER].insert_latency();
+        self.own[MASTER] = self.tracks[MASTER].insert_latency(self.reduced[MASTER]);
         seen[MASTER] = true;
 
         // Une sortie n'est historisée que si une liaison la relit en retard.
@@ -279,6 +287,9 @@ impl Mixer {
             let mut at = self.arrival[idx];
             for slot in 0..INSERT_SLOTS {
                 let Some(fx) = t.inserts[slot].as_ref().filter(|_| !t.bypass[slot]) else { continue };
+                if self.reduced[idx] && fx.latency() > 0 {
+                    continue;
+                }
                 if let Some(k) = t.sidechain[slot].filter(|&k| k < TRACKS && k != idx && k != MASTER)
                     && self.gap(at, self.out_latency(k)) > 0
                 {
@@ -334,6 +345,9 @@ impl Mixer {
                 continue;
             }
             let Some(fx) = t.inserts[slot].as_mut() else { continue };
+            if self.reduced[idx] && fx.latency() > 0 {
+                continue;
+            }
             at += fx.latency();
             if let Some((kl, kr)) = key {
                 fx.sidechain(kl, kr);
@@ -345,7 +359,8 @@ impl Mixer {
     /// Ajoute la sortie de `src` à `dst` (× `amount`), retardée pour rejoindre
     /// le chemin le plus lent qui arrive à `dst`.
     fn route(&mut self, src: usize, dst: usize, amount: f32, n: usize) {
-        let delay = self.gap(self.arrival[dst], self.out_latency(src));
+        // Trajet d'écoute à faible latence : jamais retardé.
+        let delay = if self.reduced[src] { 0 } else { self.gap(self.arrival[dst], self.out_latency(src)) };
         let (s, d) = pair(&mut self.tracks, src, dst);
         if delay == 0 {
             for i in 0..n {
@@ -365,7 +380,7 @@ impl Mixer {
     /// de la latence des pistes qui y arrivent.
     fn delay_inputs(&mut self, n: usize) {
         for idx in 0..TRACKS {
-            let delay = self.gap(self.arrival[idx], 0);
+            let delay = if self.reduced[idx] { 0 } else { self.gap(self.arrival[idx], 0) };
             let Track { l, r, input_delay, .. } = &mut self.tracks[idx];
             if delay == 0 {
                 input_delay.forget();
@@ -442,6 +457,12 @@ impl Mixer {
     pub fn master(&self, n: usize) -> (&[f32], &[f32]) {
         let m = &self.tracks[MASTER];
         (&m.l[..n], &m.r[..n])
+    }
+
+    /// Sortie du master après traitement, pour y ajouter un signal hors mixage.
+    pub(crate) fn master_mut(&mut self, n: usize) -> (&mut [f32], &mut [f32]) {
+        let m = &mut self.tracks[MASTER];
+        (&mut m.l[..n], &mut m.r[..n])
     }
 
     pub(crate) fn set_tempo(&mut self, bpm: f32) {
