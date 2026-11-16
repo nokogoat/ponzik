@@ -44,6 +44,7 @@ name = "ponzik-engine"
 version = "0.1.0"
 dependencies = [
  "ponzik-dsp",
+ "ponzik-midi",
 ]
 
 [[package]]

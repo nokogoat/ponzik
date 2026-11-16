@@ -9,6 +9,7 @@ use crate::effect::Effect;
 use crate::input::{CALIBRATION_CLICKS, InputChain, InputConsumer, InputSource, InputStrip, RecordBuffer, calibration_click, deinterleave};
 use crate::instrument::Instrument;
 use crate::meter::{PeakMeter, peak};
+use crate::midi_out::{MidiClock, MidiLink, MidiOut};
 use crate::mixer::{INSERT_SLOTS, MASTER, Mixer, SEND_SLOTS, TRACKS};
 use crate::note_fx::NoteFx;
 use crate::rack::{Channel, NOTE_FX_SLOTS};
@@ -105,6 +106,12 @@ pub enum Command {
     /// enregistre l'entrée brute dans `buffer`, rendu plein via
     /// [`Garbage::Calibration`]. `None` interrompt un calibrage en cours.
     Calibrate(Option<Box<RecordBuffer>>),
+    /// Branche (ou débranche) la sortie MIDI : notes des instruments externes
+    /// et horloge. L'ancienne repart en [`Garbage::MidiOut`].
+    SetMidiOut(Option<Box<MidiOut>>),
+    /// Ports (bit par indice de port) qui reçoivent l'horloge MIDI, Start,
+    /// Stop, Continue et Song Position Pointer ; 0 : horloge coupée.
+    SetMidiClock { ports: u32 },
 }
 
 impl std::fmt::Debug for Command {
@@ -147,6 +154,8 @@ impl std::fmt::Debug for Command {
             Command::Record { .. } => "Record",
             Command::Audition(_) => "Audition",
             Command::Calibrate(_) => "Calibrate",
+            Command::SetMidiOut(_) => "SetMidiOut",
+            Command::SetMidiClock { .. } => "SetMidiClock",
         };
         f.write_str(name)
     }
@@ -166,6 +175,7 @@ pub enum Garbage {
     Audition(Box<Audition>),
     /// Calibrage terminé : gardé à part par [`EngineHandle::take_calibration`].
     Calibration(Box<RecordBuffer>),
+    MidiOut(Box<MidiOut>),
 }
 
 /// Ce que le moteur publie pour l'interface.
@@ -365,6 +375,9 @@ pub struct Engine {
     returning: Vec<Garbage>,
     /// Pré-écoute de l'Atelier.
     audition: Option<Box<Audition>>,
+    /// Sortie MIDI (instruments externes) et horloge MIDI.
+    midi: MidiLink,
+    midi_clock: MidiClock,
 }
 
 /// État de lecture d'un clip audio entre deux blocs.
@@ -443,6 +456,8 @@ impl Engine {
             cal_clock: 0,
             returning: Vec::with_capacity(2 * MAX_RECORDINGS + 2),
             audition: None,
+            midi: MidiLink::new(sample_rate),
+            midi_clock: MidiClock::default(),
         };
         let handle = EngineHandle {
             commands: tx,
@@ -534,6 +549,9 @@ impl Engine {
 
     fn run(&mut self, out: &mut [f32], channels: usize, stop_at_end: bool, input: &[f32], in_channels: usize) -> usize {
         let started = Instant::now();
+        // Repère de temps avant les commandes : les notes jouées en direct
+        // (et les coupures) sont datées du début de ce bloc.
+        self.midi.begin(self.clock, self.mixer.latency());
         self.drain_commands();
         self.plan_monitoring();
         let channels = channels.max(1);
@@ -673,6 +691,8 @@ impl Engine {
             self.events.clear();
         }
         let offset_of = |tick: f64| ((((tick - pos_start) * spt) - 1e-6).ceil().max(0.0) as usize).min(n - 1);
+        let contiguous = (pos_start - self.audio_next).abs() < 1e-6;
+        self.midi_clock.process(&mut self.midi, self.playing, pos_start, contiguous, n, spt, self.clock);
 
         self.mixer.clear(n);
         let mut i = 0;
@@ -709,6 +729,9 @@ impl Engine {
                 end = end.min((at.saturating_sub(self.clock) as usize).clamp(i + 1, n));
             }
             self.render_channels(i, end - i);
+            for ch in &mut self.channels {
+                drain_midi(&mut self.midi, &mut *ch.instrument, now);
+            }
             i = end;
         }
 
@@ -1026,14 +1049,18 @@ impl Engine {
             }
             Command::RemoveChannel(idx) => {
                 if idx < self.channels.len() {
-                    let ch = self.channels.remove(idx);
+                    let mut ch = self.channels.remove(idx);
+                    // Un instrument externe ne doit laisser aucune note pendue.
+                    ch.silence();
+                    drain_midi(&mut self.midi, &mut *ch.instrument, self.clock);
                     self.trash(Garbage::Channel(Box::new(ch)));
                 }
             }
             Command::ReplaceInstrument { channel, instrument } => {
                 if let Some(ch) = self.channels.get_mut(channel) {
                     ch.silence();
-                    let old = std::mem::replace(&mut ch.instrument, instrument);
+                    let mut old = std::mem::replace(&mut ch.instrument, instrument);
+                    drain_midi(&mut self.midi, &mut *old, self.clock);
                     self.trash(Garbage::Instrument(old));
                 } else {
                     self.trash(Garbage::Instrument(instrument));
@@ -1223,9 +1250,25 @@ impl Engine {
                     self.calibration = Some(cal);
                 }
             }
+            Command::SetMidiOut(out) => {
+                // L'horloge repart (Start ou Continue) sur la nouvelle sortie.
+                let ports = self.midi_clock.ports;
+                self.midi_clock.set_ports(&mut self.midi, 0, self.clock);
+                self.midi_clock.ports = ports;
+                if let Some(old) = std::mem::replace(&mut self.midi.out, out) {
+                    self.trash(Garbage::MidiOut(old));
+                }
+                self.midi.begin(self.clock, self.mixer.latency());
+            }
+            Command::SetMidiClock { ports } => self.midi_clock.set_ports(&mut self.midi, ports, self.clock),
         }
         self.state.playing.store(self.playing, Ordering::Relaxed);
     }
+}
+
+/// Programme les messages MIDI que `instrument` a produits, à l'échantillon `now`.
+fn drain_midi(link: &mut MidiLink, instrument: &mut dyn Instrument, now: u64) {
+    instrument.drain_midi(&mut |ev| link.send(ev.port, now as i64 + ev.offset as i64, ev.message));
 }
 
 /// Instrument muet, utilisé comme bouche-trou.
@@ -1527,6 +1570,87 @@ mod tests {
         // Boucle de 48 ticks (12 000 échantillons) qui ne contient que le pas 1.
         run(&mut engine, 30_000, 256);
         assert_eq!(ons(&probe), [0, 12_000, 24_000]);
+    }
+
+    /// Canal External MIDI (port 1, canal MIDI 3) sur un pattern, la file de
+    /// sortie MIDI servant de port factice.
+    fn setup_midi(steps: &[usize]) -> (Engine, EngineHandle, ponzik_midi::out::MessageReceiver) {
+        let mut ext = crate::registry::create_instrument("midi_out").unwrap();
+        ext.set_param(0, 1.0);
+        ext.set_param(1, 2.0);
+        let ch = Channel::new("synth", ext);
+        let seq = Sequence { patterns: vec![pattern(steps)], ..Default::default() };
+        let (engine, mut handle) = Engine::new(SR, vec![ch], seq);
+        let (tx, rx) = ponzik_midi::out::queue(16_384);
+        handle.send(Command::SetMidiOut(Some(Box::new(MidiOut::new(tx, 0.0))))).unwrap();
+        (engine, handle, rx)
+    }
+
+    fn midi_sent(rx: &mut ponzik_midi::out::MessageReceiver) -> Vec<(u8, u64, Vec<u8>)> {
+        std::iter::from_fn(|| rx.pop()).map(|m| (m.port, m.frame, m.message.bytes().to_vec())).collect()
+    }
+
+    #[test]
+    fn external_midi_notes_and_clock_are_sample_accurate() {
+        for block in [64, 333, 1024] {
+            let (mut engine, mut handle, mut rx) = setup_midi(&[0, 4]);
+            handle.send(Command::SetMidiClock { ports: 0b1 }).unwrap();
+            handle.send(Command::Play).unwrap();
+            // 120 BPM, 48 kHz : 250 échantillons par tick, 1 000 par impulsion, 6 000 par pas.
+            run(&mut engine, 30_000, block);
+            let sent = midi_sent(&mut rx);
+            let notes: Vec<(u8, u64, Vec<u8>)> = sent.iter().filter(|m| m.0 == 1).cloned().collect();
+            assert_eq!(
+                notes,
+                [
+                    (1, 0, vec![0x92, 60, 127]),
+                    (1, 6_000, vec![0x82, 60, 0]),
+                    (1, 24_000, vec![0x92, 60, 127]),
+                ],
+                "block {block}"
+            );
+            let clock: Vec<(u64, Vec<u8>)> = sent.iter().filter(|m| m.0 == 0).map(|m| (m.1, m.2.clone())).collect();
+            assert_eq!(clock[0], (0, vec![0xFA]), "block {block}");
+            let pulses: Vec<u64> = clock[1..].iter().map(|c| c.0).collect();
+            assert_eq!(pulses, (0..30).map(|k| k * 1_000).collect::<Vec<_>>(), "block {block}");
+            assert!(clock[1..].iter().all(|c| c.1 == [0xF8]));
+            // Ordre d'émission : l'horloge d'un instant passe avant la note du même instant.
+            let first_note = sent.iter().position(|m| m.0 == 1).unwrap();
+            assert_eq!(sent[..first_note].len(), 2);
+        }
+    }
+
+    #[test]
+    fn stop_releases_external_notes_and_stops_the_clock() {
+        let (mut engine, mut handle, mut rx) = setup_midi(&[0]);
+        handle.send(Command::SetMidiClock { ports: 0b1 }).unwrap();
+        handle.send(Command::Play).unwrap();
+        run(&mut engine, 3_000, 256);
+        midi_sent(&mut rx);
+        handle.send(Command::Stop).unwrap();
+        run(&mut engine, 512, 256);
+        let sent = midi_sent(&mut rx);
+        let at = 3_000; // Début du bloc qui suit l'arrêt.
+        assert!(sent.contains(&(1, at, vec![0x82, 60, 0])), "{sent:?}");
+        assert!(sent.contains(&(1, at, vec![0xB2, 123, 0])), "{sent:?}");
+        assert!(sent.contains(&(0, at, vec![0xFC])), "{sent:?}");
+        assert!(!sent.iter().any(|m| m.2 == [0xF8]), "no clock once stopped");
+        // Locate à l'arrêt : Song Position Pointer (mesure 2 = 16 doubles croches).
+        handle.send(Command::Locate(384.0)).unwrap();
+        run(&mut engine, 256, 256);
+        assert_eq!(midi_sent(&mut rx), [(0, 3_512, vec![0xF2, 16, 0])]);
+    }
+
+    #[test]
+    fn removing_an_external_channel_releases_its_notes() {
+        let (mut engine, mut handle, mut rx) = setup_midi(&[0]);
+        handle.send(Command::Play).unwrap();
+        run(&mut engine, 1_000, 500);
+        midi_sent(&mut rx);
+        handle.send(Command::RemoveChannel(0)).unwrap();
+        run(&mut engine, 500, 500);
+        let sent: Vec<Vec<u8>> = midi_sent(&mut rx).into_iter().map(|m| m.2).collect();
+        assert_eq!(sent, [vec![0x82, 60, 0], vec![0xB2, 123, 0]]);
     }
 
     #[test]

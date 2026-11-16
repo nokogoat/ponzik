@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::midi_out::MidiOutEvent;
 use crate::param::Params;
 use crate::sample::Sample;
 
@@ -32,4 +33,11 @@ pub trait Instrument: Params + Send {
 
     /// Ajoute (`+=`) le rendu dans `left` et `right`, de même longueur.
     fn render(&mut self, left: &mut [f32], right: &mut [f32]);
+
+    /// Messages MIDI à envoyer vers le matériel (instrument externe), produits
+    /// depuis le dernier appel. Le moteur l'appelle après chaque sous-bloc
+    /// rendu : tout ce qui a été produit depuis l'est à l'instant du début de
+    /// ce sous-bloc (plus le décalage propre de chaque message). Thread audio :
+    /// ni allocation, ni blocage.
+    fn drain_midi(&mut self, _out: &mut dyn FnMut(MidiOutEvent)) {}
 }
