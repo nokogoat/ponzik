@@ -287,7 +287,7 @@ should guide the order.
 | V4-24 | **Manual track delay** (± ms per mixer track) | Fix a late sample or a slow external instrument | S | engine, ui (mixer.rs) | – | ⬜ |
 | V4-25 | **Cue and pre-listen bus** on a second output | Preview clips and samples in headphones while the mix plays (Live, Bitwig) | M | engine, audio, ui | V4-23 | ⬜ |
 | V4-26 | **Collect all and save**: copy every referenced file into the project folder | Move a project to another machine without missing samples | S | project | – | ⬜ |
-| V4-27 | **Free bundled sound library**: drums, loops and presets for every native device | A new user needs sounds in the first minute | M | content, ui | V2-22 | ⬜ |
+| V4-27 | **Free bundled sound library**: drums, loops and presets for every native device | A new user needs sounds in the first minute | M | content, ui | V2-22 | ✅ |
 | V4-28 | **Similar-sound search** in the browser (spectral fingerprint per sample) | Find another snare like this one (Live, Logic 13) | M | dsp, ui | V2-22 | ⬜ |
 | V4-29 | **Destructive sample editor**: trim, normalize, fade, reverse, loop points, with undo | Clean up a sample without leaving the DAW (FL Edison) | M | project, ui | – | ⬜ |
 | V4-30 | **Score and tab view** | Songwriters, students and guitarists read notation and tabs (Cubase, Logic, Studio Pro 8) | L | ui, project | – | ⬜ |
