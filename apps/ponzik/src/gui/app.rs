@@ -2794,3 +2794,21 @@ fn master_spectrum(sample_rate: u32) -> SpectrumAnalyzer {
     s.set_tilt(4.5);
     s
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recovery_detail_strips_the_timestamp() {
+        let detail = recovery_detail(std::path::Path::new("/nulle/part/Mon-morceau-20261116-143200-123.ponzik"));
+        assert_eq!(detail, "Mon-morceau");
+    }
+
+    #[test]
+    fn scale_labels_are_short() {
+        assert_eq!(scale_label(9, ScaleKind::Minor), "La mineur");
+        assert_eq!(scale_label(1, ScaleKind::Major), "Do# majeur");
+        assert_eq!(scale_label(4, ScaleKind::Chromatic), "Chromatique");
+    }
+}
