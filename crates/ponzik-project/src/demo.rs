@@ -69,7 +69,7 @@ pub fn demo_project() -> Project {
             p.add_note(
                 pat,
                 bass,
-                Note { start: step * TICKS_PER_STEP, len: len * TICKS_PER_STEP * 4 / 5, key, vel: 0.9 },
+                Note { start: step * TICKS_PER_STEP, len: len * TICKS_PER_STEP * 4 / 5, key, vel: 0.9, ..Note::DEFAULT },
             );
         }
     };

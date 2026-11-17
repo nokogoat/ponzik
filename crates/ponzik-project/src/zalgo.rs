@@ -62,7 +62,7 @@ fn secs(s: f32) -> u32 {
 }
 
 fn note(p: &mut Project, pat: usize, ch: usize, start: u32, len: u32, key: u8, vel: f32) {
-    p.add_note(pat, ch, Note { start, len, key, vel });
+    p.add_note(pat, ch, Note { start, len, key, vel, ..Note::DEFAULT });
 }
 
 /// Percussion hits on the sixteenth grid of `bar`: (step, velocity).

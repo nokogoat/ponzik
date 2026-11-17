@@ -29,7 +29,7 @@ fn inst(kind: &str, params: &[(u32, f32)]) -> InstrumentDef {
 /// Pose des frappes : (pas de double-croche, vélocité) ; la note règle l'accord de la percussion.
 fn hits(p: &mut Project, pat: usize, ch: usize, bar: u32, steps: &[(u32, f32)], key: u8) {
     for &(s, vel) in steps {
-        p.add_note(pat, ch, Note { start: bar * TICKS_PER_BAR + s * T16, len: T16, key, vel });
+        p.add_note(pat, ch, Note { start: bar * TICKS_PER_BAR + s * T16, len: T16, key, vel, ..Note::DEFAULT });
     }
 }
 
@@ -40,7 +40,7 @@ fn roll(p: &mut Project, pat: usize, ch: usize, bar: u32, from: u32, to: u32, ba
     for i in 0..n {
         let key = base_key + (rise as u32 * i / n.max(1)) as u8;
         let vel = 0.45 + 0.5 * i as f32 / n as f32;
-        p.add_note(pat, ch, Note { start: bar * TICKS_PER_BAR + from * T16 + i * T32, len: T32, key, vel });
+        p.add_note(pat, ch, Note { start: bar * TICKS_PER_BAR + from * T16 + i * T32, len: T32, key, vel, ..Note::DEFAULT });
     }
 }
 
@@ -133,7 +133,7 @@ pub fn demo_breakcore() -> Project {
     roll(&mut p, chop, snare, 1, 8, 16, 58, 12);
     for i in 0..32 {
         let vel = 0.3 + 0.4 * ((i % 4) as f32 / 3.0);
-        p.add_note(chop, hat, Note { start: i * T32 * 2, len: T32, key: 60, vel });
+        p.add_note(chop, hat, Note { start: i * T32 * 2, len: T32, key: 60, vel, ..Note::DEFAULT });
     }
 
     // Pattern 3 : ligne acide en Fa mineur, glissés et accents, sub et stabs.
@@ -163,13 +163,13 @@ pub fn demo_breakcore() -> Project {
             let shift = if bar == 1 && i >= 8 { -2 } else { 0 };
             let len = if slide { T16 + T32 } else { T16 * 3 / 4 };
             let key = (41 + st + shift) as u8;
-            p.add_note(acid_p, acid, Note { start: bar * TICKS_PER_BAR + i as u32 * T16, len, key, vel });
+            p.add_note(acid_p, acid, Note { start: bar * TICKS_PER_BAR + i as u32 * T16, len, key, vel, ..Note::DEFAULT });
         }
-        p.add_note(acid_p, sub, Note { start: bar * TICKS_PER_BAR, len: TICKS_PER_BAR / 2, key: 29, vel: 0.9 });
-        p.add_note(acid_p, sub, Note { start: bar * TICKS_PER_BAR + TICKS_PER_BAR / 2, len: TICKS_PER_BAR / 2, key: if bar == 0 { 32 } else { 27 }, vel: 0.9 });
+        p.add_note(acid_p, sub, Note { start: bar * TICKS_PER_BAR, len: TICKS_PER_BAR / 2, key: 29, vel: 0.9, ..Note::DEFAULT });
+        p.add_note(acid_p, sub, Note { start: bar * TICKS_PER_BAR + TICKS_PER_BAR / 2, len: TICKS_PER_BAR / 2, key: if bar == 0 { 32 } else { 27 }, vel: 0.9, ..Note::DEFAULT });
         for step in [2u32, 7, 10, 14] {
             for key in [53u8, 56, 60, 63] {
-                p.add_note(acid_p, stab, Note { start: bar * TICKS_PER_BAR + step * T16, len: T16, key, vel: 0.75 });
+                p.add_note(acid_p, stab, Note { start: bar * TICKS_PER_BAR + step * T16, len: T16, key, vel: 0.75, ..Note::DEFAULT });
             }
         }
     }
@@ -180,9 +180,9 @@ pub fn demo_breakcore() -> Project {
     p.patterns[breath].len = 2 * TICKS_PER_BAR;
     for (bar, chord) in [(0u32, [53u8, 56, 60]), (1, [51, 55, 58])] {
         for key in chord {
-            p.add_note(breath, pad, Note { start: bar * TICKS_PER_BAR, len: TICKS_PER_BAR, key, vel: 0.7 });
+            p.add_note(breath, pad, Note { start: bar * TICKS_PER_BAR, len: TICKS_PER_BAR, key, vel: 0.7, ..Note::DEFAULT });
         }
-        p.add_note(breath, sub, Note { start: bar * TICKS_PER_BAR, len: TICKS_PER_BAR, key: chord[0] - 24, vel: 0.7 });
+        p.add_note(breath, sub, Note { start: bar * TICKS_PER_BAR, len: TICKS_PER_BAR, key: chord[0] - 24, vel: 0.7, ..Note::DEFAULT });
     }
     hits(&mut p, breath, kick, 0, &[(0, 0.9)], 60);
     hits(&mut p, breath, stab, 1, &[(14, 0.6)], 60);

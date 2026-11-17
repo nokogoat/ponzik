@@ -473,6 +473,7 @@ fn load_note(v: &Json) -> Option<Note> {
         len: u32_or(n.get(1), 1).max(1),
         key: u32_or(n.get(2), 60).min(127) as u8,
         vel: f32_or(n.get(3), 0.8).clamp(0.0, 1.0),
+        ..Note::DEFAULT
     })
 }
 

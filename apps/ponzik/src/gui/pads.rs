@@ -343,7 +343,7 @@ impl App {
             }
             for k in (2..pat.len / step).step_by(4) {
                 let vel = if k % 8 == 2 { 1.0 } else { 0.45 };
-                notes.push(ponzik_engine::Note { start: k * step, len: step, key: FIRST_NOTE + 6, vel });
+                notes.push(ponzik_engine::Note { start: k * step, len: step, key: FIRST_NOTE + 6, vel, ..ponzik_engine::Note::DEFAULT });
             }
             notes.sort_by_key(|n| n.start);
         }

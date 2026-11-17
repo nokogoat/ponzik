@@ -103,7 +103,7 @@ impl App {
         // Début quantifié à la double-croche, durée au moins d'un demi-pas.
         let step = TICKS_PER_STEP as f64;
         let q = ((start / step).round() * step) % len_pat;
-        let note = Note { start: q as u32, len: (len.round() as u32).max(TICKS_PER_STEP / 2), key: h.key, vel: h.vel };
+        let note = Note { start: q as u32, len: (len.round() as u32).max(TICKS_PER_STEP / 2), key: h.key, vel: h.vel, ..Note::DEFAULT };
         if h.channel < self.project.channels.len() {
             self.project.add_note(pat, h.channel, note);
             self.commit(tr("Record notes"));

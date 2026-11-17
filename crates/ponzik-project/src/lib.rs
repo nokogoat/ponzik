@@ -663,7 +663,7 @@ impl Project {
             .map(|p| {
                 let mut notes = p.notes.clone();
                 notes.resize(n, Vec::new());
-                let mut pat = Pattern { len: p.len, notes };
+                let mut pat = Pattern { len: p.len, notes, ratchet_span: 0 };
                 pat.sort();
                 pat
             })
@@ -935,7 +935,7 @@ impl Project {
             }
             (None, true) => {
                 let at = notes.partition_point(|n| n.start < start);
-                notes.insert(at, Note { start, len: TICKS_PER_STEP, key, vel: 0.8 });
+                notes.insert(at, Note { start, len: TICKS_PER_STEP, key, vel: 0.8, ..Note::DEFAULT });
                 true
             }
         }

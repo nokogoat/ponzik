@@ -1101,7 +1101,7 @@ impl App {
             let bpm = doc.bpm.unwrap_or(self.project.bpm) as f64;
             let tick = |frame: usize| ((frame - b[0]) as f64 / sr * bpm / 60.0 * PPQ as f64).round() as u32;
             let notes: Vec<Note> = (0..n)
-                .map(|k| Note { start: tick(b[k]), len: (tick(b[k + 1]) - tick(b[k])).max(1), key: 60 + k as u8, vel: 0.8 })
+                .map(|k| Note { start: tick(b[k]), len: (tick(b[k + 1]) - tick(b[k])).max(1), key: 60 + k as u8, vel: 0.8, ..Note::DEFAULT })
                 .collect();
             let end = tick(b[n]);
             let p = self.project.add_pattern();

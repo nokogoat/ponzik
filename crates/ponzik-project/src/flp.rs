@@ -970,7 +970,7 @@ pub fn import_flp(
                 tick(n.len).clamp(1, MAX_TICK)
             };
             end = end.max(start.saturating_add(len));
-            notes[ch].push(Note { start, len, key: n.key.min(127) as u8, vel: (n.vel as f32 / 128.0).clamp(0.0, 1.0) });
+            notes[ch].push(Note { start, len, key: n.key.min(127) as u8, vel: (n.vel as f32 / 128.0).clamp(0.0, 1.0), ..Note::DEFAULT });
             kept += 1;
         }
         let looped = tick(pat.length).min(MAX_TICK);
@@ -1440,11 +1440,11 @@ mod tests {
         assert_eq!(
             intro.notes[0],
             [
-                Note { start: 0, len: TICKS_PER_STEP, key: 60, vel: 100.0 / 128.0 },
-                Note { start: 96, len: TICKS_PER_STEP, key: 60, vel: 1.0 }
+                Note { start: 0, len: TICKS_PER_STEP, key: 60, vel: 100.0 / 128.0, ..Note::DEFAULT },
+                Note { start: 96, len: TICKS_PER_STEP, key: 60, vel: 1.0, ..Note::DEFAULT }
             ]
         );
-        assert_eq!(intro.notes[1], [Note { start: 192, len: 192, key: 64, vel: 0.5 }]);
+        assert_eq!(intro.notes[1], [Note { start: 192, len: 192, key: 64, vel: 0.5, ..Note::DEFAULT }]);
         assert_eq!(p.patterns[1].name, "Empty");
 
         // Playlist: two pattern clips, the automation clip is reported.

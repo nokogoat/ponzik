@@ -227,7 +227,7 @@ pub fn read_smf(bytes: &[u8]) -> Result<MidiFile, String> {
                 .map(|n| {
                     let start = scale(n.start);
                     let len = scale(n.end).saturating_sub(start).max(1);
-                    Note { start, len, key: n.key, vel: f32::from(n.vel) / 127.0 }
+                    Note { start, len, key: n.key, vel: f32::from(n.vel) / 127.0, ..Note::DEFAULT }
                 })
                 .collect();
             notes.sort_by_key(|n| (n.start, n.key));
@@ -468,7 +468,7 @@ mod tests {
         let kick = p.add_channel("Kick", InstrumentDef::new("drumsynth"), 36);
         p.add_channel("Vide", InstrumentDef::new("pulse"), 60);
         for (start, len, key, vel) in [(0, 48, 36, 0.8), (48, 48, 36, 0.5), (96, 192, 43, 1.0), (96, 24, 48, 0.33)] {
-            p.add_note(0, bass, Note { start, len, key, vel });
+            p.add_note(0, bass, Note { start, len, key, vel, ..Note::DEFAULT });
         }
         for step in [0, 4, 8, 12] {
             p.set_step(0, kick, step, true);
@@ -501,8 +501,8 @@ mod tests {
     fn note_off_before_note_on_at_equal_ticks() {
         let mut p = Project::empty();
         let ch = p.add_channel("Lead", InstrumentDef::new("pulse"), 60);
-        p.add_note(0, ch, Note { start: 0, len: 96, key: 60, vel: 1.0 });
-        p.add_note(0, ch, Note { start: 96, len: 96, key: 60, vel: 1.0 });
+        p.add_note(0, ch, Note { start: 0, len: 96, key: 60, vel: 1.0, ..Note::DEFAULT });
+        p.add_note(0, ch, Note { start: 96, len: 96, key: 60, vel: 1.0, ..Note::DEFAULT });
         let f = read_smf(&write_smf(&p, 0)).unwrap();
         assert_eq!(keys(&f.tracks[0]), [(0, 96, 60), (96, 96, 60)]);
     }
@@ -542,8 +542,8 @@ mod tests {
                 channel: 0,
                 drums: false,
                 notes: vec![
-                    Note { start: 0, len: TICKS_PER_BAR + 1, key: 60, vel: 1.0 },
-                    Note { start: TICKS_PER_BAR * 70, len: 96, key: 62, vel: 1.0 },
+                    Note { start: 0, len: TICKS_PER_BAR + 1, key: 60, vel: 1.0, ..Note::DEFAULT },
+                    Note { start: TICKS_PER_BAR * 70, len: 96, key: 62, vel: 1.0, ..Note::DEFAULT },
                 ],
             }],
         };

@@ -466,7 +466,7 @@ mod tests {
     fn regions_render_one_file_per_section_through_the_tempo_map() {
         let mut p = Project::empty();
         let a = p.add_channel("A", InstrumentDef::new("pulse"), 60);
-        p.add_note(0, a, Note { start: 0, len: TICKS_PER_STEP, key: 60, vel: 0.5 });
+        p.add_note(0, a, Note { start: 0, len: TICKS_PER_STEP, key: 60, vel: 0.5, ..Note::DEFAULT });
         for bar in 0..6 {
             p.clips.push(crate::ClipDef { pattern: 0, lane: 0, start: bar * TICKS_PER_BAR, len: TICKS_PER_BAR, offset: 0 });
         }
@@ -511,7 +511,7 @@ mod tests {
     fn export_removes_the_compensated_latency() {
         let mut p = Project::empty();
         let a = p.add_channel("A", InstrumentDef::new("pulse"), 60);
-        p.add_note(0, a, Note { start: 0, len: TICKS_PER_STEP * 2, key: 60, vel: 0.5 });
+        p.add_note(0, a, Note { start: 0, len: TICKS_PER_STEP * 2, key: 60, vel: 0.5, ..Note::DEFAULT });
         let onset = |p: &Project| {
             let out = render_song(p, SR, &no_samples, RenderMode::Pattern(0, 1));
             out.iter().position(|s| s.abs() > 1e-4).unwrap()
@@ -529,9 +529,9 @@ mod tests {
         let b = p.add_channel("B", InstrumentDef::new("pulse"), 67);
         let m = p.add_channel("Muet", InstrumentDef::new("pulse"), 72);
         p.channels[m].muted = true;
-        p.add_note(0, a, Note { start: 0, len: TICKS_PER_STEP * 2, key: 60, vel: 0.5 });
-        p.add_note(0, b, Note { start: TICKS_PER_STEP * 8, len: TICKS_PER_STEP * 2, key: 67, vel: 0.5 });
-        p.add_note(0, m, Note { start: 0, len: TICKS_PER_STEP * 2, key: 72, vel: 0.5 });
+        p.add_note(0, a, Note { start: 0, len: TICKS_PER_STEP * 2, key: 60, vel: 0.5, ..Note::DEFAULT });
+        p.add_note(0, b, Note { start: TICKS_PER_STEP * 8, len: TICKS_PER_STEP * 2, key: 67, vel: 0.5, ..Note::DEFAULT });
+        p.add_note(0, m, Note { start: 0, len: TICKS_PER_STEP * 2, key: 72, vel: 0.5, ..Note::DEFAULT });
         let mode = RenderMode::Pattern(0, 1);
         let stems = render_stems(&p, SR, &no_samples, mode);
         assert_eq!(stems.iter().map(|(t, _)| *t).collect::<Vec<_>>(), [p.channels[a].track, p.channels[b].track]);

@@ -131,7 +131,7 @@ pub fn capture(phrase: &[LoggedNote], project_bpm: f32, bar: u32) -> Option<Capt
         let stop = at(n.off.unwrap_or(n.on)).round();
         let len = (stop - start).max(1.0);
         end = end.max(start + len);
-        notes.push((n.channel, Note { start: start as u32, len: len as u32, key: n.key, vel: n.vel.clamp(0.0, 1.0) }));
+        notes.push((n.channel, Note { start: start as u32, len: len as u32, key: n.key, vel: n.vel.clamp(0.0, 1.0), ..Note::DEFAULT }));
     }
     let len = ((end / bar).ceil().max(1.0) * bar) as u32;
     Some(Captured { notes, len, bpm, detected })

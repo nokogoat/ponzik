@@ -91,14 +91,14 @@ fn insert(p: &mut Project, ch: usize, slot: usize, effect: Option<EffectDef>) {
 fn hits(p: &mut Project, ch: usize, steps: &[u32], vel: f32) {
     for &s in steps {
         let key = p.channels[ch].root_note;
-        p.add_note(0, ch, Note { start: s * TICKS_PER_STEP, len: TICKS_PER_STEP, key, vel });
+        p.add_note(0, ch, Note { start: s * TICKS_PER_STEP, len: TICKS_PER_STEP, key, vel, ..Note::DEFAULT });
     }
 }
 
 /// Notes mélodiques du premier pattern : (pas, note, durée en pas).
 fn line(p: &mut Project, ch: usize, notes: &[(u32, u8, u32)], vel: f32) {
     for &(step, key, len) in notes {
-        p.add_note(0, ch, Note { start: step * TICKS_PER_STEP, len: len * TICKS_PER_STEP, key, vel });
+        p.add_note(0, ch, Note { start: step * TICKS_PER_STEP, len: len * TICKS_PER_STEP, key, vel, ..Note::DEFAULT });
     }
 }
 

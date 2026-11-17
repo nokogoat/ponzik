@@ -15,6 +15,64 @@ pub const TICKS_PER_STEP: u32 = PPQ / 4;
 /// carte des signatures, voir [`TempoMap`]).
 pub const TICKS_PER_BAR: u32 = PPQ * 4;
 
+/// Most repeats a note can ratchet into.
+pub const MAX_RATCHET: u8 = 8;
+
+/// When a note plays, counted in passes of its pattern (a pattern looping, or
+/// each repeat inside a playlist clip or a session slot), like Elektron's trig
+/// conditions.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum NoteCond {
+    #[default]
+    Always,
+    /// The first pass only.
+    First,
+    /// Every pass but the first.
+    NotFirst,
+    /// Pass `n` (from 1) of every `m`: `Every(1, 2)` plays one pass out of two,
+    /// `Every(3, 4)` the third of every four.
+    Every(u8, u8),
+}
+
+impl NoteCond {
+    /// True if the note plays on pass `pass` (0 is the first).
+    pub fn holds(self, pass: i64) -> bool {
+        match self {
+            Self::Always => true,
+            Self::First => pass == 0,
+            Self::NotFirst => pass != 0,
+            Self::Every(n, m) => {
+                let m = i64::from(m.max(1));
+                pass.rem_euclid(m) == (i64::from(n.max(1)) - 1) % m
+            }
+        }
+    }
+
+    /// Short label, also the project file id: "1:2", "first", "!first", "" for always.
+    pub fn id(self) -> String {
+        match self {
+            Self::Always => String::new(),
+            Self::First => "first".into(),
+            Self::NotFirst => "!first".into(),
+            Self::Every(n, m) => format!("{n}:{m}"),
+        }
+    }
+
+    /// Inverse of [`NoteCond::id`]; `None` for an unknown or out of range condition.
+    pub fn from_id(s: &str) -> Option<Self> {
+        match s.trim() {
+            "" | "always" => Some(Self::Always),
+            "first" => Some(Self::First),
+            "!first" => Some(Self::NotFirst),
+            s => {
+                let (n, m) = s.split_once(':')?;
+                let (n, m) = (n.trim().parse::<u8>().ok()?, m.trim().parse::<u8>().ok()?);
+                ((1..=16).contains(&m) && (1..=m).contains(&n)).then_some(Self::Every(n, m))
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Note {
     /// Début en ticks depuis le début du pattern.
@@ -24,6 +82,60 @@ pub struct Note {
     pub key: u8,
     /// Dans [0, 1].
     pub vel: f32,
+    /// Chance to play on each pass, in percent (100: always).
+    pub prob: u8,
+    /// Passes on which the note plays.
+    pub cond: NoteCond,
+    /// Repeats played inside the note's length, 1 to [`MAX_RATCHET`].
+    pub ratchet: u8,
+}
+
+impl Note {
+    /// A note that always plays, once.
+    pub const DEFAULT: Note = Note { start: 0, len: TICKS_PER_STEP, key: 60, vel: 0.8, prob: 100, cond: NoteCond::Always, ratchet: 1 };
+
+    pub const fn new(start: u32, len: u32, key: u8, vel: f32) -> Self {
+        Self { start, len, key, vel, prob: 100, cond: NoteCond::Always, ratchet: 1 }
+    }
+
+    /// True when the note has a chance, a condition or repeats.
+    pub fn is_varied(&self) -> bool {
+        self.prob < 100 || self.cond != NoteCond::Always || self.ratchet > 1
+    }
+
+    /// Ticks over which the repeats spread: the note's length, at most a bar.
+    pub fn ratchet_span(&self) -> u32 {
+        self.len.clamp(1, TICKS_PER_BAR)
+    }
+
+    /// True if the note plays on pass `pass` of pattern `pattern`, channel
+    /// `channel`: its condition holds and it wins its draw. The draw is a hash
+    /// of where the note is, so a given pass always plays the same way.
+    pub fn plays(&self, pattern: usize, channel: usize, pass: i64) -> bool {
+        if !self.cond.holds(pass) {
+            return false;
+        }
+        if self.prob >= 100 {
+            return true;
+        }
+        let seed = (pattern as u64) << 48 ^ (channel as u64) << 32 ^ u64::from(self.start) << 8 ^ u64::from(self.key);
+        let draw = splitmix(seed ^ (pass as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)) % 100;
+        draw < u64::from(self.prob)
+    }
+}
+
+impl Default for Note {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
+/// SplitMix64 finalizer: a well-mixed hash of `x`.
+pub fn splitmix(x: u64) -> u64 {
+    let mut z = x.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^ (z >> 31)
 }
 
 /// Un pattern contient les notes de tous les canaux, comme dans FL Studio.
@@ -33,17 +145,23 @@ pub struct Pattern {
     pub len: u32,
     /// Notes par canal, triées par début.
     pub notes: Vec<Vec<Note>>,
+    /// Longest span of a ratcheted note (set by [`Pattern::sort`]): how far
+    /// back the sequencer looks for repeats that land in a window.
+    pub ratchet_span: u32,
 }
 
 impl Pattern {
     pub fn new(len: u32, channels: usize) -> Self {
-        Self { len, notes: vec![Vec::new(); channels] }
+        Self { len, notes: vec![Vec::new(); channels], ratchet_span: 0 }
     }
 
+    /// Sorts the notes by start and measures the ratchets: call it after
+    /// changing the notes.
     pub fn sort(&mut self) {
         for notes in &mut self.notes {
             notes.sort_by_key(|n| (n.start, n.key));
         }
+        self.ratchet_span = self.notes.iter().flatten().filter(|n| n.ratchet > 1).map(Note::ratchet_span).max().unwrap_or(0);
     }
 }
 
@@ -315,7 +433,8 @@ pub struct SeqEvent {
     pub channel: usize,
     pub key: u8,
     pub vel: f32,
-    pub len: u32,
+    /// In ticks (a ratchet repeat can last a fraction of a tick).
+    pub len: f64,
 }
 
 impl Sequence {
@@ -398,7 +517,7 @@ impl Sequence {
         match self.mode {
             PlayMode::Pattern(p) => {
                 if let Some(pat) = self.patterns.get(p) {
-                    self.collect_looped(pat, 0.0, from, to, out);
+                    self.collect_looped(p, pat, 0.0, from, to, out);
                 }
             }
             PlayMode::Song => {
@@ -407,7 +526,7 @@ impl Sequence {
                     let a = from.max(clip.start as f64);
                     let b = to.min((clip.start + clip.len) as f64);
                     if a < b {
-                        self.collect_looped(pat, clip.start as f64 - clip.offset as f64, a, b, out);
+                        self.collect_looped(clip.pattern, pat, clip.start as f64 - clip.offset as f64, a, b, out);
                     }
                 }
             }
@@ -417,7 +536,7 @@ impl Sequence {
                     let a = from.max(slot.start as f64);
                     let b = to.min(slot.end as f64);
                     if a < b {
-                        self.collect_looped(pat, slot.start as f64, a, b, out);
+                        self.collect_looped(slot.pattern, pat, slot.start as f64, a, b, out);
                     }
                 }
             }
@@ -426,13 +545,16 @@ impl Sequence {
     }
 
     /// Notes d'un pattern répété à partir de `origin`, dans [`from`, `to`).
-    fn collect_looped(&self, pat: &Pattern, origin: f64, from: f64, to: f64, out: &mut Vec<SeqEvent>) {
+    /// Each pass of pattern `index` draws its chances and checks its
+    /// conditions; a ratcheted note fires its repeats evenly over its span.
+    fn collect_looped(&self, index: usize, pat: &Pattern, origin: f64, from: f64, to: f64, out: &mut Vec<SeqEvent>) {
         let len = pat.len.max(1) as f64;
         let max_swing = TICKS_PER_STEP as f64 * 0.5;
         // Un cycle plus tôt : le swing peut faire déborder une note dans la fenêtre.
         let mut base = origin + ((from - origin) / len).floor() * len - len;
         while base < to {
-            let lo = (from - base - max_swing).max(0.0);
+            let pass = ((base - origin) / len).round() as i64;
+            let lo = (from - base - max_swing - pat.ratchet_span as f64).max(0.0);
             let hi = to - base;
             for (channel, notes) in pat.notes.iter().enumerate() {
                 let first = notes.partition_point(|n| (n.start as f64) < lo);
@@ -441,8 +563,22 @@ impl Sequence {
                         break;
                     }
                     let tick = base + n.start as f64 + self.swing_offset(n.start);
-                    if tick >= from && tick < to && out.len() < out.capacity().max(1) {
-                        out.push(SeqEvent { tick, channel, key: n.key, vel: n.vel, len: n.len });
+                    let repeats = n.ratchet.clamp(1, MAX_RATCHET);
+                    let (step, sub_len) = if repeats > 1 {
+                        let step = n.ratchet_span() as f64 / f64::from(repeats);
+                        (step, step)
+                    } else {
+                        (0.0, n.len.max(1) as f64)
+                    };
+                    let last = tick + step * f64::from(repeats - 1);
+                    if last < from || tick >= to || !n.plays(index, channel, pass) {
+                        continue;
+                    }
+                    for k in 0..repeats {
+                        let t = tick + step * f64::from(k);
+                        if t >= from && t < to && out.len() < out.capacity().max(1) {
+                            out.push(SeqEvent { tick: t, channel, key: n.key, vel: n.vel, len: sub_len });
+                        }
                     }
                 }
             }
@@ -456,7 +592,7 @@ mod tests {
     use super::*;
 
     fn note(start: u32) -> Note {
-        Note { start, len: TICKS_PER_STEP, key: 60, vel: 1.0 }
+        Note::new(start, TICKS_PER_STEP, 60, 1.0)
     }
 
     fn pattern(starts: &[u32], len: u32) -> Pattern {
@@ -509,6 +645,82 @@ mod tests {
         };
         assert_eq!(ticks(&seq, 0.0, 384.0), [0.0, 96.0, 192.0, 240.0, 336.0]);
         assert_eq!(seq.loop_end(), None);
+    }
+
+    #[test]
+    fn conditions_count_passes() {
+        let holds = |c: NoteCond| (0..8).map(|p| c.holds(p)).collect::<Vec<_>>();
+        let (t, f) = (true, false);
+        assert_eq!(holds(NoteCond::Always), [t; 8]);
+        assert_eq!(holds(NoteCond::First), [t, f, f, f, f, f, f, f]);
+        assert_eq!(holds(NoteCond::NotFirst), [f, t, t, t, t, t, t, t]);
+        assert_eq!(holds(NoteCond::Every(1, 2)), [t, f, t, f, t, f, t, f]);
+        assert_eq!(holds(NoteCond::Every(2, 2)), [f, t, f, t, f, t, f, t]);
+        assert_eq!(holds(NoteCond::Every(3, 4)), [f, f, t, f, f, f, t, f]);
+        for c in [NoteCond::Always, NoteCond::First, NoteCond::NotFirst, NoteCond::Every(3, 4), NoteCond::Every(8, 8)] {
+            assert_eq!(NoteCond::from_id(&c.id()), Some(c));
+        }
+        assert_eq!(NoteCond::from_id("5:4"), None);
+        assert_eq!(NoteCond::from_id("0:4"), None);
+        assert_eq!(NoteCond::from_id("x"), None);
+    }
+
+    fn seq_of(notes: Vec<Note>, len: u32) -> Sequence {
+        let mut p = Pattern::new(len, 1);
+        p.notes[0] = notes;
+        p.sort();
+        Sequence { patterns: vec![p], ..Default::default() }
+    }
+
+    #[test]
+    fn conditions_play_on_their_passes() {
+        let n = Note { cond: NoteCond::Every(2, 3), ..note(24) };
+        let seq = seq_of(vec![note(0), n], 96);
+        // Passes 0..6: the conditioned note plays on passes 1 and 4.
+        assert_eq!(ticks(&seq, 0.0, 576.0), [0.0, 96.0, 120.0, 192.0, 288.0, 384.0, 408.0, 480.0]);
+        // Counted from the clip start in song mode.
+        let first = Note { cond: NoteCond::First, ..note(0) };
+        let mut seq = seq_of(vec![first], 96);
+        seq.mode = PlayMode::Song;
+        seq.song_len = 1_000;
+        seq.clips = vec![Clip { pattern: 0, start: 192, len: 288, offset: 0 }, Clip { pattern: 0, start: 576, len: 96, offset: 0 }];
+        assert_eq!(ticks(&seq, 0.0, 1_000.0), [192.0, 576.0]);
+    }
+
+    #[test]
+    fn probability_is_deterministic_per_pass() {
+        let half = Note { prob: 50, ..note(0) };
+        let seq = seq_of(vec![half], 96);
+        let mut out = Vec::with_capacity(1_000);
+        seq.collect(0.0, 96.0 * 400.0, &mut out);
+        let all: Vec<f64> = out.iter().map(|e| e.tick).collect();
+        // Same passes on a second listen, in any window size.
+        let mut pieces = Vec::new();
+        for k in 0..800 {
+            pieces.extend(ticks(&seq, k as f64 * 48.0, (k + 1) as f64 * 48.0));
+        }
+        assert_eq!(all, pieces);
+        assert!((150..250).contains(&all.len()), "{}", all.len());
+        let never = seq_of(vec![Note { prob: 0, ..note(0) }], 96);
+        assert!(ticks(&never, 0.0, 9_600.0).is_empty());
+        let always = seq_of(vec![Note { prob: 100, ..note(0) }], 96);
+        assert_eq!(ticks(&always, 0.0, 6_000.0).len(), 63);
+    }
+
+    #[test]
+    fn ratchets_split_the_note() {
+        let n = Note { ratchet: 4, ..note(24) };
+        let seq = seq_of(vec![n], 96);
+        let mut out = Vec::with_capacity(16);
+        seq.collect(0.0, 96.0, &mut out);
+        assert_eq!(out.iter().map(|e| e.tick).collect::<Vec<_>>(), [24.0, 30.0, 36.0, 42.0]);
+        assert!(out.iter().all(|e| e.len == 6.0));
+        // Repeats still found when the window starts after the note.
+        assert_eq!(ticks(&seq, 33.0, 40.0), [36.0]);
+        assert_eq!(ticks(&seq, 41.0, 121.0), [42.0, 120.0]);
+        // An odd count over a step: fractional ticks.
+        let seq = seq_of(vec![Note { ratchet: 3, ..note(0) }], 96);
+        assert_eq!(ticks(&seq, 0.0, 96.0), [0.0, 8.0, 16.0]);
     }
 
     #[test]

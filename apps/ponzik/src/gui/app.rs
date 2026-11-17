@@ -4178,7 +4178,7 @@ mod tests {
     #[test]
     fn undo_history_is_bounded_in_steps_and_memory() {
         let mut big = Project::empty();
-        let note = ponzik_engine::Note { start: 0, len: 24, key: 60, vel: 0.8 };
+        let note = ponzik_engine::Note { start: 0, len: 24, key: 60, vel: 0.8, ..ponzik_engine::Note::DEFAULT };
         big.patterns[0].notes = vec![vec![note; 10_000]; 4];
         let size = big.approx_bytes();
         assert!(size > 40_000 * std::mem::size_of::<ponzik_engine::Note>(), "{size}");

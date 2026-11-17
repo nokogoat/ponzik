@@ -974,7 +974,7 @@ impl Engine {
         if self.playing {
             self.sequence.collect(pos_start, to, &mut self.events);
             for ev in &self.events {
-                let len = (view.secs_at(ev.tick + ev.len.max(1) as f64) - view.secs_at(ev.tick)) * sr;
+                let len = (view.secs_at(ev.tick + ev.len) - view.secs_at(ev.tick)) * sr;
                 self.event_frames.push((frame_of(ev.tick), len.round().max(1.0) as u64));
             }
         } else {
@@ -1874,7 +1874,7 @@ mod tests {
         let mut p = Pattern::new(16 * TICKS_PER_STEP, 1);
         p.notes[0] = steps
             .iter()
-            .map(|&s| Note { start: s as u32 * TICKS_PER_STEP, len: TICKS_PER_STEP, key: 60, vel: 1.0 })
+            .map(|&s| Note { start: s as u32 * TICKS_PER_STEP, len: TICKS_PER_STEP, key: 60, vel: 1.0, ..Note::DEFAULT })
             .collect();
         p
     }
@@ -1919,6 +1919,36 @@ mod tests {
         handle.send(Command::Play).unwrap();
         run(&mut engine, 7_000, 512);
         assert_eq!(probe.log.lock().unwrap().clone(), [("on", 60, 0), ("off", 60, 6_000)]);
+    }
+
+    #[test]
+    fn ratchets_and_conditions_are_sample_accurate() {
+        for block in [64, 333, 1024] {
+            let probe = Probe::default();
+            let ch = Channel::new("probe", Box::new(probe.clone())).with_track(1);
+            let mut p = Pattern::new(16 * TICKS_PER_STEP, 1);
+            // Step 0: 4 repeats; step 8: one pass out of two.
+            p.notes[0] = vec![
+                Note { ratchet: 4, ..Note::new(0, TICKS_PER_STEP, 60, 1.0) },
+                Note { cond: crate::NoteCond::Every(2, 2), ..Note::new(8 * TICKS_PER_STEP, TICKS_PER_STEP, 62, 1.0) },
+            ];
+            p.sort();
+            let (mut engine, mut handle) = Engine::new(SR, vec![ch], Sequence { patterns: vec![p], ..Default::default() });
+            handle.send(Command::SetBpm(120.0)).unwrap();
+            handle.send(Command::Play).unwrap();
+            // 6000 samples per step, 96 000 per pass: two passes.
+            run(&mut engine, 192_000, block);
+            let log = probe.log.lock().unwrap().clone();
+            let on: Vec<(u8, u64)> = log.iter().filter(|e| e.0 == "on").map(|e| (e.1, e.2)).collect();
+            let off: Vec<(u8, u64)> = log.iter().filter(|e| e.0 == "off").map(|e| (e.1, e.2)).collect();
+            assert_eq!(
+                on,
+                [(60, 0), (60, 1_500), (60, 3_000), (60, 4_500), (60, 96_000), (60, 97_500), (60, 99_000), (60, 100_500), (62, 144_000)],
+                "block {block}"
+            );
+            // Each repeat lasts a quarter of the step.
+            assert_eq!(&off[..4], [(60, 1_500), (60, 3_000), (60, 4_500), (60, 6_000)], "block {block}");
+        }
     }
 
     #[test]
@@ -1967,7 +1997,7 @@ mod tests {
             // Accord do-mi-sol tenu toute la mesure, joué dans le désordre.
             let mut p = Pattern::new(16 * TICKS_PER_STEP, 1);
             p.notes[0] =
-                [67, 60, 64].map(|key| Note { start: 0, len: 16 * TICKS_PER_STEP, key, vel: 0.9 }).to_vec();
+                [67, 60, 64].map(|key| Note { start: 0, len: 16 * TICKS_PER_STEP, key, vel: 0.9, ..Note::DEFAULT }).to_vec();
             handle.send(Command::SetSequence(Box::new(Sequence { patterns: vec![p], ..Default::default() }))).unwrap();
             handle.send(Command::SetNoteFx { channel: 0, slot: 0, fx: note_fx("arpeggiator") }).unwrap();
             handle.send(Command::SetBpm(120.0)).unwrap();

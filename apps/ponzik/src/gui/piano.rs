@@ -577,7 +577,7 @@ impl App {
                     let keys = self.stamp_keys(key as u8);
                     let notes = self.notes_mut(ch);
                     let base = notes.len();
-                    notes.extend(keys.iter().map(|&k| Note { start, len, key: k, vel: 0.8 }));
+                    notes.extend(keys.iter().map(|&k| Note { start, len, key: k, vel: 0.8, ..Note::DEFAULT }));
                     let orig: Vec<(usize, Note)> = (base..notes.len()).map(|i| (i, notes[i])).collect();
                     for &k in &keys {
                         self.anim.set(pop_id(k, start), 0.0);
