@@ -199,6 +199,7 @@ pub enum Shortcut {
     TapTempo,
     Metronome,
     TypingKeyboard,
+    Capture,
     ViewPlaylist,
     ViewRack,
     ViewPiano,
@@ -231,7 +232,7 @@ pub enum Shortcut {
 pub const GROUPS: [&str; 5] = [tr_noop("Transport"), tr_noop("Views"), tr_noop("Pattern"), tr_noop("Edit"), tr_noop("File")];
 
 impl Shortcut {
-    pub const ALL: [Shortcut; 32] = [
+    pub const ALL: [Shortcut; 33] = [
         Shortcut::PlayStop,
         Shortcut::ToggleMode,
         Shortcut::Record,
@@ -253,6 +254,7 @@ impl Shortcut {
         Shortcut::NewPattern,
         Shortcut::NextPattern,
         Shortcut::PrevPattern,
+        Shortcut::Capture,
         Shortcut::Undo,
         Shortcut::Redo,
         Shortcut::History,
@@ -275,6 +277,7 @@ impl Shortcut {
             Shortcut::TapTempo => "tap_tempo",
             Shortcut::Metronome => "metronome",
             Shortcut::TypingKeyboard => "typing_keyboard",
+            Shortcut::Capture => "capture_midi",
             Shortcut::ViewPlaylist => "view_playlist",
             Shortcut::ViewRack => "view_rack",
             Shortcut::ViewPiano => "view_piano",
@@ -316,6 +319,7 @@ impl Shortcut {
             Shortcut::TapTempo => tr("Tap tempo"),
             Shortcut::Metronome => tr("Metronome"),
             Shortcut::TypingKeyboard => tr("Typing keyboard"),
+            Shortcut::Capture => tr("Capture MIDI"),
             Shortcut::ViewPlaylist => tr("Playlist"),
             Shortcut::ViewRack => tr("Channel Rack"),
             Shortcut::ViewPiano => tr("Piano roll"),
@@ -353,6 +357,7 @@ impl Shortcut {
             Shortcut::TapTempo => Icon::Metronome,
             Shortcut::Metronome => Icon::Metronome,
             Shortcut::TypingKeyboard => Icon::Keyboard,
+            Shortcut::Capture => Icon::Midi,
             Shortcut::ViewPlaylist => Icon::Playlist,
             Shortcut::ViewRack => Icon::Rack,
             Shortcut::ViewPiano => Icon::Piano,
@@ -401,7 +406,7 @@ impl Shortcut {
             | Shortcut::ZoomIn
             | Shortcut::ZoomOut
             | Shortcut::ZoomReset => "Views",
-            Shortcut::NewPattern | Shortcut::NextPattern | Shortcut::PrevPattern => "Pattern",
+            Shortcut::NewPattern | Shortcut::NextPattern | Shortcut::PrevPattern | Shortcut::Capture => "Pattern",
             Shortcut::Undo
             | Shortcut::Redo
             | Shortcut::History
@@ -422,6 +427,7 @@ impl Shortcut {
             Shortcut::TapTempo => Combo::key(Char('t')),
             Shortcut::Metronome => Combo::ctrl(Char('m')),
             Shortcut::TypingKeyboard => Combo::ctrl(Char('t')),
+            Shortcut::Capture => Combo::ctrl_shift(Char('c')),
             Shortcut::ViewPlaylist => Combo::key(F(5)),
             Shortcut::ViewRack => Combo::key(F(6)),
             Shortcut::ViewPiano => Combo::key(F(7)),
@@ -567,6 +573,8 @@ mod tests {
         assert_eq!(k.lookup(Key::F(9), NONE), Some(Shortcut::ViewMixer));
         assert_eq!(k.lookup(Key::Char('s'), CTRL), Some(Shortcut::Save));
         assert_eq!(k.lookup(Key::Char('s'), CTRL_SHIFT), Some(Shortcut::SaveAs));
+        assert_eq!(k.lookup(Key::Char('c'), CTRL_SHIFT), Some(Shortcut::Capture));
+        assert_eq!(k.lookup(Key::Char('c'), CTRL), None);
         assert_eq!(k.lookup(Key::Char('s'), NONE), None);
         // Taille de l'interface : Ctrl =, Ctrl −, Ctrl 0 ; sans Ctrl, + et − changent de pattern.
         assert_eq!(k.lookup(Key::Char('='), CTRL), Some(Shortcut::ZoomIn));

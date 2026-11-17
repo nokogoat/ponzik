@@ -5919,3 +5919,27 @@ msgstr "Touch"
 
 msgid "Write"
 msgstr "Write"
+
+msgid "Capture"
+msgstr "Capture"
+
+msgid "Capture MIDI"
+msgstr "Capturer le MIDI"
+
+msgid "Capture MIDI: the last phrase played becomes a pattern"
+msgstr "Capturer le MIDI : la dernière phrase jouée devient un pattern"
+
+msgid "Captured {} at {} BPM (detected)"
+msgstr "Capturé : {} à {} BPM (détecté)"
+
+msgid "Captured {} into \"{}\""
+msgstr "Capturé : {} dans « {} »"
+
+msgid "Nothing to capture: play something on a controller or the typing keyboard"
+msgstr "Rien à capturer : jouez quelque chose sur un contrôleur ou le clavier d'ordinateur"
+
+msgid "Record automation: Touch, Latch, Write"
+msgstr "Enregistrer l'automation : Touch, Latch, Write"
+
+msgid "Settings: MIDI controller links"
+msgstr "Réglages : liens des contrôleurs MIDI"

@@ -484,7 +484,7 @@ impl App {
                         self.playlist.selected = None;
                         self.commit(tr("Delete clip"));
                     }
-                    Key::Char('c') if mods.ctrl => {
+                    Key::Char('c') if mods.ctrl && !mods.shift => {
                         if let Some(i) = sel {
                             self.clipboard_clip = Some(self.project.clips[i]);
                             self.toast(tr("Clip copied"));

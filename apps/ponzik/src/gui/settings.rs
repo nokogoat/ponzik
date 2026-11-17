@@ -567,6 +567,7 @@ impl App {
             Shortcut::TapTempo => Action::TapTempo,
             Shortcut::Metronome => Action::ToggleMetronome,
             Shortcut::TypingKeyboard => Action::ToggleTyping,
+            Shortcut::Capture => Action::CaptureMidi,
             Shortcut::NextView => {
                 let views = self.shown_views();
                 let i = views.iter().position(|v| *v == self.view).map_or(0, |i| (i + 1) % views.len());

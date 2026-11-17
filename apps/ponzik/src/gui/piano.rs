@@ -916,7 +916,7 @@ impl App {
                 }
                 Key::Char('a') if mods.ctrl => self.piano.selected = (0..self.notes(ch).len()).collect(),
                 Key::Char('d') if mods.ctrl => self.piano.selected.clear(),
-                Key::Char('c') if mods.ctrl => {
+                Key::Char('c') if mods.ctrl && !mods.shift => {
                     let notes: Vec<Note> = targets.iter().filter_map(|&i| self.notes(ch).get(i).copied()).collect();
                     let first = notes.iter().map(|n| n.start).min().unwrap_or(0);
                     self.clipboard_notes = notes.into_iter().map(|n| Note { start: n.start - first, ..n }).collect();

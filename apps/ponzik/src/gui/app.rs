@@ -314,6 +314,8 @@ pub enum Action {
     /// Opens or closes a plugin device's own window.
     ToggleEditor(super::devices::Device),
     SetAutoMode(ponzik_project::auto_rec::AutoMode),
+    /// The last phrase played becomes a pattern.
+    CaptureMidi,
     /// Waits for a MIDI control to move, then links it.
     Learn(ponzik_project::midi_map::ControlTarget),
     Unlink(ponzik_project::midi_map::ControlTarget),
@@ -430,6 +432,8 @@ pub struct FontSet {
 struct Toast {
     text: String,
     age: f32,
+    /// A button in the toast: its label and what it does.
+    action: Option<(String, Action)>,
 }
 
 /// État du piano roll.
@@ -614,6 +618,10 @@ pub struct App {
     pub ctl: super::learn::CtlUi,
     /// Live automation recording.
     pub autorec: super::autorec::AutoRec,
+    /// The last minutes of played notes (MIDI capture).
+    pub note_log: ponzik_project::capture::NoteLog,
+    /// Buttons of the toasts drawn last frame (they take the mouse).
+    toast_hits: Vec<Rect>,
 }
 
 impl App {
@@ -737,6 +745,8 @@ impl App {
             mod_ui: Default::default(),
             ctl: Default::default(),
             autorec: Default::default(),
+            note_log: Default::default(),
+            toast_hits: Vec::new(),
         };
         // What the cache knows; the background scan brings the rest.
         app.set_plugins(super::plugins::cached());
@@ -1082,7 +1092,7 @@ impl App {
     }
 
     pub fn toast(&mut self, text: &str) {
-        self.toasts.push(Toast { text: text.to_string(), age: 0.0 });
+        self.toasts.push(Toast { text: text.to_string(), age: 0.0, action: None });
         if self.toasts.len() > 3 {
             self.toasts.remove(0);
         }
@@ -1737,6 +1747,7 @@ impl App {
         let masked;
         let over_card = self.recovery_rect(w).is_some_and(|r| r.contains(input.x, input.y))
             || self.learn_rect(w).is_some_and(|r| r.contains(input.x, input.y))
+            || self.toast_hits.iter().any(|r| r.contains(input.x, input.y))
             || (self.popup.is_none() && self.over_tour(input));
         let ui = if self.popup.is_some() || over_card {
             masked = Input {
@@ -1784,7 +1795,7 @@ impl App {
         } else {
             self.tour.anchors = Default::default();
         }
-        self.toast_layer(c, dt, Rect::new(sb, TOP_BAR, w - sb, h - TOP_BAR - pn));
+        self.toast_layer(c, input, dt, Rect::new(sb, TOP_BAR, w - sb, h - TOP_BAR - pn));
         self.dnd_layer(c, input);
         if self.popup.is_none() {
             self.tooltip_layer(c, input, Rect::new(0.0, 0.0, w, h));
@@ -3277,6 +3288,7 @@ impl App {
             Action::Automate(target, value) => self.create_automation(target, value),
             Action::Learn(target) => self.start_learn(target),
             Action::SetAutoMode(m) => self.set_auto_mode(m),
+            Action::CaptureMidi => self.capture_midi(),
             Action::Unlink(target) => self.unlink(target),
             Action::SaveAs => {
                 let text = self.project.name.clone();
@@ -3642,27 +3654,62 @@ impl App {
         }
     }
 
-    fn toast_layer(&mut self, c: &mut Canvas, dt: f32, area: Rect) {
+    /// A toast with a button (Undo…).
+    pub fn toast_action(&mut self, text: &str, label: &str, action: Action) {
+        self.toast(text);
+        if let Some(last) = self.toasts.last_mut() {
+            last.action = Some((label.to_string(), action));
+        }
+    }
+
+    fn toast_layer(&mut self, c: &mut Canvas, input: &Input, dt: f32, area: Rect) {
         let t = self.theme;
         let mut y = area.bottom() - 16.0;
         let mut i = self.toasts.len();
+        self.toast_hits.clear();
+        let mut run = None;
         while i > 0 {
             i -= 1;
+            // A toast with a button stays longer, and while the mouse is on it.
+            let life = if self.toasts[i].action.is_some() { 6.0 } else { 3.0 };
             self.toasts[i].age += dt;
             let age = self.toasts[i].age;
-            let alpha = (age / 0.18).min(1.0) * ((3.2 - age) / 0.3).clamp(0.0, 1.0);
-            if alpha <= 0.0 && age > 3.0 {
+            let alpha = (age / 0.18).min(1.0) * ((life + 0.2 - age) / 0.3).clamp(0.0, 1.0);
+            if alpha <= 0.0 && age > life {
                 self.toasts.remove(i);
                 continue;
             }
             let text = self.toasts[i].text.clone();
-            let tw = self.fonts.measure(self.f.sans, 13.0, &text).min(area.w - 80.0);
-            let r = Rect::new(area.right() - 16.0 - tw - 40.0, y - 40.0 + (1.0 - alpha) * 8.0, tw + 40.0, 40.0);
+            let action = self.toasts[i].action.clone();
+            let bw = action.as_ref().map_or(0.0, |(l, _)| self.fonts.measure(self.f.sans_med, 12.0, l) + 26.0);
+            let tw = self.fonts.measure(self.f.sans, 13.0, &text).min(area.w - 80.0 - bw);
+            let r = Rect::new(area.right() - 16.0 - tw - 40.0 - bw, y - 40.0 + (1.0 - alpha) * 8.0, tw + 40.0 + bw, 40.0);
             c.fill_rrect(r, 12.0, t.raised_hi.alpha(alpha));
             c.stroke_rrect(r, 12.0, 1.0, t.hairline.alpha(alpha));
             c.fill_circle(r.x + 16.0, r.y + 20.0, 3.0, t.accent.alpha(alpha));
             self.text_fit(c, self.f.sans, 13.0, r.x + 28.0, r.y + 20.0, &text, tw, t.text.alpha(alpha));
+            if let Some((label, act)) = action {
+                let b = Rect::new(r.right() - bw - 6.0, r.y + 7.0, bw, 26.0);
+                let id = wid("toast-act", i, 0);
+                let hov = input.inside && b.contains(input.x, input.y);
+                let hv = self.hover_anim(id, hov);
+                c.fill_rrect(b, 8.0, t.accent.alpha((0.16 + 0.14 * hv) * alpha));
+                self.text_center(c, self.f.sans_med, 12.0, b.x + b.w * 0.5, b.y + 13.0, &label, t.accent.alpha(alpha));
+                self.toast_hits.push(b);
+                if hov {
+                    self.set_cursor(ponzik_window::Cursor::Hand);
+                    // Kept on screen while pointed at.
+                    self.toasts[i].age = self.toasts[i].age.min(life - 0.5);
+                    if input.pressed && self.popup.is_none() {
+                        run = Some((i, act));
+                    }
+                }
+            }
             y -= 48.0;
+        }
+        if let Some((i, act)) = run {
+            self.toasts.remove(i);
+            self.run_action(act, Rect::default());
         }
     }
 }

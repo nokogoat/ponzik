@@ -84,6 +84,8 @@ impl App {
         let count_in = if self.count_in { tr("Turn off the count-in") } else { tr("One-bar count-in before recording") };
         add(count_in.into(), tr("Transport"), none(), Action::ToggleCountIn);
         add(tr("Computer typing keyboard").into(), tr("Transport"), k(S::TypingKeyboard), Action::ToggleTyping);
+        add(tr("Capture MIDI: the last phrase played becomes a pattern").into(), tr("Transport"), k(S::Capture), Action::CaptureMidi);
+        add(tr("Record automation: Touch, Latch, Write").into(), tr("Transport"), none(), Action::Popup(Popup::AutoMode));
         for (title, port) in self.midi_out_palette() {
             add(title, "MIDI", none(), Action::ToggleMidiClock(port));
         }
@@ -95,6 +97,7 @@ impl App {
         // Réglages : une vue masquée se retrouve toujours ici.
         add(tr("Settings: workspace").into(), tr("Settings"), k(S::Settings), Action::Popup(Popup::Settings { tab: 0 }));
         add(tr("Settings: keyboard shortcuts").into(), tr("Settings"), none(), Action::Popup(Popup::Settings { tab: 1 }));
+        add(tr("Settings: MIDI controller links").into(), tr("Settings"), none(), Action::Popup(Popup::Settings { tab: 2 }));
         for (i, (name, desc, _)) in super::settings::presets().into_iter().enumerate() {
             add(tr_fmt!("Profile: {} · {}", name, desc.to_lowercase()), tr("Settings"), none(), Action::ApplyPreset(i));
         }

@@ -8,6 +8,7 @@ mod app;
 mod arrange;
 mod assistant;
 mod automation;
+mod capture;
 mod autorec;
 mod compat;
 mod devices;
@@ -657,6 +658,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // PONZIK_AUTOREC=latch|touch|write: an automation pass being recorded.
     if let Ok(spec) = std::env::var("PONZIK_AUTOREC") {
         app.screenshot_autorec(&spec);
+    }
+    // PONZIK_CAPTURE=1: a phrase played with the transport stopped, captured.
+    if std::env::var_os("PONZIK_CAPTURE").is_some() {
+        app.screenshot_capture();
     }
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {

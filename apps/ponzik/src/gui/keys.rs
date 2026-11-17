@@ -81,12 +81,18 @@ impl App {
             self.record && self.playing && self.counting <= 0.0 && matches!(self.project.mode, PlayMode::Pattern(_));
         let start = recording.then(|| self.cycle_position());
         self.held.push(HeldNote { code, channel: ch, key, vel, start });
+        // MIDI capture: every note, recording or not.
+        let tick = (self.playing && self.counting <= 0.0).then(|| self.engine.position());
+        let now = self.ctl.now();
+        self.note_log.note_on(ch, key, vel, now, tick);
     }
 
     pub fn live_note_off(&mut self, code: u16) {
         let Some(i) = self.held.iter().position(|h| h.code == code) else { return };
         let h = self.held.remove(i);
         self.send(Command::NoteOff { channel: h.channel, note: h.key });
+        let now = self.ctl.now();
+        self.note_log.note_off(h.channel, h.key, now);
         let Some(start) = h.start else { return };
         let pat = self.project.current_pattern;
         let len_pat = self.project.patterns[pat].len.max(1) as f64;
