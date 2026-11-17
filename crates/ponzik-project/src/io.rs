@@ -19,7 +19,7 @@ use crate::json::{self, Json};
 use crate::rack::{ModTarget, ModulatorDef, RackDef, RackDevice, rack_accepts};
 use crate::{
     AudioClipDef, AutoPoint, AutoScope, AutoTarget, AutomationDef, ChannelDef, ClipDef, EffectDef, InstrumentDef,
-    NoteFxDef, PatternDef, Project, TrackDef, TrackKind,
+    NoteFxDef, PatternDef, PluginState, Project, TrackDef, TrackKind,
 };
 
 pub const FORMAT: &str = "ponzik-project";
@@ -51,7 +51,29 @@ fn instrument_json(i: &InstrumentDef) -> Json {
             .collect();
         pairs.push(("pads", Json::Arr(pads)));
     }
+    if let Some(state) = &i.state {
+        pairs.push(("state", state_json(state)));
+    }
     obj(pairs)
+}
+
+/// A plugin state, in base64.
+pub(crate) fn state_json(state: &[u8]) -> Json {
+    Json::Str(crate::base64::encode(state))
+}
+
+/// A plugin state written by [`state_json`]; anything else is dropped (the
+/// plugin then starts from its parameters alone).
+pub(crate) fn load_state(v: Option<&Json>) -> Option<PluginState> {
+    let text = v?.as_str()?;
+    match crate::base64::decode(text) {
+        Some(bytes) if !bytes.is_empty() => Some(bytes.into()),
+        Some(_) => None,
+        None => {
+            eprintln!("plugin state: invalid base64, ignored");
+            None
+        }
+    }
 }
 
 /// Chains and mappings of a rack.
@@ -167,6 +189,9 @@ fn track_json(t: &TrackDef) -> Json {
                 }
                 if let Some(rack) = fx.rack.as_deref() {
                     pairs.push(("rack", rack_json(rack)));
+                }
+                if let Some(state) = &fx.state {
+                    pairs.push(("state", state_json(state)));
                 }
                 obj(pairs)
             }
@@ -416,6 +441,7 @@ fn load_channel(v: &Json) -> ChannelDef {
             params: load_params(field("params")),
             sample: field("sample").and_then(Json::as_str).map(String::from),
             pads: load_pads(field("pads")),
+            state: load_state(field("state")),
         },
         note_fx: load_note_fx(v.get("note_fx")),
         gain: gain(v.get("gain"), 0.8),
@@ -539,6 +565,7 @@ fn load_effect(v: &Json) -> Option<EffectDef> {
         bypass: bool_or(v.get("bypass"), false),
         sidechain: index(v.get("sidechain"), TRACKS),
         rack,
+        state: load_state(v.get("state")),
     })
 }
 
@@ -1065,6 +1092,44 @@ mod tests {
         assert_eq!(mods[0].targets[0].depth, 1.0);
         // It builds.
         let _ = p.build_engine(48_000.0, &|_| None);
+    }
+
+    #[test]
+    fn plugin_states_round_trip_in_base64() {
+        let mut p = demo_project();
+        let blob: Vec<u8> = (0..=255u8).cycle().take(1000).collect();
+        p.channels[0].instrument.state = Some(blob.clone().into());
+        let mut fx = EffectDef::new("clap:/x.clap#y");
+        fx.state = Some(vec![0, 1, 2, 0xff].into());
+        p.tracks[2].inserts[0] = Some(fx);
+        let text = save(&p);
+        assert!(text.contains(&crate::base64::encode(&blob)));
+        let back = load(&text).unwrap();
+        assert_eq!(back.channels[0].instrument.state.as_deref(), Some(&blob[..]));
+        assert_eq!(back, p);
+        assert_eq!(save(&back), text);
+        // No state, no field: older files stay byte for byte the same.
+        assert!(!save(&demo_project()).contains("\"state\""));
+    }
+
+    #[test]
+    fn malformed_plugin_states_are_dropped() {
+        let text = r#"{"format": "ponzik-project", "channels": [
+            {"instrument": {"kind": "clap:/a.clap#b", "state": "not base64!"}},
+            {"instrument": {"kind": "clap:/a.clap#b", "state": 42}},
+            {"instrument": {"kind": "clap:/a.clap#b", "state": ""}},
+            {"instrument": {"kind": "clap:/a.clap#b", "state": "AAEC"}}],
+          "tracks": [{}, {"inserts": [{"kind": "eq", "state": ["x"]}]}]}"#;
+        let p = load(text).unwrap();
+        let states: Vec<_> = p.channels.iter().map(|c| c.instrument.state.as_deref()).collect();
+        assert_eq!(states, [None, None, None, Some(&[0u8, 1, 2][..])]);
+        assert_eq!(p.tracks[1].inserts[0].as_ref().unwrap().state, None);
+        // A native device given a state ignores it.
+        let fx = p.tracks[1].inserts[0].clone().map(|mut d| {
+            d.state = Some(vec![1].into());
+            d
+        });
+        assert!(Project::make_effect(&fx.unwrap(), 48_000.0, 120.0).is_some());
     }
 
     #[test]

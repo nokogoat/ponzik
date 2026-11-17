@@ -71,11 +71,20 @@ pub struct InstrumentDef {
     /// Pad instruments (Drum Pads): the files of each pad, one per velocity
     /// layer, softest first. Empty for every other instrument.
     pub pads: Vec<Vec<String>>,
+    /// The plugin's opaque state ([`PluginState`]), captured when the project
+    /// is saved; `None` for native instruments.
+    pub state: Option<PluginState>,
 }
+
+/// Opaque state of a CLAP or VST 3 plugin (`clap.state`, VST 3 component and
+/// controller states): the whole patch, parameters included. Base64 in the
+/// project file. Shared, so that undo snapshots and copies of the project do
+/// not duplicate it.
+pub type PluginState = Arc<[u8]>;
 
 impl InstrumentDef {
     pub fn new(kind: &str) -> Self {
-        Self { kind: kind.into(), params: Vec::new(), sample: None, pads: Vec::new() }
+        Self { kind: kind.into(), params: Vec::new(), sample: None, pads: Vec::new(), state: None }
     }
 
     /// Every audio file the instrument needs (sample and pad layers).
@@ -110,11 +119,20 @@ pub struct EffectDef {
     pub sidechain: Option<usize>,
     /// Chains and macro mappings, for a rack (kind `"rack"`).
     pub rack: Option<Box<RackDef>>,
+    /// Like [`InstrumentDef::state`].
+    pub state: Option<PluginState>,
 }
 
 impl EffectDef {
     pub fn new(kind: &str) -> Self {
-        Self { kind: kind.into(), params: Vec::new(), bypass: false, sidechain: None, rack: (kind == rack::RACK).then(Box::default) }
+        Self {
+            kind: kind.into(),
+            params: Vec::new(),
+            bypass: false,
+            sidechain: None,
+            rack: (kind == rack::RACK).then(Box::default),
+            state: None,
+        }
     }
 
     pub fn set(&mut self, id: u32, value: f32) {
@@ -645,6 +663,14 @@ impl Project {
             registry::create_instrument(&def.kind)
         };
         let mut inst = created.or_else(|| registry::create_instrument("pulse")).expect("le registre contient Pulse");
+        // The plugin's own state first, before activation; the saved values
+        // (newer, when an undo step restores an older state) come after.
+        if let Some(state) = &def.state
+            && inst.kind() == def.kind
+            && let Err(e) = inst.load_state(state)
+        {
+            eprintln!("{}: {e}", def.kind);
+        }
         inst.set_sample_rate(sample_rate);
         for &(id, v) in &def.params {
             inst.set_param(id, v);
@@ -676,6 +702,11 @@ impl Project {
         } else {
             registry::create_effect(&def.kind)?
         };
+        if let Some(state) = &def.state
+            && let Err(e) = fx.load_state(state)
+        {
+            eprintln!("{}: {e}", def.kind);
+        }
         fx.set_sample_rate(sample_rate);
         fx.set_tempo(bpm);
         for &(id, v) in &def.params {
