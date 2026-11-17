@@ -274,6 +274,38 @@ pub struct RecordBuffer {
     /// Sauts du transport pendant la prise : (trame du tampon, tick où l'on
     /// reprend). Préalloué ; les sauts au-delà de la capacité sont ignorés.
     pub jumps: Vec<(usize, f64)>,
+    /// Morceaux ajoutés pendant la prise ([`crate::Command::RecordChunk`]) :
+    /// la prise continue dedans quand `left`/`right` sont pleins. La place des
+    /// pointeurs est préallouée ([`MAX_RECORD_CHUNKS`]) ; [`RecordBuffer::flatten`]
+    /// les recolle à la suite, hors du thread audio.
+    pub chunks: Vec<Box<RecordChunk>>,
+}
+
+/// Morceaux qu'une prise peut recevoir en plus de son tampon de départ.
+pub const MAX_RECORD_CHUNKS: usize = 128;
+
+/// Suite d'un tampon d'enregistrement, allouée (et écrite) par l'interface
+/// quand la prise s'allonge : `right` est vide pour une prise mono.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RecordChunk {
+    pub left: Vec<f32>,
+    pub right: Vec<f32>,
+}
+
+impl RecordChunk {
+    /// `frames` trames, mono ou stéréo, mémoire déjà écrite (pas de défaut de
+    /// page sur le thread audio).
+    pub fn new(frames: usize, mono: bool) -> Self {
+        Self { left: zeroed(frames), right: if mono { Vec::new() } else { zeroed(frames) } }
+    }
+
+    pub fn frames(&self) -> usize {
+        if self.right.is_empty() { self.left.len() } else { self.left.len().min(self.right.len()) }
+    }
+
+    pub fn is_mono(&self) -> bool {
+        self.right.is_empty()
+    }
 }
 
 impl RecordBuffer {
@@ -300,6 +332,7 @@ impl RecordBuffer {
             mix_latency: 0,
             samples_per_tick: 0.0,
             jumps: Vec::with_capacity(MAX_JUMPS),
+            chunks: Vec::with_capacity(MAX_RECORD_CHUNKS),
         }
     }
 
@@ -320,24 +353,87 @@ impl RecordBuffer {
         self.right.is_empty()
     }
 
-    pub fn capacity(&self) -> usize {
+    /// Trames du tampon de départ (sans les morceaux ajoutés).
+    fn base(&self) -> usize {
         if self.is_mono() { self.left.len() } else { self.left.len().min(self.right.len()) }
+    }
+
+    /// Trames que la prise peut tenir, morceaux ajoutés compris.
+    pub fn capacity(&self) -> usize {
+        self.base() + self.chunks.iter().map(|c| c.frames()).sum::<usize>()
     }
 
     pub fn is_full(&self) -> bool {
         self.len >= self.capacity()
     }
 
+    /// Trames encore libres.
+    pub fn room(&self) -> usize {
+        self.capacity().saturating_sub(self.len)
+    }
+
     /// Ajoute ce qui tient ; renvoie le nombre de trames écrites. Un tampon
     /// mono ne garde que `left`.
     pub fn write(&mut self, left: &[f32], right: &[f32]) -> usize {
-        let n = left.len().min(right.len()).min(self.capacity().saturating_sub(self.len));
-        self.left[self.len..self.len + n].copy_from_slice(&left[..n]);
-        if !self.is_mono() {
-            self.right[self.len..self.len + n].copy_from_slice(&right[..n]);
+        let n = left.len().min(right.len()).min(self.room());
+        let mono = self.is_mono();
+        let mut done = 0;
+        // Position dans le tampon de départ, puis dans chaque morceau.
+        let mut at = self.len;
+        let base = self.base();
+        let parts = std::iter::once((&mut self.left[..base], &mut self.right[..if mono { 0 } else { base }]))
+            .chain(self.chunks.iter_mut().map(|c| {
+                let k = c.frames();
+                let right = if c.right.is_empty() { &mut c.right[..] } else { &mut c.right[..k] };
+                (&mut c.left[..k], right)
+            }));
+        for (dl, dr) in parts {
+            if done == n {
+                break;
+            }
+            if at >= dl.len() {
+                at -= dl.len();
+                continue;
+            }
+            let k = (dl.len() - at).min(n - done);
+            dl[at..at + k].copy_from_slice(&left[done..done + k]);
+            if !mono && !dr.is_empty() {
+                dr[at..at + k].copy_from_slice(&right[done..done + k]);
+            }
+            done += k;
+            at = 0;
         }
-        self.len += n;
-        n
+        self.len += done;
+        done
+    }
+
+    /// Recolle les morceaux ajoutés au tampon de départ : `left[..len]` (et
+    /// `right[..len]`) tiennent alors toute la prise. Alloue : hors du thread audio.
+    pub fn flatten(&mut self) {
+        let base = self.base();
+        let mono = self.is_mono();
+        self.left.truncate(base);
+        self.right.truncate(if mono { 0 } else { base });
+        for c in self.chunks.drain(..) {
+            let k = c.frames();
+            self.left.extend_from_slice(&c.left[..k]);
+            if !mono {
+                self.right.extend_from_slice(&c.right[..k]);
+            }
+        }
+    }
+
+    /// Ramène le tampon à `frames` trames, sans morceaux ajoutés, pour une
+    /// prochaine prise (la mémoire au-delà est rendue).
+    pub fn shrink_for_reuse(&mut self, frames: usize) {
+        self.chunks.clear();
+        self.left.truncate(frames);
+        self.left.shrink_to_fit();
+        if !self.is_mono() {
+            self.right.truncate(frames);
+            self.right.shrink_to_fit();
+        }
+        self.len = 0;
     }
 
     /// Note un saut du transport à la trame courante (sans allocation).
@@ -350,6 +446,7 @@ impl RecordBuffer {
     /// Échantillon des trames écrites (le surplus préalloué est libéré) ; le
     /// mono est recopié à droite, comme un fichier mono chargé.
     pub fn into_sample(mut self, name: impl Into<String>) -> Sample {
+        self.flatten();
         self.left.truncate(self.len);
         self.left.shrink_to_fit();
         if self.is_mono() {
@@ -508,6 +605,24 @@ mod tests {
         assert_eq!(rx.read(&mut l, &mut r), 4);
         assert_eq!(l, [0.1, 0.2, 0.3, 0.5, 0.0, 0.0]);
         assert_eq!(r, [0.1, 0.2, 0.4, 0.6, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn mono_take_continues_in_chunks_then_flattens() {
+        let mut b = RecordBuffer::for_source(InputSource::Left, 1.0, 3.0);
+        assert_eq!(b.capacity(), 3);
+        b.chunks.push(Box::new(RecordChunk::new(2, true)));
+        b.chunks.push(Box::new(RecordChunk::new(4, true)));
+        assert_eq!((b.capacity(), b.room()), (9, 9));
+        let src: Vec<f32> = (1..=8).map(|i| i as f32).collect();
+        assert_eq!(b.write(&src[..4], &src[..4]), 4);
+        assert_eq!(b.write(&src[4..], &src[4..]), 4);
+        assert_eq!(b.room(), 1);
+        b.flatten();
+        assert_eq!(&b.left[..b.len], &src[..]);
+        assert!(b.right.is_empty() && b.chunks.is_empty());
+        let s = b.into_sample("take");
+        assert_eq!((s.left.len(), s.right.len()), (8, 8));
     }
 
     #[test]

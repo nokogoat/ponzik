@@ -35,7 +35,7 @@ pub use effect::Effect;
 pub use effects::fx_rack::{MacroMap, RackLayout};
 pub use modulation::{ModClock, ModKind, ModLink, ModMeters, ModParam, ModSet, Modulator};
 pub use engine::{Command, Engine, EngineHandle, Garbage, MAX_CHANNELS, MAX_RECORDINGS};
-pub use input::{InputConsumer, InputProducer, InputSource, InputStrip, RecordBuffer, TakeSlice, input_channel};
+pub use input::{InputConsumer, InputProducer, InputSource, InputStrip, RecordBuffer, RecordChunk, TakeSlice, input_channel};
 pub use instrument::Instrument;
 pub use midi_out::{MidiOut, MidiOutEvent};
 pub use note_fx::{NoteBuffer, NoteEvent, NoteFx};

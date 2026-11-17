@@ -6,7 +6,7 @@ use ponzik_dsp::util::balance_gains;
 
 use crate::audition::Audition;
 use crate::effect::Effect;
-use crate::input::{CALIBRATION_CLICKS, InputChain, InputConsumer, InputSource, InputStrip, RecordBuffer, calibration_click, deinterleave};
+use crate::input::{CALIBRATION_CLICKS, InputChain, InputConsumer, InputSource, InputStrip, RecordBuffer, RecordChunk, calibration_click, deinterleave};
 use crate::instrument::Instrument;
 use crate::meter::{PeakMeter, peak};
 use crate::midi_out::{MidiClock, MidiLink, MidiOut};
@@ -119,6 +119,10 @@ pub enum Command {
     /// le tampon via [`Garbage::Recording`]. Jusqu'à [`MAX_RECORDINGS`] pistes à
     /// la fois ; `armed` sans tampon désarme la piste.
     Record { track: usize, armed: bool, buffer: Option<Box<RecordBuffer>> },
+    /// Allonge la prise en cours de `track` : elle continue dans `chunk` quand
+    /// son tampon est plein (voir [`EngineHandle::record_room`]). Sans prise
+    /// en cours (ou morceau d'un autre format), il revient en [`Garbage::RecordChunk`].
+    RecordChunk { track: usize, chunk: Box<RecordChunk> },
     /// Pré-écoute de l'Atelier, ajoutée à la sortie hors du mixer : remplace la
     /// voix en cours (rendue en [`Garbage::Audition`]) ; `None` l'arrête en fondu.
     Audition(Option<Box<Audition>>),
@@ -178,6 +182,7 @@ impl std::fmt::Debug for Command {
             Command::SetLowLatencyMonitoring(_) => "SetLowLatencyMonitoring",
             Command::SetInputStrip(_) => "SetInputStrip",
             Command::Record { .. } => "Record",
+            Command::RecordChunk { .. } => "RecordChunk",
             Command::Audition(_) => "Audition",
             Command::Calibrate(_) => "Calibrate",
             Command::SetMidiOut(_) => "SetMidiOut",
@@ -203,6 +208,7 @@ pub enum Garbage {
     /// Calibrage terminé : gardé à part par [`EngineHandle::take_calibration`].
     Calibration(Box<RecordBuffer>),
     MidiOut(Box<MidiOut>),
+    RecordChunk(Box<RecordChunk>),
 }
 
 /// Ce que le moteur publie pour l'interface.
@@ -234,6 +240,9 @@ struct SharedState {
     workers: AtomicU32,
     /// Les threads de calcul servent en ce moment (choix adaptatif).
     parallel: AtomicBool,
+    /// Place libre de chaque prise en cours : `(piste + 1) << 32 | trames`
+    /// (0 : emplacement libre).
+    record_room: [AtomicU64; MAX_RECORDINGS],
 }
 
 /// Lit une charge publiée (bits d'un `f32`).
@@ -407,6 +416,15 @@ impl EngineHandle {
         self.calibration.take()
     }
 
+    /// Trames encore libres dans la prise en cours de `track` (`None` : pas de
+    /// prise) : l'interface envoie un [`Command::RecordChunk`] avant qu'elle soit pleine.
+    pub fn record_room(&self, track: usize) -> Option<usize> {
+        self.state.record_room.iter().find_map(|cell| {
+            let v = cell.load(Ordering::Relaxed);
+            ((v >> 32) as usize == track + 1).then_some((v & 0xffff_ffff) as usize)
+        })
+    }
+
     /// Enregistrements terminés depuis le dernier appel (tampons vides compris).
     pub fn take_recordings(&mut self) -> Vec<Box<RecordBuffer>> {
         self.collect_garbage();
@@ -528,6 +546,7 @@ impl Engine {
             channel_cpu: (0..MAX_CHANNELS).map(|_| AtomicU32::new(0)).collect(),
             workers: AtomicU32::new(0),
             parallel: AtomicBool::new(false),
+            record_room: std::array::from_fn(|_| AtomicU64::new(0)),
         });
         let mut voices = Vec::with_capacity(MAX_AUDIO_VOICES);
         voices.resize(sequence.audio_clips.len().min(MAX_AUDIO_VOICES), AudioVoice::default());
@@ -699,6 +718,7 @@ impl Engine {
                 self.trash(Garbage::Recording(rec));
             }
         }
+        self.publish_record_room();
     }
 
     /// Remplit `out` (entrelacé, `channels` canaux) — appelé par le thread audio.
@@ -1150,6 +1170,15 @@ impl Engine {
             let (sl, sr) = rec.source.pick(&self.input_l[..n], &self.input_r[..n]);
             // Tampon plein : on cesse d'écrire, il sera rendu au désarmement.
             rec.write(sl, sr);
+        }
+        self.publish_record_room();
+    }
+
+    /// Place libre des prises en cours, pour que l'interface les allonge à temps.
+    fn publish_record_room(&self) {
+        for (cell, rec) in self.state.record_room.iter().zip(&self.recordings) {
+            let v = rec.as_ref().map_or(0, |r| ((r.track as u64 + 1) << 32) | r.room().min(u32::MAX as usize) as u64);
+            cell.store(v, Ordering::Relaxed);
         }
     }
 
@@ -1628,6 +1657,18 @@ impl Engine {
                     Some(rec) => self.trash(Garbage::Recording(rec)),
                     None => {}
                 }
+                self.publish_record_room();
+            }
+            Command::RecordChunk { track, chunk } => {
+                let rec = self.recordings.iter_mut().flatten().find(|r| r.track == track);
+                match rec {
+                    // Place des pointeurs préallouée : pas d'allocation ici.
+                    Some(rec) if rec.chunks.len() < rec.chunks.capacity() && rec.is_mono() == chunk.is_mono() => {
+                        rec.chunks.push(chunk);
+                    }
+                    _ => self.trash(Garbage::RecordChunk(chunk)),
+                }
+                self.publish_record_room();
             }
             Command::Audition(Some(voice)) => {
                 if let Some(old) = self.audition.replace(voice) {
@@ -2503,6 +2544,44 @@ mod tests {
         tx.push(&data, 2);
         run(&mut engine, 1_000, 256);
         assert!(handle.take_recordings().is_empty());
+    }
+
+    #[test]
+    fn a_take_grows_into_chunks_sent_while_it_records() {
+        let (mut engine, mut handle, mut tx) = setup_input();
+        assert_eq!(handle.record_room(1), None);
+        let rec = Box::new(RecordBuffer::new(300, SR));
+        handle.send(Command::Record { track: 1, armed: true, buffer: Some(rec) }).unwrap();
+        handle.send(Command::Play).unwrap();
+        let data = ramp(2_000);
+        tx.push(&data[..2 * 256], 2);
+        run(&mut engine, 256, 256);
+        assert_eq!(handle.record_room(1), Some(300 - 256));
+        assert_eq!(handle.record_room(2), None);
+        // Two chunks while it records; one of the wrong format comes back.
+        handle.send(Command::RecordChunk { track: 1, chunk: Box::new(RecordChunk::new(500, false)) }).unwrap();
+        handle.send(Command::RecordChunk { track: 1, chunk: Box::new(RecordChunk::new(500, true)) }).unwrap();
+        handle.send(Command::RecordChunk { track: 1, chunk: Box::new(RecordChunk::new(700, false)) }).unwrap();
+        handle.send(Command::RecordChunk { track: 4, chunk: Box::new(RecordChunk::new(10, false)) }).unwrap();
+        tx.push(&data[2 * 256..], 2);
+        run(&mut engine, 2_000 - 256, 256);
+        // 300 + 500 + 700 frames: the take is full.
+        assert_eq!(handle.record_room(1), Some(0));
+        handle.send(Command::Stop).unwrap();
+        engine.process(&mut [], 2);
+        assert_eq!(handle.record_room(1), None);
+        let mut recs = handle.take_recordings();
+        assert_eq!(recs.len(), 1);
+        let rec = &mut recs[0];
+        assert_eq!((rec.len, rec.capacity(), rec.chunks.len()), (1_500, 1_500, 2));
+        rec.flatten();
+        assert!(rec.chunks.is_empty() && rec.left.len() >= rec.len && rec.right.len() >= rec.len);
+        // The whole take reads in order across the chunk boundaries.
+        for i in 0..rec.len {
+            assert_eq!((rec.left[i], rec.right[i]), (data[2 * i], data[2 * i + 1]), "frame {i}");
+        }
+        rec.shrink_for_reuse(300);
+        assert_eq!((rec.capacity(), rec.len), (300, 0));
     }
 
     #[test]
