@@ -585,6 +585,11 @@ impl Stream for Renderer {
         unsafe {
             let mut padding = 0;
             hr((c.client.vtbl().GetCurrentPadding)(c.client.this(), &mut padding), "GetCurrentPadding")?;
+            // Tampon système vide au moment de le remplir : la carte a manqué
+            // d'échantillons, on a entendu un craquement.
+            if padding == 0 {
+                duplex.note_xrun();
+            }
             let frames = c.buffer_frames.saturating_sub(padding);
             if frames == 0 {
                 return Ok(());

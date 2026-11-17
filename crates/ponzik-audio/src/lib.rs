@@ -52,10 +52,26 @@ mod backend;
 #[path = "unsupported.rs"]
 mod backend;
 
-/// Latence de sortie visée, en millisecondes : 10 par défaut, ou
-/// `PONZIK_LATENCY_MS` (2 à 100) pour une machine qui décroche.
+/// Latence choisie par l'application (0 : celle par défaut).
+static LATENCY_MS: AtomicU32 = AtomicU32::new(0);
+
+/// Latence de sortie par défaut, en millisecondes.
+pub const DEFAULT_LATENCY_MS: u32 = 10;
+
+/// Latence de sortie visée, en millisecondes : `PONZIK_LATENCY_MS` (2 à 100)
+/// s'il est donné, sinon celle choisie par [`set_target_latency_ms`], sinon 10.
 pub fn target_latency_ms() -> u32 {
-    std::env::var("PONZIK_LATENCY_MS").ok().and_then(|v| v.trim().parse::<u32>().ok()).map_or(10, |ms| ms.clamp(2, 100))
+    let chosen = LATENCY_MS.load(Ordering::Relaxed);
+    std::env::var("PONZIK_LATENCY_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .or((chosen > 0).then_some(chosen))
+        .map_or(DEFAULT_LATENCY_MS, |ms| ms.clamp(2, 100))
+}
+
+/// Choisit la latence des sorties ouvertes ensuite (0 : celle par défaut).
+pub fn set_target_latency_ms(ms: u32) {
+    LATENCY_MS.store(if ms == 0 { 0 } else { ms.clamp(2, 100) }, Ordering::Relaxed);
 }
 
 /// Ce qu'on demande au système quand il nous laisse le choix.
@@ -102,13 +118,59 @@ impl std::error::Error for AudioError {}
 pub struct Output {
     config: OutputConfig,
     device_name: String,
-    pending: backend::PendingOutput,
+    pending: Pending,
 }
 
-/// Ouvre la sortie audio par défaut du système.
+enum Pending {
+    Device(backend::PendingOutput),
+    /// Sortie muette cadencée par l'horloge (`PONZIK_AUDIO=null`) : mesures,
+    /// tests, machines sans carte son.
+    Null { period: usize },
+}
+
+/// Ouvre la sortie audio par défaut du système, ou une sortie muette cadencée
+/// en temps réel si `PONZIK_AUDIO=null`.
 pub fn open_default() -> Result<Output, AudioError> {
+    if std::env::var("PONZIK_AUDIO").is_ok_and(|v| v == "null") {
+        return Ok(open_null());
+    }
     let (config, device_name, pending) = backend::open_default(PREFERRED)?;
-    Ok(Output { config, device_name, pending })
+    Ok(Output { config, device_name, pending: Pending::Device(pending) })
+}
+
+/// Sortie muette cadencée en temps réel (une période = la moitié de la latence visée).
+pub fn open_null() -> Output {
+    let period = (PREFERRED.sample_rate * target_latency_ms() / 2000).max(64) as usize;
+    let device_name = format!("Null output · period {period} frames");
+    Output { config: PREFERRED, device_name, pending: Pending::Null { period } }
+}
+
+/// Sortie muette : rend un bloc par période, au rythme de l'horloge.
+fn start_null(mut duplex: Duplex, period: usize, rate: u32, channels: usize) -> Result<AudioThread, AudioError> {
+    use std::time::{Duration, Instant};
+    let stop = Arc::new(AtomicBool::new(false));
+    let flag = stop.clone();
+    let handle = std::thread::Builder::new()
+        .name("ponzik-audio".into())
+        .spawn(move || {
+            let mut buf = vec![0.0f32; period * channels];
+            let step = Duration::from_secs_f64(period as f64 / rate as f64);
+            let mut next = Instant::now();
+            while !flag.load(Ordering::Acquire) {
+                duplex.render(&mut buf, channels, period as u32);
+                next += step;
+                match next.checked_duration_since(Instant::now()) {
+                    Some(wait) => std::thread::sleep(wait),
+                    None => {
+                        // En retard d'une période ou plus : c'est un décrochage.
+                        duplex.note_xrun();
+                        next = Instant::now();
+                    }
+                }
+            }
+        })
+        .map_err(|e| AudioError::System(format!("audio thread: {e}")))?;
+    Ok(AudioThread { stop, handle: Some(handle) })
 }
 
 impl Output {
@@ -136,11 +198,27 @@ impl Output {
     where
         F: FnMut(&[f32], usize, &mut [f32], usize) + Send + 'static,
     {
+        self.start_boxed(Box::new(render), Arc::new(StreamInfo::default()))
+    }
+
+    fn start_boxed(self, render: DuplexFn, info: Arc<StreamInfo>) -> Result<OutputStream, AudioError> {
         let (control_tx, control_rx) = mpsc::channel();
         let (back_tx, back_rx) = mpsc::channel();
-        let info = Arc::new(StreamInfo::default());
-        let duplex = Duplex { render: Box::new(render), control: control_rx, back: back_tx, attached: None, info: info.clone() };
-        let thread = self.pending.start(duplex)?;
+        let (handback_tx, handback_rx) = mpsc::channel();
+        let duplex = Duplex {
+            render,
+            control: control_rx,
+            back: back_tx,
+            attached: None,
+            info: info.clone(),
+            handback: handback_tx,
+        };
+        let channels = self.config.channels as usize;
+        let null = matches!(self.pending, Pending::Null { .. });
+        let thread = match self.pending {
+            Pending::Device(pending) => pending.start(duplex)?,
+            Pending::Null { period } => start_null(duplex, period, self.config.sample_rate, channels)?,
+        };
         Ok(OutputStream {
             config: self.config,
             device_name: self.device_name,
@@ -148,6 +226,8 @@ impl Output {
             info,
             control: control_tx,
             returned: back_rx,
+            handback: handback_rx,
+            null,
             capture: None,
             input: None,
         })
@@ -181,6 +261,8 @@ pub(crate) struct StreamInfo {
     output: AtomicU32,
     input: AtomicU32,
     underruns: AtomicU32,
+    /// Décrochages de la sortie (le système a manqué d'échantillons).
+    xruns: AtomicU32,
 }
 
 /// Une capture lue par le thread de sortie.
@@ -210,9 +292,24 @@ pub(crate) struct Duplex {
     back: mpsc::Sender<Box<Attached>>,
     attached: Option<Box<Attached>>,
     info: Arc<StreamInfo>,
+    /// Rend la fonction de rendu (et le moteur qu'elle possède) au flux quand
+    /// le thread audio s'arrête : [`OutputStream::reopen`] la relance ailleurs.
+    handback: mpsc::Sender<DuplexFn>,
+}
+
+impl Drop for Duplex {
+    fn drop(&mut self) {
+        let render = std::mem::replace(&mut self.render, Box::new(|_, _, _, _| {}));
+        let _ = self.handback.send(render);
+    }
 }
 
 impl Duplex {
+    /// Le système a manqué d'échantillons (sous-alimentation) : compté pour l'interface.
+    pub(crate) fn note_xrun(&self) {
+        self.info.xruns.fetch_add(1, Ordering::Relaxed);
+    }
+
     /// Un cycle : relève la capture, puis rend `out`. `out_delay` : trames déjà
     /// en attente côté système avant celles-ci.
     pub(crate) fn render(&mut self, out: &mut [f32], channels: usize, out_delay: u32) {
@@ -247,6 +344,9 @@ pub struct OutputStream {
     info: Arc<StreamInfo>,
     control: mpsc::Sender<Option<Box<Attached>>>,
     returned: mpsc::Receiver<Box<Attached>>,
+    handback: mpsc::Receiver<DuplexFn>,
+    /// Sortie muette ([`open_null`]) : rouverte muette.
+    null: bool,
     /// Thread de capture séparé (WASAPI), arrêté quand l'entrée change.
     capture: Option<AudioThread>,
     input: Option<(InputConfig, String)>,
@@ -303,6 +403,37 @@ impl OutputStream {
     /// Famines de l'entrée (trames arrivées trop tard) depuis son branchement.
     pub fn input_underruns(&self) -> u32 {
         self.info.underruns.load(Ordering::Relaxed)
+    }
+
+    /// Décrochages de la sortie (craquements) depuis l'ouverture du flux,
+    /// réouvertures comprises.
+    pub fn xruns(&self) -> u32 {
+        self.info.xruns.load(Ordering::Relaxed)
+    }
+
+    /// Rouvre la sortie par défaut avec la latence `latency_ms`, en gardant la
+    /// même fonction de rendu (et donc le même moteur). L'entrée branchée est
+    /// débranchée : à rebrancher par l'appelant. Si la nouvelle latence est
+    /// refusée, l'ancienne est reprise.
+    pub fn reopen(self, latency_ms: u32) -> Result<OutputStream, AudioError> {
+        let previous = LATENCY_MS.load(Ordering::Relaxed);
+        let OutputStream { thread, info, handback, capture, null, .. } = self;
+        // Arrêt et attente du thread : le rendu revient par `handback`.
+        drop(thread);
+        drop(capture);
+        let render = handback
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .map_err(|_| AudioError::System("the audio thread did not hand back the engine".into()))?;
+        set_target_latency_ms(latency_ms);
+        let open = || if null { Ok(open_null()) } else { open_default() };
+        let output = match open() {
+            Ok(o) => o,
+            Err(e) => {
+                set_target_latency_ms(previous);
+                open().map_err(|_| e)?
+            }
+        };
+        output.start_boxed(render, info)
     }
 
     /// Libère les captures remplacées.
@@ -500,6 +631,44 @@ mod tests {
         let b: Vec<u8> = [1i32 << 30, i32::MIN].iter().flat_map(|s| s.to_ne_bytes()).collect();
         SampleKind::I32.decode(&b, &mut out);
         assert_eq!(out, [0.5, -1.0]);
+    }
+
+    #[test]
+    fn null_output_runs_in_real_time_and_reopens_with_the_same_renderer() {
+        let (tx, rx) = mpsc::channel();
+        let mut frames = 0usize;
+        let output = open_null();
+        let period = match output.pending {
+            Pending::Null { period } => period,
+            Pending::Device(_) => unreachable!(),
+        };
+        let stream = output
+            .start(move |out, ch| {
+                out.fill(0.0);
+                frames += out.len() / ch;
+                let _ = tx.send(frames);
+            })
+            .unwrap();
+        let started = std::time::Instant::now();
+        let mut last = 0;
+        while last < 4_800 {
+            last = rx.recv_timeout(std::time::Duration::from_secs(2)).unwrap();
+        }
+        // Cadencée par l'horloge : 0,1 s de son prend environ 0,1 s.
+        assert!(started.elapsed() >= std::time::Duration::from_millis(60), "{:?}", started.elapsed());
+        let stream = stream.reopen(20).unwrap();
+        // Le même rendu continue : son compteur reprend où il en était.
+        let next = rx.recv_timeout(std::time::Duration::from_secs(2)).unwrap();
+        assert!(next > last, "{next} après {last}");
+        assert!(stream.device_name().contains("Null"));
+        assert!(period >= 64);
+        assert_eq!(LATENCY_MS.load(Ordering::Relaxed), 20);
+        drop(stream);
+        // Le choix est borné ; 0 revient à la latence par défaut.
+        set_target_latency_ms(500);
+        assert_eq!(LATENCY_MS.load(Ordering::Relaxed), 100);
+        set_target_latency_ms(0);
+        assert_eq!(LATENCY_MS.load(Ordering::Relaxed), 0);
     }
 
     /// À lancer à la main : `cargo test -p ponzik-audio -- --ignored --nocapture`.

@@ -58,6 +58,7 @@ const SND_PCM_NONBLOCK: c_int = 1;
 const SND_PCM_ACCESS_RW_INTERLEAVED: c_int = 3;
 const SND_PCM_STATE_PREPARED: c_int = 2;
 const EAGAIN: c_long = 11;
+const EPIPE: c_long = 32;
 #[cfg(target_endian = "little")]
 const SND_PCM_FORMAT_FLOAT: c_int = 14;
 #[cfg(target_endian = "big")]
@@ -173,6 +174,9 @@ impl PendingOutput {
                             continue;
                         }
                         // Sous-alimentation (xrun) ou suspension : on relance le flux.
+                        if n == -EPIPE {
+                            duplex.note_xrun();
+                        }
                         // SAFETY: handle ouvert.
                         let recovered = unsafe { snd_pcm_recover(pcm.0, n as c_int, 1) };
                         if let Err(e) = check(recovered, "snd_pcm_writei") {
