@@ -10,8 +10,8 @@
 use ponzik_dsp::lfo::{Lfo, LfoShape};
 use ponzik_dsp::util::{db_to_gain, decay_coef, gain_to_db, midi_to_hz};
 
-use super::common::{drive, fast_sin, pick_voice, soft_clip};
-use crate::Instrument;
+use super::common::{Expr, Tune, drive, fast_sin, pan_gains, pick_voice, soft_clip};
+use crate::{Controller, Instrument, NoteExpression};
 use crate::param::{ParamInfo, Params, Unit};
 
 const VOICES: usize = 12;
@@ -70,6 +70,8 @@ struct Voice {
     bell_scale: f32,
     /// Déclin des aigus plus rapide : facteur sur les temps.
     keyscale: f32,
+    expr: Expr,
+    tune: Tune,
 }
 
 /// Piano électrique polyphonique douze voix.
@@ -87,6 +89,8 @@ pub struct EPiano {
     lfo: Lfo,
     voices: [Voice; VOICES],
     note_counter: u64,
+    /// Pitch bend in semitones.
+    bend: f32,
 }
 
 impl Default for EPiano {
@@ -111,6 +115,7 @@ impl EPiano {
             lfo: Lfo::new(LfoShape::Sine),
             voices: [Voice::default(); VOICES],
             note_counter: 0,
+            bend: 0.0,
         };
         for p in &PARAMS {
             e.set_param(p.id, p.default);
@@ -215,6 +220,7 @@ impl Instrument for EPiano {
             bell_coef: decay_coef(BELL_TAU * keyscale, sr),
             bell_scale: ((sr * 0.45 - bell_hz) / (sr * 0.1)).clamp(0.0, 1.0),
             keyscale,
+            ..Voice::default()
         };
         if was_active {
             // Voix volée : on garde sa phase.
@@ -234,6 +240,23 @@ impl Instrument for EPiano {
         }
     }
 
+    fn supports_expression(&self) -> bool {
+        true
+    }
+
+    fn note_expression(&mut self, key: u8, expr: NoteExpression) {
+        let sr = self.sample_rate;
+        if let Some(v) = self.voices.iter_mut().filter(|v| v.active && !v.released && v.note == key).max_by_key(|v| v.started_at) {
+            v.expr.apply(expr, sr);
+        }
+    }
+
+    fn controller(&mut self, ctl: Controller) {
+        if let Controller::PitchBend(b) = ctl {
+            self.bend = b.clamp(-1.0, 1.0) * crate::PITCH_BEND_RANGE;
+        }
+    }
+
     fn all_notes_off(&mut self) {
         for v in &mut self.voices {
             v.active = false;
@@ -246,14 +269,19 @@ impl Instrument for EPiano {
         }
         let attack_step = 1.0 / (ATTACK * self.sample_rate).max(1.0);
         let depth = self.trem_depth * 0.5;
+        let bend = self.bend;
         for (l, r) in left.iter_mut().zip(right.iter_mut()) {
-            let mut mix = 0.0;
+            let (mut ml, mut mr) = (0.0, 0.0);
             for v in self.voices.iter_mut().filter(|v| v.active) {
                 let tine = fast_sin(v.phase + v.index * fast_sin(v.phase));
                 let bell = fast_sin(v.phase + BELL_INDEX * fast_sin(v.bell_phase)) * v.bell * v.bell_scale;
-                mix += (tine + bell) * v.amp * v.attack;
-                v.phase = (v.phase + v.inc).fract();
-                v.bell_phase = (v.bell_phase + v.inc * BELL_RATIO).fract();
+                let x = (tine + bell) * v.amp * v.attack;
+                let (pl, pr) = pan_gains(v.expr.pan);
+                ml += x * pl;
+                mr += x * pr;
+                let inc = (v.inc * v.tune.ratio(v.expr.tuning.tick() + bend)).min(0.45);
+                v.phase = (v.phase + inc).fract();
+                v.bell_phase = (v.bell_phase + inc * BELL_RATIO).fract();
                 v.attack = (v.attack + attack_step).min(1.0);
                 v.amp *= v.amp_coef;
                 v.index *= v.index_coef;
@@ -262,10 +290,11 @@ impl Instrument for EPiano {
                     v.active = false;
                 }
             }
-            let s = drive(mix * 0.5, self.drive) * self.gain;
             let lfo = self.lfo.next_sample();
-            *l += soft_clip(s * (1.0 - depth * (1.0 + lfo)));
-            *r += soft_clip(s * (1.0 - depth * (1.0 - lfo)));
+            let sl = drive(ml * 0.5, self.drive) * self.gain;
+            let sr = drive(mr * 0.5, self.drive) * self.gain;
+            *l += soft_clip(sl * (1.0 - depth * (1.0 + lfo)));
+            *r += soft_clip(sr * (1.0 - depth * (1.0 - lfo)));
         }
     }
 }

@@ -12,8 +12,8 @@ use ponzik_dsp::filter::{FilterMode, Svf};
 use ponzik_dsp::noise::WhiteNoise;
 use ponzik_dsp::util::{balance_gains, db_to_gain, gain_to_db};
 
-use super::common::{Glide, fast_sin, glide_coef, pick_voice, soft_clip};
-use crate::Instrument;
+use super::common::{Expr, Glide, Tune, fast_sin, glide_coef, pan_gains, pick_voice, soft_clip};
+use crate::{Controller, Instrument, NoteExpression};
 use crate::param::{ParamInfo, Params, Unit};
 
 const TABLE_LEN: usize = 2048;
@@ -229,6 +229,8 @@ struct Voice {
     filter_env: Adsr,
     filter: [Svf; 2],
     tick: u32,
+    expr: Expr,
+    tune: Tune,
 }
 
 /// Ponzik Wave, polyphonique huit voix, unisson jusqu'à huit oscillateurs par voix.
@@ -256,6 +258,8 @@ pub struct WaveSynth {
     rng: WhiteNoise,
     note_counter: u64,
     last_note: Option<u8>,
+    /// Pitch bend in semitones.
+    bend: f32,
 }
 
 impl Default for WaveSynth {
@@ -301,10 +305,13 @@ impl WaveSynth {
                 filter_env: Adsr::new(env, sr),
                 filter: std::array::from_fn(|_| Svf::new(FilterMode::LowPass, 2_000.0, 0.9, sr)),
                 tick: 0,
+                expr: Expr::default(),
+                tune: Tune::default(),
             }),
             rng: WhiteNoise::new(0x5EED_CAFE),
             note_counter: 0,
             last_note: None,
+            bend: 0.0,
         };
         for p in &PARAMS {
             s.set_param(p.id, p.default);
@@ -425,6 +432,7 @@ impl Instrument for WaveSynth {
         v.note = note;
         v.velocity = velocity.clamp(0.0, 1.0);
         v.started_at = self.note_counter;
+        v.expr.reset();
         match from {
             Some(f) => {
                 v.glide.jump(f as f32);
@@ -453,6 +461,23 @@ impl Instrument for WaveSynth {
         }
     }
 
+    fn supports_expression(&self) -> bool {
+        true
+    }
+
+    fn note_expression(&mut self, key: u8, expr: NoteExpression) {
+        let sr = self.sample_rate;
+        if let Some(v) = self.voices.iter_mut().filter(|v| v.note == key && v.amp_env.is_gated()).max_by_key(|v| v.started_at) {
+            v.expr.apply(expr, sr);
+        }
+    }
+
+    fn controller(&mut self, ctl: Controller) {
+        if let Controller::PitchBend(b) = ctl {
+            self.bend = b.clamp(-1.0, 1.0) * crate::PITCH_BEND_RANGE;
+        }
+    }
+
     fn all_notes_off(&mut self) {
         for v in &mut self.voices {
             v.amp_env.reset();
@@ -461,6 +486,7 @@ impl Instrument for WaveSynth {
     }
 
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let bend = self.bend;
         let sr = self.sample_rate;
         let inv_sr = 1.0 / sr;
         let set = &self.tables[self.set];
@@ -473,7 +499,7 @@ impl Instrument for WaveSynth {
         for (l, r) in left.iter_mut().zip(right.iter_mut()) {
             let (mut ml, mut mr) = (0.0, 0.0);
             for v in self.voices.iter_mut().filter(|v| v.amp_env.is_active()) {
-                let hz = v.glide.next(self.glide_coef);
+                let hz = v.glide.next(self.glide_coef) * v.tune.ratio(v.expr.tuning.tick() + bend);
                 if hz != v.level_hz {
                     v.level_hz = hz;
                     v.level = mip_level(hz * MAX_DETUNE_RATIO);
@@ -504,8 +530,9 @@ impl Instrument for WaveSynth {
                 }
                 v.tick = (v.tick + 1) % CONTROL_RATE;
                 let amp = v.amp_env.next_sample() * v.velocity;
-                ml += v.filter[0].process(sl + s) * amp;
-                mr += v.filter[1].process(sr + s) * amp;
+                let (pl, pr) = pan_gains(v.expr.pan);
+                ml += v.filter[0].process(sl + s) * amp * pl;
+                mr += v.filter[1].process(sr + s) * amp * pr;
             }
             *l += soft_clip(ml * self.gain);
             *r += soft_clip(mr * self.gain);

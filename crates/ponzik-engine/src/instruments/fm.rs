@@ -7,8 +7,8 @@ use ponzik_dsp::env::{Adsr, AdsrParams};
 use ponzik_dsp::filter::{FilterMode, Svf};
 use ponzik_dsp::util::{db_to_gain, gain_to_db};
 
-use super::common::{Glide, fast_sin, glide_coef, pick_voice, soft_clip};
-use crate::Instrument;
+use super::common::{Expr, Glide, Tune, fast_sin, glide_coef, pan_gains, pick_voice, soft_clip};
+use crate::{Controller, Instrument, NoteExpression};
 use crate::param::{ParamInfo, Params, Unit};
 
 const VOICES: usize = 8;
@@ -129,6 +129,8 @@ struct Voice {
     amp: [f32; OPS],
     /// Deux dernières sorties de l'opérateur 4 (rétroaction moyennée, façon DX7).
     fb: [f32; 2],
+    expr: Expr,
+    tune: Tune,
 }
 
 impl Voice {
@@ -150,9 +152,13 @@ pub struct FmSynth {
     sample_rate: f32,
     glide_coef: f32,
     filter: Svf,
+    /// Right side: voices can be panned.
+    filter_r: Svf,
     voices: [Voice; VOICES],
     note_counter: u64,
     last_note: Option<u8>,
+    /// Pitch bend in semitones.
+    bend: f32,
 }
 
 impl Default for FmSynth {
@@ -178,6 +184,7 @@ impl FmSynth {
             sample_rate: sr,
             glide_coef: 0.0,
             filter: Svf::new(FilterMode::LowPass, 20_000.0, 0.707, sr),
+            filter_r: Svf::new(FilterMode::LowPass, 20_000.0, 0.707, sr),
             voices: std::array::from_fn(|_| Voice {
                 note: 0,
                 started_at: 0,
@@ -186,9 +193,12 @@ impl FmSynth {
                 env: std::array::from_fn(|_| Adsr::new(env, sr)),
                 amp: [0.0; OPS],
                 fb: [0.0; 2],
+                expr: Expr::default(),
+                tune: Tune::default(),
             }),
             note_counter: 0,
             last_note: None,
+            bend: 0.0,
         };
         for p in &PARAMS {
             s.set_param(p.id, p.default);
@@ -199,6 +209,8 @@ impl FmSynth {
     fn update_filter(&mut self) {
         self.filter.mode = if self.filter_mode == 0 { FilterMode::LowPass } else { FilterMode::HighPass };
         self.filter.set_params(self.cutoff, self.resonance, self.sample_rate);
+        self.filter_r.mode = self.filter.mode;
+        self.filter_r.set_params(self.cutoff, self.resonance, self.sample_rate);
     }
 }
 
@@ -306,6 +318,7 @@ impl Instrument for FmSynth {
         let was_sounding = v.sounding(carriers);
         v.note = note;
         v.started_at = self.note_counter;
+        v.expr.reset();
         match from {
             Some(f) => {
                 v.glide.jump(f as f32);
@@ -334,6 +347,25 @@ impl Instrument for FmSynth {
         }
     }
 
+    fn supports_expression(&self) -> bool {
+        true
+    }
+
+    fn note_expression(&mut self, key: u8, expr: NoteExpression) {
+        let sr = self.sample_rate;
+        let carriers = ALGOS[self.algo].carriers;
+        let gated = |v: &Voice| (0..OPS).any(|i| carriers & (1 << i) != 0 && v.env[i].is_gated());
+        if let Some(v) = self.voices.iter_mut().filter(|v| v.note == key && gated(v)).max_by_key(|v| v.started_at) {
+            v.expr.apply(expr, sr);
+        }
+    }
+
+    fn controller(&mut self, ctl: Controller) {
+        if let Controller::PitchBend(b) = ctl {
+            self.bend = b.clamp(-1.0, 1.0) * crate::PITCH_BEND_RANGE;
+        }
+    }
+
     fn all_notes_off(&mut self) {
         for v in &mut self.voices {
             for e in &mut v.env {
@@ -341,6 +373,7 @@ impl Instrument for FmSynth {
             }
         }
         self.filter.reset();
+        self.filter_r.reset();
     }
 
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
@@ -348,15 +381,18 @@ impl Instrument for FmSynth {
         let carriers = algo.carriers;
         if !self.voices.iter().any(|v| v.sounding(carriers)) {
             self.filter.reset();
+            self.filter_r.reset();
             return;
         }
         let norm = self.gain / carriers.count_ones() as f32;
         let ratios: [f32; OPS] = std::array::from_fn(|i| self.ops[i].ratio() / self.sample_rate);
         let fb = self.feedback * FB_DEPTH;
+        let bend = self.bend;
         for (l, r) in left.iter_mut().zip(right.iter_mut()) {
-            let mut mix = 0.0;
+            let (mut ml, mut mr) = (0.0, 0.0);
             for v in self.voices.iter_mut().filter(|v| v.sounding(carriers)) {
-                let hz = v.glide.next(self.glide_coef);
+                let hz = v.glide.next(self.glide_coef) * v.tune.ratio(v.expr.tuning.tick() + bend);
+                let mut mix = 0.0;
                 let mut out = [0.0f32; OPS];
                 for i in (0..OPS).rev() {
                     let mut m = 0.0;
@@ -378,10 +414,12 @@ impl Instrument for FmSynth {
                         mix += o;
                     }
                 }
+                let (pl, pr) = pan_gains(v.expr.pan);
+                ml += mix * pl;
+                mr += mix * pr;
             }
-            let s = soft_clip(self.filter.process(mix * norm));
-            *l += s;
-            *r += s;
+            *l += soft_clip(self.filter.process(ml * norm));
+            *r += soft_clip(self.filter_r.process(mr * norm));
         }
         // Porteuses éteintes : on coupe aussi les modulateurs.
         for v in self.voices.iter_mut().filter(|v| !v.sounding(carriers)) {

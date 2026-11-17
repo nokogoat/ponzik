@@ -41,7 +41,7 @@ pub use effects::fx_rack::{MacroMap, RackLayout};
 pub use modulation::{ModClock, ModKind, ModLink, ModMeters, ModParam, ModSet, Modulator};
 pub use engine::{Command, Engine, EngineHandle, Garbage, MAX_CHANNELS, MAX_RECORDINGS, render_audio_clips, silent_instrument, track_remap};
 pub use input::{InputConsumer, InputProducer, InputSource, InputStrip, RecordBuffer, RecordChunk, TakeSlice, input_channel};
-pub use instrument::Instrument;
+pub use instrument::{Controller, Instrument, NoteExpression, PITCH_BEND_RANGE, Ramp, TuningRamps};
 pub use midi_out::{MidiOut, MidiOutEvent};
 pub use note_fx::{NoteBuffer, NoteEvent, NoteFx};
 pub use param::{ParamInfo, Params, Unit};
@@ -49,7 +49,7 @@ pub use pool::{Parallelism, WorkerPool, default_worker_threads, promote_current_
 pub use rack::{Channel, NOTE_FX_SLOTS};
 pub use sample::Sample;
 pub use sequence::{
-    AudioClip, AutoPoint, AutoScope, AutoTarget, AutomationLane, Clip, ClipWarp, MAX_RATCHET, Note, NoteCond, PPQ, Pattern, PlayMode, Sequence, SessionSlot,
+    AudioClip, AutoPoint, AutoScope, AutoTarget, AutomationLane, Clip, ClipWarp, MAX_FINE, MAX_RATCHET, Note, NoteCond, PPQ, Pattern, PlayMode, Sequence, SessionSlot,
     TICKS_PER_BAR, TICKS_PER_STEP, WarpMap, WarpMarker, equal_power, fade_shape, splitmix,
 };
 pub use tempo_map::{BarBeat, TempoMap, TempoPoint, TempoView, TimeSig};

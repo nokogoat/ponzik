@@ -88,14 +88,45 @@ pub struct Note {
     pub cond: NoteCond,
     /// Repeats played inside the note's length, 1 to [`MAX_RATCHET`].
     pub ratchet: u8,
+    /// Slide note (FL Studio): plays nothing by itself, it glides the notes
+    /// held on its channel to its key over its length.
+    pub slide: bool,
+    /// Pan of the note in [−1, 1] (0: center).
+    pub pan: f32,
+    /// Fine pitch in cents, [−100, 100].
+    pub fine: f32,
 }
+
+/// Fine pitch range of a note, in cents (±).
+pub const MAX_FINE: f32 = 100.0;
 
 impl Note {
     /// A note that always plays, once.
-    pub const DEFAULT: Note = Note { start: 0, len: TICKS_PER_STEP, key: 60, vel: 0.8, prob: 100, cond: NoteCond::Always, ratchet: 1 };
+    pub const DEFAULT: Note = Note {
+        start: 0,
+        len: TICKS_PER_STEP,
+        key: 60,
+        vel: 0.8,
+        prob: 100,
+        cond: NoteCond::Always,
+        ratchet: 1,
+        slide: false,
+        pan: 0.0,
+        fine: 0.0,
+    };
 
     pub const fn new(start: u32, len: u32, key: u8, vel: f32) -> Self {
-        Self { start, len, key, vel, prob: 100, cond: NoteCond::Always, ratchet: 1 }
+        Self { start, len, key, vel, ..Self::DEFAULT }
+    }
+
+    /// True when the note has a pan or a fine pitch.
+    pub fn has_expression(&self) -> bool {
+        self.pan != 0.0 || self.fine != 0.0
+    }
+
+    /// Pitch of the note in semitones, fine pitch included.
+    pub fn pitch(&self) -> f32 {
+        f32::from(self.key) + self.fine / 100.0
     }
 
     /// True when the note has a chance, a condition or repeats.
@@ -470,6 +501,12 @@ pub struct SeqEvent {
     pub vel: f32,
     /// In ticks (a ratchet repeat can last a fraction of a tick).
     pub len: f64,
+    /// A slide note: glides the held notes instead of playing.
+    pub slide: bool,
+    /// Pan in [−1, 1].
+    pub pan: f32,
+    /// Fine pitch in cents.
+    pub fine: f32,
 }
 
 impl Sequence {
@@ -612,7 +649,7 @@ impl Sequence {
                         break;
                     }
                     let tick = base + n.start as f64 + self.swing_offset(n.start);
-                    let repeats = n.ratchet.clamp(1, MAX_RATCHET);
+                    let repeats = if n.slide { 1 } else { n.ratchet.clamp(1, MAX_RATCHET) };
                     let (step, sub_len) = if repeats > 1 {
                         let step = n.ratchet_span() as f64 / f64::from(repeats);
                         (step, step)
@@ -626,7 +663,7 @@ impl Sequence {
                     for k in 0..repeats {
                         let t = tick + step * f64::from(k);
                         if t >= from && t < to && out.len() < out.capacity().max(1) {
-                            out.push(SeqEvent { tick: t, channel, key: n.key, vel: n.vel, len: sub_len });
+                            out.push(SeqEvent { tick: t, channel, key: n.key, vel: n.vel, len: sub_len, slide: n.slide, pan: n.pan, fine: n.fine });
                         }
                     }
                 }

@@ -72,6 +72,8 @@ pub enum Command {
     SetChannelGain { channel: usize, gain: f32 },
     SetChannelPan { channel: usize, pan: f32 },
     SetChannelMute { channel: usize, muted: bool },
+    /// Portamento of a channel in seconds (0: off).
+    SetChannelPorta { channel: usize, secs: f32 },
     SetChannelTrack { channel: usize, track: usize },
     SetInstrumentParam { channel: usize, id: u32, value: f32 },
     /// Place (ou retire) un effet de notes, déjà réglé à la fréquence
@@ -178,6 +180,7 @@ impl std::fmt::Debug for Command {
             Command::SetChannelGain { .. } => "SetChannelGain",
             Command::SetChannelPan { .. } => "SetChannelPan",
             Command::SetChannelMute { .. } => "SetChannelMute",
+            Command::SetChannelPorta { .. } => "SetChannelPorta",
             Command::SetChannelTrack { .. } => "SetChannelTrack",
             Command::SetInstrumentParam { .. } => "SetInstrumentParam",
             Command::SetNoteFx { .. } => "SetNoteFx",
@@ -1312,21 +1315,35 @@ impl Engine {
         let mut next_event = 0;
         while i < n {
             let now = self.clock + i as u64;
+            // Events due now: slides first, so that the notes ending here
+            // still glide (legato), then the note ends, then the new notes.
+            let due = next_event + self.event_frames[next_event..].iter().take_while(|&&(frame, _)| frame <= i).count();
+            for k in next_event..due {
+                let (ev, len) = (self.events[k], self.event_frames[k].1);
+                if ev.slide
+                    && let Some(ch) = self.channels.get_mut(ev.channel)
+                    && !ch.muted
+                    && ch.slide(now, f32::from(ev.key) + ev.fine / 100.0, len as f32 / self.sample_rate, now + len)
+                {
+                    self.events[k].vel = -1.0;
+                }
+            }
             for ch in &mut self.channels {
                 ch.release_due(now);
             }
-            while let Some(&(frame, len)) = self.event_frames.get(next_event) {
-                if frame > i {
-                    break;
+            for k in next_event..due {
+                let (ev, len) = (self.events[k], self.event_frames[k].1);
+                // A slide that glided is done; one with nothing to glide plays.
+                if ev.vel < 0.0 {
+                    continue;
                 }
-                let ev = self.events[next_event];
-                next_event += 1;
                 if let Some(ch) = self.channels.get_mut(ev.channel)
                     && !ch.muted
                 {
-                    ch.trigger(now, ev.key, ev.vel, now + len);
+                    ch.play(now, ev.key, ev.vel, now + len, ev.pan, ev.fine);
                 }
             }
+            next_event = due;
             for ch in &mut self.channels {
                 ch.flush(now);
             }
@@ -1777,6 +1794,11 @@ impl Engine {
                     }
                 }
             }
+            Command::SetChannelPorta { channel, secs } => {
+                if let Some(ch) = self.channels.get_mut(channel) {
+                    ch.porta = secs.max(0.0);
+                }
+            }
             Command::SetChannelTrack { channel, track } => {
                 if let Some(ch) = self.channels.get_mut(channel) {
                     ch.track = if track < self.mixer.len() { track } else { MASTER };
@@ -2130,9 +2152,22 @@ mod tests {
     struct Probe {
         log: Arc<Mutex<Vec<LogEntry>>>,
         rendered: Arc<AtomicUsize>,
+        /// Follows tuning expressions.
+        expressive: bool,
+        /// (key, expression, sample).
+        exprs: Arc<Mutex<Vec<(u8, crate::NoteExpression, u64)>>>,
+        /// (controller, sample).
+        ctls: Arc<Mutex<Vec<(crate::Controller, u64)>>>,
+        /// (parameter, value, sample).
+        params: Arc<Mutex<Vec<(u32, f32, u64)>>>,
     }
 
-    impl crate::param::Params for Probe {}
+    impl crate::param::Params for Probe {
+        fn set_param(&mut self, id: u32, value: f32) {
+            let t = self.rendered.load(Ordering::Relaxed) as u64;
+            self.params.lock().unwrap().push((id, value, t));
+        }
+    }
 
     impl Instrument for Probe {
         fn kind(&self) -> &'static str {
@@ -2148,6 +2183,17 @@ mod tests {
             self.log.lock().unwrap().push(("off", note, t));
         }
         fn all_notes_off(&mut self) {}
+        fn supports_expression(&self) -> bool {
+            self.expressive
+        }
+        fn note_expression(&mut self, key: u8, expr: crate::NoteExpression) {
+            let t = self.rendered.load(Ordering::Relaxed) as u64;
+            self.exprs.lock().unwrap().push((key, expr, t));
+        }
+        fn controller(&mut self, ctl: crate::Controller) {
+            let t = self.rendered.load(Ordering::Relaxed) as u64;
+            self.ctls.lock().unwrap().push((ctl, t));
+        }
         fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
             self.rendered.fetch_add(left.len(), Ordering::Relaxed);
             left.fill(0.25);
@@ -2198,6 +2244,69 @@ mod tests {
             run(&mut engine, 6_000 * 17, block);
             assert_eq!(ons(&probe), [0, 24_000, 48_000, 72_000, 96_000], "bloc {block}");
         }
+    }
+
+    fn expressive_setup(notes: Vec<Note>, porta: f32) -> (Engine, EngineHandle, Probe) {
+        let probe = Probe { expressive: true, ..Default::default() };
+        let ch = Channel::new("probe", Box::new(probe.clone())).with_track(1).with_porta(porta);
+        let mut p = Pattern::new(4 * crate::TICKS_PER_BAR, 1);
+        p.notes[0] = notes;
+        p.sort();
+        let (engine, mut handle) = Engine::new(SR, vec![ch], Sequence { patterns: vec![p], ..Default::default() });
+        handle.send(Command::SetBpm(120.0)).unwrap();
+        handle.send(Command::Play).unwrap();
+        (engine, handle, probe)
+    }
+
+    #[test]
+    fn slide_notes_glide_the_held_notes() {
+        use crate::NoteExpression::{Pan, Tuning};
+        for block in [64, 1000] {
+            // 250 samples a tick. A held A3, a slide to A4 on its second beat
+            // over half a beat, then a slide note right where a note ends (legato).
+            let held = Note::new(0, 192, 57, 1.0);
+            let slide = Note { slide: true, fine: 50.0, ..Note::new(96, 48, 69, 1.0) };
+            let short = Note::new(384, 96, 60, 1.0);
+            let legato = Note { slide: true, ..Note::new(480, 96, 62, 1.0) };
+            let lone = Note { slide: true, pan: -0.5, ..Note::new(960, 24, 64, 1.0) };
+            let (mut engine, _handle, probe) = expressive_setup(vec![held, slide, short, legato, lone], 0.0);
+            run(&mut engine, 1_100 * 250, block);
+            let log = probe.log.lock().unwrap().clone();
+            // Slides play no note; the held notes last to the end of the slides;
+            // a slide with nothing to glide plays as a note, with its pan.
+            assert_eq!(
+                log,
+                [("on", 57, 0), ("off", 57, 48_000), ("on", 60, 96_000), ("off", 60, 144_000), ("on", 64, 240_000), ("off", 64, 246_000)],
+                "block {block}"
+            );
+            let exprs = probe.exprs.lock().unwrap().clone();
+            assert_eq!(
+                exprs,
+                [
+                    (57, Tuning { semitones: 12.5, secs: 0.25 }, 24_000),
+                    (60, Tuning { semitones: 2.0, secs: 0.5 }, 120_000),
+                    (64, Pan(-0.5), 240_000),
+                ],
+                "block {block}"
+            );
+        }
+    }
+
+    #[test]
+    fn portamento_and_fine_pitch() {
+        use crate::NoteExpression::Tuning;
+        let a = Note { fine: -20.0, ..Note::new(0, 96, 60, 1.0) };
+        let b = Note::new(96, 96, 67, 1.0);
+        let (mut engine, _handle, probe) = expressive_setup(vec![a, b], 0.1);
+        run(&mut engine, 200 * 250, 128);
+        assert_eq!(
+            probe.exprs.lock().unwrap().clone(),
+            [
+                (60, Tuning { semitones: -0.2, secs: 0.0 }, 0),
+                (67, Tuning { semitones: 60.0 - 0.2 - 67.0, secs: 0.0 }, 24_000),
+                (67, Tuning { semitones: 0.0, secs: 0.1 }, 24_000),
+            ]
+        );
     }
 
     #[test]

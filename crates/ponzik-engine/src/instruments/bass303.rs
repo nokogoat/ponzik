@@ -10,8 +10,8 @@ use ponzik_dsp::filter::{FilterMode, Svf};
 use ponzik_dsp::osc::{Oscillator, Waveform};
 use ponzik_dsp::util::{db_to_gain, decay_coef, gain_to_db};
 
-use super::common::{Glide, glide_coef, soft_clip};
-use crate::Instrument;
+use super::common::{Expr, Glide, Tune, glide_coef, pan_gains, soft_clip};
+use crate::{Controller, Instrument, NoteExpression};
 use crate::param::{ParamInfo, Params, Unit};
 
 const ACCENT_VELOCITY: f32 = 0.8;
@@ -74,6 +74,11 @@ pub struct Bass303 {
     /// Notes tenues, la plus récente en dernier.
     held: [u8; HELD],
     held_len: usize,
+    /// Expression of the note that plays.
+    expr: Expr,
+    expr_tune: Tune,
+    /// Pitch bend in semitones.
+    bend: f32,
 }
 
 impl Default for Bass303 {
@@ -109,6 +114,9 @@ impl Bass303 {
             velocity: 0.0,
             held: [0; HELD],
             held_len: 0,
+            expr: Expr::default(),
+            expr_tune: Tune::default(),
+            bend: 0.0,
         };
         for p in &PARAMS {
             s.set_param(p.id, p.default);
@@ -198,6 +206,7 @@ impl Instrument for Bass303 {
         let legato = self.held_len > 0 && self.amp_env.is_gated();
         self.velocity = velocity.clamp(0.0, 1.0);
         self.accented = self.velocity > ACCENT_VELOCITY;
+        self.expr.reset();
         if legato {
             self.glide.go(note as f32);
         } else {
@@ -231,6 +240,22 @@ impl Instrument for Bass303 {
         }
     }
 
+    fn supports_expression(&self) -> bool {
+        true
+    }
+
+    fn note_expression(&mut self, key: u8, expr: NoteExpression) {
+        if self.held_len > 0 && self.held[self.held_len - 1] == key {
+            self.expr.apply(expr, self.sample_rate);
+        }
+    }
+
+    fn controller(&mut self, ctl: Controller) {
+        if let Controller::PitchBend(b) = ctl {
+            self.bend = b.clamp(-1.0, 1.0) * crate::PITCH_BEND_RANGE;
+        }
+    }
+
     fn all_notes_off(&mut self) {
         self.held_len = 0;
         self.amp_env.reset();
@@ -252,8 +277,9 @@ impl Instrument for Bass303 {
         let drive = 1.0 + self.dist * 15.0;
         let makeup = 1.0 / drive.tanh().max(0.5) / (1.0 + self.dist * 1.5);
         let level = self.gain * (0.6 + 0.4 * self.velocity) * (1.0 + 0.6 * acc);
+        let (pl, pr) = pan_gains(self.expr.pan);
         for (l, r) in left.iter_mut().zip(right.iter_mut()) {
-            let hz = self.glide.next(self.slide_coef) * tune;
+            let hz = self.glide.next(self.slide_coef) * tune * self.expr_tune.ratio(self.expr.tuning.tick() + self.bend);
             self.osc.set_frequency(hz, sr);
             let fc = self.cutoff * 2f32.powf(env_oct * self.filter_env);
             self.filter_env *= coef;
@@ -263,8 +289,8 @@ impl Instrument for Bass303 {
             let y = self.filters[1].process(x) * comp;
             let s = (y * drive).tanh() * makeup * self.amp_env.next_sample() * level;
             let s = soft_clip(s);
-            *l += s;
-            *r += s;
+            *l += s * pl;
+            *r += s * pr;
             if !self.amp_env.is_active() {
                 break;
             }

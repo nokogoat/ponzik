@@ -3,6 +3,62 @@
 
 use ponzik_dsp::util::{decay_coef, midi_to_hz};
 
+use crate::{NoteExpression, Ramp};
+
+/// Expression of a voice: tuning (semitones, ramped) and pan.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Expr {
+    pub tuning: Ramp,
+    pub pan: f32,
+}
+
+impl Expr {
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    pub fn apply(&mut self, expr: NoteExpression, sample_rate: f32) {
+        match expr {
+            NoteExpression::Tuning { semitones, secs } if semitones.is_finite() => {
+                self.tuning.go(semitones.clamp(-96.0, 96.0), secs, sample_rate)
+            }
+            NoteExpression::Tuning { .. } => {}
+            NoteExpression::Pan(p) => self.pan = if p.is_finite() { p.clamp(-1.0, 1.0) } else { 0.0 },
+        }
+    }
+}
+
+/// Frequency ratio of a pitch offset in semitones, computed again only when
+/// the offset changes.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Tune {
+    off: f32,
+    ratio: f32,
+}
+
+impl Default for Tune {
+    fn default() -> Self {
+        Self { off: 0.0, ratio: 1.0 }
+    }
+}
+
+impl Tune {
+    #[inline]
+    pub fn ratio(&mut self, off: f32) -> f32 {
+        if off != self.off {
+            self.off = off;
+            self.ratio = (off / 12.0).exp2();
+        }
+        self.ratio
+    }
+}
+
+/// Balance gains (left, right) of a pan in [−1, 1]: unity at the center.
+#[inline]
+pub(crate) fn pan_gains(pan: f32) -> (f32, f32) {
+    ((1.0 - pan).min(1.0), (1.0 + pan).min(1.0))
+}
+
 /// Sinus rapide, `phase` en tours (n'importe quel réel). Erreur < 0,1 %.
 #[inline]
 pub(crate) fn fast_sin(phase: f32) -> f32 {

@@ -2,8 +2,8 @@
 //! de mixer, précédé d'une chaîne d'effets de notes. Les notes vivent dans les
 //! patterns ([`crate::sequence`]).
 
-use crate::Instrument;
 use crate::note_fx::{NoteBuffer, NoteEvent, NoteFx};
+use crate::{Instrument, NoteExpression};
 
 const MAX_PENDING_OFFS: usize = 64;
 /// Emplacements d'effets de notes par canal.
@@ -11,6 +11,8 @@ pub const NOTE_FX_SLOTS: usize = 4;
 /// Notes entrantes gardées pour un même instant avant de passer la chaîne :
 /// avec un accord de cinq notes, la sortie tient dans un [`NoteBuffer`].
 const MAX_INPUTS: usize = 24;
+/// Note expressions waiting for their notes to leave the note effects.
+const MAX_EXPRESSIONS: usize = 64;
 
 pub struct Channel {
     pub name: String,
@@ -42,6 +44,13 @@ pub struct Channel {
     /// the channel's when `tap_out`.
     pub(crate) tap: Option<Vec<f32>>,
     pub(crate) tap_out: bool,
+    /// Portamento in seconds (0: off): each note glides from the previous
+    /// one, on instruments that follow tuning expressions.
+    pub porta: f32,
+    /// Pitch of the last note started (fine pitch included), for portamento.
+    last_pitch: Option<f32>,
+    /// Expressions of notes started at `fx_clock`, sent once they play.
+    exprs: Vec<(u8, NoteExpression)>,
 }
 
 impl Channel {
@@ -64,7 +73,15 @@ impl Channel {
             frozen: None,
             tap: None,
             tap_out: false,
+            porta: 0.0,
+            last_pitch: None,
+            exprs: Vec::with_capacity(MAX_EXPRESSIONS),
         }
+    }
+
+    pub fn with_porta(mut self, secs: f32) -> Self {
+        self.porta = secs.max(0.0);
+        self
     }
 
     pub fn with_gain(mut self, gain: f32) -> Self {
@@ -146,6 +163,16 @@ impl Channel {
             }
         }
         src.clear();
+        for &(key, expr) in self.exprs.iter() {
+            self.instrument.note_expression(key, expr);
+        }
+        self.exprs.clear();
+    }
+
+    fn express(&mut self, key: u8, expr: NoteExpression) {
+        if self.exprs.len() < MAX_EXPRESSIONS {
+            self.exprs.push((key, expr));
+        }
     }
 
     /// Échantillon absolu de la prochaine émission spontanée de la chaîne.
@@ -174,6 +201,44 @@ impl Channel {
         self.pending_offs.push((note, off_at));
     }
 
+    /// A note from the sequencer: with its pan and fine pitch (cents), and
+    /// gliding from the previous note when the channel has portamento.
+    pub(crate) fn play(&mut self, now: u64, note: u8, velocity: f32, off_at: u64, pan: f32, fine: f32) {
+        self.trigger(now, note, velocity, off_at);
+        let pitch = f32::from(note) + fine / 100.0;
+        let tuned = self.instrument.supports_expression();
+        if tuned && self.porta > 0.0 && let Some(from) = self.last_pitch.filter(|&p| p != pitch) {
+            self.express(note, NoteExpression::Tuning { semitones: from - f32::from(note), secs: 0.0 });
+            self.express(note, NoteExpression::Tuning { semitones: fine / 100.0, secs: self.porta });
+        } else if fine != 0.0 {
+            self.express(note, NoteExpression::Tuning { semitones: fine / 100.0, secs: 0.0 });
+        }
+        if pan != 0.0 {
+            self.express(note, NoteExpression::Pan(pan.clamp(-1.0, 1.0)));
+        }
+        self.last_pitch = Some(pitch);
+    }
+
+    /// A slide note: the notes held at `now` (those ending now included)
+    /// glide to `pitch` (semitones) over `secs` and last at least until
+    /// `until`. Nothing held, or an instrument that cannot glide: `false`,
+    /// the caller plays it as a note.
+    pub(crate) fn slide(&mut self, now: u64, pitch: f32, secs: f32, until: u64) -> bool {
+        if !self.instrument.supports_expression() || !self.pending_offs.iter().any(|&(_, at)| at >= now) {
+            return false;
+        }
+        for i in 0..self.pending_offs.len() {
+            let (key, at) = self.pending_offs[i];
+            if at < now {
+                continue;
+            }
+            self.pending_offs[i].1 = at.max(until);
+            self.express(key, NoteExpression::Tuning { semitones: pitch - f32::from(key), secs });
+        }
+        self.last_pitch = Some(pitch);
+        true
+    }
+
     pub(crate) fn release_due(&mut self, now: u64) {
         let mut i = 0;
         while i < self.pending_offs.len() {
@@ -194,6 +259,8 @@ impl Channel {
     pub(crate) fn silence(&mut self) {
         self.pending_offs.clear();
         self.inputs.clear();
+        self.exprs.clear();
+        self.last_pitch = None;
         for fx in self.note_fx.iter_mut().flatten() {
             fx.reset();
         }

@@ -3,7 +3,8 @@ use ponzik_dsp::filter::{FilterMode, Svf};
 use ponzik_dsp::osc::{Oscillator, Waveform};
 use ponzik_dsp::util::midi_to_hz;
 
-use crate::Instrument;
+use super::common::{Expr, pan_gains};
+use crate::{Controller, Instrument, NoteExpression};
 use crate::param::{ParamInfo, Params, Unit};
 
 const VOICES: usize = 8;
@@ -133,6 +134,10 @@ struct Voice {
     filter: Svf,
     amp_env: Adsr,
     filter_env: Adsr,
+    /// Slides, fine pitch, pan.
+    expr: Expr,
+    /// Pitch the oscillators play, in semitones.
+    pitch: f32,
 }
 
 pub struct Pulse {
@@ -140,6 +145,8 @@ pub struct Pulse {
     sample_rate: f32,
     voices: Vec<Voice>,
     note_counter: u64,
+    /// Pitch bend in semitones.
+    bend: f32,
 }
 
 impl Pulse {
@@ -155,9 +162,18 @@ impl Pulse {
                 filter: Svf::new(FilterMode::LowPass, params.cutoff_hz, params.resonance, sample_rate),
                 amp_env: Adsr::new(params.amp_env, sample_rate),
                 filter_env: Adsr::new(params.filter_env, sample_rate),
+                expr: Expr::default(),
+                pitch: 0.0,
             })
             .collect();
-        Self { params, sample_rate, voices, note_counter: 0 }
+        Self { params, sample_rate, voices, note_counter: 0, bend: 0.0 }
+    }
+
+    fn tune(v: &mut Voice, pitch: f32, detune_cents: f32, sr: f32) {
+        v.pitch = pitch;
+        let hz = midi_to_hz(pitch);
+        v.osc1.set_frequency(hz, sr);
+        v.osc2.set_frequency(hz * 2f32.powf(detune_cents / 1_200.0), sr);
     }
 }
 
@@ -189,13 +205,12 @@ impl Instrument for Pulse {
             });
         self.note_counter += 1;
         let p = self.params;
-        let hz = midi_to_hz(note as f32);
         let v = &mut self.voices[idx];
         v.note = note;
         v.velocity = velocity.clamp(0.0, 1.0);
         v.started_at = self.note_counter;
-        v.osc1.set_frequency(hz, self.sample_rate);
-        v.osc2.set_frequency(hz * 2f32.powf(p.detune_cents / 1_200.0), self.sample_rate);
+        v.expr.reset();
+        Self::tune(v, f32::from(note) + self.bend, p.detune_cents, self.sample_rate);
         if !v.amp_env.is_active() {
             v.osc1.reset(0.0);
             v.osc2.reset(0.37);
@@ -212,6 +227,23 @@ impl Instrument for Pulse {
         }
     }
 
+    fn supports_expression(&self) -> bool {
+        true
+    }
+
+    fn note_expression(&mut self, key: u8, expr: NoteExpression) {
+        let sr = self.sample_rate;
+        if let Some(v) = self.voices.iter_mut().filter(|v| v.note == key && v.amp_env.is_gated()).max_by_key(|v| v.started_at) {
+            v.expr.apply(expr, sr);
+        }
+    }
+
+    fn controller(&mut self, ctl: Controller) {
+        if let Controller::PitchBend(b) = ctl {
+            self.bend = b.clamp(-1.0, 1.0) * crate::PITCH_BEND_RANGE;
+        }
+    }
+
     fn all_notes_off(&mut self) {
         for v in &mut self.voices {
             v.amp_env.reset();
@@ -222,14 +254,20 @@ impl Instrument for Pulse {
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
         let p = self.params;
         let sr = self.sample_rate;
+        let bend = self.bend;
         for v in self.voices.iter_mut().filter(|v| v.amp_env.is_active()) {
+            let (pl, pr) = pan_gains(v.expr.pan);
             for (l, r) in left.iter_mut().zip(right.iter_mut()) {
+                let pitch = f32::from(v.note) + v.expr.tuning.tick() + bend;
+                if pitch != v.pitch {
+                    Self::tune(v, pitch, p.detune_cents, sr);
+                }
                 let cutoff = p.cutoff_hz + v.filter_env.next_sample() * p.filter_env_hz * v.velocity;
                 v.filter.set_params(cutoff, p.resonance, sr);
                 let raw = 0.5 * (v.osc1.next_sample() + v.osc2.next_sample());
                 let s = v.filter.process(raw) * v.amp_env.next_sample() * v.velocity * p.gain;
-                *l += s;
-                *r += s;
+                *l += s * pl;
+                *r += s * pr;
             }
         }
     }
@@ -256,6 +294,63 @@ mod tests {
         synth.note_off(45);
         peak(&mut synth, 48_000);
         assert_eq!(peak(&mut synth, 512), 0.0);
+    }
+
+    /// Pitch (MIDI) heard in `samples`, by YIN.
+    pub(crate) fn heard(samples: &[f32]) -> f32 {
+        let mut tuner = ponzik_dsp::tuner::Tuner::new(48_000.0, 2_048);
+        tuner.push(samples);
+        let p = tuner.detect().expect("a pitch");
+        p.note as f32 + p.cents / 100.0
+    }
+
+    fn sine() -> Pulse {
+        let mut synth = Pulse::new(PulseParams {
+            waveform: Waveform::Sine,
+            detune_cents: 0.0,
+            cutoff_hz: 16_000.0,
+            filter_env_hz: 0.0,
+            amp_env: AdsrParams { attack: 0.001, decay: 0.1, sustain: 1.0, release: 0.05 },
+            ..Default::default()
+        });
+        synth.set_sample_rate(48_000.0);
+        synth
+    }
+
+    #[test]
+    fn tuning_expression_glides_in_a_straight_line() {
+        let mut synth = sine();
+        synth.note_on(57, 1.0);
+        let (l, _) = super::super::common::test_util::render(&mut synth, 4_800);
+        assert!((heard(&l[2_400..]) - 57.0).abs() < 0.05);
+        // An octave up over half a second.
+        synth.note_expression(57, NoteExpression::Tuning { semitones: 12.0, secs: 0.5 });
+        let (l, _) = super::super::common::test_util::render(&mut synth, 48_000);
+        // At 0.25 s, halfway in semitones. YIN compares the first half of
+        // its window with what follows: the window starts 512 samples before.
+        let at = |t: usize| heard(&l[t - 512..t + 1_536]);
+        let mid = at(12_000);
+        assert!((mid - 63.0).abs() < 0.1, "{mid}");
+        let quarter = at(6_000);
+        assert!((quarter - 60.0).abs() < 0.1, "{quarter}");
+        assert!((heard(&l[30_000..32_048]) - 69.0).abs() < 0.05);
+        // A new note on the key starts without the offset.
+        synth.note_off(57);
+        synth.note_on(57, 1.0);
+        let (l, _) = super::super::common::test_util::render(&mut synth, 9_600);
+        assert!((heard(&l[4_800..6_848]) - 57.0).abs() < 0.05);
+    }
+
+    #[test]
+    fn pitch_bend_and_pan() {
+        let mut synth = sine();
+        synth.controller(Controller::PitchBend(1.0));
+        synth.note_on(60, 1.0);
+        synth.note_expression(60, NoteExpression::Pan(-1.0));
+        let (l, r) = super::super::common::test_util::render(&mut synth, 9_600);
+        assert!((heard(&l[4_800..6_848]) - 62.0).abs() < 0.05);
+        assert!(r.iter().all(|&s| s == 0.0));
+        assert!(l.iter().any(|&s| s.abs() > 0.05));
     }
 
     #[test]
