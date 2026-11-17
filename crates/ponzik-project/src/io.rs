@@ -54,6 +54,9 @@ fn instrument_json(i: &InstrumentDef) -> Json {
     if let Some(state) = &i.state {
         pairs.push(("state", state_json(state)));
     }
+    if let Some(ab) = &i.ab {
+        pairs.push(("ab", crate::ab::ab_json(ab, params_json)));
+    }
     obj(pairs)
 }
 
@@ -209,6 +212,9 @@ fn track_json(t: &TrackDef) -> Json {
                 }
                 if let Some(state) = &fx.state {
                     pairs.push(("state", state_json(state)));
+                }
+                if let Some(ab) = &fx.ab {
+                    pairs.push(("ab", crate::ab::ab_json(ab, params_json)));
                 }
                 obj(pairs)
             }
@@ -490,6 +496,7 @@ fn load_channel(v: &Json) -> ChannelDef {
             sample: field("sample").and_then(Json::as_str).map(String::from),
             pads: load_pads(field("pads")),
             state: load_state(field("state")),
+            ab: crate::ab::load_ab(field("ab"), load_params, false),
         },
         note_fx: load_note_fx(v.get("note_fx")),
         gain: gain(v.get("gain"), 0.8),
@@ -617,6 +624,7 @@ fn load_effect(v: &Json) -> Option<EffectDef> {
         params: load_params(v.get("params")),
         bypass: bool_or(v.get("bypass"), false),
         sidechain: index(v.get("sidechain"), TRACKS),
+        ab: crate::ab::load_ab(v.get("ab"), load_params, rack.is_some()),
         rack,
         state: load_state(v.get("state")),
     })

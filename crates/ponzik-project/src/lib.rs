@@ -23,6 +23,7 @@ pub use ponzik_engine::{AutoPoint, AutoScope, AutoTarget, SessionSlot};
 pub const SESSION_COLUMNS: usize = 8;
 pub const SESSION_SCENES: usize = 8;
 
+pub mod ab;
 mod arrange;
 pub mod base64;
 pub mod bounce;
@@ -87,6 +88,8 @@ pub struct InstrumentDef {
     /// The plugin's opaque state ([`PluginState`]), captured when the project
     /// is saved; `None` for native instruments.
     pub state: Option<PluginState>,
+    /// The other A/B state, once compared (see [`ab`]).
+    pub ab: Option<Box<ab::DeviceAb>>,
 }
 
 /// Opaque state of a CLAP or VST 3 plugin (`clap.state`, VST 3 component and
@@ -97,7 +100,7 @@ pub type PluginState = Arc<[u8]>;
 
 impl InstrumentDef {
     pub fn new(kind: &str) -> Self {
-        Self { kind: kind.into(), params: Vec::new(), sample: None, pads: Vec::new(), state: None }
+        Self { kind: kind.into(), params: Vec::new(), sample: None, pads: Vec::new(), state: None, ab: None }
     }
 
     /// Every audio file the instrument needs (sample and pad layers).
@@ -134,6 +137,8 @@ pub struct EffectDef {
     pub rack: Option<Box<RackDef>>,
     /// Like [`InstrumentDef::state`].
     pub state: Option<PluginState>,
+    /// Like [`InstrumentDef::ab`].
+    pub ab: Option<Box<ab::DeviceAb>>,
 }
 
 impl EffectDef {
@@ -145,6 +150,7 @@ impl EffectDef {
             sidechain: None,
             rack: (kind == rack::RACK).then(Box::default),
             state: None,
+            ab: None,
         }
     }
 
