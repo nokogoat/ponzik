@@ -250,6 +250,28 @@ pub enum AutoTarget {
     TrackPan(usize),
     /// En BPM.
     Tempo,
+    /// Pitch bend of a channel's instrument, in [−1, 1].
+    PitchBend(usize),
+    /// Control change `cc` (1: the mod wheel) sent to a channel's
+    /// instrument, in [0, 1].
+    Cc { channel: usize, cc: u8 },
+}
+
+impl AutoTarget {
+    /// Sent to the instrument as events on their exact sample (each tick of
+    /// a ramp), rather than once per block.
+    pub fn is_event(self) -> bool {
+        matches!(self, Self::InstrumentParam { .. } | Self::PitchBend(_) | Self::Cc { .. })
+    }
+
+    /// The channel whose instrument the target drives, if any.
+    pub fn channel(self) -> Option<usize> {
+        match self {
+            Self::InstrumentParam { channel, .. } | Self::Cc { channel, .. } | Self::PitchBend(channel) => Some(channel),
+            Self::ChannelGain(c) | Self::ChannelPan(c) => Some(c),
+            _ => None,
+        }
+    }
 }
 
 /// Portée d'une courbe d'automation.

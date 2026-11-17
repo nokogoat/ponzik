@@ -17,7 +17,7 @@
 //! automatique instrument ↔ entrée reste à faire (crochet : un futur paramètre
 //! « Audio return » qui choisirait la source d'écoute de la piste du canal).
 
-use crate::Instrument;
+use crate::{Controller, Instrument};
 use crate::midi_out::{MidiOutEvent, ShortMessage};
 use crate::param::{ParamInfo, Params, Unit};
 use ponzik_midi::message::CC_MOD_WHEEL;
@@ -187,6 +187,17 @@ impl Instrument for ExternalMidi {
         let vel = (velocity.clamp(0.0, 1.0) * 127.0).round() as u8;
         if self.push(held.port, ShortMessage::note_on(held.channel, held.key, vel)) {
             self.held[note as usize] = Some(held);
+        }
+    }
+
+    fn controller(&mut self, ctl: Controller) {
+        match ctl {
+            // Same as the knobs: the hardware hears changes only.
+            Controller::PitchBend(b) => self.set_param(P_BEND, b),
+            Controller::Cc(CC_MOD_WHEEL, v) => self.set_param(P_MOD, v),
+            Controller::Cc(cc, v) => {
+                self.push(self.port, ShortMessage::control_change(self.channel, cc.min(127), (v.clamp(0.0, 1.0) * 127.0).round() as u8));
+            }
         }
     }
 

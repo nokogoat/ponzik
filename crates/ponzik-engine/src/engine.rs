@@ -505,6 +505,8 @@ pub struct Engine {
     click_hz: f32,
 
     events: Vec<SeqEvent>,
+    /// Controller events of the block: (frame, automation lane, value).
+    ctl_events: Vec<(usize, usize, f32)>,
     /// For each event of the block: its frame in the block and its length in samples.
     event_frames: Vec<(usize, u64)>,
     scratch_l: Vec<f32>,
@@ -817,6 +819,7 @@ impl Engine {
             click_env: 0.0,
             click_hz: 0.0,
             events: Vec::with_capacity(MAX_EVENTS),
+            ctl_events: Vec::with_capacity(MAX_EVENTS),
             event_frames: Vec::with_capacity(MAX_EVENTS),
             scratch_l: vec![0.0; MAX_BLOCK],
             scratch_r: vec![0.0; MAX_BLOCK],
@@ -1203,14 +1206,8 @@ impl Engine {
                 continue;
             }
             match lane.target {
-                AutoTarget::InstrumentParam { channel, id } => {
-                    if let Some(ch) = self.channels.get_mut(channel)
-                        && !ch.mods.as_mut().is_some_and(|m| m.set_base(0, id, v))
-                        && ch.instrument.get_param(id) != v
-                    {
-                        ch.instrument.set_param(id, v);
-                    }
-                }
+                // Sent on their sample by `process_chunk`.
+                AutoTarget::InstrumentParam { .. } | AutoTarget::PitchBend(_) | AutoTarget::Cc { .. } => {}
                 AutoTarget::EffectParam { track, slot, id } => {
                     if let Some(t) = self.mixer.tracks.get_mut(track)
                         && !t.mods.as_mut().is_some_and(|m| m.set_base(slot, id, v))
@@ -1242,6 +1239,61 @@ impl Engine {
                 }
                 AutoTarget::Tempo => {}
             }
+        }
+    }
+
+    /// Events of the lanes sent on their sample ([`AutoTarget::is_event`])
+    /// in the block that starts at tick `from`: a value on each tick where
+    /// it changes, and the value at `from` when the block does not follow
+    /// the previous one. `frame_in` gives the frame of a tick in the block,
+    /// `None` outside: a tick on the edge of two blocks belongs to one only.
+    fn collect_controls(
+        seq: &Sequence,
+        held: &[Option<AutoTarget>],
+        out: &mut Vec<(usize, usize, f32)>,
+        (from, to): (f64, f64),
+        restart: bool,
+        frame_in: &dyn Fn(f64) -> Option<usize>,
+    ) {
+        out.clear();
+        for (li, lane) in seq.automation.iter().enumerate() {
+            if !lane.target.is_event() || held.contains(&Some(lane.target)) {
+                continue;
+            }
+            let value_at = |tick: f64| seq.automation_tick(lane.scope, tick).and_then(|t| lane.value_at(t)).filter(|v| v.is_finite());
+            let full = |events: &Vec<(usize, usize, f32)>| events.len() == events.capacity();
+            if restart && let Some(v) = value_at(from) && !full(out) {
+                out.push((0, li, v));
+            }
+            let mut t = from.floor();
+            while t <= to.ceil() && !full(out) {
+                let cur = value_at(t);
+                if let Some(frame) = frame_in(t)
+                    && !(restart && frame == 0)
+                    && let Some(v) = cur
+                    && cur != value_at(t - 1.0)
+                {
+                    out.push((frame, li, v));
+                }
+                t += 1.0;
+            }
+        }
+        out.sort_unstable_by_key(|e| e.0);
+    }
+
+    /// Sends a controller event of automation lane `lane`.
+    fn apply_control(&mut self, lane: usize, v: f32) {
+        let Some(target) = self.sequence.automation.get(lane).map(|l| l.target) else { return };
+        let Some(ch) = target.channel().and_then(|c| self.channels.get_mut(c)) else { return };
+        match target {
+            AutoTarget::InstrumentParam { id, .. } => {
+                if !ch.mods.as_mut().is_some_and(|m| m.set_base(0, id, v)) && ch.instrument.get_param(id) != v {
+                    ch.instrument.set_param(id, v);
+                }
+            }
+            AutoTarget::PitchBend(_) => ch.instrument.controller(crate::Controller::PitchBend(v.clamp(-1.0, 1.0))),
+            AutoTarget::Cc { cc, .. } => ch.instrument.controller(crate::Controller::Cc(cc.min(127), v.clamp(0.0, 1.0))),
+            _ => {}
         }
     }
 
@@ -1296,6 +1348,15 @@ impl Engine {
             self.events.clear();
         }
         let contiguous = (pos_start - self.audio_next).abs() < 1e-6;
+        if self.playing {
+            let frame_in = |tick: f64| {
+                let f = ((view.secs_at(tick) - t0) * sr - 1e-6).ceil();
+                (f >= 0.0 && f < n as f64).then_some(f as usize)
+            };
+            Self::collect_controls(&self.sequence, &self.held, &mut self.ctl_events, (pos_start, to), !contiguous, &frame_in);
+        } else {
+            self.ctl_events.clear();
+        }
         let freeze = FreezeClock { playing: self.playing, song: self.sequence.mode == PlayMode::Song, contiguous, secs: t0, sample_rate: sr };
         for f in self.channels.iter_mut().filter_map(|ch| ch.frozen.as_mut()) {
             f.sync(&freeze);
@@ -1313,8 +1374,17 @@ impl Engine {
         let parallel = active.filter(|_| self.channels.len() >= 2);
         let mut i = 0;
         let mut next_event = 0;
+        let mut next_ctl = 0;
         while i < n {
             let now = self.clock + i as u64;
+            // Controllers first: a bend on a note's start applies to it.
+            while let Some(&(frame, lane, v)) = self.ctl_events.get(next_ctl) {
+                if frame > i {
+                    break;
+                }
+                next_ctl += 1;
+                self.apply_control(lane, v);
+            }
             // Events due now: slides first, so that the notes ending here
             // still glide (legato), then the note ends, then the new notes.
             let due = next_event + self.event_frames[next_event..].iter().take_while(|&&(frame, _)| frame <= i).count();
@@ -1350,6 +1420,9 @@ impl Engine {
             // Jusqu'au prochain événement (début ou fin de note).
             let mut end = n;
             if let Some(&(frame, _)) = self.event_frames.get(next_event) {
+                end = end.min(frame.clamp(i + 1, n));
+            }
+            if let Some(&(frame, _, _)) = self.ctl_events.get(next_ctl) {
                 end = end.min(frame.clamp(i + 1, n));
             }
             let next_off = self.channels.iter().filter_map(Channel::next_off).min();
@@ -2290,6 +2363,47 @@ mod tests {
                 "block {block}"
             );
         }
+    }
+
+    #[test]
+    fn controller_lanes_send_events_on_their_sample() {
+        use crate::Controller::{Cc, PitchBend};
+        let pt = |tick: u32, value: f32| AutoPoint { tick, value, curve: 0.0 };
+        let scope = AutoScope::Pattern(0);
+        let lanes = vec![
+            AutomationLane { target: AutoTarget::PitchBend(0), scope, points: vec![pt(0, 0.0), pt(96, 1.0)] },
+            AutomationLane { target: AutoTarget::Cc { channel: 0, cc: 1 }, scope, points: vec![pt(200, 0.0), pt(201, 0.5)] },
+            AutomationLane { target: AutoTarget::InstrumentParam { channel: 0, id: 3 }, scope, points: vec![pt(192, 5.0)] },
+            // Song lanes are not heard in pattern mode.
+            AutomationLane { target: AutoTarget::PitchBend(0), scope: AutoScope::Song, points: vec![pt(0, -1.0)] },
+        ];
+        let mut runs = Vec::new();
+        for block in [64, 1000] {
+            let (mut engine, mut handle, probe) = setup(&[]);
+            let seq = Sequence { patterns: vec![pattern(&[])], automation: lanes.clone(), ..Default::default() };
+            handle.send(Command::SetSequence(Box::new(seq))).unwrap();
+            handle.send(Command::SetBpm(120.0)).unwrap();
+            handle.send(Command::Play).unwrap();
+            // 250 samples a tick; the pattern loops after 384 ticks.
+            run(&mut engine, 400 * 250, block);
+            let ctls = probe.ctls.lock().unwrap().clone();
+            let params = probe.params.lock().unwrap().clone();
+            runs.push((ctls, params));
+        }
+        assert_eq!(runs[0], runs[1], "same events whatever the block size");
+        let (ctls, params) = &runs[0];
+        // The bend: its start value, then one value per tick of the ramp.
+        let bends: Vec<(f32, u64)> = ctls.iter().filter_map(|&(c, t)| if let PitchBend(v) = c { Some((v, t)) } else { None }).collect();
+        // Ticks 1 to 96, the loop at 384, then the ramp again up to 399.
+        assert_eq!(bends.len(), 1 + 96 + 1 + 15, "{bends:?}");
+        assert_eq!(bends[0], (0.0, 0));
+        assert_eq!(bends[48], (0.5, 48 * 250));
+        assert_eq!(bends[96], (1.0, 96 * 250));
+        // The pattern loops: back to 0 on the loop's first sample.
+        assert_eq!(bends[97], (0.0, 384 * 250));
+        let ccs: Vec<(crate::Controller, u64)> = ctls.iter().copied().filter(|(c, _)| matches!(c, Cc(..))).collect();
+        assert_eq!(ccs, [(Cc(1, 0.0), 0), (Cc(1, 0.5), 201 * 250), (Cc(1, 0.0), 384 * 250)]);
+        assert_eq!(params, &[(3, 5.0, 0)]);
     }
 
     #[test]
