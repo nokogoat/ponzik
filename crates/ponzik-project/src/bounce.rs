@@ -543,10 +543,10 @@ mod tests {
         p.channels[a].gain = 0.6;
         p.channels[a].pan = -0.3;
         for k in [60, 64, 67] {
-            p.add_note(0, a, Note { start: 0, len: TICKS_PER_BAR / 2, key: k, vel: 0.7 });
+            p.add_note(0, a, Note::new(0, TICKS_PER_BAR / 2, k, 0.7));
         }
         for s in [0, 4, 8, 12] {
-            p.add_note(0, b, Note { start: s * TICKS_PER_STEP, len: TICKS_PER_STEP * 2, key: 36, vel: 0.8 });
+            p.add_note(0, b, Note::new(s * TICKS_PER_STEP, TICKS_PER_STEP * 2, 36, 0.8));
         }
         let ta = p.channels[a].track;
         let tb = p.channels[b].track;
@@ -667,7 +667,7 @@ mod tests {
         let lead = Some(FreezeTarget::Channel(0));
         assert_eq!(changed(&|q| q.channels[0].instrument.set(2, 0.5)), lead);
         assert_eq!(changed(&|q| q.channels[0].note_fx.clear()), lead);
-        assert_eq!(changed(&|q| q.add_note(0, 0, Note { start: 96, len: 24, key: 72, vel: 1.0 })), lead);
+        assert_eq!(changed(&|q| q.add_note(0, 0, Note::new(96, 24, 72, 1.0))), lead);
         assert_eq!(changed(&|q| q.clips[1].start += TICKS_PER_BAR), lead);
         assert_eq!(changed(&|q| q.bpm = 90.0), lead);
         let param = crate::AutoTarget::InstrumentParam { channel: 0, id: 1 };
@@ -676,7 +676,7 @@ mod tests {
         assert_eq!(changed(&|q| q.channels[0].gain = 0.1), None);
         assert_eq!(changed(&|q| q.channels[0].muted = true), None);
         assert_eq!(changed(&|q| q.tracks[track].inserts[0] = None), None);
-        assert_eq!(changed(&|q| q.add_note(0, 1, Note { start: 96, len: 24, key: 40, vel: 1.0 })), None);
+        assert_eq!(changed(&|q| q.add_note(0, 1, Note::new(96, 24, 40, 1.0))), None);
         assert_eq!(changed(&|q| q.clips[1].lane = 5), None, "a clip moved to another lane plays the same");
         // Thawing is not an edit.
         assert_eq!(changed(&|q| q.channels[0].frozen = None), None);
