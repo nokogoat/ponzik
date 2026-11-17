@@ -887,7 +887,10 @@ impl MediaLookup {
         // Loaded through the app's sample loader, which retries offline files:
         // formats it learns later play without importing again.
         let readable = ponzik_engine::wav::is_audio_file(Path::new(file));
-        let unsupported = || tr_fmt!("'{}': {} (format not yet supported)", label, raw);
+        // The channel's name, unless it is just the file's (audio clips).
+        let stem = file.rsplit_once('.').map_or(file, |(s, _)| s);
+        let who = if stem == label { raw.to_string() } else { format!("'{label}': {raw}") };
+        let unsupported = || tr_fmt!("{} (format not yet supported)", who);
         let path = match resolve(raw) {
             Some(found) if readable => {
                 self.done.insert(raw.to_string(), found.clone());
@@ -910,7 +913,7 @@ impl MediaLookup {
                     return sound;
                 }
                 None if readable => {
-                    report.offline.push(tr_fmt!("'{}': {} not found on this computer", label, raw));
+                    report.offline.push(tr_fmt!("{} not found on this computer", who));
                     raw.to_string()
                 }
                 None => {
@@ -1797,7 +1800,7 @@ mod tests {
         let lines = report.lines().join("\n");
         assert!(lines.contains("Offline: 2 files missing (locate later)"), "{lines}");
         assert!(lines.contains("'Take 1': G:\\sons\\Audio\\Take 1_REC.wav not found on this computer"), "{lines}");
-        assert!(lines.contains("'Beat': G:\\sons\\Beat.mp3 (format not yet supported)"), "{lines}");
+        assert!(lines.contains("Offline: G:\\sons\\Beat.mp3 (format not yet supported)"), "{lines}");
         assert!(lines.contains("3 audio clips are offline"), "{lines}");
         assert!(!lines.contains("packed") && !lines.contains("too far"), "{lines}");
         // Offline files survive a save / load round trip.

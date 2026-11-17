@@ -7051,12 +7051,6 @@ msgstr "{} joue sur la piste {}"
 msgid "'{}': FL Studio factory sample {} replaced by library sound {}"
 msgstr "« {} » : échantillon d'usine FL Studio {} remplacé par le son de la bibliothèque {}"
 
-msgid "'{}': {} (format not yet supported)"
-msgstr "« {} » : {} (format pas encore pris en charge)"
-
-msgid "'{}': {} not found on this computer"
-msgstr "« {} » : {} introuvable sur cet ordinateur"
-
 msgid "Approximated ({})"
 msgstr "Approchés ({})"
 
@@ -7083,3 +7077,9 @@ msgstr "{} clips audio sont hors ligne : ils restent dans la playlist, muets jus
 
 msgid "{} audio clips with their start in the file (stretching and fades are not imported)"
 msgstr "{} clips audio avec leur début dans le fichier (étirements et fondus ne sont pas importés)"
+
+msgid "{} (format not yet supported)"
+msgstr "{} (format pas encore pris en charge)"
+
+msgid "{} not found on this computer"
+msgstr "{} introuvable sur cet ordinateur"
