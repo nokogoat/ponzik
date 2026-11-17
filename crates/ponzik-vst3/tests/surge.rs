@@ -3,7 +3,7 @@
 //! `cargo test -p ponzik-vst3 --test surge -- --ignored --nocapture`.
 
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use ponzik_vst3::{create_instrument, scan_bundle};
 
@@ -50,6 +50,8 @@ fn surge_xt_plays_headless() {
 #[test]
 #[ignore = "needs Surge XT installed and an X11 display"]
 fn surge_xt_editor_in_a_window() {
+    use std::time::Duration;
+
     use ponzik_engine::ParentWindow;
     use ponzik_window::{NativeHandle, PluginWindow, PluginWindowOptions};
 

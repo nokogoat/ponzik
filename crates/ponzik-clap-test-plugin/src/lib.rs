@@ -113,6 +113,7 @@ struct Gui {
     timer: Option<ClapId>,
     ticks: u32,
     /// Tube (lecture, écriture) surveillé par l'hôte.
+    #[cfg_attr(not(unix), allow(dead_code))]
     pipe: Option<(i32, i32)>,
     /// Édition simulée, sortie au prochain `process`.
     edit: Option<f64>,

@@ -811,7 +811,7 @@ const PLATFORM: &CStr = c"HWND";
 #[cfg(not(any(target_os = "macos", windows)))]
 const PLATFORM: &CStr = c"X11EmbedWindowID";
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 mod sys {
     use std::ffi::{c_int, c_void};
     unsafe extern "C" {
@@ -838,6 +838,7 @@ struct View {
     scale: f32,
     size: (i32, i32),
     ticks: u32,
+    #[cfg_attr(not(all(unix, not(target_os = "macos"))), allow(dead_code))]
     pipe: Option<(i32, i32)>,
 }
 
@@ -990,7 +991,7 @@ unsafe extern "system" fn view_removed(this: *mut c_void) -> TResult {
         }
         unref(std::mem::replace(&mut v.run_loop, null_mut()).cast());
     }
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "macos")))]
     if let Some((r, w)) = v.pipe.take() {
         // SAFETY : tube ouvert par `attached`.
         unsafe {
@@ -1082,7 +1083,7 @@ unsafe extern "system" fn view_on_timer(this: *mut c_void) {
 
 unsafe extern "system" fn view_on_fd(this: *mut c_void, fd: i32) {
     let v = view::<EVENT>(this);
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "macos")))]
     if v.pipe.is_some_and(|(r, _)| r == fd) {
         let mut b = [0u8; 1];
         // SAFETY : tube lisible ouvert par `attached`.
@@ -1094,7 +1095,7 @@ unsafe extern "system" fn view_on_fd(this: *mut c_void, fd: i32) {
             unsafe { ((*(*v.frame).vtbl).resize_view)(v.frame.cast(), base.add(VIEW).cast(), &mut r) };
         }
     }
-    #[cfg(not(unix))]
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
     let _ = (v, fd);
 }
 
