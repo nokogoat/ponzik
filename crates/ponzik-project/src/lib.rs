@@ -11,7 +11,7 @@ use ponzik_i18n::{tr, tr_fmt, tr_noop};
 use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS, TRACKS, routing_order};
 use ponzik_engine::registry;
 use ponzik_engine::{
-    AutomationLane, Channel, Clip, ClipWarp, Effect, Engine, EngineHandle, Frozen, Instrument, NOTE_FX_SLOTS,
+    AudioClip, AutomationLane, Channel, Clip, ClipWarp, Effect, Engine, EngineHandle, Frozen, Instrument, NOTE_FX_SLOTS,
     Note, NoteFx, PPQ, Pattern, PlayMode, Sample, Sequence, TICKS_PER_BAR, TICKS_PER_STEP,
 };
 pub use ponzik_dsp::warp::WarpAlgo;
@@ -46,6 +46,7 @@ pub mod presets;
 pub mod rack;
 pub mod render;
 pub mod scale;
+pub mod session;
 pub mod templates;
 pub mod transform;
 pub mod warp;
@@ -66,6 +67,7 @@ pub use render::{
 };
 pub use rack::{ModTarget, ModulatorDef, RackDef, RackDevice};
 pub use scale::{ChordKind, ScaleKind, Voicing, chord, revoice};
+pub use session::{Follow, FollowAction, LaunchMode, LiveClip, Quant, SceneDef, SlotDef};
 pub use templates::templates;
 
 /// Un instrument et l'état de ses paramètres.
@@ -472,8 +474,14 @@ pub struct Project {
     pub loop_range: Option<(u32, u32)>,
     /// Grille de la vue Session : `session_grid[colonne][scène]` = pattern.
     pub session_grid: Vec<Vec<Option<usize>>>,
+    /// Launch settings and audio clips of the slots, `[column][scene]`.
+    pub session_slots: Vec<Vec<SlotDef>>,
+    /// Settings of the scenes (rows).
+    pub session_scenes: Vec<SceneDef>,
+    /// Quantization of the launches (slots can have their own).
+    pub session_quant: Quant,
     /// Clips de session en cours de lecture (non enregistrés).
-    pub session_live: Vec<SessionSlot>,
+    pub session_live: Vec<LiveClip>,
     pub automation: Vec<AutomationDef>,
     pub audio_clips: Vec<AudioClipDef>,
     /// Loop recordings: takes and the comp that plays (see [`comp`]).
@@ -533,6 +541,9 @@ impl Project {
             current_pattern: 0,
             loop_range: None,
             session_grid: vec![vec![None; SESSION_SCENES]; SESSION_COLUMNS],
+            session_slots: vec![vec![SlotDef::DEFAULT; SESSION_SCENES]; SESSION_COLUMNS],
+            session_scenes: vec![SceneDef::default(); SESSION_SCENES],
+            session_quant: Quant::Bar,
             session_live: Vec::new(),
             automation: Vec::new(),
             audio_clips: Vec::new(),
@@ -596,6 +607,7 @@ impl Project {
             + vec(&self.session_grid)
             + grid
             + vec(&self.session_live)
+            + self.session_slots.iter().map(|c| vec(c)).sum::<usize>()
     }
 
     /// Fin du morceau : fin du dernier clip (pattern ou audio), arrondie à la
@@ -706,7 +718,7 @@ impl Project {
             song_len: self.song_len(),
             swing: self.swing,
             loop_range: self.loop_range,
-            session: self.session_live.clone(),
+            session: self.session_slots_live(),
             automation: self
                 .automation
                 .iter()
@@ -714,26 +726,34 @@ impl Project {
                 .map(|a| AutomationLane { target: a.target, scope: a.scope, points: a.points.clone() })
                 .collect(),
             // The session plays its own audio clips, not the playlist's.
-            audio_clips: self
-                .audio_clips
-                .iter()
-                .filter(|c| !c.muted && self.mode != PlayMode::Session && self.frozen_track(c.track, loader).is_none())
-                .filter_map(|c| {
-                    let sample = loader(&c.path)?;
-                    let warp = c.warp.then(|| ClipWarp {
-                        map: c.warp_map(),
-                        rendered: warp::WarpJob::for_clip(c, &sample, &map, sample_rate).and_then(|job| warps(&job)),
-                    });
-                    Some(comp::engine_clip(c, sample, warp))
-                })
-                // Comps: their segments, crossfaded (takes play unwarped).
-                .chain(self.take_groups.iter().filter(|g| self.mode != PlayMode::Session && self.frozen_track(g.track, loader).is_none()).flat_map(|g| g.pieces(&map)).filter_map(|p| {
-                    let mut clip = comp::engine_clip(&p.clip, loader(&p.clip.path)?, None);
-                    (clip.xfade_in, clip.xfade_out) = (p.xfade_in, p.xfade_out);
-                    Some(clip)
-                }))
-                .collect(),
+            audio_clips: if self.mode == PlayMode::Session {
+                self.session_audio_live(sample_rate, loader, warps)
+            } else {
+                self.song_audio(sample_rate, loader, warps, &map)
+            },
         }
+    }
+
+    /// Engine clips of the playlist's audio clips and comps (frozen tracks play their render).
+    fn song_audio(&self, sample_rate: f32, loader: SampleLoader, warps: WarpLookup, map: &TempoMap) -> Vec<AudioClip> {
+        self.audio_clips
+            .iter()
+            .filter(|c| !c.muted && self.frozen_track(c.track, loader).is_none())
+            .filter_map(|c| {
+                let sample = loader(&c.path)?;
+                let warp = c.warp.then(|| ClipWarp {
+                    map: c.warp_map(),
+                    rendered: warp::WarpJob::for_clip(c, &sample, map, sample_rate).and_then(|job| warps(&job)),
+                });
+                Some(comp::engine_clip(c, sample, warp))
+            })
+            // Comps: their segments, crossfaded (takes play unwarped).
+            .chain(self.take_groups.iter().filter(|g| self.frozen_track(g.track, loader).is_none()).flat_map(|g| g.pieces(map)).filter_map(|p| {
+                let mut clip = comp::engine_clip(&p.clip, loader(&p.clip.path)?, None);
+                (clip.xfade_in, clip.xfade_out) = (p.xfade_in, p.xfade_out);
+                Some(clip)
+            }))
+            .collect()
     }
 
     // --- Automation ---

@@ -321,7 +321,7 @@ pub fn save(project: &Project) -> String {
         PlayMode::Song => "song".into(),
         PlayMode::Session => "session".into(),
     };
-    obj(vec![
+    let mut pairs = vec![
         ("format", FORMAT.into()),
         ("version", VERSION.into()),
         ("name", project.name.as_str().into()),
@@ -379,8 +379,9 @@ pub fn save(project: &Project) -> String {
                     .collect(),
             ),
         ),
-    ])
-    .pretty()
+    ];
+    pairs.extend(crate::session::session_json(project, audio_clip_json));
+    obj(pairs).pretty()
 }
 
 /// Écrit le projet dans un fichier (via un fichier temporaire, pour ne jamais
@@ -855,6 +856,7 @@ pub fn load(text: &str) -> Result<Project, String> {
             p.session_grid[c][r] = cell.as_f64().map(|v| v as usize).filter(|&v| v < np);
         }
     }
+    crate::session::load_session(&mut p, &root, load_audio_clip);
 
     for a in arr(root.get("automation")).iter().filter_map(|a| load_automation(a, n, np)) {
         // Une seule courbe par cible et portée : la première gagne.

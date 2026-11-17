@@ -3785,7 +3785,7 @@ impl App {
                 }
             }
             Action::AssignSession(col, row, p) => {
-                self.project.session_grid[col][row] = Some(p);
+                self.project.set_session_pattern(col, row, p);
                 self.commit(tr("Fill a slot"));
             }
             Action::Humanize(ticks, vel) => self.humanize(ticks, vel),

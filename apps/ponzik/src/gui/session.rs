@@ -1,9 +1,9 @@
 //! Vue Session, à la manière d'Ableton : une grille de clips lancés en direct,
 //! quantifiés à la mesure, et des scènes qui lancent une rangée entière.
 
-use ponzik_engine::{PlayMode, SessionSlot, TICKS_PER_BAR};
+use ponzik_engine::{PlayMode, TICKS_PER_BAR};
 use ponzik_i18n::{tr, tr_fmt, tr_noop};
-use ponzik_project::{SESSION_COLUMNS, SESSION_SCENES};
+use ponzik_project::{LiveClip, SESSION_COLUMNS, SESSION_SCENES};
 use ponzik_ui::{Canvas, Path, Rect};
 
 use super::Input;
@@ -38,21 +38,17 @@ impl App {
 
     /// Recalcule les clips de session envoyés au moteur, sans étape d'annulation.
     fn push_session(&mut self) {
-        let grid = self.project.session_grid.clone();
         let mut live = Vec::new();
         for (col, st) in self.session_cols.iter().enumerate() {
             let next_start = st.queued.map_or(u32::MAX, |(_, s)| s);
-            if let Some((row, start)) = st.playing
-                && let Some(p) = grid[col][row]
-            {
-                live.push(SessionSlot { pattern: p, start, end: next_start, ..Default::default() });
+            if let Some((row, start)) = st.playing {
+                live.push(LiveClip { col, row, start, end: next_start, ..Default::default() });
             }
-            if let Some((row, start)) = st.queued
-                && let Some(p) = grid[col][row]
-            {
-                live.push(SessionSlot { pattern: p, start, end: u32::MAX, ..Default::default() });
+            if let Some((row, start)) = st.queued {
+                live.push(LiveClip { col, row, start, end: u32::MAX, ..Default::default() });
             }
         }
+        live.retain(|l| self.project.session_filled(l.col, l.row));
         if self.project.session_live != live {
             self.project.session_live = live;
             self.sync_session();
