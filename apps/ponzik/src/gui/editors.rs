@@ -21,6 +21,9 @@ struct OpenWindow {
     device: Device,
     editor: Editor,
     window: PluginWindow,
+    /// Last size the plugin asked for and got: asking again is not a new
+    /// request (some plugins ask again from the resize itself).
+    granted: Option<(u32, u32)>,
 }
 
 /// Editors of the engine's plugin instances, and their open windows.
@@ -161,7 +164,7 @@ impl PluginEditors {
         let size = editor.open(parent, window.scale_factor() as f64)?;
         window.set_resizable(size.resizable);
         window.set_size(size.width, size.height);
-        self.open.push(OpenWindow { device, editor, window });
+        self.open.push(OpenWindow { device, editor, window, granted: Some((size.width, size.height)) });
         Ok(())
     }
 
@@ -207,11 +210,14 @@ impl PluginEditors {
                 match e {
                     Event::CloseRequested => to_close.push(w.device),
                     // The user resized: the plugin takes what fits its constraints.
-                    Event::Resized { width, height } => match w.editor.set_size(width, height) {
-                        Some(size) if size != (width, height) => w.window.set_size(size.0, size.1),
-                        Some(_) => {}
-                        None => w.window.set_size(width, height),
-                    },
+                    Event::Resized { width, height } => {
+                        w.granted = None;
+                        if let Some(size) = w.editor.set_size(width, height)
+                            && size != (width, height)
+                        {
+                            w.window.set_size(size.0, size.1);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -220,7 +226,8 @@ impl PluginEditors {
         for (device, e) in events {
             let w = self.open.iter_mut().find(|w| w.device == device);
             match (e, w) {
-                (EditorEvent::Resize { width, height }, Some(w)) => {
+                (EditorEvent::Resize { width, height }, Some(w)) if w.granted != Some((width, height)) => {
+                    w.granted = Some((width, height));
                     w.window.set_size(width, height);
                     w.editor.set_size(width, height);
                 }
