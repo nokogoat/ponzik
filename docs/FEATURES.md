@@ -50,7 +50,7 @@ Legend: **FL** = FL Studio · **AB** = Ableton Live · ✅ done in Ponzik · �
 | Note probability and random velocity range | AB | ⬜ |
 | MPE editing (per-note pressure, glide, slide) | AB | ⬜ |
 | Editing several clips at once | AB | ⬜ |
-| MIDI Capture (recover what you played without recording) | AB | ⬜ |
+| MIDI Capture (recover what you played without recording) | AB | ✅ last 5 minutes kept, Ctrl+Shift+C: tempo detected, never quantized |
 | Score logger (recover what you played) | FL | ⬜ |
 | Tuning systems (microtonal) | AB | ⬜ |
 | Event editor and controller lanes | FL · AB | ⬜ |
@@ -162,10 +162,10 @@ Proprietary instruments cannot be copied, so Ponzik builds its own equivalents.
 | Feature | Where | Ponzik |
 |---|---|---|
 | Automation clips with curves (FL) / automation lanes (AB) | FL · AB | ✅ song lanes with curves |
-| Live automation recording | FL · AB | ⬜ |
+| Live automation recording | FL · AB | ✅ Touch, Latch and Write; transport and per-lane arm; one undo step per pass |
 | Clip envelopes (clip-relative modulation) | AB | ⬜ |
 | Mappable macros, macro variations, randomization | AB | ⬜ |
-| Linking a parameter to a MIDI controller (MIDI learn), keyboard and MIDI mapping mode | FL · AB | ⬜ |
+| Linking a parameter to a MIDI controller (MIDI learn), keyboard and MIDI mapping mode | FL · AB | 🟡 MIDI learn on every knob, fader, send, macro, plugin parameter and transport button; absolute, relative (encoding detected), toggle, range, pickup; global or per-project links. No keyboard mapping |
 | Modulators (LFOs, envelopes, followers) patched to any parameter | FL · AB | ⬜ |
 
 ## 8. Live and performance
