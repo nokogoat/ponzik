@@ -119,6 +119,18 @@ fn sequence(gain: f32) -> Box<Sequence> {
             xfade_in: 0.01,
             ..clip(960)
         },
+        // Session-style clips starting over every cycle.
+        AudioClip {
+            cycle: 96,
+            phase: 30,
+            ..clip(48)
+        },
+        AudioClip {
+            warp: warp(None),
+            cycle: 192,
+            phase: 7,
+            ..clip(240)
+        },
     ];
     let tempo = TempoMap::new(
         vec![

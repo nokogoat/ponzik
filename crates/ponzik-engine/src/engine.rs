@@ -612,14 +612,29 @@ fn play_audio_clip<'o>(clip: &AudioClip, prev: AudioVoice, b: &ClipBlock, out: i
     let at = |ch: &[f32], i: usize| if clip.reverse { ch[last - i] } else { ch[i] };
     let rendered = clip.warp.as_ref().and_then(|w| w.rendered.as_deref()).filter(|r| r.sample_rate as f64 == sr && !r.is_empty());
     let warp_origin = clip.warp.as_ref().map_or(0.0, |w| w.map.beat_at(clip.offset.max(0.0)));
+    // Session clip starting over every cycle: its length and phase in output
+    // samples (the session tempo is constant).
+    let frames_of = |ticks: u32| (view.secs_at(start + ticks as f64) - view.secs_at(start)) * sr;
+    let (cycle, phase) = if clip.cycle > 0 { (frames_of(clip.cycle).max(1.0), frames_of(clip.phase % clip.cycle)) } else { (0.0, 0.0) };
     let (tl, tr) = if k0 < k1 { out() } else { (&mut [][..], &mut [][..]) };
     let mut ended = false;
     for k in k0..k1 {
-        let since = k as f64 - start_at;
+        let from_start = k as f64 - start_at;
+        let (since, until_cycle) = if cycle > 0.0 && from_start >= 0.0 {
+            let local = (from_start + phase).rem_euclid(cycle);
+            // Unwarped: the file from the offset, at its own speed.
+            p = clip.offset.max(0.0) * src_rate + local * ratio;
+            if clip.looped {
+                p = p.rem_euclid(len as f64);
+            }
+            (local, cycle - local)
+        } else {
+            (from_start, f64::MAX)
+        };
         let (l, r, until_src) = match (&clip.warp, rendered) {
             (Some(_), Some(buf)) => {
                 let i = since.round();
-                if i < 0.0 {
+                if i < 0.0 || (cycle > 0.0 && i as usize >= buf.len()) {
                     (0.0, 0.0, f64::MAX)
                 } else if i as usize >= buf.len() {
                     ended = true;
@@ -633,7 +648,12 @@ fn play_audio_clip<'o>(clip: &AudioClip, prev: AudioVoice, b: &ClipBlock, out: i
             (Some(w), None) => {
                 // Resampled along the tempo map until the stretch is ready.
                 let tick = view.tick_at_secs(t0 + k as f64 / sr);
-                let beat = warp_origin + (tick - start) / PPQ as f64;
+                let local = if clip.cycle > 0 {
+                    (tick - start + (clip.phase % clip.cycle) as f64).rem_euclid(clip.cycle as f64)
+                } else {
+                    tick - start
+                };
+                let beat = warp_origin + local / PPQ as f64;
                 let mut pos = w.map.secs_at(beat) * src_rate;
                 if clip.looped {
                     pos = pos.rem_euclid(len as f64);
@@ -649,6 +669,8 @@ fn play_audio_clip<'o>(clip: &AudioClip, prev: AudioVoice, b: &ClipBlock, out: i
                     (l, r, f64::MAX)
                 }
             }
+            // Past the file's end, a cycling clip is silent until its next cycle.
+            (None, _) if cycle > 0.0 && !clip.looped && p >= len as f64 => (0.0, 0.0, f64::MAX),
             (None, _) => {
                 if p >= len as f64 {
                     if !clip.looped {
@@ -674,8 +696,8 @@ fn play_audio_clip<'o>(clip: &AudioClip, prev: AudioVoice, b: &ClipBlock, out: i
             }
         };
         // En échantillons de sortie ; +1 : le premier échantillon n'est pas nul.
-        let since_start = since + 1.0;
-        let until_end = (end_at - k as f64).min(until_src);
+        let since_start = since.min(from_start) + 1.0;
+        let until_end = (end_at - k as f64).min(until_src).min(until_cycle);
         let jump = fade_shape((run + 1.0) / fade_in, 0.0);
         let fin = if xin > 0.0 {
             equal_power((k as f64 - win_start) / xin) * jump
@@ -1312,7 +1334,7 @@ impl Engine {
     /// along the tempo map; both are computed from the time of each sample, so
     /// a clip is always in time, whatever the block size.
     fn render_audio_clips(&mut self, pos_start: f64, n: usize, t0: f64) {
-        let song = self.playing && self.sequence.mode == PlayMode::Song;
+        let song = self.playing && !matches!(self.sequence.mode, PlayMode::Pattern(_));
         // Bloc dans la continuité du précédent : les clips reprennent où ils étaient
         // (même si le tempo a changé entre-temps).
         let contiguous = (pos_start - self.audio_next).abs() < 1e-6;
@@ -2686,8 +2708,12 @@ mod tests {
 
     /// Moteur en mode morceau avec ces clips audio, canal sonde coupé ; rend `frames` (gauche seulement).
     fn render_audio(clips: Vec<AudioClip>, frames: usize, block: usize) -> Vec<f32> {
+        render_audio_in(PlayMode::Song, clips, frames, block)
+    }
+
+    fn render_audio_in(mode: PlayMode, clips: Vec<AudioClip>, frames: usize, block: usize) -> Vec<f32> {
         let (mut engine, mut handle, _) = setup(&[]);
-        let seq = Sequence { mode: PlayMode::Song, song_len: 384 * 8, audio_clips: clips, ..Default::default() };
+        let seq = Sequence { mode, song_len: 384 * 8, audio_clips: clips, ..Default::default() };
         handle.send(Command::SetChannelMute { channel: 0, muted: true }).unwrap();
         handle.send(Command::SetSequence(Box::new(seq))).unwrap();
         handle.send(Command::Play).unwrap();
@@ -2721,6 +2747,31 @@ mod tests {
             assert!(out[24_000 + 4_319] > 0.0);
             assert!(out[24_000 + 4_320..].iter().all(|&s| s == 0.0), "bloc {block}");
         }
+    }
+
+    #[test]
+    fn session_audio_clip_cycles_from_its_phase() {
+        let n = 48_000;
+        let left: Vec<f32> = (0..n).map(|i| i as f32 / n as f32).collect();
+        let sample = Sample { name: "rampe".into(), sample_rate: SR, right: left.clone(), left, markers: Vec::new() };
+        // From tick 96 (sample 24 000), a cycle of 48 ticks (12 000 samples)
+        // entered 24 ticks in (legato), until tick 288.
+        let mut clip = audio_clip(sample, 96, 0.0, 1.0);
+        (clip.len, clip.cycle, clip.phase) = (192, 48, 24);
+        for block in [64, 333, 1024] {
+            let out = render_audio_in(PlayMode::Session, vec![clip.clone()], 80_000, block);
+            assert!(out[..24_000].iter().all(|&s| s == 0.0), "block {block}");
+            for k in [500, 3_000, 5_500, 6_500, 12_000, 30_000, 47_000] {
+                let want = ((k + 6_000) % 12_000) as f32 / n as f32;
+                assert!((out[24_000 + k] - want).abs() < 1e-5, "block {block}, {k}: {} ≠ {want}", out[24_000 + k]);
+            }
+            // Faded out before each restart, silent after the end.
+            assert!(out[24_000 + 5_999].abs() < 0.01, "block {block}: {}", out[24_000 + 5_999]);
+            assert!(out[72_000..].iter().all(|&s| s == 0.0), "block {block}");
+        }
+        // Pattern mode plays no audio clip.
+        let out = render_audio_in(PlayMode::Pattern(0), vec![clip], 40_000, 256);
+        assert!(out.iter().all(|&s| s == 0.0));
     }
 
     #[test]

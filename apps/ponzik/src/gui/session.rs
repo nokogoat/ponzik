@@ -45,12 +45,12 @@ impl App {
             if let Some((row, start)) = st.playing
                 && let Some(p) = grid[col][row]
             {
-                live.push(SessionSlot { pattern: p, start, end: next_start });
+                live.push(SessionSlot { pattern: p, start, end: next_start, ..Default::default() });
             }
             if let Some((row, start)) = st.queued
                 && let Some(p) = grid[col][row]
             {
-                live.push(SessionSlot { pattern: p, start, end: u32::MAX });
+                live.push(SessionSlot { pattern: p, start, end: u32::MAX, ..Default::default() });
             }
         }
         if self.project.session_live != live {

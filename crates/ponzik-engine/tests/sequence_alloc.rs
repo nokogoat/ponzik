@@ -69,3 +69,28 @@ fn chances_and_ratchets_never_allocate() {
     }
     assert_eq!(allocs() - before, 0, "the audio path allocated");
 }
+
+#[test]
+fn session_legato_and_repeat_never_allocate() {
+    use ponzik_engine::{PlayMode, SessionSlot};
+    let mut p = Pattern::new(16 * TICKS_PER_STEP, 1);
+    p.notes[0] = (0..16u32).map(|s| Note::new(s * TICKS_PER_STEP, TICKS_PER_STEP, 48 + s as u8, 0.8)).collect();
+    p.sort();
+    let ch = Channel::new("pulse", Box::new(Pulse::new(Default::default()))).with_track(1);
+    let session = vec![
+        SessionSlot { pattern: 0, start: 0, end: 4_000, offset: 0, period: 0 },
+        SessionSlot { pattern: 0, start: 4_000, end: u32::MAX, offset: 120, period: TICKS_PER_STEP * 3 },
+    ];
+    let seq = Sequence { patterns: vec![p], mode: PlayMode::Session, session, ..Default::default() };
+    let (mut engine, mut handle) = Engine::new(48_000.0, vec![ch], seq);
+    handle.send(Command::Play).unwrap();
+    let mut buf = vec![0.0f32; 2 * 256];
+    for _ in 0..8 {
+        engine.process(&mut buf, 2);
+    }
+    let before = allocs();
+    for _ in 0..2_000 {
+        engine.process(&mut buf, 2);
+    }
+    assert_eq!(allocs() - before, 0, "the audio path allocated");
+}

@@ -713,10 +713,11 @@ impl Project {
                 .filter(|a| !a.points.is_empty())
                 .map(|a| AutomationLane { target: a.target, scope: a.scope, points: a.points.clone() })
                 .collect(),
+            // The session plays its own audio clips, not the playlist's.
             audio_clips: self
                 .audio_clips
                 .iter()
-                .filter(|c| !c.muted && self.frozen_track(c.track, loader).is_none())
+                .filter(|c| !c.muted && self.mode != PlayMode::Session && self.frozen_track(c.track, loader).is_none())
                 .filter_map(|c| {
                     let sample = loader(&c.path)?;
                     let warp = c.warp.then(|| ClipWarp {
@@ -726,7 +727,7 @@ impl Project {
                     Some(comp::engine_clip(c, sample, warp))
                 })
                 // Comps: their segments, crossfaded (takes play unwarped).
-                .chain(self.take_groups.iter().filter(|g| self.frozen_track(g.track, loader).is_none()).flat_map(|g| g.pieces(&map)).filter_map(|p| {
+                .chain(self.take_groups.iter().filter(|g| self.mode != PlayMode::Session && self.frozen_track(g.track, loader).is_none()).flat_map(|g| g.pieces(&map)).filter_map(|p| {
                     let mut clip = comp::engine_clip(&p.clip, loader(&p.clip.path)?, None);
                     (clip.xfade_in, clip.xfade_out) = (p.xfade_in, p.xfade_out);
                     Some(clip)

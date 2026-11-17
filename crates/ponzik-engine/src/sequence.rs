@@ -187,11 +187,25 @@ pub enum PlayMode {
 
 /// Clip lancé en vue Session : un pattern qui boucle de `start` à `end` (ticks),
 /// `end` = `u32::MAX` tant qu'il n'est pas remplacé ou arrêté.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SessionSlot {
     pub pattern: usize,
     pub start: u32,
     pub end: u32,
+    /// Ticks into the pattern at `start` (legato launch: the position of the
+    /// clip it replaces).
+    pub offset: u32,
+    /// Non-zero: the clip starts over every `period` ticks (repeat launch).
+    pub period: u32,
+}
+
+impl SessionSlot {
+    /// Position in the pattern (ticks from its start, before looping) at `tick`.
+    pub fn local(&self, tick: f64) -> f64 {
+        let since = tick - self.start as f64;
+        let since = if self.period > 0 { since.rem_euclid(self.period as f64) } else { since };
+        since + self.offset as f64
+    }
 }
 
 /// Ce que pilote une courbe d'automation.
@@ -303,6 +317,11 @@ pub struct AudioClip {
     /// Past its end, the file starts over.
     pub looped: bool,
     pub warp: Option<ClipWarp>,
+    /// Non-zero (session clips): the clip starts over every `cycle` ticks,
+    /// fades included; a warped clip's render then covers one cycle.
+    pub cycle: u32,
+    /// Ticks into the cycle at `start` (legato launch).
+    pub phase: u32,
 }
 
 /// Warping of a clip: its beat map, and the stretched audio once rendered
@@ -413,7 +432,8 @@ pub struct Sequence {
     /// Retard des doubles-croches paires, dans [0, 1] (1 = un demi-pas).
     pub swing: f32,
     pub automation: Vec<AutomationLane>,
-    /// Joués en mode morceau seulement.
+    /// Played in song mode (the playlist's clips) and in session mode (the
+    /// launched audio clips), never in pattern mode.
     pub audio_clips: Vec<AudioClip>,
     /// Boucle de lecture (début, fin) en ticks, tirée dans une règle.
     pub loop_range: Option<(u32, u32)>,
@@ -503,7 +523,7 @@ impl Sequence {
             (AutoScope::Song, PlayMode::Pattern(_) | PlayMode::Session) => None,
             (AutoScope::Pattern(p), PlayMode::Session) => {
                 let slot = self.session.iter().rfind(|s| s.pattern == p && pos >= s.start as f64 && pos < s.end as f64)?;
-                Some((pos - slot.start as f64).rem_euclid(pattern_len(p)?))
+                Some(slot.local(pos).rem_euclid(pattern_len(p)?))
             }
             (AutoScope::Pattern(p), PlayMode::Pattern(cur)) if p == cur => Some(pos.rem_euclid(pattern_len(p)?)),
             (AutoScope::Pattern(_), PlayMode::Pattern(_)) => None,
@@ -550,8 +570,22 @@ impl Sequence {
                     let Some(pat) = self.patterns.get(slot.pattern) else { continue };
                     let a = from.max(slot.start as f64);
                     let b = to.min(slot.end as f64);
-                    if a < b {
-                        self.collect_looped(slot.pattern, pat, slot.start as f64, a, b, out);
+                    if a >= b {
+                        continue;
+                    }
+                    if slot.period == 0 {
+                        self.collect_looped(slot.pattern, pat, slot.start as f64 - slot.offset as f64, a, b, out);
+                        continue;
+                    }
+                    // Repeat: each period plays the pattern again from the offset.
+                    let period = slot.period as f64;
+                    let mut base = slot.start as f64 + ((a - slot.start as f64) / period).floor() * period;
+                    while base < b {
+                        let (x, y) = (a.max(base), b.min(base + period));
+                        if x < y {
+                            self.collect_looped(slot.pattern, pat, base - slot.offset as f64, x, y, out);
+                        }
+                        base += period;
                     }
                 }
             }
@@ -653,13 +687,34 @@ mod tests {
             patterns: vec![pattern(&[0], 96), pattern(&[48], 96)],
             mode: PlayMode::Session,
             session: vec![
-                SessionSlot { pattern: 0, start: 0, end: 288 },
-                SessionSlot { pattern: 1, start: 192, end: u32::MAX },
+                SessionSlot { pattern: 0, start: 0, end: 288, ..Default::default() },
+                SessionSlot { pattern: 1, start: 192, end: u32::MAX, ..Default::default() },
             ],
             ..Default::default()
         };
         assert_eq!(ticks(&seq, 0.0, 384.0), [0.0, 96.0, 192.0, 240.0, 336.0]);
         assert_eq!(seq.loop_end(), None);
+    }
+
+    #[test]
+    fn session_slots_start_at_their_offset_and_repeat() {
+        // Notes every 24 ticks over 96: the legato clip starts 48 ticks in.
+        let pat = pattern(&[0, 24, 48, 72], 96);
+        let legato = SessionSlot { pattern: 0, start: 384, end: 480, offset: 48, period: 0 };
+        let seq = Sequence { patterns: vec![pat.clone()], mode: PlayMode::Session, session: vec![legato], ..Default::default() };
+        assert_eq!(ticks(&seq, 0.0, 1000.0), [384.0, 408.0, 432.0, 456.0]);
+        assert_eq!(seq.automation_tick(AutoScope::Pattern(0), 400.0), Some(64.0));
+        // Repeat every 36 ticks: the first two notes, again and again.
+        let repeat = SessionSlot { pattern: 0, start: 0, end: 108, offset: 0, period: 36 };
+        let seq = Sequence { patterns: vec![pat], mode: PlayMode::Session, session: vec![repeat], ..Default::default() };
+        assert_eq!(ticks(&seq, 0.0, 1000.0), [0.0, 24.0, 36.0, 60.0, 72.0, 96.0]);
+        // Window by window, the same notes.
+        let mut by_block = Vec::new();
+        for k in 0..100 {
+            by_block.extend(ticks(&seq, k as f64 * 10.0, (k + 1) as f64 * 10.0));
+        }
+        assert_eq!(by_block, [0.0, 24.0, 36.0, 60.0, 72.0, 96.0]);
+        assert_eq!(seq.automation_tick(AutoScope::Pattern(0), 40.0), Some(4.0));
     }
 
     #[test]

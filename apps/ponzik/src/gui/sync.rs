@@ -292,7 +292,7 @@ mod tests {
     fn session_launches_and_loop_range_reach_the_engine() {
         let a = demo_project();
         let mut b = a.clone();
-        b.session_live.push(ponzik_project::SessionSlot { pattern: 0, start: 384, end: u32::MAX });
+        b.session_live.push(ponzik_project::SessionSlot { pattern: 0, start: 384, end: u32::MAX, ..Default::default() });
         assert_eq!(names(&diff(&a, &b, 48_000.0, &none)), ["SetSequence"]);
         let mut c = a.clone();
         c.loop_range = Some((0, 768));

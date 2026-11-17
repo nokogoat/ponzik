@@ -429,6 +429,8 @@ pub(crate) fn engine_clip(c: &AudioClipDef, sample: std::sync::Arc<Sample>, warp
         fade_out: c.fade_out,
         xfade_in: 0.0,
         xfade_out: 0.0,
+        cycle: 0,
+        phase: 0,
     }
 }
 
