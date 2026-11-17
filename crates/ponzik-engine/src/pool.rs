@@ -13,7 +13,7 @@
 //! finishes the job alone. It only waits for tasks already started elsewhere.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU16, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU16, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -27,8 +27,10 @@ pub const MAX_WORKERS: usize = 15;
 /// than this, and on SMT machines more spinning workers end up on the sibling
 /// of a busy core and slow it down.
 pub const DEFAULT_MAX_WORKERS: usize = 4;
-/// How long an idle worker spins before it parks.
-const SPIN: Duration = Duration::from_micros(80);
+/// How long an idle worker spins before it parks: long enough to catch the
+/// next job of the same audio block, short enough not to burn a core between
+/// blocks.
+const SPIN: Duration = Duration::from_micros(20);
 /// Free slot of the ready queue.
 const EMPTY: u16 = u16::MAX;
 
@@ -142,6 +144,10 @@ struct Shared {
     tail: Padded<AtomicUsize>,
     /// Tasks not finished yet.
     remaining: Padded<AtomicUsize>,
+    /// Time spent inside tasks, all threads together, and wall time of the
+    /// jobs on the calling thread, in nanoseconds (see [`WorkerPool::take_times`]).
+    work_ns: Padded<AtomicU64>,
+    job_ns: AtomicU64,
 }
 
 /// A counter alone on its cache line: threads that write it do not slow down
@@ -179,7 +185,9 @@ impl Shared {
                         std::hint::spin_loop();
                     },
                 };
+                let started = Instant::now();
                 (job.task)(task);
+                self.work_ns.fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
                 if let Some(graph) = job.graph {
                     for &d in graph.dependents(task) {
                         if self.pending[d as usize].fetch_sub(1, Ordering::AcqRel) == 1 {
@@ -225,6 +233,8 @@ impl WorkerPool {
             head: Padded(AtomicUsize::new(0)),
             tail: Padded(AtomicUsize::new(0)),
             remaining: Padded(AtomicUsize::new(0)),
+            work_ns: Padded(AtomicU64::new(0)),
+            job_ns: AtomicU64::new(0),
         });
         let threads = (0..workers)
             .filter_map(|i| {
@@ -237,6 +247,14 @@ impl WorkerPool {
 
     pub fn workers(&self) -> usize {
         self.threads.len()
+    }
+
+    /// Time spent in the tasks of the jobs run since the last call (all threads
+    /// together) and wall time of those jobs, in nanoseconds. Their difference
+    /// is what the jobs saved compared to running alone on the calling thread.
+    pub(crate) fn take_times(&self) -> (u64, u64) {
+        let s = &*self.shared;
+        (s.work_ns.swap(0, Ordering::Relaxed), s.job_ns.swap(0, Ordering::Relaxed))
     }
 
     /// Runs `task(0..count)` in any order, on the workers and the calling thread.
@@ -254,6 +272,7 @@ impl WorkerPool {
             return;
         }
         let s = &*self.shared;
+        let started = Instant::now();
         // No worker is inside a job here (see the end of this function).
         s.head.store(0, Ordering::Relaxed);
         s.remaining.store(job.count, Ordering::Relaxed);
@@ -287,6 +306,62 @@ impl WorkerPool {
         while s.busy.load(Ordering::SeqCst) != 0 {
             std::hint::spin_loop();
         }
+        s.job_ns.fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
+    }
+}
+
+/// Load above which the workers are woken up: the share of the block budget
+/// that rendering on the audio thread alone would take (smoothed).
+const PARALLEL_ON: f32 = 0.40;
+/// A single block this heavy wakes the workers at once.
+const PARALLEL_SPIKE: f32 = 0.70;
+/// Load under which the workers may go back to sleep…
+const PARALLEL_OFF: f32 = 0.20;
+/// …once it stayed there this long, in seconds.
+const PARALLEL_CALM: f32 = 3.0;
+/// Time constant of the smoothed load, in seconds.
+const PARALLEL_TAU: f32 = 0.2;
+
+/// Decides, block after block, whether the worker threads are worth waking
+/// up. A light project renders on the audio thread alone and the workers stay
+/// parked (no CPU at all); once the load nears the budget, the work is shared
+/// again. Hysteresis keeps it from flapping: on fast, off slowly.
+///
+/// The output does not depend on the choice: it is bit-identical either way.
+#[derive(Clone, Debug, Default)]
+pub struct Parallelism {
+    on: bool,
+    smoothed: f32,
+    calm: f32,
+}
+
+impl Parallelism {
+    /// Feeds the serial-equivalent load of one block (time the audio thread
+    /// alone would have spent / duration of the block) lasting `secs` seconds;
+    /// returns whether the next blocks should use the workers.
+    pub fn update(&mut self, load: f32, secs: f32) -> bool {
+        let load = if load.is_finite() { load.max(0.0) } else { 1.0 };
+        let a = (secs / PARALLEL_TAU).clamp(0.0, 1.0);
+        self.smoothed += (load - self.smoothed) * a;
+        if !self.on {
+            if self.smoothed > PARALLEL_ON || load > PARALLEL_SPIKE {
+                self.on = true;
+                self.calm = 0.0;
+            }
+        } else if self.smoothed < PARALLEL_OFF {
+            self.calm += secs;
+            if self.calm >= PARALLEL_CALM {
+                self.on = false;
+            }
+        } else {
+            self.calm = 0.0;
+        }
+        self.on
+    }
+
+    /// Whether the workers are in use.
+    pub fn active(&self) -> bool {
+        self.on
     }
 }
 
@@ -462,6 +537,52 @@ mod tests {
             sum.fetch_add(t, Ordering::Relaxed);
         });
         assert_eq!(sum.load(Ordering::Relaxed), 45);
+    }
+
+    #[test]
+    fn parallelism_switches_on_fast_and_off_slowly() {
+        let block = 256.0 / 48_000.0;
+        let mut p = Parallelism::default();
+        // Light load: the workers stay asleep.
+        for _ in 0..1_000 {
+            assert!(!p.update(0.15, block));
+        }
+        // A sustained heavy load wakes them within a fraction of a second.
+        let mut blocks = 0;
+        while !p.update(0.55, block) {
+            blocks += 1;
+            assert!(blocks < 60, "too slow to switch on");
+        }
+        // Spread on the workers, the load drops: they stay on for a while…
+        let mut calm = 0.0;
+        while p.update(0.12, block) {
+            calm += block;
+            assert!(calm < 10.0, "never switches off");
+        }
+        assert!(calm >= PARALLEL_CALM, "switched off after {calm} s");
+        // …and a load between the two thresholds changes nothing.
+        for _ in 0..2_000 {
+            assert!(!p.update(0.30, block));
+        }
+        // A single block close to the budget wakes them at once.
+        assert!(p.update(0.9, block));
+        // Back between the thresholds: still on, the calm period restarts.
+        for _ in 0..2_000 {
+            assert!(p.update(0.30, block));
+        }
+        // A load that cannot be measured counts as a full one.
+        assert!(Parallelism::default().update(f32::NAN, block));
+    }
+
+    #[test]
+    fn job_times_are_measured() {
+        let pool = WorkerPool::new(2);
+        pool.run(8, &|_| thread::sleep(Duration::from_micros(200)));
+        let (work, wall) = pool.take_times();
+        assert!(work >= 8 * 200_000, "{work}");
+        // Wall time: at least one task, at most all of them plus the overhead.
+        assert!(wall >= 200_000 && wall <= work + 1_000_000, "{wall} / {work}");
+        assert_eq!(pool.take_times(), (0, 0));
     }
 
     #[test]
