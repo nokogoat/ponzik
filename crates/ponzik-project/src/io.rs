@@ -10,7 +10,7 @@ use ponzik_i18n::{tr, tr_fmt};
 
 use ponzik_engine::mixer::{DEFAULT_TRACKS, INSERT_SLOTS, MASTER, MAX_TRACKS, SEND_SLOTS};
 use ponzik_engine::instruments::drum_pads::{LAYERS, PADS as PAD_LIMIT};
-use ponzik_engine::{MAX_RATCHET, NOTE_FX_SLOTS, Note, NoteCond, PlayMode, TICKS_PER_BAR};
+use ponzik_engine::{MAX_FINE, MAX_RATCHET, NOTE_FX_SLOTS, Note, NoteCond, PlayMode, TICKS_PER_BAR};
 
 use ponzik_engine::effects::fx_rack::{CHAIN_LEN, CHAINS, MACROS, MAX_MAPPINGS, UNITS};
 use ponzik_engine::{MacroMap, ModKind};
@@ -19,7 +19,7 @@ use crate::json::{self, Json};
 use crate::rack::{ModTarget, ModulatorDef, RackDef, RackDevice, rack_accepts};
 use crate::{
     AudioClipDef, WarpAlgo, WarpMap, WarpMarker, AutoPoint, AutoScope, AutoTarget, AutomationDef, ChannelDef, ClipDef, EffectDef, InstrumentDef,
-    NoteFxDef, PatternDef, PluginState, Project, TrackDef, TrackKind,
+    MAX_PORTA, NoteFxDef, PatternDef, PluginState, Project, TrackDef, TrackKind,
 };
 
 pub const FORMAT: &str = "ponzik-project";
@@ -140,6 +140,9 @@ fn channel_json(c: &ChannelDef) -> Json {
     if !c.modulators.is_empty() {
         pairs.push(("modulators", modulators_json(&c.modulators)));
     }
+    if c.porta > 0.0 {
+        pairs.push(("porta", c.porta.into()));
+    }
     if let Some(path) = &c.frozen {
         pairs.push(("frozen", path.as_str().into()));
     }
@@ -147,11 +150,16 @@ fn channel_json(c: &ChannelDef) -> Json {
 }
 
 /// `[start, len, key, vel]`, followed by `[chance %, condition, repeats]`
-/// only when the note has any of them.
+/// only when the note has any of them, then `[slide, pan, fine]` only when
+/// it slides or has an expression.
 fn note_json(n: &Note) -> Json {
     let mut v = vec![n.start.into(), n.len.into(), n.key.into(), n.vel.into()];
-    if n.is_varied() {
+    let expressive = n.slide || n.has_expression();
+    if n.is_varied() || expressive {
         v.extend([n.prob.into(), n.cond.id().as_str().into(), n.ratchet.into()]);
+    }
+    if expressive {
+        v.extend([u32::from(n.slide).into(), n.pan.into(), n.fine.into()]);
     }
     Json::Arr(v)
 }
@@ -508,6 +516,7 @@ fn load_channel(v: &Json) -> ChannelDef {
         color: u32_or(v.get("color"), 0),
         modulators: load_modulators(v.get("modulators"), 1),
         frozen: v.get("frozen").and_then(Json::as_str).filter(|p| !p.is_empty()).map(String::from),
+        porta: f32_or(v.get("porta"), 0.0).clamp(0.0, MAX_PORTA),
     }
 }
 
@@ -521,6 +530,9 @@ fn load_note(v: &Json) -> Option<Note> {
         prob: u32_or(n.get(4), 100).min(100) as u8,
         cond: n.get(5).and_then(Json::as_str).and_then(NoteCond::from_id).unwrap_or_default(),
         ratchet: u32_or(n.get(6), 1).clamp(1, u32::from(MAX_RATCHET)) as u8,
+        slide: u32_or(n.get(7), 0) != 0,
+        pan: f32_or(n.get(8), 0.0).clamp(-1.0, 1.0),
+        fine: f32_or(n.get(9), 0.0).clamp(-MAX_FINE, MAX_FINE),
     })
 }
 
@@ -1062,6 +1074,23 @@ mod tests {
             (50, NoteCond::First, 1),
             (100, NoteCond::NotFirst, 2),
         ]);
+    }
+
+    #[test]
+    fn slides_pans_and_fine_pitches_round_trip() {
+        let mut p = Project::empty();
+        p.add_channel("A", InstrumentDef::new("pulse"), 60);
+        let slide = Note { slide: true, ..Note::new(48, 24, 67, 0.5) };
+        let panned = Note { pan: -0.25, fine: 12.5, ..Note::new(96, 24, 60, 0.8) };
+        for n in [Note::new(0, 96, 60, 0.8), slide, panned] {
+            p.add_note(0, 0, n);
+        }
+        let text = save(&p);
+        assert!(text.contains("[0, 96, 60, 0.8]") || text.contains("[0,96,60,0.8]"), "{text}");
+        assert_eq!(load(&text).unwrap().patterns[0].notes[0], [Note::new(0, 96, 60, 0.8), slide, panned]);
+        let text = r#"{"format": "ponzik-project", "channels": [{}], "patterns": [{"notes": [[[0, 24, 60, 1, 100, "", 1, 1, 9, -400]]]}]}"#;
+        let n = load(text).unwrap().patterns[0].notes[0][0];
+        assert_eq!((n.slide, n.pan, n.fine), (true, 1.0, -MAX_FINE));
     }
 
     #[test]

@@ -1073,6 +1073,7 @@ pub fn import_flp(
             color: ch.color.unwrap_or(0),
             modulators: Vec::new(),
             frozen: None,
+            porta: 0.0,
         });
     }
     if !p.channels.is_empty() {

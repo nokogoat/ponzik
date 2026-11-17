@@ -153,6 +153,9 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: Loader) -> V
         if moved_track(a.track) != b.track {
             cmds.push(Command::SetChannelTrack { channel: i, track: b.track });
         }
+        if a.porta != b.porta {
+            cmds.push(Command::SetChannelPorta { channel: i, secs: b.porta });
+        }
         // After the parameters: the set reads its base values from `new`.
         if a.modulators != b.modulators || (!b.modulators.is_empty() && !same_instrument(&a.instrument, &b.instrument)) {
             cmds.push(Command::SetChannelModulators { channel: i, mods: new.make_channel_mods(i) });

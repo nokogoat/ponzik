@@ -221,7 +221,12 @@ pub struct ChannelDef {
     /// Frozen: the audio file of its render, played instead of its
     /// instrument and note effects (kept here, unloaded from the engine).
     pub frozen: Option<String>,
+    /// Portamento in seconds (0: off): each note glides from the previous one.
+    pub porta: f32,
 }
+
+/// Longest channel portamento, in seconds.
+pub const MAX_PORTA: f32 = 2.0;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PatternDef {
@@ -954,7 +959,8 @@ impl Project {
         let mut ch = Channel::new(c.name.clone(), Self::make_instrument(&c.instrument, sample_rate, loader))
             .with_gain(c.gain)
             .with_pan(c.pan)
-            .with_track(c.track);
+            .with_track(c.track)
+            .with_porta(c.porta);
         ch.muted = c.muted;
         for (slot, def) in c.note_fx.iter().enumerate().take(NOTE_FX_SLOTS) {
             ch.note_fx[slot] = def.as_ref().and_then(|d| Self::make_note_fx(d, sample_rate, self.bpm));
@@ -1074,6 +1080,7 @@ impl Project {
             color: 0,
             modulators: Vec::new(),
             frozen: None,
+            porta: 0.0,
         });
         for p in &mut self.patterns {
             p.notes.resize(self.channels.len(), Vec::new());
