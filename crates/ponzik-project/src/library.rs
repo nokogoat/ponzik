@@ -1412,6 +1412,102 @@ pub fn library_sample(path: &str) -> Option<ponzik_engine::Sample> {
     })
 }
 
+/// The library sound closest to a sample named `name` (a file name, or a
+/// path: its folders help), by category: "Basic 808 Kick.wav" → an 808 kick,
+/// "Open HH 02" → an open hat. The path is relative to the library root
+/// (`/`-separated, as [`library_sample`] takes it); `None` when the name
+/// says nothing the library has.
+pub fn closest_library_sound(name: &str) -> Option<String> {
+    let lower = name.to_lowercase();
+    let words: Vec<&str> = lower.split(|ch: char| !ch.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let has = |keys: &[&str]| keys.iter().any(|k| lower.contains(k));
+    let word = |keys: &[&str]| words.iter().any(|w| keys.contains(w));
+    let starts = |keys: &[&str]| words.iter().any(|w| keys.iter().any(|k| w.starts_with(k)));
+    let pick = |a: &'static str, b: &'static str, cond: bool| if cond { a } else { b };
+    // (folder, preferred word in the sound's name).
+    let (folder, prefer) = if has(&["kick", "bassdrum", "bass drum"]) || word(&["bd", "kik"]) {
+        let style = if has(&["808", "trap"]) {
+            "808"
+        } else if has(&["techno", "909"]) {
+            "Techno"
+        } else if has(&["hardstyle", "hard"]) {
+            "Hardstyle"
+        } else if has(&["lofi", "lo-fi", "dusty"]) {
+            "Lofi"
+        } else {
+            "Punchy"
+        };
+        ("Drums/Kicks", style)
+    } else if has(&["snare"]) || word(&["sd", "sn", "snr"]) {
+        let style = if has(&["909"]) {
+            "909"
+        } else if has(&["trap", "808"]) {
+            "Trap"
+        } else if has(&["lofi", "lo-fi"]) {
+            "Lofi"
+        } else {
+            "Tight"
+        };
+        ("Drums/Snares", style)
+    } else if has(&["clap"]) || word(&["cp", "clp"]) {
+        ("Drums/Claps", pick("Trap", "Tight", has(&["trap", "808"])))
+    } else if starts(&["rim"]) || has(&["sidestick", "side stick"]) {
+        ("Drums/Rims", "Dry")
+    } else if ((has(&["hat"]) || word(&["hh"])) && has(&["open"])) || word(&["oh", "ohh", "ohat"]) {
+        ("Drums/Hats", "Open Hat")
+    } else if has(&["hat", "hihat", "hi-hat"]) || word(&["hh", "ch", "chh", "chat"]) {
+        ("Drums/Hats", pick("Trap", "Closed Hat", has(&["trap", "808"])))
+    } else if has(&["shaker", "shake", "maraca"]) {
+        ("Drums/Shakers", "Soft")
+    } else if starts(&["tom"]) {
+        ("Drums/Toms", pick("Low", "Mid", has(&["low", "floor"])))
+    } else if has(&["crash"]) {
+        ("Drums/Cymbals", "Crash")
+    } else if starts(&["ride"]) {
+        ("Drums/Cymbals", "Ride")
+    } else if has(&["cymbal", "splash", "china"]) {
+        ("Drums/Cymbals", "Splash")
+    } else if has(&["conga"]) {
+        ("Drums/Percussion", "Conga")
+    } else if has(&["bongo"]) {
+        ("Drums/Percussion", "Bongo")
+    } else if has(&["cowbell", "cow bell"]) {
+        ("Drums/Percussion", "Cowbell")
+    } else if has(&["clave"]) {
+        ("Drums/Percussion", "Clave")
+    } else if has(&["tamb"]) {
+        ("Drums/Percussion", "Tambourine")
+    } else if has(&["triangle"]) {
+        ("Drums/Percussion", "Triangle")
+    } else if has(&["perc", "wood", "block"]) {
+        ("Drums/Percussion", "Perc")
+    } else if has(&["808"]) || word(&["sub", "subs"]) {
+        ("Bass/808", "Clean")
+    } else if has(&["bass"]) {
+        ("Bass/Synth", "Bass")
+    } else if has(&["pluck"]) {
+        ("Synths/Plucks", "Pluck")
+    } else if has(&["pad"]) {
+        ("Synths/Pads", "Pad")
+    } else if has(&["stab", "chord"]) {
+        ("Synths/Stabs", "Stab")
+    } else if has(&["piano", "keys", "rhodes", "epiano", "bell"]) {
+        ("Synths/Keys", "Keys")
+    } else if has(&["riser", "uplifter", "build"]) {
+        ("FX/Risers", "Riser")
+    } else if has(&["impact", "boom"]) || word(&["hit", "hits"]) {
+        ("FX/Impacts", "Impact")
+    } else if has(&["sweep", "downlifter", "whoosh", "noise"]) {
+        ("FX/Sweeps", "Sweep")
+    } else {
+        return None;
+    };
+    let items = library_items();
+    let in_folder = || items.iter().filter(|it| it.folder == folder);
+    let item = in_folder().find(|it| it.name.contains(prefer)).or_else(|| in_folder().next())?;
+    Some(format!("{}/{}.wav", item.folder, item.name))
+}
+
 fn synth_bass_note(v: u32) -> u8 {
     [29, 33, 36, 28, 31, 38][v as usize % 6]
 }
@@ -1481,6 +1577,31 @@ pub fn generate_library(dir: &Path, threads: usize, progress: &(dyn Fn(usize, us
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn closest_sounds_by_category() {
+        let cases = [
+            ("Basic 808 Kick.wav", "Drums/Kicks/Kick - 808 Long 01.wav"),
+            ("Packs/Legacy/Drums/Dance/Basic 808 Clap.wav", "Drums/Claps/Clap - Trap Stack 01.wav"),
+            ("Basic 808 HiHat.wav", "Drums/Hats/Closed Hat - Trap 01.wav"),
+            ("Basic 808 Snare.wav", "Drums/Snares/Snare - Trap 01.wav"),
+            ("909 Snare 2.wav", "Drums/Snares/Snare - Snappy 909 01.wav"),
+            ("House Kick 04.wav", "Drums/Kicks/Kick - Punchy House 01.wav"),
+            ("Open HH 02.wav", "Drums/Hats/Open Hat - Classic 01.wav"),
+            ("Rimshot.wav", "Drums/Rims/Rim - Dry 01.wav"),
+            ("Ride Bell.wav", "Drums/Cymbals/Ride - Classic 01.wav"),
+            ("Cowbell 808.wav", "Drums/Percussion/Perc - Cowbell 01.wav"),
+            ("Tom Low.wav", "Drums/Toms/Tom - Low 01.wav"),
+            ("808 Bass C.wav", "Bass/808/808 - Clean - C1.wav"),
+        ];
+        for (name, want) in cases {
+            assert_eq!(closest_library_sound(name).as_deref(), Some(want), "{name}");
+            assert!(library_sample(want).is_some(), "{want}");
+        }
+        // Words inside other words do not count.
+        assert_eq!(closest_library_sound("Trim the override.wav"), None);
+        assert_eq!(closest_library_sound("Vocal take 3.wav"), None);
+    }
 
     #[test]
     fn library_samples_resolve_from_relative_or_absolute_paths() {
