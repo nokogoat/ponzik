@@ -135,6 +135,9 @@ pub const CLAP_EVENT_IS_LIVE: u32 = 1;
 pub const CLAP_EVENT_NOTE_ON: u16 = 0;
 pub const CLAP_EVENT_NOTE_OFF: u16 = 1;
 pub const CLAP_EVENT_NOTE_CHOKE: u16 = 2;
+pub const CLAP_EVENT_NOTE_EXPRESSION: u16 = 4;
+pub const CLAP_NOTE_EXPRESSION_PAN: i32 = 1;
+pub const CLAP_NOTE_EXPRESSION_TUNING: i32 = 2;
 pub const CLAP_EVENT_PARAM_VALUE: u16 = 5;
 pub const CLAP_EVENT_PARAM_GESTURE_BEGIN: u16 = 6;
 pub const CLAP_EVENT_PARAM_GESTURE_END: u16 = 7;
@@ -159,6 +162,19 @@ pub struct ClapEventNote {
     pub channel: i16,
     pub key: i16,
     pub velocity: f64,
+}
+
+/// `clap_event_note_expression`: tuning in semitones, pan in [0, 1].
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ClapEventNoteExpression {
+    pub header: ClapEventHeader,
+    pub expression_id: i32,
+    pub note_id: i32,
+    pub port_index: i16,
+    pub channel: i16,
+    pub key: i16,
+    pub value: f64,
 }
 
 #[repr(C)]

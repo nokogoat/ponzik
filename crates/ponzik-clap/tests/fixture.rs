@@ -186,6 +186,26 @@ fn instrument_plays_the_right_pitch() {
     assert_eq!(rms(&l), 0.0);
 }
 
+#[test]
+fn instrument_follows_tuning_expressions() {
+    use ponzik_engine::NoteExpression;
+    let Some(path) = fixture("glide") else { return };
+    let mut inst = create_instrument(&path, "ponzik.test.sine").unwrap();
+    inst.set_sample_rate(SR);
+    assert!(inst.supports_expression());
+    let rising = |l: &[f32]| l.windows(2).filter(|w| w[0] < 0.0 && w[1] >= 0.0).count();
+    inst.note_on(57, 1.0);
+    // An octave up over 50 ms, sent in steps while it renders.
+    inst.note_expression(57, NoteExpression::Tuning { semitones: 12.0, secs: 0.05 });
+    let (mut l, mut r) = (vec![0.0; SR as usize / 10], vec![0.0; SR as usize / 10]);
+    for (a, b) in l.chunks_mut(256).zip(r.chunks_mut(256)) {
+        inst.render(a, b);
+    }
+    let (mut l, mut r) = (vec![0.0; SR as usize], vec![0.0; SR as usize]);
+    inst.render(&mut l, &mut r);
+    assert!((439..=441).contains(&rising(&l)), "{}", rising(&l));
+}
+
 #[cfg(target_os = "macos")]
 const PARENT: ParentWindow = ParentWindow::Cocoa(0x1234);
 #[cfg(windows)]

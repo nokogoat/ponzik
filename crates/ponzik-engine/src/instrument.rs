@@ -203,25 +203,26 @@ impl TuningRamps {
     }
 
     /// Ramps over the next `frames` samples: `emit(offset, key, semitones)`
-    /// every `every` samples while a ramp moves, then once at its end.
+    /// every `every` samples while a ramp moves, then once at its end; in
+    /// the order of the offsets.
     pub fn advance(&mut self, frames: usize, every: usize, mut emit: impl FnMut(usize, u8, f32)) {
         let every = every.max(1);
-        let mut busy = self.busy;
-        while busy != 0 {
-            let k = busy.trailing_zeros() as usize;
-            busy &= busy - 1;
-            let r = &mut self.ramps[k];
-            let mut off = 0;
-            while off < frames {
+        let mut off = 0;
+        while off < frames && self.busy != 0 {
+            let n = every.min(frames - off);
+            let mut busy = self.busy;
+            while busy != 0 {
+                let k = busy.trailing_zeros() as usize;
+                busy &= busy - 1;
+                let r = &mut self.ramps[k];
                 emit(off, k as u8, r.value());
-                if !r.is_moving() {
+                if r.is_moving() {
+                    r.skip(n as u32);
+                } else {
                     self.busy &= !(1 << k);
-                    break;
                 }
-                let n = every.min(frames - off);
-                r.skip(n as u32);
-                off += n;
             }
+            off += n;
         }
     }
 }

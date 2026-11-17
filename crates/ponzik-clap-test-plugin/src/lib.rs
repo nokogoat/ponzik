@@ -221,6 +221,12 @@ fn handle_events(t: &mut Test, events: *const ClapInputEvents) {
                 t.freq = 440.0 * 2f64.powf((e.key as f64 - 69.0) / 12.0);
                 t.amp = e.velocity;
             }
+            CLAP_EVENT_NOTE_EXPRESSION => {
+                let e = unsafe { &*(h as *const ClapEventNoteExpression) };
+                if e.expression_id == CLAP_NOTE_EXPRESSION_TUNING && (e.key == -1 || e.key == t.key) {
+                    t.freq = 440.0 * 2f64.powf((t.key as f64 + e.value - 69.0) / 12.0);
+                }
+            }
             CLAP_EVENT_NOTE_OFF | CLAP_EVENT_NOTE_CHOKE => {
                 let e = unsafe { &*(h as *const ClapEventNote) };
                 if e.key == -1 || e.key == t.key {

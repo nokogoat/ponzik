@@ -10,7 +10,9 @@ use std::ptr::{null, null_mut};
 use std::sync::{Arc, Mutex};
 
 use ponzik_engine::ring::Producer;
-use ponzik_engine::{Editor, Effect, Instrument, ParamInfo, Params, StateContext, Unit};
+use ponzik_engine::{
+    Controller, Editor, Effect, Instrument, NoteExpression, PITCH_BEND_RANGE, ParamInfo, Params, StateContext, TuningRamps, Unit,
+};
 
 use crate::abi::*;
 use crate::host::{ClapEditor, HostShared, OutMsg, as_audio_thread, new_host};
@@ -20,6 +22,8 @@ use crate::library::Library;
 pub const MAX_BLOCK: usize = 4096;
 /// Capacité des files d'événements : au-delà, les événements du bloc sont perdus.
 const EVENT_CAPACITY: usize = 1024;
+/// Samples between two values of a gliding note's tuning.
+const RAMP_STEP: usize = 32;
 
 // --- Files d'événements ----------------------------------------------------
 
@@ -30,6 +34,7 @@ union Event {
     note: ClapEventNote,
     param: ClapEventParamValue,
     midi: ClapEventMidi,
+    expression: ClapEventNoteExpression,
 }
 
 /// File d'entrée de taille fixe ; `list.ctx` pointe sur la structure elle-même.
@@ -191,6 +196,11 @@ struct Core {
     inputs: Ports,
     outputs: Ports,
     midi_dialect: bool,
+    /// The note port also takes MIDI: pitch bend and CCs go as MIDI.
+    accepts_midi: bool,
+    /// Tuning of each key (slides, portamento), sent every [`RAMP_STEP`].
+    tuning: Box<TuningRamps>,
+    sample_rate: f32,
     held: u128,
     steady_time: i64,
     /// Latence annoncée par `clap.latency`, lue à l'activation.
@@ -230,16 +240,27 @@ fn port_channels(plugin: *const ClapPlugin, is_input: bool, fallback: u32) -> Ve
         .collect()
 }
 
-fn prefers_midi(plugin: *const ClapPlugin) -> bool {
+fn expression_event(id: i32, key: i16, value: f64, time: u32) -> Event {
+    let mut h = header(CLAP_EVENT_NOTE_EXPRESSION, size_of::<ClapEventNoteExpression>());
+    h.time = time;
+    Event { expression: ClapEventNoteExpression { header: h, expression_id: id, note_id: -1, port_index: 0, channel: -1, key, value } }
+}
+
+/// Dialects of the first note input port (0: none).
+fn note_dialects(plugin: *const ClapPlugin) -> u32 {
     let np = ext::<ClapPluginNotePorts>(plugin, CLAP_EXT_NOTE_PORTS);
     // SAFETY : extension renvoyée par le plugin, pointeur vérifié.
-    let Some(np) = (unsafe { np.as_ref() }) else { return false };
+    let Some(np) = (unsafe { np.as_ref() }) else { return 0 };
     let mut info: ClapNotePortInfo = unsafe { std::mem::zeroed() };
     // SAFETY : appels documentés de `clap.note-ports`.
     if unsafe { (np.count)(plugin, true) } == 0 || !unsafe { (np.get)(plugin, 0, true, &mut info) } {
-        return false;
+        return 0;
     }
-    info.supported_dialects & CLAP_NOTE_DIALECT_CLAP == 0 && info.supported_dialects & CLAP_NOTE_DIALECT_MIDI != 0
+    info.supported_dialects
+}
+
+fn prefers_midi(dialects: u32) -> bool {
+    dialects & CLAP_NOTE_DIALECT_CLAP == 0 && dialects & CLAP_NOTE_DIALECT_MIDI != 0
 }
 
 impl Core {
@@ -277,6 +298,7 @@ impl Core {
             })
             .collect();
         values.sort_by_key(|p| p.id);
+        let dialects = note_dialects(plugin);
         Ok(Core {
             plugin,
             kind,
@@ -286,7 +308,10 @@ impl Core {
             out_events: OutEvents::new(),
             inputs: Ports::new(&port_channels(plugin, true, if effect { 2 } else { 0 })),
             outputs: Ports::new(&port_channels(plugin, false, 2)),
-            midi_dialect: prefers_midi(plugin),
+            midi_dialect: prefers_midi(dialects),
+            accepts_midi: dialects & CLAP_NOTE_DIALECT_MIDI != 0,
+            tuning: Box::default(),
+            sample_rate: 48_000.0,
             held: 0,
             steady_time: 0,
             latency: 0,
@@ -300,6 +325,7 @@ impl Core {
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
         self.stop();
         // SAFETY : plugin initialisé et inactif.
         self.active = unsafe { ((*self.plugin).activate)(self.plugin, sample_rate as f64, 1, MAX_BLOCK as u32) };
@@ -351,6 +377,9 @@ impl Core {
 
     fn note(&mut self, kind: u16, key: u8, velocity: f32) {
         let key = key.min(127);
+        if kind == CLAP_EVENT_NOTE_ON {
+            self.tuning.reset(key);
+        }
         let e = if self.midi_dialect {
             let status = if kind == CLAP_EVENT_NOTE_ON { 0x90 } else { 0x80 };
             let midi = ClapEventMidi {
@@ -376,6 +405,61 @@ impl Core {
         } else {
             self.held &= !(1 << key);
         }
+    }
+
+    /// A note expression of `key` (-1: every note) at `time` in the next block.
+    fn expression(&mut self, id: i32, key: i16, value: f64, time: u32) {
+        self.in_events.push(expression_event(id, key, value, time));
+    }
+
+    fn note_expression(&mut self, key: u8, expr: NoteExpression) {
+        if self.midi_dialect {
+            return;
+        }
+        let key = key.min(127);
+        match expr {
+            NoteExpression::Tuning { semitones, secs } => {
+                if let Some(v) = self.tuning.set(key, semitones, secs, self.sample_rate) {
+                    self.expression(CLAP_NOTE_EXPRESSION_TUNING, key as i16, v as f64, 0);
+                }
+            }
+            NoteExpression::Pan(p) => {
+                self.expression(CLAP_NOTE_EXPRESSION_PAN, key as i16, 0.5 * (p.clamp(-1.0, 1.0) as f64 + 1.0), 0);
+            }
+        }
+    }
+
+    fn midi(&mut self, data: [u8; 3]) {
+        let midi = ClapEventMidi { header: header(CLAP_EVENT_MIDI, size_of::<ClapEventMidi>()), port_index: 0, data };
+        self.in_events.push(Event { midi });
+    }
+
+    fn controller(&mut self, ctl: Controller) {
+        match ctl {
+            Controller::PitchBend(b) if self.accepts_midi => {
+                let v = ((b.clamp(-1.0, 1.0) * 8192.0).round() as i32 + 8192).clamp(0, 16_383) as u16;
+                self.midi([0xE0, (v & 0x7F) as u8, (v >> 7) as u8]);
+            }
+            // CLAP notes only: a tuning of every note.
+            Controller::PitchBend(b) => {
+                self.expression(CLAP_NOTE_EXPRESSION_TUNING, -1, (b.clamp(-1.0, 1.0) * PITCH_BEND_RANGE) as f64, 0)
+            }
+            Controller::Cc(cc, v) if self.accepts_midi => {
+                self.midi([0xB0, cc.min(127), (v.clamp(0.0, 1.0) * 127.0).round() as u8]);
+            }
+            Controller::Cc(..) => {}
+        }
+    }
+
+    /// Values of the gliding notes over the next `frames` samples.
+    fn ramp_tuning(&mut self, frames: usize) {
+        if !self.tuning.is_busy() {
+            return;
+        }
+        let Self { tuning, in_events, .. } = self;
+        tuning.advance(frames, RAMP_STEP, |off, key, v| {
+            in_events.push(expression_event(CLAP_NOTE_EXPRESSION_TUNING, key as i16, v as f64, off as u32));
+        });
     }
 
     fn all_notes_off(&mut self) {
@@ -567,6 +651,18 @@ impl Instrument for ClapInstrument {
         self.0.note(CLAP_EVENT_NOTE_OFF, note, 0.0);
     }
 
+    fn supports_expression(&self) -> bool {
+        !self.0.midi_dialect
+    }
+
+    fn note_expression(&mut self, key: u8, expr: NoteExpression) {
+        self.0.note_expression(key, expr);
+    }
+
+    fn controller(&mut self, ctl: Controller) {
+        self.0.controller(ctl);
+    }
+
     fn all_notes_off(&mut self) {
         self.0.all_notes_off();
     }
@@ -583,6 +679,7 @@ impl Instrument for ClapInstrument {
         let core = &mut self.0;
         for (l, r) in left.chunks_mut(MAX_BLOCK).zip(right.chunks_mut(MAX_BLOCK)) {
             let n = l.len();
+            core.ramp_tuning(n);
             if !core.run(n) {
                 return;
             }
