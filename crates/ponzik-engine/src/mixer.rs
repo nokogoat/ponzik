@@ -20,6 +20,7 @@ use ponzik_dsp::util::balance_gains;
 use std::time::Instant;
 
 use crate::effect::Effect;
+use crate::freeze::{FreezeClock, Frozen};
 use crate::meter::{PeakMeter, peak};
 use crate::modulation::{MOD_CHUNK, ModClock, ModInput, ModSet};
 use crate::pool::{Graph, WorkerPool};
@@ -49,6 +50,11 @@ pub struct Track {
     pub vca: Option<usize>,
     /// Modulators of the track's inserts (rack macros and devices included).
     pub mods: Option<Box<ModSet>>,
+    /// Frozen: this render replaces the track's input and inserts (and its
+    /// latency); the fader, pan, sends and routing stay live.
+    pub frozen: Option<Box<Frozen>>,
+    /// Offline capture after the inserts, before the fader (interleaved stereo).
+    pub(crate) tap: Option<Vec<f32>>,
     pub(crate) l: Vec<f32>,
     pub(crate) r: Vec<f32>,
     /// Retard de l'entrée directe (compensation).
@@ -76,6 +82,8 @@ impl Track {
             sidechain: [None; INSERT_SLOTS],
             vca: None,
             mods: None,
+            frozen: None,
+            tap: None,
             l: vec![0.0; max_block],
             r: vec![0.0; max_block],
             input_delay: Delay::new(max_block, max_latency),
@@ -90,7 +98,7 @@ impl Track {
     /// Latence cumulée des inserts actifs ; `reduced` : ceux qui anticipent
     /// sont court-circuités (écoute à faible latence), donc sans latence.
     fn insert_latency(&self, reduced: bool) -> usize {
-        if reduced {
+        if reduced || self.frozen.is_some() {
             return 0;
         }
         let active = self.inserts.iter().zip(&self.bypass).filter(|(_, bypass)| !**bypass);
@@ -283,6 +291,8 @@ pub struct Mixer {
     plan: Box<Plan>,
     /// Transport of the block, for the modulators.
     pub(crate) clock: ModClock,
+    /// Transport of the block, for the frozen tracks.
+    pub(crate) freeze_clock: FreezeClock,
 }
 
 /// Ordre par défaut : toutes les pistes vont directement au master.
@@ -439,9 +449,22 @@ unsafe fn process_track(tracks: Tracks, idx: usize, cx: &Ctx, vca: f32, ready: i
     let started = Instant::now();
     let n = cx.n;
     // SAFETY: voir la fonction.
-    unsafe { run_inserts(tracks, idx, cx, ready) };
+    let frozen = unsafe { (*tracks.0.add(idx)).frozen.is_some() };
+    if frozen {
+        // SAFETY: voir la fonction ; l'emprunt se termine aussitôt.
+        let Track { frozen, l, r, .. } = unsafe { &mut *tracks.0.add(idx) };
+        if let Some(f) = frozen.as_mut() {
+            f.read(&mut l[..n], &mut r[..n]);
+        }
+    } else {
+        // SAFETY: voir la fonction.
+        unsafe { run_inserts(tracks, idx, cx, ready) };
+    }
     // SAFETY: voir la fonction.
     let t = unsafe { &mut *tracks.0.add(idx) };
+    if let Some(tap) = t.tap.as_mut() {
+        tap.extend(t.l[..n].iter().zip(&t.r[..n]).flat_map(|(&a, &b)| [a, b]));
+    }
     let (gl, gr) = balance_gains(t.pan);
     let (gl, gr) = if t.muted { (0.0, 0.0) } else { (gl * t.gain * vca, gr * t.gain * vca) };
     for i in 0..n {
@@ -465,6 +488,13 @@ unsafe fn process_track(tracks: Tracks, idx: usize, cx: &Ctx, vca: f32, ready: i
 unsafe fn process_master(tracks: Tracks, cx: &Ctx, ready: impl Fn(usize) -> bool) {
     let started = Instant::now();
     let n = cx.n;
+    {
+        // SAFETY: voir la fonction ; l'emprunt se termine avant les inserts.
+        let m = unsafe { &mut *tracks.0.add(MASTER) };
+        if let Some(tap) = m.tap.as_mut() {
+            tap.extend(m.l[..n].iter().zip(&m.r[..n]).flat_map(|(&a, &b)| [a, b]));
+        }
+    }
     // SAFETY: voir la fonction.
     unsafe { run_inserts(tracks, MASTER, cx, ready) };
     // SAFETY: voir la fonction.
@@ -505,6 +535,26 @@ impl Mixer {
                 vca: [1.0; TRACKS],
             }),
             clock: ModClock::default(),
+            freeze_clock: FreezeClock::default(),
+        }
+    }
+
+    /// Latency of what [`crate::Tap::Track`] captures, as of the last block:
+    /// a track's signal after its inserts (the slowest path into it plus its
+    /// own inserts), the master's input.
+    pub fn track_latency(&self, track: usize) -> usize {
+        match track {
+            MASTER => self.lat.arrival[MASTER],
+            t if t < TRACKS => self.lat.out(t),
+            _ => 0,
+        }
+    }
+
+    /// Frozen tracks follow the transport of the block.
+    fn sync_frozen(&mut self) {
+        let clock = self.freeze_clock;
+        for f in self.tracks.iter_mut().filter_map(|t| t.frozen.as_mut()) {
+            f.sync(&clock);
         }
     }
 
@@ -531,7 +581,10 @@ impl Mixer {
             lat.own[idx] = t.insert_latency(self.reduced[idx]);
             let out = lat.out(idx);
             for dst in t.destinations(idx) {
-                lat.arrival[dst] = lat.arrival[dst].max(out);
+                // A frozen track ignores what comes in: its render is already in time.
+                if self.tracks[dst].frozen.is_none() {
+                    lat.arrival[dst] = lat.arrival[dst].max(out);
+                }
             }
         }
         lat.own[MASTER] = self.tracks[MASTER].insert_latency(self.reduced[MASTER]);
@@ -546,7 +599,7 @@ impl Mixer {
             }
             let mut at = lat.arrival[idx];
             for slot in 0..INSERT_SLOTS {
-                let Some(fx) = t.inserts[slot].as_ref().filter(|_| !t.bypass[slot]) else { continue };
+                let Some(fx) = t.inserts[slot].as_ref().filter(|_| !t.bypass[slot] && t.frozen.is_none()) else { continue };
                 if self.reduced[idx] && fx.latency() > 0 {
                     continue;
                 }
@@ -604,6 +657,7 @@ impl Mixer {
     /// Traite toutes les pistes, une à une dans l'ordre de routage ; le résultat
     /// est dans le master. Chemin de référence du traitement parallèle.
     pub(crate) fn process(&mut self, n: usize, meters: &[PeakMeter]) {
+        self.sync_frozen();
         self.plan_latency();
         self.delay_inputs(n);
         let vca: [f32; TRACKS] = std::array::from_fn(|idx| self.vca_gain(idx));
@@ -711,6 +765,7 @@ impl Mixer {
         if !self.plan_parallel() || self.plan.graph.count() < 2 {
             return self.process(n, meters);
         }
+        self.sync_frozen();
         self.plan_latency();
         self.delay_inputs(n);
         let Self { tracks, silence, lat, reduced, plan, clock, .. } = self;

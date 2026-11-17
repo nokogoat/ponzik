@@ -6,6 +6,7 @@ use ponzik_dsp::util::balance_gains;
 
 use crate::audition::Audition;
 use crate::effect::Effect;
+use crate::freeze::{FreezeClock, Frozen, Tap};
 use crate::input::{CALIBRATION_CLICKS, InputChain, InputConsumer, InputSource, InputStrip, RecordBuffer, RecordChunk, calibration_click, deinterleave};
 use crate::instrument::Instrument;
 use crate::meter::{PeakMeter, peak};
@@ -64,6 +65,9 @@ pub enum Command {
     AddChannel(Box<Channel>),
     RemoveChannel(usize),
     ReplaceInstrument { channel: usize, instrument: Box<dyn Instrument> },
+    /// Replaces a whole channel (instrument, note effects, modulators,
+    /// freeze); the old one comes back as [`Garbage::Channel`].
+    ReplaceChannel { channel: usize, ch: Box<Channel> },
     SetChannelGain { channel: usize, gain: f32 },
     SetChannelPan { channel: usize, pan: f32 },
     SetChannelMute { channel: usize, muted: bool },
@@ -103,6 +107,12 @@ pub enum Command {
     SetTrackModulators { track: usize, mods: Option<Box<ModSet>> },
     /// Modulators of a channel (targets: its instrument).
     SetChannelModulators { channel: usize, mods: Option<Box<ModSet>> },
+    /// Freezes a channel (its render replaces its instrument) or thaws it
+    /// (`None`); the old player comes back as [`Garbage::Frozen`].
+    SetChannelFrozen { channel: usize, frozen: Option<Box<Frozen>> },
+    /// Freezes a mixer track (its render replaces its input and inserts) or
+    /// thaws it; the old player comes back as [`Garbage::Frozen`].
+    SetTrackFrozen { track: usize, frozen: Option<Box<Frozen>> },
     SetMetronome(bool),
     /// While a lane is being recorded live, its playback stops overriding the
     /// parameter (the hand wins); `hold: false` gives it back to the lane.
@@ -158,6 +168,7 @@ impl std::fmt::Debug for Command {
             Command::AddChannel(_) => "AddChannel",
             Command::RemoveChannel(_) => "RemoveChannel",
             Command::ReplaceInstrument { .. } => "ReplaceInstrument",
+            Command::ReplaceChannel { .. } => "ReplaceChannel",
             Command::SetChannelGain { .. } => "SetChannelGain",
             Command::SetChannelPan { .. } => "SetChannelPan",
             Command::SetChannelMute { .. } => "SetChannelMute",
@@ -183,6 +194,8 @@ impl std::fmt::Debug for Command {
             Command::SetRackMapping { .. } => "SetRackMapping",
             Command::SetTrackModulators { .. } => "SetTrackModulators",
             Command::SetChannelModulators { .. } => "SetChannelModulators",
+            Command::SetChannelFrozen { .. } => "SetChannelFrozen",
+            Command::SetTrackFrozen { .. } => "SetTrackFrozen",
             Command::SetMetronome(_) => "SetMetronome",
             Command::HoldAutomation { .. } => "HoldAutomation",
             Command::SetInput(_) => "SetInput",
@@ -218,6 +231,7 @@ pub enum Garbage {
     Calibration(Box<RecordBuffer>),
     MidiOut(Box<MidiOut>),
     RecordChunk(Box<RecordChunk>),
+    Frozen(Box<Frozen>),
 }
 
 /// Ce que le moteur publie pour l'interface.
@@ -675,6 +689,48 @@ impl Engine {
         &self.channels
     }
 
+    /// Captures `taps` from now on, in place of the previous ones (offline
+    /// renders only: the captures grow as they go). A channel or a track
+    /// appears once: its last tap wins.
+    pub fn set_taps(&mut self, taps: &[Tap]) {
+        for ch in &mut self.channels {
+            ch.tap = None;
+        }
+        for t in &mut self.mixer.tracks {
+            t.tap = None;
+        }
+        for &tap in taps {
+            let buf = Some(Vec::with_capacity(1 << 16));
+            match tap {
+                Tap::Channel(c) | Tap::ChannelOut(c) => {
+                    if let Some(ch) = self.channels.get_mut(c) {
+                        ch.tap = buf;
+                        ch.tap_out = matches!(tap, Tap::ChannelOut(_));
+                    }
+                }
+                Tap::Track(t) => {
+                    if let Some(t) = self.mixer.tracks.get_mut(t) {
+                        t.tap = buf;
+                    }
+                }
+            }
+        }
+    }
+
+    /// What each tap captured since the last call (interleaved stereo), in
+    /// the order of `taps`.
+    pub fn take_taps(&mut self, taps: &[Tap]) -> Vec<Vec<f32>> {
+        taps.iter()
+            .map(|&tap| {
+                let buf = match tap {
+                    Tap::Channel(c) | Tap::ChannelOut(c) => self.channels.get_mut(c).and_then(|ch| ch.tap.as_mut()),
+                    Tap::Track(t) => self.mixer.tracks.get_mut(t).and_then(|t| t.tap.as_mut()),
+                };
+                buf.map(std::mem::take).unwrap_or_default()
+            })
+            .collect()
+    }
+
     /// Accès direct au mixer, pour préparer l'état avant le premier bloc.
     pub fn mixer_mut(&mut self) -> &mut Mixer {
         &mut self.mixer
@@ -981,6 +1037,11 @@ impl Engine {
             self.events.clear();
         }
         let contiguous = (pos_start - self.audio_next).abs() < 1e-6;
+        let freeze = FreezeClock { playing: self.playing, song: self.sequence.mode == PlayMode::Song, contiguous, secs: t0, sample_rate: sr };
+        for f in self.channels.iter_mut().filter_map(|ch| ch.frozen.as_mut()) {
+            f.sync(&freeze);
+        }
+        self.mixer.freeze_clock = freeze;
         self.midi_clock.process(&mut self.midi, self.playing, pos_start, contiguous, n, to, &frame_of, self.clock);
 
         self.mixer.clear(n);
@@ -1099,6 +1160,10 @@ impl Engine {
                     // Après un saut, petit fondu d'entrée ; sinon (nouvelle séquence,
                     // début du clip) seul le fondu du clip compte.
                     let p = secs * src_rate;
+                    // At the engine's rate, the clip starts on a whole frame of
+                    // its file (its first sample on the first output sample at
+                    // or after its start), copied without interpolation.
+                    let p = if (ratio - 1.0).abs() < 1e-12 { (p + 1e-6).floor() } else { p };
                     (if clip.looped { p.rem_euclid(len as f64) } else { p }, if contiguous { f64::MAX / 2.0 } else { 0.0 })
                 };
                 let fade_in = clip.fade_in.max(MIN_FADE) as f64 * sr;
@@ -1274,7 +1339,13 @@ impl Engine {
         let started = Instant::now();
         l.fill(0.0);
         r.fill(0.0);
-        ch.instrument.render(l, r);
+        match ch.frozen.as_mut() {
+            Some(f) => f.read(l, r),
+            None => ch.instrument.render(l, r),
+        }
+        if let Some(tap) = ch.tap.as_mut().filter(|_| !ch.tap_out) {
+            tap.extend(l.iter().zip(r.iter()).flat_map(|(&a, &b)| [a, b]));
+        }
         if !ch.muted {
             let (gl, gr) = balance_gains(ch.pan);
             let (gl, gr) = (gl * ch.gain, gr * ch.gain);
@@ -1290,6 +1361,11 @@ impl Engine {
             if ch.mods.is_some() {
                 ch.level = ch.level.max(peak(l)).max(peak(r));
             }
+        }
+        if let Some(tap) = ch.tap.as_mut().filter(|_| ch.tap_out) {
+            // A muted channel sends nothing to its track.
+            let silent = if ch.muted { 0.0 } else { 1.0 };
+            tap.extend(l.iter().zip(r.iter()).flat_map(|(&a, &b)| [a * silent, b * silent]));
         }
         ch.cpu_ns += started.elapsed().as_nanos() as u64;
     }
@@ -1503,6 +1579,14 @@ impl Engine {
                     self.trash(Garbage::Channel(Box::new(ch)));
                 }
             }
+            Command::ReplaceChannel { channel, mut ch } => {
+                if let Some(slot) = self.channels.get_mut(channel) {
+                    slot.silence();
+                    drain_midi(&mut self.midi, &mut *slot.instrument, self.clock);
+                    std::mem::swap(slot, &mut *ch);
+                }
+                self.trash(Garbage::Channel(ch));
+            }
             Command::ReplaceInstrument { channel, instrument } => {
                 if let Some(ch) = self.channels.get_mut(channel) {
                     ch.silence();
@@ -1690,6 +1774,23 @@ impl Engine {
                     self.trash(Garbage::Modulators(old));
                 }
             }
+            Command::SetChannelFrozen { channel, mut frozen } => {
+                if let Some(ch) = self.channels.get_mut(channel) {
+                    ch.silence();
+                    frozen = std::mem::replace(&mut ch.frozen, frozen);
+                }
+                if let Some(old) = frozen {
+                    self.trash(Garbage::Frozen(old));
+                }
+            }
+            Command::SetTrackFrozen { track, mut frozen } => {
+                if let Some(t) = self.mixer.tracks.get_mut(track).filter(|_| track != MASTER) {
+                    frozen = std::mem::replace(&mut t.frozen, frozen);
+                }
+                if let Some(old) = frozen {
+                    self.trash(Garbage::Frozen(old));
+                }
+            }
             Command::SetMetronome(on) => self.metronome = on,
             Command::HoldAutomation { target, hold } => {
                 for h in &mut self.held {
@@ -1795,6 +1896,11 @@ impl Engine {
 /// Programme les messages MIDI que `instrument` a produits, à l'échantillon `now`.
 fn drain_midi(link: &mut MidiLink, instrument: &mut dyn Instrument, now: u64) {
     instrument.drain_midi(&mut |ev| link.send(ev.port, now as i64 + ev.offset as i64, ev.message));
+}
+
+/// A silent instrument: the placeholder of a frozen channel.
+pub fn silent_instrument() -> Box<dyn Instrument> {
+    Box::new(Silence)
 }
 
 /// Instrument muet, utilisé comme bouche-trou.

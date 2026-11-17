@@ -36,6 +36,12 @@ pub struct Channel {
     pub mods: Option<Box<crate::modulation::ModSet>>,
     /// Peak of the block, heard by an envelope follower on the channel.
     pub(crate) level: f32,
+    /// Frozen: plays this render instead of its instrument.
+    pub frozen: Option<Box<crate::freeze::Frozen>>,
+    /// Offline capture (interleaved stereo) of the instrument's output, or of
+    /// the channel's when `tap_out`.
+    pub(crate) tap: Option<Vec<f32>>,
+    pub(crate) tap_out: bool,
 }
 
 impl Channel {
@@ -55,6 +61,9 @@ impl Channel {
             cpu_ns: 0,
             mods: None,
             level: 0.0,
+            frozen: None,
+            tap: None,
+            tap_out: false,
         }
     }
 
