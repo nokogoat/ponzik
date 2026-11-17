@@ -724,6 +724,8 @@ impl Project {
                         gain: c.gain,
                         fade_in: c.fade_in,
                         fade_out: c.fade_out,
+                        xfade_in: 0.0,
+                        xfade_out: 0.0,
                     })
                 })
                 .collect(),

@@ -38,7 +38,7 @@ pub use effect::Effect;
 pub use freeze::{FreezeClock, Frozen, Tap};
 pub use effects::fx_rack::{MacroMap, RackLayout};
 pub use modulation::{ModClock, ModKind, ModLink, ModMeters, ModParam, ModSet, Modulator};
-pub use engine::{Command, Engine, EngineHandle, Garbage, MAX_CHANNELS, MAX_RECORDINGS, silent_instrument};
+pub use engine::{Command, Engine, EngineHandle, Garbage, MAX_CHANNELS, MAX_RECORDINGS, render_audio_clips, silent_instrument};
 pub use input::{InputConsumer, InputProducer, InputSource, InputStrip, RecordBuffer, RecordChunk, TakeSlice, input_channel};
 pub use instrument::Instrument;
 pub use midi_out::{MidiOut, MidiOutEvent};
@@ -49,6 +49,6 @@ pub use rack::{Channel, NOTE_FX_SLOTS};
 pub use sample::Sample;
 pub use sequence::{
     AudioClip, AutoPoint, AutoScope, AutoTarget, AutomationLane, Clip, ClipWarp, MAX_RATCHET, Note, NoteCond, PPQ, Pattern, PlayMode, Sequence, SessionSlot,
-    TICKS_PER_BAR, TICKS_PER_STEP, WarpMap, WarpMarker, fade_shape, splitmix,
+    TICKS_PER_BAR, TICKS_PER_STEP, WarpMap, WarpMarker, equal_power, fade_shape, splitmix,
 };
 pub use tempo_map::{BarBeat, TempoMap, TempoPoint, TempoView, TimeSig};

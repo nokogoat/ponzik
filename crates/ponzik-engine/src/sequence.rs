@@ -284,12 +284,20 @@ pub struct AudioClip {
     /// Décalage dans l'échantillon au début du clip, en secondes.
     pub offset: f64,
     pub gain: f32,
-    /// Fondus en secondes (au moins 2 ms, contre les clics).
+    /// Fondus en secondes (au moins 2 ms, contre les clics). Negative: no
+    /// fade at all (offline renders whose edges are faded later).
     pub fade_in: f32,
     pub fade_out: f32,
     /// Fade shapes in [−1, 1]: 0 is linear, positive starts slowly, negative quickly.
     pub fade_in_curve: f32,
     pub fade_out_curve: f32,
+    /// Equal-power crossfades in seconds, centered on the start and the end
+    /// (0: none, the fades above apply). The clip starts sounding half a
+    /// crossfade before its start and stops half a crossfade after its end,
+    /// so two clips meeting on a tick with the same crossfade sum to constant
+    /// power: comp segments of a take group.
+    pub xfade_in: f32,
+    pub xfade_out: f32,
     /// The file is played backwards (offset and warp markers count in the reversed file).
     pub reverse: bool,
     /// Past its end, the file starts over.
@@ -379,6 +387,13 @@ impl WarpMap {
         let (a, b) = (m[i - 1], m[i]);
         a.secs + (beat - a.beat) * (b.secs - a.secs) / (b.beat - a.beat)
     }
+}
+
+/// Gain of an equal-power fade in at `x` in [0, 1]: the fade out over the
+/// same span is `equal_power(1 − x)`, and the squares of both sum to 1.
+#[inline]
+pub fn equal_power(x: f64) -> f64 {
+    (x.clamp(0.0, 1.0) * std::f64::consts::FRAC_PI_2).sin()
 }
 
 /// Fade gain for a position `x` in [0, 1] of the fade, bent by `curve`.

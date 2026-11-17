@@ -18,7 +18,8 @@ use crate::note_fx::NoteFx;
 use crate::pool::{Parallelism, WorkerPool};
 use crate::rack::{Channel, NOTE_FX_SLOTS};
 use crate::ring::{self, Consumer, Producer};
-use crate::sequence::{AutoTarget, PPQ, PlayMode, SeqEvent, Sequence, fade_shape};
+use crate::sequence::{AudioClip, AutoTarget, PPQ, PlayMode, SeqEvent, Sequence, equal_power, fade_shape};
+use crate::tempo_map::{TempoMap, TempoView};
 
 /// Taille max d'un bloc de traitement (l'automation est évaluée à chaque bloc).
 const MAX_BLOCK: usize = 256;
@@ -538,6 +539,186 @@ struct AudioVoice {
     src: f64,
     /// Échantillons joués depuis le (re)démarrage, pour le fondu d'entrée.
     run: f64,
+}
+
+/// Fastest tick rate (ticks per second, at the highest tempo): bounds how far
+/// before its start a crossfaded clip can sound.
+const MAX_TICKS_PER_SEC: f64 = crate::tempo_map::MAX_BPM / 60.0 * PPQ as f64;
+
+/// A block of audio clip playback: where it starts in the song.
+struct ClipBlock<'a> {
+    view: &'a TempoView<'a>,
+    /// Tick and time (seconds) of the first sample.
+    pos_start: f64,
+    t0: f64,
+    n: usize,
+    sr: f64,
+    /// Follows the previous block: clips resume where they were.
+    contiguous: bool,
+}
+
+/// Plays one audio clip over a block, sample-accurately, into the buffers
+/// `out` gives (asked for only when the clip sounds in this block); returns
+/// the voice to resume from on the next block. Unwarped clips keep their place
+/// in ticks and play at their own speed (linear interpolation): they don't
+/// follow tempo changes. Warped clips play their rendered stretch, or until it
+/// is ready their file resampled along the tempo map; both are computed from
+/// the time of each sample, so a clip is always in time, whatever the block
+/// size. Crossfaded edges (comp segments) sound half a crossfade beyond the
+/// clip, on an equal-power curve.
+fn play_audio_clip<'o>(clip: &AudioClip, prev: AudioVoice, b: &ClipBlock, out: impl FnOnce() -> (&'o mut [f32], &'o mut [f32])) -> AudioVoice {
+    let (view, t0, n, sr) = (b.view, b.t0, b.n, b.sr);
+    let sample = &*clip.sample;
+    let len = sample.len();
+    let (start, end) = (clip.start as f64, clip.start as f64 + clip.len as f64);
+    let (xin, xout) = (clip.xfade_in.max(0.0) as f64, clip.xfade_out.max(0.0) as f64);
+    let margin = 0.5 * xin.max(xout) * MAX_TICKS_PER_SEC + 1.0;
+    let margin = if xin > 0.0 || xout > 0.0 { margin } else { 0.0 };
+    let to = view.tick_at_secs(t0 + n as f64 / sr);
+    if len == 0 || end + margin <= b.pos_start || start - margin >= to {
+        return AudioVoice::default();
+    }
+    // Output samples from the block start (k = 0) to the clip start and end,
+    // then to the edges of the crossfade windows around them.
+    let start_at = (view.secs_at(start) - t0) * sr;
+    let end_at = (view.secs_at(end) - t0) * sr;
+    let (xin, xout) = (xin * sr, xout * sr);
+    let (win_start, win_end) = (start_at - 0.5 * xin, end_at + 0.5 * xout);
+    let first = |at: f64| ((at - 1e-6).ceil().max(0.0) as usize).min(n);
+    let (k0, k1) = (first(win_start), first(win_end));
+    let src_rate = sample.sample_rate.max(1.0) as f64;
+    let ratio = src_rate / sr;
+    let resume = prev.active && b.contiguous && k0 == 0;
+    let (mut p, mut run) = if resume {
+        (prev.src, prev.run)
+    } else {
+        // The clip start plays the offset; a crossfade before it reads earlier
+        // (nothing before the file start).
+        let lead = if xin > 0.0 { k0 as f64 - start_at } else { (k0 as f64 - start_at).max(0.0) };
+        let secs = clip.offset.max(0.0) + lead / sr;
+        // Après un saut, petit fondu d'entrée ; sinon (nouvelle séquence,
+        // début du clip) seul le fondu du clip compte.
+        let p = secs * src_rate;
+        // At the engine's rate, the clip starts on a whole frame of its file
+        // (its first sample on the first output sample at or after its
+        // start), copied without interpolation.
+        let p = if (ratio - 1.0).abs() < 1e-12 { (p + 1e-6).floor() } else { p };
+        (if clip.looped { p.rem_euclid(len as f64) } else { p }, if b.contiguous { f64::MAX / 2.0 } else { 0.0 })
+    };
+    let fade_in = clip.fade_in.max(MIN_FADE) as f64 * sr;
+    let fade_out = clip.fade_out.max(MIN_FADE) as f64 * sr;
+    let right = if sample.right.len() == len { &sample.right } else { &sample.left };
+    let last = len - 1;
+    let at = |ch: &[f32], i: usize| if clip.reverse { ch[last - i] } else { ch[i] };
+    let rendered = clip.warp.as_ref().and_then(|w| w.rendered.as_deref()).filter(|r| r.sample_rate as f64 == sr && !r.is_empty());
+    let warp_origin = clip.warp.as_ref().map_or(0.0, |w| w.map.beat_at(clip.offset.max(0.0)));
+    let (tl, tr) = if k0 < k1 { out() } else { (&mut [][..], &mut [][..]) };
+    let mut ended = false;
+    for k in k0..k1 {
+        let since = k as f64 - start_at;
+        let (l, r, until_src) = match (&clip.warp, rendered) {
+            (Some(_), Some(buf)) => {
+                let i = since.round();
+                if i < 0.0 {
+                    (0.0, 0.0, f64::MAX)
+                } else if i as usize >= buf.len() {
+                    ended = true;
+                    break;
+                } else {
+                    let i = i as usize;
+                    let rr = if buf.right.len() == buf.len() { &buf.right } else { &buf.left };
+                    (buf.left[i], rr[i], f64::MAX)
+                }
+            }
+            (Some(w), None) => {
+                // Resampled along the tempo map until the stretch is ready.
+                let tick = view.tick_at_secs(t0 + k as f64 / sr);
+                let beat = warp_origin + (tick - start) / PPQ as f64;
+                let mut pos = w.map.secs_at(beat) * src_rate;
+                if clip.looped {
+                    pos = pos.rem_euclid(len as f64);
+                }
+                if pos < 0.0 || pos >= len as f64 {
+                    (0.0, 0.0, f64::MAX)
+                } else {
+                    let i = pos as usize;
+                    let j = (i + 1).min(last);
+                    let frac = (pos - i as f64) as f32;
+                    let l = at(&sample.left, i) + (at(&sample.left, j) - at(&sample.left, i)) * frac;
+                    let r = at(right, i) + (at(right, j) - at(right, i)) * frac;
+                    (l, r, f64::MAX)
+                }
+            }
+            (None, _) => {
+                if p >= len as f64 {
+                    if !clip.looped {
+                        ended = true;
+                        break;
+                    }
+                    p -= len as f64;
+                }
+                if p < 0.0 {
+                    // Crossfade reaching before the file start.
+                    p += ratio;
+                    (0.0, 0.0, f64::MAX)
+                } else {
+                    let i = (p as usize).min(last);
+                    let j = if clip.looped && i == last { 0 } else { (i + 1).min(last) };
+                    let frac = (p - i as f64) as f32;
+                    let l = at(&sample.left, i) + (at(&sample.left, j) - at(&sample.left, i)) * frac;
+                    let r = at(right, i) + (at(right, j) - at(right, i)) * frac;
+                    let until = if clip.looped { f64::MAX } else { (len as f64 - p) / ratio };
+                    p += ratio;
+                    (l, r, until)
+                }
+            }
+        };
+        // En échantillons de sortie ; +1 : le premier échantillon n'est pas nul.
+        let since_start = since + 1.0;
+        let until_end = (end_at - k as f64).min(until_src);
+        let jump = fade_shape((run + 1.0) / fade_in, 0.0);
+        let fin = if xin > 0.0 {
+            equal_power((k as f64 - win_start) / xin) * jump
+        } else if clip.fade_in < 0.0 {
+            jump
+        } else {
+            fade_shape(since_start.min(run + 1.0) / fade_in, clip.fade_in_curve)
+        };
+        let fout = if xout > 0.0 {
+            equal_power((win_end - k as f64) / xout) * fade_shape(until_src / fade_out, 0.0)
+        } else if clip.fade_out < 0.0 {
+            fade_shape(until_src / fade_out, 0.0)
+        } else {
+            fade_shape(until_end / fade_out, clip.fade_out_curve)
+        };
+        let g = clip.gain * (fin * fout).max(0.0) as f32;
+        tl[k] += l * g;
+        tr[k] += r * g;
+        run += 1.0;
+    }
+    AudioVoice { active: k1 == n && !ended, src: p, run }
+}
+
+/// Plays audio clips offline as the engine does in song mode, without the
+/// mixer: all clips summed into one stereo buffer of `frames` samples from
+/// `from` seconds. Renders a comp exactly as it plays (flattening).
+pub fn render_audio_clips(clips: &[AudioClip], tempo: &TempoMap, sample_rate: f32, from: f64, frames: usize) -> (Vec<f32>, Vec<f32>) {
+    let (mut left, mut right) = (vec![0.0f32; frames], vec![0.0f32; frames]);
+    let mut voices = vec![AudioVoice::default(); clips.len()];
+    let view = tempo.view();
+    let sr = sample_rate.max(1.0) as f64;
+    let mut done = 0;
+    while done < frames {
+        let n = (frames - done).min(MAX_BLOCK);
+        let t0 = from + done as f64 / sr;
+        let block = ClipBlock { view: &view, pos_start: view.tick_at_secs(t0), t0, n, sr, contiguous: true };
+        for (clip, voice) in clips.iter().zip(&mut voices) {
+            let (l, r) = (&mut left[done..done + n], &mut right[done..done + n]);
+            *voice = play_audio_clip(clip, *voice, &block, || (l, r));
+        }
+        done += n;
+    }
+    (left, right)
 }
 
 impl Engine {
@@ -1137,105 +1318,11 @@ impl Engine {
         let contiguous = (pos_start - self.audio_next).abs() < 1e-6;
         let sr = self.sample_rate as f64;
         let view = self.sequence.tempo_view();
-        let to = view.tick_at_secs(t0 + n as f64 / sr);
-        let first = |tick: f64| (((view.secs_at(tick) - t0) * sr - 1e-6).ceil().max(0.0) as usize).min(n);
+        let block = ClipBlock { view: &view, pos_start, t0, n, sr, contiguous };
         for (idx, clip) in self.sequence.audio_clips.iter().enumerate() {
             let prev = self.voices.get(idx).copied().unwrap_or_default();
-            let mut voice = AudioVoice::default();
-            let sample = &*clip.sample;
-            let len = sample.len();
-            let (start, end) = (clip.start as f64, clip.start as f64 + clip.len as f64);
-            if song && len > 0 && end > pos_start && start < to {
-                let (k0, k1) = (first(start), first(end));
-                let src_rate = sample.sample_rate.max(1.0) as f64;
-                let ratio = src_rate / sr;
-                let resume = prev.active && contiguous && k0 == 0;
-                // Output samples from the clip start to the block start (k = 0).
-                let start_at = (view.secs_at(start) - t0) * sr;
-                let end_at = (view.secs_at(end) - t0) * sr;
-                let (mut p, mut run) = if resume {
-                    (prev.src, prev.run)
-                } else {
-                    let secs = clip.offset.max(0.0) + (k0 as f64 - start_at).max(0.0) / sr;
-                    // Après un saut, petit fondu d'entrée ; sinon (nouvelle séquence,
-                    // début du clip) seul le fondu du clip compte.
-                    let p = secs * src_rate;
-                    // At the engine's rate, the clip starts on a whole frame of
-                    // its file (its first sample on the first output sample at
-                    // or after its start), copied without interpolation.
-                    let p = if (ratio - 1.0).abs() < 1e-12 { (p + 1e-6).floor() } else { p };
-                    (if clip.looped { p.rem_euclid(len as f64) } else { p }, if contiguous { f64::MAX / 2.0 } else { 0.0 })
-                };
-                let fade_in = clip.fade_in.max(MIN_FADE) as f64 * sr;
-                let fade_out = clip.fade_out.max(MIN_FADE) as f64 * sr;
-                let right = if sample.right.len() == len { &sample.right } else { &sample.left };
-                let last = len - 1;
-                let at = |ch: &[f32], i: usize| if clip.reverse { ch[last - i] } else { ch[i] };
-                let rendered = clip.warp.as_ref().and_then(|w| w.rendered.as_deref()).filter(|r| r.sample_rate as f64 == sr && !r.is_empty());
-                let warp_origin = clip.warp.as_ref().map_or(0.0, |w| w.map.beat_at(clip.offset.max(0.0)));
-                let (tl, tr) = self.mixer.input(clip.track, n);
-                let mut ended = false;
-                for k in k0..k1 {
-                    let since = k as f64 - start_at;
-                    let (l, r, until_src) = match (&clip.warp, rendered) {
-                        (Some(_), Some(buf)) => {
-                            let i = since.round().max(0.0) as usize;
-                            if i >= buf.len() {
-                                ended = true;
-                                break;
-                            }
-                            let rr = if buf.right.len() == buf.len() { &buf.right } else { &buf.left };
-                            (buf.left[i], rr[i], f64::MAX)
-                        }
-                        (Some(w), None) => {
-                            // Resampled along the tempo map until the stretch is ready.
-                            let tick = view.tick_at_secs(t0 + k as f64 / sr);
-                            let beat = warp_origin + (tick - start) / PPQ as f64;
-                            let mut pos = w.map.secs_at(beat) * src_rate;
-                            if clip.looped {
-                                pos = pos.rem_euclid(len as f64);
-                            }
-                            if pos < 0.0 || pos >= len as f64 {
-                                (0.0, 0.0, f64::MAX)
-                            } else {
-                                let i = pos as usize;
-                                let j = (i + 1).min(last);
-                                let frac = (pos - i as f64) as f32;
-                                let l = at(&sample.left, i) + (at(&sample.left, j) - at(&sample.left, i)) * frac;
-                                let r = at(right, i) + (at(right, j) - at(right, i)) * frac;
-                                (l, r, f64::MAX)
-                            }
-                        }
-                        (None, _) => {
-                            if p >= len as f64 {
-                                if !clip.looped {
-                                    ended = true;
-                                    break;
-                                }
-                                p -= len as f64;
-                            }
-                            let i = (p as usize).min(last);
-                            let j = if clip.looped && i == last { 0 } else { (i + 1).min(last) };
-                            let frac = (p - i as f64) as f32;
-                            let l = at(&sample.left, i) + (at(&sample.left, j) - at(&sample.left, i)) * frac;
-                            let r = at(right, i) + (at(right, j) - at(right, i)) * frac;
-                            let until = if clip.looped { f64::MAX } else { (len as f64 - p) / ratio };
-                            p += ratio;
-                            (l, r, until)
-                        }
-                    };
-                    // En échantillons de sortie ; +1 : le premier échantillon n'est pas nul.
-                    let since_start = since + 1.0;
-                    let until_end = (end_at - k as f64).min(until_src);
-                    let fin = fade_shape(since_start.min(run + 1.0) / fade_in, clip.fade_in_curve);
-                    let fout = fade_shape(until_end / fade_out, clip.fade_out_curve);
-                    let g = clip.gain * (fin * fout).max(0.0) as f32;
-                    tl[k] += l * g;
-                    tr[k] += r * g;
-                    run += 1.0;
-                }
-                voice = AudioVoice { active: k1 == n && !ended, src: p, run };
-            }
+            let mixer = &mut self.mixer;
+            let voice = if song { play_audio_clip(clip, prev, &block, || mixer.input(clip.track, n)) } else { AudioVoice::default() };
             if let Some(v) = self.voices.get_mut(idx) {
                 *v = voice;
             }
@@ -1938,7 +2025,7 @@ mod tests {
     use super::*;
     use crate::input::{CALIBRATION_SECONDS, InputProducer, input_channel, measure_round_trip, take_slices};
     use crate::sample::Sample;
-    use crate::sequence::{AudioClip, AutoPoint, AutoScope, AutomationLane, Clip, Note, Pattern, TICKS_PER_STEP};
+    use crate::sequence::{AutoPoint, AutoScope, AutomationLane, Clip, Note, Pattern, TICKS_PER_STEP};
     use std::sync::Mutex;
     use std::sync::atomic::AtomicUsize;
 
@@ -2712,6 +2799,59 @@ mod tests {
             assert!((out[24_000 + k] - k as f32 / 20_000.0).abs() < 1e-5, "{k}");
         }
         assert!(out[44_000..].iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn equal_power_fades_sum_to_unit_power() {
+        for i in 0..=100 {
+            let x = i as f64 / 100.0;
+            let (a, b) = (equal_power(x), equal_power(1.0 - x));
+            assert!((a * a + b * b - 1.0).abs() < 1e-12, "{x}");
+        }
+        assert_eq!((equal_power(-1.0), equal_power(2.0)), (0.0, 1.0));
+    }
+
+    /// Two comp segments meeting at tick 96 (0.5 s, sample 24 000) with a
+    /// 10 ms crossfade: their gains (on a constant signal) keep unit power.
+    #[test]
+    fn crossfaded_clips_keep_constant_power_across_the_boundary() {
+        let dc = Arc::new(Sample { name: "dc".into(), sample_rate: SR, left: vec![1.0; 96_000], right: vec![1.0; 96_000], markers: Vec::new() });
+        let a = AudioClip { sample: dc, track: 2, start: 0, len: 96, gain: 1.0, xfade_out: 0.01, ..Default::default() };
+        let b = AudioClip { start: 96, offset: 0.5, xfade_in: 0.01, xfade_out: 0.0, ..a.clone() };
+        let map = TempoMap::default();
+        let (la, _) = render_audio_clips(&[a], &map, SR, 0.0, 30_000);
+        let (lb, _) = render_audio_clips(&[b], &map, SR, 0.0, 30_000);
+        // Before the window only the first, after it only the second.
+        assert_eq!((la[23_700], lb[23_700]), (1.0, 0.0));
+        assert_eq!((la[24_300], lb[24_300]), (0.0, 1.0));
+        for k in 23_700..24_300 {
+            let power = la[k] * la[k] + lb[k] * lb[k];
+            assert!((power - 1.0).abs() < 1e-5, "{k}: {power}");
+        }
+        // Centered on the boundary.
+        assert!((la[24_000] - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-2);
+        assert!((lb[24_000] - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-2);
+    }
+
+    /// The offline render (flattening) gives what the engine plays, whatever
+    /// the block size; a crossfade before the file start reads silence.
+    #[test]
+    fn offline_clip_render_matches_playback() {
+        let n = 48_000;
+        let left: Vec<f32> = (0..n).map(|i| (i as f32 * 0.003).sin() * 0.8).collect();
+        let sample = Sample { name: "sine".into(), sample_rate: 44_100.0, right: left.clone(), left, markers: Vec::new() };
+        let a = AudioClip { len: 96, start: 48, xfade_out: 0.02, ..audio_clip(sample.clone(), 48, 0.0, 0.9) };
+        let b = AudioClip { start: 144, len: 120, offset: 0.3, xfade_in: 0.02, xfade_out: 0.02, ..a.clone() };
+        let c = AudioClip { start: 264, len: 100, offset: 0.0, xfade_in: 0.02, xfade_out: 0.0, ..a.clone() };
+        let clips = vec![a, b, c];
+        let (offline, _) = render_audio_clips(&clips, &TempoMap::default(), SR, 0.0, 120_000);
+        for block in [64, 256] {
+            let played = render_audio(clips.clone(), 120_000, block);
+            for (k, (x, y)) in played.iter().zip(&offline).enumerate() {
+                assert!((x - y).abs() < 1e-5, "block {block}, {k}: {x} vs {y}");
+            }
+        }
+        assert!(offline.iter().any(|&s| s.abs() > 0.5));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! Audio clips on the audio thread: unwarped, looped, reversed and warped
-//! clips (rendered or still resampled along a tempo ramp), sequence swaps and
-//! jumps never allocate.
+//! clips (rendered or still resampled along a tempo ramp), comp segments
+//! with equal-power crossfades, sequence swaps and jumps never allocate.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
@@ -99,6 +99,25 @@ fn sequence(gain: f32) -> Box<Sequence> {
         AudioClip {
             warp: warp(Some(rendered)),
             ..clip(384)
+        },
+        // A comp: three segments of a take, crossfaded at their boundaries.
+        AudioClip {
+            len: 96,
+            xfade_out: 0.01,
+            ..clip(768)
+        },
+        AudioClip {
+            len: 96,
+            offset: 0.4,
+            xfade_in: 0.01,
+            xfade_out: 0.01,
+            ..clip(864)
+        },
+        AudioClip {
+            len: 192,
+            offset: 0.1,
+            xfade_in: 0.01,
+            ..clip(960)
         },
     ];
     let tempo = TempoMap::new(
