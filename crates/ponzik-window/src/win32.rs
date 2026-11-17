@@ -142,6 +142,14 @@ unsafe extern "system" {
     fn SetWindowLongPtrW(hwnd: HWND, index: i32, value: isize) -> isize;
 }
 
+#[link(name = "shell32")]
+unsafe extern "system" {
+    fn DragAcceptFiles(hwnd: HWND, accept: i32);
+    fn DragQueryFileW(drop: HANDLE, index: u32, file: *mut u16, len: u32) -> u32;
+    fn DragQueryPoint(drop: HANDLE, pt: *mut POINT) -> i32;
+    fn DragFinish(drop: HANDLE);
+}
+
 #[link(name = "kernel32")]
 unsafe extern "system" {
     fn GetModuleHandleW(name: *const u16) -> HINSTANCE;
@@ -220,6 +228,7 @@ const WM_MBUTTONUP: u32 = 0x0208;
 const WM_MOUSEWHEEL: u32 = 0x020A;
 const WM_MOUSELEAVE: u32 = 0x02A3;
 const WM_DPICHANGED: u32 = 0x02E0;
+const WM_DROPFILES: u32 = 0x0233;
 
 const MIN_SIZE: (i32, i32) = (960, 640);
 const WS_CLIPCHILDREN: u32 = 0x0200_0000;
@@ -316,6 +325,27 @@ fn min_window_size() -> (i32, i32) {
     outer_size(MIN_SIZE.0, MIN_SIZE.1, DPI.get())
 }
 
+/// Files dropped from Explorer (`WM_DROPFILES`): names and client position.
+/// Windows reports no hovering without OLE, only the drop.
+unsafe fn dropped_files(drop: HANDLE) -> Event {
+    // SAFETY: `drop` comes with WM_DROPFILES and is released here.
+    unsafe {
+        let count = DragQueryFileW(drop, u32::MAX, null_mut(), 0);
+        let mut paths = Vec::with_capacity(count as usize);
+        for i in 0..count {
+            let len = DragQueryFileW(drop, i, null_mut(), 0);
+            let mut buf = vec![0u16; len as usize + 1];
+            let got = DragQueryFileW(drop, i, buf.as_mut_ptr(), buf.len() as u32);
+            buf.truncate(got as usize);
+            paths.push(std::path::PathBuf::from(String::from_utf16_lossy(&buf)));
+        }
+        let mut pt = POINT::default();
+        DragQueryPoint(drop, &mut pt);
+        DragFinish(drop);
+        Event::FileDrop { x: pt.x as f32, y: pt.y as f32, paths }
+    }
+}
+
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
     let button = |m| match m {
         WM_LBUTTONDOWN | WM_LBUTTONUP => MouseButton::Left,
@@ -402,6 +432,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
                 }
             }
             WM_KILLFOCUS => push(Event::FocusLost),
+            WM_DROPFILES => push(dropped_files(w as HANDLE)),
             WM_DPICHANGED => {
                 // Fenêtre passée sur un autre moniteur, ou échelle changée :
                 // Windows propose le rectangle qui garde la même taille apparente.
@@ -563,17 +594,17 @@ impl PluginWindow {
         }
         let hwnd = self.hwnd;
         PLUGIN_QUEUE.with(|q| {
-            q.borrow_mut().retain(|&(h, ev)| {
-                if h != hwnd {
+            q.borrow_mut().retain(|(h, ev)| {
+                if *h != hwnd {
                     return true;
                 }
-                match ev {
+                match *ev {
                     Event::Resized { width, height } if (width, height) == self.size => {}
                     Event::Resized { width, height } => {
                         self.size = (width, height);
-                        out.push(ev);
+                        out.push(ev.clone());
                     }
-                    _ => out.push(ev),
+                    _ => out.push(ev.clone()),
                 }
                 false
             });
@@ -651,6 +682,8 @@ impl Window {
                 SetWindowPos(hwnd, null_mut(), 0, 0, ow, oh, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
             }
             ShowWindow(hwnd, SW_SHOW);
+            // Files can be dropped here from Explorer.
+            DragAcceptFiles(hwnd, 1);
 
             let mut client = RECT::default();
             GetClientRect(hwnd, &mut client);

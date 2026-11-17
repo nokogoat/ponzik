@@ -743,6 +743,83 @@ extern "C" fn plugin_did_resize(_: Id, _: Sel, notification: Id) {
     }
 }
 
+// ---------------------------------------------------------------- files dragged from the Finder
+
+/// `NSDragOperationCopy`.
+const NS_DRAG_OPERATION_COPY: usize = 1;
+
+/// Where the dragged files are, in our pixels.
+fn drag_pos(view: Id, info: Id) -> (f32, f32) {
+    // SAFETY: `info` is the NSDraggingInfo handed to the view.
+    let p: NSPoint = unsafe {
+        let p: NSPoint = msg(info, c"draggingLocation", ());
+        msg(view, c"convertPoint:fromView:", (p, null_mut::<c_void>()))
+    };
+    let s = SCALE.get();
+    ((p.x * s) as f32, (p.y * s) as f32)
+}
+
+extern "C" fn on_drag_hover(this: Id, _: Sel, info: Id) -> usize {
+    let (x, y) = drag_pos(this, info);
+    push(Event::DragHover { x, y });
+    NS_DRAG_OPERATION_COPY
+}
+
+extern "C" fn on_drag_exited(_: Id, _: Sel, _: Id) {
+    push(Event::DragLeave);
+}
+
+/// The file URLs on the drag's pasteboard, as paths.
+fn dragged_paths(info: Id) -> Vec<std::path::PathBuf> {
+    let _pool = Pool::new();
+    // SAFETY: NSDraggingInfo, its pasteboard and the arrays it returns live
+    // until the end of the pool.
+    unsafe {
+        let board: Id = msg(info, c"draggingPasteboard", ());
+        let url_class = class(c"NSURL");
+        if board.is_null() || url_class.is_null() {
+            return Vec::new();
+        }
+        let classes: Id = msg(class(c"NSArray"), c"arrayWithObject:", (url_class,));
+        let yes: Id = msg(class(c"NSNumber"), c"numberWithBool:", (YES,));
+        let key = ns_string("NSPasteboardURLReadingFileURLsOnlyKey");
+        let options: Id = msg(class(c"NSDictionary"), c"dictionaryWithObject:forKey:", (yes, key));
+        let urls: Id = msg(board, c"readObjectsForClasses:options:", (classes, options));
+        if urls.is_null() {
+            return Vec::new();
+        }
+        let count: usize = msg(urls, c"count", ());
+        (0..count)
+            .map(|i| {
+                let url: Id = msg(urls, c"objectAtIndex:", (i,));
+                std::path::PathBuf::from(rust_string(msg(url, c"path", ())))
+            })
+            .filter(|p| !p.as_os_str().is_empty())
+            .collect()
+    }
+}
+
+extern "C" fn on_perform_drag(this: Id, _: Sel, info: Id) -> Bool {
+    let (x, y) = drag_pos(this, info);
+    let paths = dragged_paths(info);
+    if paths.is_empty() {
+        push(Event::DragLeave);
+        return NO;
+    }
+    push(Event::FileDrop { x, y, paths });
+    YES
+}
+
+/// Files from the Finder may be dropped on `view`.
+fn accept_file_drops(view: Id) {
+    let _pool = Pool::new();
+    // SAFETY: live view; the array is autoreleased.
+    unsafe {
+        let types: Id = msg(class(c"NSArray"), c"arrayWithObject:", (ns_string("public.file-url"),));
+        let () = msg(view, c"registerForDraggedTypes:", (types,));
+    }
+}
+
 // ---------------------------------------------------------------- classes
 
 #[cfg(target_arch = "aarch64")]
@@ -808,6 +885,11 @@ fn view_class() -> Result<Class, WindowError> {
             (c"keyDown:", ev(on_key_down), v),
             (c"keyUp:", ev(on_key_up), v),
             (c"flagsChanged:", ev(on_flags_changed), v),
+            (c"draggingEntered:", on_drag_hover as extern "C" fn(Id, Sel, Id) -> usize as *const c_void, c"Q@:@"),
+            (c"draggingUpdated:", on_drag_hover as extern "C" fn(Id, Sel, Id) -> usize as *const c_void, c"Q@:@"),
+            (c"draggingExited:", ev(on_drag_exited), v),
+            (c"prepareForDragOperation:", yes_with as extern "C" fn(Id, Sel, Id) -> Bool as *const c_void, BOOL_OBJ_TYPES),
+            (c"performDragOperation:", on_perform_drag as extern "C" fn(Id, Sel, Id) -> Bool as *const c_void, BOOL_OBJ_TYPES),
         ],
     )
 }
@@ -954,17 +1036,17 @@ impl PluginWindow {
     pub(crate) fn poll_plugin_events(&mut self, out: &mut Vec<Event>) {
         let me = self.window as usize;
         PLUGIN_QUEUE.with(|q| {
-            q.borrow_mut().retain(|&(w, ev)| {
-                if w != me {
+            q.borrow_mut().retain(|(w, ev)| {
+                if *w != me {
                     return true;
                 }
-                match ev {
+                match *ev {
                     Event::Resized { width, height } if (width, height) == self.size => {}
                     Event::Resized { width, height } => {
                         self.size = (width, height);
-                        out.push(ev);
+                        out.push(ev.clone());
                     }
-                    _ => out.push(ev),
+                    _ => out.push(ev.clone()),
                 }
                 false
             });
@@ -1110,6 +1192,7 @@ impl Window {
             let () = msg(area, c"release", ());
 
             let () = msg(window, c"setContentView:", (view,));
+            accept_file_drops(view);
             let _: Bool = msg(window, c"makeFirstResponder:", (view,));
             let () = msg(window, c"center", ());
             let () = msg(window, c"makeKeyAndOrderFront:", (null_mut::<c_void>(),));

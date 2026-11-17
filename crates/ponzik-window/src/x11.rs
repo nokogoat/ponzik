@@ -35,6 +35,8 @@ const OP_CHANGE_WINDOW_ATTRIBUTES: u8 = 2;
 const OP_MAP_WINDOW: u8 = 8;
 const OP_CONFIGURE_WINDOW: u8 = 12;
 const OP_INTERN_ATOM: u8 = 16;
+const OP_CONVERT_SELECTION: u8 = 24;
+const OP_SEND_EVENT: u8 = 25;
 const OP_CHANGE_PROPERTY: u8 = 18;
 const OP_GET_PROPERTY: u8 = 20;
 const OP_TRANSLATE_COORDINATES: u8 = 40;
@@ -171,6 +173,152 @@ fn get_property_req(window: u32, prop: u32) -> Vec<u8> {
     r.finish().to_vec()
 }
 
+/// GetProperty that deletes the property once read (a selection transfer).
+fn take_property_req(window: u32, prop: u32) -> Vec<u8> {
+    let mut r = Req::new(OP_GET_PROPERTY, 1);
+    r.u32(window).u32(prop).u32(0).u32(0).u32(RESOURCES_MAX_WORDS);
+    r.finish().to_vec()
+}
+
+// --- XDND: files dragged from other applications --------------------------------
+//
+// The source sends ClientMessages to our window: XdndEnter (the types on
+// offer), XdndPosition (root coordinates, each answered by an XdndStatus),
+// XdndLeave or XdndDrop. On a drop we ask the XdndSelection for
+// `text/uri-list`; the server answers with SelectionNotify once the data sits
+// in a property of our window, and we close with XdndFinished.
+
+/// Protocol version we speak (and announce in `XdndAware`).
+const XDND_VERSION: u32 = 5;
+
+/// Atoms of the XDND protocol (all zero on windows that do not take drops).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct XdndAtoms {
+    aware: u32,
+    enter: u32,
+    position: u32,
+    status: u32,
+    leave: u32,
+    drop: u32,
+    finished: u32,
+    selection: u32,
+    action_copy: u32,
+    uri_list: u32,
+    /// Property of our window that receives the dropped data.
+    property: u32,
+}
+
+impl XdndAtoms {
+    const NAMES: [&'static str; 11] = [
+        "XdndAware",
+        "XdndEnter",
+        "XdndPosition",
+        "XdndStatus",
+        "XdndLeave",
+        "XdndDrop",
+        "XdndFinished",
+        "XdndSelection",
+        "XdndActionCopy",
+        "text/uri-list",
+        "PONZIK_XDND_DATA",
+    ];
+
+    fn from_list(a: [u32; 11]) -> Self {
+        let [aware, enter, position, status, leave, drop, finished, selection, action_copy, uri_list, property] = a;
+        Self { aware, enter, position, status, leave, drop, finished, selection, action_copy, uri_list, property }
+    }
+}
+
+/// An XDND message from the drag source.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Xdnd {
+    /// `files`: `text/uri-list` is on offer (or the source has more than three
+    /// types and keeps them in `XdndTypeList`: we try anyway).
+    Enter { source: u32, version: u32, files: bool },
+    /// Pointer in root coordinates.
+    Position { source: u32, x: i16, y: i16, time: u32 },
+    Leave { source: u32 },
+    Drop { source: u32, time: u32 },
+}
+
+/// Reads an XDND ClientMessage (`b`: the 32-byte event).
+fn parse_xdnd(b: &[u8; 32], atoms: &XdndAtoms) -> Option<Xdnd> {
+    if b[0] & 0x7f != 33 || b[1] != 32 || atoms.enter == 0 {
+        return None;
+    }
+    let ty = u32_at(b, 8);
+    let l = |i: usize| u32_at(b, 12 + 4 * i);
+    Some(if ty == atoms.enter {
+        let more = l(1) & 1 != 0;
+        Xdnd::Enter { source: l(0), version: l(1) >> 24, files: more || (2..5).any(|i| l(i) == atoms.uri_list) }
+    } else if ty == atoms.position {
+        Xdnd::Position { source: l(0), x: (l(2) >> 16) as u16 as i16, y: l(2) as u16 as i16, time: l(3) }
+    } else if ty == atoms.leave {
+        Xdnd::Leave { source: l(0) }
+    } else if ty == atoms.drop {
+        Xdnd::Drop { source: l(0), time: l(2) }
+    } else {
+        return None;
+    })
+}
+
+/// A ClientMessage event (format 32) for `window`.
+fn client_message(window: u32, ty: u32, data: [u32; 5]) -> [u8; 32] {
+    let mut e = [0u8; 32];
+    e[0] = 33;
+    e[1] = 32;
+    e[4..8].copy_from_slice(&window.to_le_bytes());
+    e[8..12].copy_from_slice(&ty.to_le_bytes());
+    for (i, v) in data.iter().enumerate() {
+        e[12 + 4 * i..16 + 4 * i].copy_from_slice(&v.to_le_bytes());
+    }
+    e
+}
+
+/// SendEvent of `event` to `dest`, with no event mask (straight to its owner).
+fn send_event_req(dest: u32, event: &[u8; 32]) -> Vec<u8> {
+    let mut r = Req::new(OP_SEND_EVENT, 0);
+    r.u32(dest).u32(0).bytes(event);
+    r.finish().to_vec()
+}
+
+/// XdndStatus: whether we take the drop here, and the action (copy).
+fn xdnd_status(atoms: &XdndAtoms, ours: u32, source: u32, accept: bool) -> Vec<u8> {
+    // Bit 1: send a position for every move, our targets change all over the window.
+    let flags = accept as u32 | 2;
+    let action = if accept { atoms.action_copy } else { 0 };
+    send_event_req(source, &client_message(source, atoms.status, [ours, flags, 0, 0, action]))
+}
+
+/// XdndFinished: the drop is over (`accepted` with the copy action).
+fn xdnd_finished(atoms: &XdndAtoms, ours: u32, source: u32, accepted: bool) -> Vec<u8> {
+    let action = if accepted { atoms.action_copy } else { 0 };
+    send_event_req(source, &client_message(source, atoms.finished, [ours, accepted as u32, action, 0, 0]))
+}
+
+/// ConvertSelection: the selection `selection` as `target`, into `property` of `requestor`.
+fn convert_selection_req(requestor: u32, selection: u32, target: u32, property: u32, time: u32) -> Vec<u8> {
+    let mut r = Req::new(OP_CONVERT_SELECTION, 0);
+    r.u32(requestor).u32(selection).u32(target).u32(property).u32(time);
+    r.finish().to_vec()
+}
+
+/// A drag in progress over our window.
+#[derive(Debug)]
+struct DragIn {
+    source: u32,
+    version: u32,
+    accept: bool,
+    /// Our window's origin on the root, to turn root positions into ours.
+    origin: Option<(i32, i32)>,
+    pos: (f32, f32),
+    /// Dropped: the data was asked for at this time.
+    dropped: Option<Instant>,
+}
+
+/// How long a source may take to hand the dropped data over.
+const DROP_WAIT: Duration = Duration::from_secs(3);
+
 /// Valeur d'une réponse GetProperty en octets (vide si la propriété n'existe pas).
 fn property_value(reply: &[u8]) -> &[u8] {
     if reply.len() < 32 || reply[1] == 0 {
@@ -251,6 +399,10 @@ enum Incoming {
     Reply(Vec<u8>),
     /// La base de ressources X (donc peut-être Xft.dpi) a changé.
     ResourcesChanged,
+    /// A message of a drag from another application.
+    Xdnd(Xdnd),
+    /// SelectionNotify: the requested selection is in `property` (0: refused).
+    Selection { property: u32 },
     Error { code: u8, major: u8 },
     Closed,
 }
@@ -329,6 +481,7 @@ struct ReaderCtx {
     wm_protocols: u32,
     wm_delete: u32,
     shm_event: Option<u8>,
+    xdnd: XdndAtoms,
 }
 
 fn parse_event(code: u8, b: &[u8; 32], ctx: &ReaderCtx) -> Option<Event> {
@@ -398,6 +551,12 @@ fn reader_loop(mut stream: UnixStream, tx: Sender<Incoming>, ctx: ReaderCtx) {
                 let code = c & 0x7f;
                 if Some(code) == ctx.shm_event {
                     Some(Incoming::ShmCompletion)
+                } else if let Some(m) = parse_xdnd(&b, &ctx.xdnd) {
+                    Some(Incoming::Xdnd(m))
+                } else if code == 31 {
+                    // SelectionNotify: requestor, selection, target, property.
+                    (u32_at(&b, 12) == ctx.xdnd.selection && ctx.xdnd.selection != 0)
+                        .then(|| Incoming::Selection { property: u32_at(&b, 20) })
                 } else {
                     // Position physique de la touche (code X11 = code evdev + 8).
                     if (code == 2 || code == 3)
@@ -621,6 +780,11 @@ pub(crate) struct Window {
     resizable: bool,
     /// Size asked by `set_plugin_size` and when, until the server confirms it.
     awaiting: Option<((u32, u32), Instant)>,
+    /// XDND atoms (zero on plugin windows), the drag over the window and the
+    /// messages waiting to be handled outside the reply loop.
+    xdnd: XdndAtoms,
+    drag: Option<DragIn>,
+    xdnd_inbox: VecDeque<Incoming>,
 }
 
 /// How long the sizes reported after our own resize are taken as stale.
@@ -666,6 +830,11 @@ impl Window {
         let resources = roundtrip(&mut stream, &get_property_req(setup.root, resource_manager))?;
         let scale = system_scale(property_value(&resources));
         let px = |v: u32| (v as f32 * scale).round() as u32;
+        let mut atoms = [0; 11];
+        for (atom, name) in atoms.iter_mut().zip(XdndAtoms::NAMES) {
+            *atom = intern_atom(&mut stream, name)?;
+        }
+        let xdnd = XdndAtoms::from_list(atoms);
         let (width, height) = (px(width), px(height));
 
         let count = setup.max_keycode - setup.min_keycode + 1;
@@ -705,6 +874,9 @@ impl Window {
             frame_extents: 0,
             resizable: true,
             awaiting: None,
+            xdnd: XdndAtoms::default(),
+            drag: None,
+            xdnd_inbox: VecDeque::new(),
             setup,
         };
         win.window = win.alloc_id();
@@ -730,6 +902,9 @@ impl Window {
         win.set_property(net_wm_name, utf8_string, 8, title.as_bytes())?;
         win.set_property(ATOM_WM_CLASS, ATOM_STRING, 8, b"ponzik\0Ponzik\0")?;
         win.set_property(wm_protocols, ATOM_ATOM, 32, &wm_delete.to_le_bytes())?;
+        // Files can be dropped here from other applications.
+        win.xdnd = xdnd;
+        win.set_property(xdnd.aware, ATOM_ATOM, 32, &XDND_VERSION.to_le_bytes())?;
         let mut hints = [0u32; 18];
         hints[0] = 16; // PMinSize
         hints[5] = px(MIN_SIZE.0);
@@ -753,7 +928,7 @@ impl Window {
         let (tx, rx) = mpsc::channel();
         win.rx = rx;
         let reader = win.stream.try_clone().map_err(io_err)?;
-        let ctx = ReaderCtx { keymap, root: win.setup.root, resource_manager, wm_protocols, wm_delete, shm_event };
+        let ctx = ReaderCtx { keymap, root: win.setup.root, resource_manager, wm_protocols, wm_delete, shm_event, xdnd };
         thread::Builder::new()
             .name("ponzik-x11".into())
             .spawn(move || reader_loop(reader, tx, ctx))
@@ -802,6 +977,9 @@ impl Window {
             frame_extents,
             resizable: o.resizable,
             awaiting: None,
+            xdnd: XdndAtoms::default(),
+            drag: None,
+            xdnd_inbox: VecDeque::new(),
             setup,
         };
         win.window = win.alloc_id();
@@ -836,7 +1014,15 @@ impl Window {
         let (tx, rx) = mpsc::channel();
         win.rx = rx;
         let reader = win.stream.try_clone().map_err(io_err)?;
-        let ctx = ReaderCtx { keymap, root: win.setup.root, resource_manager, wm_protocols, wm_delete, shm_event: None };
+        let ctx = ReaderCtx {
+            keymap,
+            root: win.setup.root,
+            resource_manager,
+            wm_protocols,
+            wm_delete,
+            shm_event: None,
+            xdnd: XdndAtoms::default(),
+        };
         thread::Builder::new()
             .name("ponzik-x11-plugin".into())
             .spawn(move || reader_loop(reader, tx, ctx))
@@ -947,6 +1133,8 @@ impl Window {
             Incoming::ShmCompletion => self.shm_busy = false,
             Incoming::Reply(data) => return Some(data),
             Incoming::ResourcesChanged => self.resources_changed = true,
+            // Answered outside: it may need a request of its own.
+            msg @ (Incoming::Xdnd(_) | Incoming::Selection { .. }) => self.xdnd_inbox.push_back(msg),
             Incoming::Error { code, major } => {
                 if Some(major) == self.shm_major {
                     self.shm_failed = true;
@@ -1050,6 +1238,98 @@ impl Window {
         if self.resources_changed {
             self.refresh_scale();
         }
+        self.handle_xdnd();
+    }
+
+    /// Answers the drag messages received so far.
+    fn handle_xdnd(&mut self) {
+        while let Some(msg) = self.xdnd_inbox.pop_front() {
+            match msg {
+                Incoming::Xdnd(m) => self.on_xdnd(m),
+                Incoming::Selection { property } => self.on_dropped_data(property),
+                _ => {}
+            }
+        }
+        // A source that never hands its data over.
+        if self.drag.as_ref().and_then(|d| d.dropped).is_some_and(|t| t.elapsed() > DROP_WAIT) {
+            self.end_drag(None);
+        }
+    }
+
+    fn on_xdnd(&mut self, m: Xdnd) {
+        let atoms = self.xdnd;
+        match m {
+            Xdnd::Enter { source, version, files } => {
+                let origin = self.root_origin();
+                self.drag = Some(DragIn { source, version, accept: files, origin, pos: (0.0, 0.0), dropped: None });
+            }
+            Xdnd::Position { source, x, y, .. } => {
+                let Some(drag) = self.drag.as_mut().filter(|d| d.source == source && d.dropped.is_none()) else { return };
+                let (ox, oy) = drag.origin.unwrap_or((0, 0));
+                drag.pos = ((x as i32 - ox) as f32, (y as i32 - oy) as f32);
+                let (accept, pos) = (drag.accept, drag.pos);
+                let _ = self.send(&xdnd_status(&atoms, self.window, source, accept));
+                if accept {
+                    self.pending.push_back(Event::DragHover { x: pos.0, y: pos.1 });
+                }
+            }
+            Xdnd::Leave { source } => {
+                if self.drag.as_ref().is_some_and(|d| d.source == source) {
+                    self.drag = None;
+                    self.pending.push_back(Event::DragLeave);
+                }
+            }
+            Xdnd::Drop { source, time } => {
+                let Some(drag) = self.drag.as_mut().filter(|d| d.source == source) else { return };
+                if !drag.accept {
+                    self.end_drag(None);
+                    return;
+                }
+                drag.dropped = Some(Instant::now());
+                let req = convert_selection_req(self.window, atoms.selection, atoms.uri_list, atoms.property, time);
+                if self.send(&req).is_err() {
+                    self.end_drag(None);
+                }
+            }
+        }
+    }
+
+    /// The dropped `text/uri-list` arrived in `property` (0: the source refused).
+    fn on_dropped_data(&mut self, property: u32) {
+        if self.drag.as_ref().is_none_or(|d| d.dropped.is_none()) {
+            return;
+        }
+        let paths = if property == 0 {
+            Vec::new()
+        } else {
+            let req = take_property_req(self.window, property);
+            self.request(&req).map(|reply| crate::parse_uri_list(property_value(&reply))).unwrap_or_default()
+        };
+        self.end_drag(Some(paths));
+    }
+
+    /// Closes the drag: tells the source (after a drop) and the application,
+    /// with the dropped files, if any.
+    fn end_drag(&mut self, paths: Option<Vec<std::path::PathBuf>>) {
+        let Some(drag) = self.drag.take() else { return };
+        let paths = paths.filter(|p| !p.is_empty());
+        // Version 2+ expects XdndFinished after a drop.
+        if drag.version >= 2 {
+            let _ = self.send(&xdnd_finished(&self.xdnd, self.window, drag.source, paths.is_some()));
+        }
+        self.pending.push_back(match paths {
+            Some(paths) => Event::FileDrop { x: drag.pos.0, y: drag.pos.1, paths },
+            None => Event::DragLeave,
+        });
+    }
+
+    /// Our window's top-left corner on the root.
+    fn root_origin(&mut self) -> Option<(i32, i32)> {
+        let mut r = Req::new(OP_TRANSLATE_COORDINATES, 0);
+        r.u32(self.window).u32(self.setup.root).i16(0).i16(0);
+        let req = r.finish().to_vec();
+        let reply = self.request(&req).ok()?;
+        (reply.len() >= 16).then(|| (i16_at(&reply, 12) as i32, i16_at(&reply, 14) as i32))
     }
 
     pub(crate) fn poll_events(&mut self, out: &mut Vec<Event>) {
@@ -1356,6 +1636,82 @@ mod tests {
         assert_eq!(&req[..4], &[OP_CONFIGURE_WINDOW, 0, 5, 0]);
         assert_eq!((u32_at(&req, 4), u16_at(&req, 8)), (0x42, 0xc));
         assert_eq!((u32_at(&req, 12), u32_at(&req, 16)), (300, 1));
+    }
+
+    fn atoms() -> XdndAtoms {
+        XdndAtoms::from_list([100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110])
+    }
+
+    #[test]
+    fn xdnd_atom_names_line_up() {
+        let a = atoms();
+        assert_eq!(XdndAtoms::NAMES[2], "XdndPosition");
+        assert_eq!(a.position, 102);
+        assert_eq!(XdndAtoms::NAMES[9], "text/uri-list");
+        assert_eq!(a.uri_list, 109);
+        assert_eq!(a.property, 110);
+    }
+
+    #[test]
+    fn xdnd_messages_are_decoded() {
+        let a = atoms();
+        // Enter, version 5, three types listed, uri-list among them.
+        let enter = client_message(0x42, a.enter, [0x0c00_0001, 5 << 24, 77, a.uri_list, 0]);
+        assert_eq!(parse_xdnd(&enter, &a), Some(Xdnd::Enter { source: 0x0c00_0001, version: 5, files: true }));
+        // Only text: no files. More than three types: kept in XdndTypeList, tried anyway.
+        let text = client_message(0x42, a.enter, [9, 5 << 24, 77, 78, 0]);
+        assert_eq!(parse_xdnd(&text, &a), Some(Xdnd::Enter { source: 9, version: 5, files: false }));
+        let more = client_message(0x42, a.enter, [9, (4 << 24) | 1, 0, 0, 0]);
+        assert_eq!(parse_xdnd(&more, &a), Some(Xdnd::Enter { source: 9, version: 4, files: true }));
+        // Position: root x in the high half, y in the low one (signed).
+        let pos = client_message(0x42, a.position, [9, 0, (300 << 16) | 0xfffe, 1234, a.action_copy]);
+        assert_eq!(parse_xdnd(&pos, &a), Some(Xdnd::Position { source: 9, x: 300, y: -2, time: 1234 }));
+        assert_eq!(parse_xdnd(&client_message(0x42, a.leave, [9, 0, 0, 0, 0]), &a), Some(Xdnd::Leave { source: 9 }));
+        assert_eq!(
+            parse_xdnd(&client_message(0x42, a.drop, [9, 0, 777, 0, 0]), &a),
+            Some(Xdnd::Drop { source: 9, time: 777 })
+        );
+        // Sent events carry the high bit; other messages and formats are not ours.
+        let mut sent = pos;
+        sent[0] |= 0x80;
+        assert!(parse_xdnd(&sent, &a).is_some());
+        assert_eq!(parse_xdnd(&client_message(0x42, 555, [0; 5]), &a), None);
+        let mut format8 = pos;
+        format8[1] = 8;
+        assert_eq!(parse_xdnd(&format8, &a), None);
+        // A window without XDND atoms ignores everything.
+        assert_eq!(parse_xdnd(&pos, &XdndAtoms::default()), None);
+    }
+
+    #[test]
+    fn xdnd_replies_are_encoded() {
+        let a = atoms();
+        let status = xdnd_status(&a, 0x50, 0x0c00_0001, true);
+        assert_eq!(status.len(), 44);
+        assert_eq!(&status[..4], &[OP_SEND_EVENT, 0, 11, 0]);
+        assert_eq!((u32_at(&status, 4), u32_at(&status, 8)), (0x0c00_0001, 0), "destination, no event mask");
+        let ev = &status[12..];
+        assert_eq!((ev[0], ev[1]), (33, 32));
+        assert_eq!((u32_at(ev, 4), u32_at(ev, 8)), (0x0c00_0001, a.status));
+        let l: Vec<u32> = (0..5).map(|i| u32_at(ev, 12 + 4 * i)).collect();
+        assert_eq!(l, [0x50, 3, 0, 0, a.action_copy]);
+        // Refused: no accept bit, no action.
+        let no = xdnd_status(&a, 0x50, 7, false);
+        assert_eq!((u32_at(&no, 12 + 16), u32_at(&no, 12 + 28)), (2, 0));
+
+        let done = xdnd_finished(&a, 0x50, 7, true);
+        assert_eq!(u32_at(&done, 12 + 8), a.finished);
+        assert_eq!((u32_at(&done, 12 + 12), u32_at(&done, 12 + 16), u32_at(&done, 12 + 20)), (0x50, 1, a.action_copy));
+        let failed = xdnd_finished(&a, 0x50, 7, false);
+        assert_eq!((u32_at(&failed, 12 + 16), u32_at(&failed, 12 + 20)), (0, 0));
+
+        let conv = convert_selection_req(0x50, a.selection, a.uri_list, a.property, 999);
+        assert_eq!(&conv[..4], &[OP_CONVERT_SELECTION, 0, 6, 0]);
+        let words: Vec<u32> = (1..6).map(|i| u32_at(&conv, 4 * i)).collect();
+        assert_eq!(words, [0x50, a.selection, a.uri_list, a.property, 999]);
+
+        let take = take_property_req(0x50, a.property);
+        assert_eq!(&take[..4], &[OP_GET_PROPERTY, 1, 6, 0], "delete once read");
     }
 
     #[test]

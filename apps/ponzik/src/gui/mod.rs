@@ -166,6 +166,8 @@ impl Input {
                 }
             }
             Event::KeyUp { .. } | Event::CloseRequested => return false,
+            // Files dragged from other applications: not taken yet.
+            Event::DragHover { .. } | Event::DragLeave | Event::FileDrop { .. } => return false,
             Event::Resized { .. } | Event::Redraw | Event::ScaleChanged { .. } => {}
         }
         true
