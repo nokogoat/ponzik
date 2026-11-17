@@ -473,6 +473,42 @@ mod tests {
     }
 
     #[test]
+    fn a_frozen_track_moves_without_being_rendered_again() {
+        use ponzik_project::FreezeTarget;
+        let tone: Vec<f32> = (0..48_000).map(|i| (i as f32 * 0.031).sin() * 0.3).collect();
+        let file = Arc::new(Sample { sample_rate: 48_000.0, left: tone.clone(), right: tone, ..Default::default() });
+        let loader = |p: &str| (p == "f.wav").then(|| file.clone());
+        let mut a = demo_project();
+        let t = a.channels[1].track;
+        a.set_frozen(FreezeTarget::Track(t), Some("f.wav".into()));
+        let mut b = a.clone();
+        b.insert_track(1);
+        let cmds = diff(&a, &b, 48_000.0, &loader);
+        let n = names(&cmds);
+        assert_eq!(n.first().map(String::as_str), Some("RemapTracks"));
+        assert!(!n.iter().any(|c| c == "SetTrackFrozen" || c == "ReplaceChannel"), "{n:?}");
+        let render = |p: &Project, edit: Vec<Command>| {
+            let (mut engine, mut handle) = p.build_engine(48_000.0, &loader);
+            for cmd in edit {
+                handle.send(cmd).unwrap();
+            }
+            handle.send(Command::SetSequence(Box::new(b.sequence_with(&loader)))).unwrap();
+            handle.send(Command::Play).unwrap();
+            let mut buf = [0.0f32; 2 * 256];
+            let mut out = Vec::new();
+            for _ in 0..60 {
+                engine.process(&mut buf, 2);
+                out.extend_from_slice(&buf);
+            }
+            out
+        };
+        let edited = render(&a, cmds);
+        let fresh = render(&b, Vec::new());
+        assert!(edited.iter().any(|s| s.abs() > 0.01));
+        assert!(edited.iter().zip(&fresh).all(|(x, y)| x.to_bits() == y.to_bits()), "the frozen render plays at its new place");
+    }
+
+    #[test]
     fn note_fx_edits_map_to_slot_commands() {
         let a = demo_project();
         let mut b = a.clone();

@@ -363,6 +363,23 @@ mod tests {
     }
 
     #[test]
+    fn frozen_tracks_stay_frozen_where_they_go() {
+        use crate::FreezeTarget;
+        let mut p = wired();
+        p.set_frozen(FreezeTarget::Track(4), Some("t4.wav".into()));
+        assert!(p.channel_locked(0), "the kick plays on track 4");
+        p.insert_track(1);
+        assert!(p.is_frozen(FreezeTarget::Track(5)) && !p.is_frozen(FreezeTarget::Track(4)));
+        assert_eq!(p.tracks[5].frozen.as_deref(), Some("t4.wav"));
+        assert!(p.channel_locked(0), "its channel stays locked with it");
+        p.move_track(5, 30);
+        assert!(p.is_frozen(FreezeTarget::Track(30)) && p.channel_locked(0));
+        p.delete_track(30);
+        assert!(!p.channel_locked(0), "the channel goes to the master with the track deleted");
+        assert!(p.tracks.iter().all(|t| t.frozen.is_none()));
+    }
+
+    #[test]
     fn moving_a_track_keeps_its_links() {
         let mut p = wired();
         // Track 6 (the VCA) to place 1: 1..=5 move up by one.
