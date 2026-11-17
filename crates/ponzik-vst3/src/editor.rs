@@ -15,7 +15,7 @@ use std::time::Instant;
 
 use ponzik_engine::editor::FD_READ;
 use ponzik_engine::ring::{self, Consumer, Producer};
-use ponzik_engine::{EditorEvent, EditorSize, ParentWindow, PluginEditor, RunLoop};
+use ponzik_engine::{EditorEvent, EditorSize, ParentWindow, PluginEditor, RunLoop, StateContext};
 
 use crate::abi::*;
 use crate::com::*;
@@ -57,6 +57,8 @@ fn addref(p: *mut c_void) {
 }
 
 struct ViewState {
+    /// For the plugin's state; given back with the controller at `detach`.
+    component: Option<Com<IComponent>>,
     controller: Option<Com<IEditController>>,
     view: Option<Com<IPlugView>>,
     frame: Owned<PlugFrame>,
@@ -110,6 +112,7 @@ impl Vst3Shared {
             let run_loop = Owned::new(RunLoopObj(weak.clone()));
             Vst3Shared {
                 state: Mutex::new(ViewState {
+                    component: None,
                     controller: None,
                     view: None,
                     frame: Owned::new(PlugFrame { shared: weak.clone(), run_loop }),
@@ -128,10 +131,21 @@ impl Vst3Shared {
     }
 
     /// The controller is ready; `steps` lists the exposed parameters.
-    pub(crate) fn attach(&self, controller: Option<Com<IEditController>>, mut steps: Vec<(ParamId, i32)>) {
+    pub(crate) fn attach(
+        &self,
+        component: Com<IComponent>,
+        controller: Option<Com<IEditController>>,
+        mut steps: Vec<(ParamId, i32)>,
+    ) {
         steps.sort_by_key(|s| s.0);
         let _ = self.steps.set(steps);
-        lock(&self.state).controller = controller;
+        let mut st = lock(&self.state);
+        st.component = Some(component);
+        st.controller = controller;
+    }
+
+    fn steps(&self) -> &[(ParamId, i32)] {
+        self.steps.get().map_or(&[], Vec::as_slice)
     }
 
     /// The instance is about to be terminated: interface first, then every
@@ -141,6 +155,7 @@ impl Vst3Shared {
         let mut st = lock(&self.state);
         close_view(&mut st);
         st.controller = None;
+        st.component = None;
         drop(st);
         lock(&self.run_loop).clear();
     }
@@ -508,6 +523,24 @@ impl PluginEditor for Vst3Editor {
         if let Some(ctrl) = lock(&s.state).controller.as_ref() {
             call(ctrl, |v: &IEditControllerVtbl, p| unsafe { (v.set_param_normalized)(p, id, n) });
         }
+    }
+
+    fn save_state(&self, _: StateContext) -> Option<Vec<u8>> {
+        // References taken out of the lock: the plugin may call the host back.
+        let (component, controller) = {
+            let st = lock(&self.0.state);
+            (st.component.clone()?, st.controller.clone())
+        };
+        crate::state::save(&component, controller.as_ref())
+    }
+
+    fn load_state(&self, data: &[u8], _: StateContext) -> Result<Vec<(u32, f32)>, String> {
+        let (component, controller) = {
+            let st = lock(&self.0.state);
+            (st.component.clone().ok_or("the plugin is no longer loaded")?, st.controller.clone())
+        };
+        crate::state::load(&component, controller.as_ref(), data)?;
+        Ok(crate::state::read_values(controller.as_ref(), self.0.steps()))
     }
 }
 

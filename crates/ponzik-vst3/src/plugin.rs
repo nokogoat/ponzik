@@ -302,7 +302,7 @@ impl Core {
         }
         values.sort_by_key(|p| p.id);
         values.dedup_by_key(|p| p.id);
-        shared.attach(controller.clone(), values.iter().map(|p| (p.id, p.steps)).collect());
+        shared.attach(component.clone(), controller.clone(), values.iter().map(|p| (p.id, p.steps)).collect());
         let context = Box::new(ProcessContext {
             state: K_TEMPO_VALID | K_CONT_TIME_VALID,
             tempo: 120.0,
@@ -595,6 +595,19 @@ impl Core {
     fn editor(&self) -> Option<Editor> {
         Some(Arc::new(Vst3Editor(self.shared.clone())))
     }
+
+    /// Restores a state on the instance it owns (UI thread, before it goes to
+    /// the engine), then reads every parameter value back.
+    fn load_state(&mut self, data: &[u8]) -> Result<(), String> {
+        crate::state::load(&self.component, self.controller.as_ref(), data)?;
+        let steps: Vec<(ParamId, i32)> = self.values.iter().map(|p| (p.id, p.steps)).collect();
+        for (id, v) in crate::state::read_values(self.controller.as_ref(), &steps) {
+            if let Some(i) = self.param_index(id) {
+                self.values[i].value = v;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Instrument for Vst3Instrument {
@@ -624,6 +637,10 @@ impl Instrument for Vst3Instrument {
 
     fn editor(&self) -> Option<Editor> {
         self.0.editor()
+    }
+
+    fn load_state(&mut self, data: &[u8]) -> Result<(), String> {
+        self.0.load_state(data)
     }
 
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
@@ -663,6 +680,10 @@ impl Effect for Vst3Effect {
 
     fn editor(&self) -> Option<Editor> {
         self.0.editor()
+    }
+
+    fn load_state(&mut self, data: &[u8]) -> Result<(), String> {
+        self.0.load_state(data)
     }
 
     /// VST 3 n'a pas de `reset` : on arrête le traitement, relancé au bloc suivant.

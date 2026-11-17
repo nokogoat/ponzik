@@ -9,7 +9,7 @@
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX};
 use std::path::{Path, PathBuf};
 
-use ponzik_engine::{EditorEvent, ParentWindow};
+use ponzik_engine::{EditorEvent, ParentWindow, StateContext};
 use ponzik_vst3::abi::uid;
 use ponzik_vst3::{
     class_id_hex, create_effect, create_instrument, effect_from_kind, instrument_from_kind, kind_for, scan_dir,
@@ -149,6 +149,64 @@ fn gain_param_halves_the_level() {
     let (mut l, mut r) = (vec![1.0; 32], vec![1.0; 32]);
     fx.process(&mut l, &mut r);
     assert!((l[0] - 0.5).abs() < 1e-6);
+}
+
+/// Fields of a test plugin's state: (gain, blocks, last key, controller edits).
+fn test_state(b: &[u8]) -> (f64, u32, i16, u32) {
+    let u32_at = |i: usize| u32::from_le_bytes(b[i..i + 4].try_into().unwrap());
+    assert_eq!((&b[..4], u32_at(4), u32_at(8), b.len()), (&b"PZV3"[..], 1, 14, 12 + 14 + 4 + 4), "{b:?}");
+    assert_eq!(u32_at(26), 4);
+    (f64::from_le_bytes(b[12..20].try_into().unwrap()), u32_at(20), i16::from_le_bytes([b[24], b[25]]), u32_at(30))
+}
+
+#[test]
+fn state_round_trips_component_and_controller() {
+    let Some(path) = fixture("etat", true) else { return };
+    let mut fx = create_effect(&path, &gain_id()).unwrap();
+    fx.set_sample_rate(SR);
+    fx.set_param(7, 0.25);
+    let (mut l, mut r) = (vec![0.5; 64], vec![0.5; 64]);
+    for _ in 0..3 {
+        fx.process(&mut l, &mut r);
+    }
+    let ed = fx.editor().unwrap();
+    // The controller's own state: one host change reached it.
+    ed.param_changed(7, 0.25);
+    let state = ed.save_state(StateContext::Project).expect("state");
+    assert_eq!(test_state(&state), (0.5, 3, -1, 1));
+
+    // A new instance restored before activation: parameter read back from
+    // the controller, hidden values of both halves back.
+    let mut copy = create_effect(&path, &gain_id()).unwrap();
+    assert_eq!(copy.get_param(7), 0.5);
+    copy.load_state(&state).unwrap();
+    assert_eq!(copy.get_param(7), 0.25);
+    let copy_ed = copy.editor().unwrap();
+    assert_eq!(copy_ed.save_state(StateContext::Project).unwrap(), state);
+    copy.set_sample_rate(SR);
+    let (mut l, mut r) = (vec![0.5; 64], vec![0.5; 64]);
+    copy.process(&mut l, &mut r);
+    assert!((l[10] - 0.25).abs() < 1e-6, "restored gain applies: {}", l[10]);
+    assert!(copy.load_state(b"PZV3 garbage").is_err());
+
+    // Loaded live through the editor: values come back for the host.
+    let mut louder = state.clone();
+    louder[12..20].copy_from_slice(&1.5f64.to_le_bytes());
+    assert_eq!(ed.load_state(&louder, StateContext::Preset).unwrap(), [(7, 0.75)]);
+    drop(fx);
+    assert!(ed.save_state(StateContext::Project).is_none(), "instance gone");
+    assert!(ed.load_state(&state, StateContext::Project).is_err());
+
+    // Single-object instrument: the last key played comes back.
+    let mut sine = create_instrument(&path, &sine_id()).unwrap();
+    sine.set_sample_rate(SR);
+    sine.note_on(64, 1.0);
+    sine.render(&mut l, &mut r);
+    let state = sine.editor().unwrap().save_state(StateContext::Project).unwrap();
+    assert_eq!(test_state(&state).2, 64);
+    let mut copy = create_instrument(&path, &sine_id()).unwrap();
+    copy.load_state(&state).unwrap();
+    assert_eq!(copy.editor().unwrap().save_state(StateContext::Project).unwrap(), state);
 }
 
 #[test]

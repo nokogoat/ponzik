@@ -16,6 +16,10 @@
 //! (`beginEdit` / `performEdit` / `endEdit` vers l'hôte) et un tube surveillé
 //! dont la lecture demande au cadre un redimensionnement à 420 × 260. Une vue
 //! libérée encore attachée interrompt le processus.
+//!
+//! State: the component saves its gain plus two hidden values (blocks
+//! processed, last key played), the controller its count of
+//! `setParamNormalized` calls; none of them is a parameter.
 
 use std::ffi::{CStr, c_char, c_void};
 use std::mem::offset_of;
@@ -264,6 +268,11 @@ struct Plugin {
     freq: f64,
     amp: f64,
     phase: f64,
+    /// Hidden component state: blocks processed, last key played.
+    blocks: u32,
+    last_key: i16,
+    /// Hidden controller state: `setParamNormalized` calls.
+    edits: u32,
 }
 
 const COMPONENT: usize = offset_of!(Plugin, component);
@@ -311,8 +320,8 @@ static CONTROLLER_VTBL: IEditControllerVtbl = IEditControllerVtbl {
         terminate: terminate::<CONTROLLER>,
     },
     set_component_state,
-    set_state: stream_ok,
-    get_state: stream_ok,
+    set_state: controller_set_state,
+    get_state: controller_get_state,
     get_parameter_count,
     get_parameter_info,
     get_param_string_by_value,
@@ -350,6 +359,9 @@ impl Plugin {
             freq: 0.0,
             amp: 0.0,
             phase: 0.0,
+            blocks: 0,
+            last_key: -1,
+            edits: 0,
         }))
     }
 
@@ -532,21 +544,39 @@ fn read_f64(stream: *mut IBStream) -> Option<f64> {
     (r == K_RESULT_OK && n == 8).then(|| f64::from_le_bytes(b))
 }
 
+fn read_bytes<const N: usize>(stream: *mut IBStream) -> Option<[u8; N]> {
+    let mut b = [0u8; N];
+    let mut n = 0;
+    // SAFETY : flux fourni par l'hôte.
+    let r = unsafe { ((*(*stream).vtbl).read)(stream.cast(), b.as_mut_ptr().cast(), N as i32, &mut n) };
+    (r == K_RESULT_OK && n == N as i32).then_some(b)
+}
+
+fn write_bytes(stream: *mut IBStream, b: &[u8]) -> TResult {
+    let mut n = 0;
+    // SAFETY : flux fourni par l'hôte, lu seulement.
+    let r = unsafe { ((*(*stream).vtbl).write)(stream.cast(), b.as_ptr() as *mut c_void, b.len() as i32, &mut n) };
+    if r == K_RESULT_OK && n == b.len() as i32 { K_RESULT_OK } else { K_RESULT_FALSE }
+}
+
+/// Component state: gain (f64), blocks processed (u32), last key (i16), little-endian.
 unsafe extern "system" fn component_set_state(this: *mut c_void, stream: *mut IBStream) -> TResult {
-    match read_f64(stream) {
-        Some(g) => {
-            component(this).gain = g;
-            K_RESULT_OK
-        }
-        None => K_RESULT_FALSE,
-    }
+    let (Some(g), Some(blocks), Some(key)) = (read_f64(stream), read_bytes::<4>(stream), read_bytes::<2>(stream)) else {
+        return K_RESULT_FALSE;
+    };
+    let p = component(this);
+    p.gain = g;
+    p.blocks = u32::from_le_bytes(blocks);
+    p.last_key = i16::from_le_bytes(key);
+    K_RESULT_OK
 }
 
 unsafe extern "system" fn component_get_state(this: *mut c_void, stream: *mut IBStream) -> TResult {
-    let mut b = component(this).gain.to_le_bytes();
-    let mut n = 0;
-    // SAFETY : flux fourni par l'hôte.
-    unsafe { ((*(*stream).vtbl).write)(stream.cast(), b.as_mut_ptr().cast(), 8, &mut n) }
+    let p = component(this);
+    let mut b = p.gain.to_le_bytes().to_vec();
+    b.extend_from_slice(&p.blocks.to_le_bytes());
+    b.extend_from_slice(&p.last_key.to_le_bytes());
+    write_bytes(stream, &b)
 }
 
 // --- IAudioProcessor -------------------------------------------------------
@@ -642,6 +672,7 @@ fn apply_event(p: &mut Plugin, e: &Event) {
             K_NOTE_ON_EVENT => {
                 let n = e.data.note_on;
                 p.key = n.pitch;
+                p.last_key = n.pitch;
                 p.freq = 440.0 * 2f64.powf((n.pitch as f64 - 69.0) / 12.0);
                 p.amp = n.velocity as f64;
             }
@@ -656,6 +687,7 @@ unsafe extern "system" fn process(this: *mut c_void, data: *mut ProcessData) -> 
     // SAFETY : structure et tampons fournis par l'hôte pour la durée de l'appel.
     let d = unsafe { &mut *data };
     read_changes(p, d.input_parameter_changes);
+    p.blocks += 1;
     let n = d.num_samples.max(0) as usize;
     if n == 0 || d.num_outputs < 1 {
         return K_RESULT_OK;
@@ -713,8 +745,19 @@ unsafe extern "system" fn set_component_state(this: *mut c_void, stream: *mut IB
     K_RESULT_OK
 }
 
-unsafe extern "system" fn stream_ok(_: *mut c_void, _: *mut IBStream) -> TResult {
-    K_RESULT_OK
+/// Controller state: its count of `setParamNormalized` calls (u32).
+unsafe extern "system" fn controller_set_state(this: *mut c_void, stream: *mut IBStream) -> TResult {
+    match read_bytes::<4>(stream) {
+        Some(b) => {
+            controller(this).edits = u32::from_le_bytes(b);
+            K_RESULT_OK
+        }
+        None => K_RESULT_FALSE,
+    }
+}
+
+unsafe extern "system" fn controller_get_state(this: *mut c_void, stream: *mut IBStream) -> TResult {
+    write_bytes(stream, &controller(this).edits.to_le_bytes())
 }
 
 unsafe extern "system" fn get_parameter_count(this: *mut c_void) -> i32 {
@@ -772,7 +815,9 @@ unsafe extern "system" fn set_param_normalized(this: *mut c_void, id: ParamId, v
     if id != GAIN_PARAM {
         return K_INVALID_ARGUMENT;
     }
-    controller(this).norm = v;
+    let p = controller(this);
+    p.norm = v;
+    p.edits += 1;
     K_RESULT_OK
 }
 
