@@ -7,6 +7,8 @@
 
 pub mod mp3;
 mod mp3_tables;
+pub mod ogg;
+pub mod vorbis;
 
 use crate::sample::Sample;
 use ponzik_i18n::tr;
@@ -82,7 +84,7 @@ pub fn decode_sample(bytes: &[u8], name: &str, ext: &str) -> Result<Sample, Stri
         Some(Format::Wav) => crate::wav::decode_wav(bytes, name),
         Some(Format::Flac) => crate::flac::decode_sample(bytes, name),
         Some(Format::Mp3) => Ok(mp3::decode(bytes)?.into_sample(name)),
-        Some(Format::Ogg) => Err(tr("Unsupported audio format").into()),
+        Some(Format::Ogg) => Ok(ogg::decode(bytes)?.into_sample(name)),
         None => Err(tr("Unsupported audio format").into()),
     }
 }

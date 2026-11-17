@@ -160,3 +160,61 @@ fn mp3_matches_ffmpeg() {
         }
     }
 }
+
+/// The length an Ogg stream declares (its last granule position).
+fn declared_frames(file: &Path) -> usize {
+    let out = Command::new("ffprobe")
+        .args(["-v", "error", "-select_streams", "a:0", "-show_entries", "stream=duration_ts", "-of", "csv=p=0"])
+        .arg(file)
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).trim().trim_end_matches(',').parse().unwrap()
+}
+
+#[test]
+fn vorbis_matches_libvorbis() {
+    if !has("ffmpeg") || !has("ffprobe") {
+        eprintln!("ffmpeg missing: skipped");
+        return;
+    }
+    let dir = Scratch::new("vorbis");
+    let surround = "pan=5.1|FL=c0|FR=c1|FC=0.5*c0+0.5*c1|LFE=0.3*c0|BL=0.7*c1|BR=0.7*c0";
+    // (name, rate, channels of the source, encoder arguments)
+    let cases: Vec<(&str, u32, usize, Vec<&str>)> = vec![
+        ("q4-stereo", 44_100, 2, vec!["-q:a", "4"]),
+        ("q-1-stereo", 44_100, 2, vec!["-q:a", "-1"]),
+        ("q10-stereo-48k", 48_000, 2, vec!["-q:a", "10"]),
+        ("q3-mono-22k", 22_050, 1, vec!["-q:a", "3"]),
+        ("q0-mono-8k", 8_000, 1, vec!["-q:a", "0"]),
+        ("q5-surround", 44_100, 2, vec!["-af", surround, "-q:a", "5"]),
+        ("abr-96k", 32_000, 2, vec!["-b:a", "96k"]),
+    ];
+    let mut chained = Vec::new();
+    for (name, rate, channels, args) in cases {
+        let wav = dir.path(&format!("{name}.wav"));
+        let ogg = dir.path(&format!("{name}.ogg"));
+        write_wav(&wav, rate, channels, &music(rate, 2.3, channels));
+        run(Command::new("ffmpeg").args(["-hide_banner", "-loglevel", "error", "-y", "-i"]).arg(&wav).args(["-c:a", "libvorbis"]).args(&args).arg(&ogg));
+        let bytes = std::fs::read(&ogg).unwrap();
+        let ours = codecs::ogg::decode(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(ours.sample_rate, rate, "{name}");
+        assert_eq!(ours.frames(), declared_frames(&ogg), "{name}: trimmed to the last granule position");
+        // FFmpeg may keep the end padding: compare what both have.
+        // FFmpeg's libvorbis wrapper keeps the Vorbis channel order; its own
+        // decoder puts front left and right first, as we do.
+        let decoder = if args.contains(&surround) { "vorbis" } else { "libvorbis" };
+        let (mut l, mut r) = ffmpeg_decode(&ogg, Some(decoder));
+        assert!(l.len() >= ours.frames(), "{name}");
+        l.truncate(ours.frames());
+        r.truncate(ours.frames());
+        compare(name, &ours, &(l, r), 110.0);
+        if name.ends_with("stereo") {
+            chained.push((bytes, ours));
+        }
+    }
+    // Chained streams (files put end to end) play one after the other.
+    let file: Vec<u8> = chained.iter().flat_map(|(b, _)| b.clone()).collect();
+    let ours = codecs::ogg::decode(&file).unwrap();
+    let left: Vec<f32> = chained.iter().flat_map(|(_, d)| d.left.clone()).collect();
+    assert_eq!(ours.left, left);
+}

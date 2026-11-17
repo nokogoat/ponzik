@@ -3555,6 +3555,12 @@ msgstr "fichier FLAC non pris en charge"
 msgid "Corrupt MP3 file"
 msgstr "fichier MP3 abîmé"
 
+msgid "Corrupt Ogg file"
+msgstr "fichier Ogg abîmé"
+
+msgid "Opus files are not supported yet"
+msgstr "les fichiers Opus ne sont pas encore pris en charge"
+
 msgid "Unsupported audio format"
 msgstr "format audio non pris en charge"
 
