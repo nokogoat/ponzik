@@ -96,6 +96,8 @@ impl App {
         self.plugins = report.clap;
         self.vst3_plugins = report.vst3;
         self.scan_errors = report.errors;
+        // Same counts after a rescan can still hide new plugins: rebuild the list.
+        self.browser_cache.0 = None;
     }
 
     /// Below the plugins of the browser: the files that could not be loaded

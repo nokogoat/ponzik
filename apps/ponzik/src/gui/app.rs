@@ -18,6 +18,11 @@ use ponzik_window::Key;
 use super::Input;
 use super::compat;
 use super::dnd::Payload;
+
+/// Entrée du navigateur : (catégorie, nom, description, contenu).
+type BrowserEntry = (usize, String, String, Payload);
+/// Ce dont dépendent les entrées : échantillons (adresse, nombre), plugins, langue.
+type BrowserKey = (usize, usize, usize, &'static str);
 use super::theme::*;
 use super::widgets::{Icon, TipState, draw_icon, wid};
 
@@ -498,6 +503,9 @@ pub struct App {
     pub editors: super::editors::PluginEditors,
     /// Plugin parameter last moved in a plugin window, and its value.
     pub last_plugin_param: Option<(ponzik_engine::AutoTarget, f32)>,
+    /// Entrées du navigateur, reconstruites seulement quand leurs sources
+    /// (échantillons, plugins, langue) changent, pas à chaque image.
+    pub(super) browser_cache: (Option<BrowserKey>, Vec<BrowserEntry>),
 
     pub playing: bool,
     pub metronome: bool,
@@ -651,6 +659,7 @@ impl App {
             plugin_scan: None,
             editors: Default::default(),
             last_plugin_param: None,
+            browser_cache: (None, Vec::new()),
             playing: false,
             metronome: false,
             position: 0.0,
@@ -2304,7 +2313,7 @@ impl App {
     // --- Navigateur ---
 
     /// Tout ce que propose le navigateur : (catégorie, nom, description, contenu).
-    fn browser_entries(&self) -> Vec<(usize, String, String, Payload)> {
+    fn browser_entries(&self) -> Vec<BrowserEntry> {
         let mut v = Vec::new();
         for k in registry::instruments() {
             let payload = Payload::Instrument { kind: k.id.into(), name: tr(k.name).into() };
@@ -2428,16 +2437,26 @@ impl App {
         let mut y = list.y + 6.0 - scroll;
 
         // Filtre et tri par pertinence.
-        let mut entries: Vec<(usize, String, String, Payload)> = self.browser_entries();
+        let key = (
+            self.sample_files.as_ptr() as usize,
+            self.sample_files.len(),
+            self.plugins.len() + self.vst3_plugins.len(),
+            ponzik_i18n::lang().code(),
+        );
+        if self.browser_cache.0 != Some(key) {
+            self.browser_cache = (Some(key), self.browser_entries());
+        }
+        let all = std::mem::take(&mut self.browser_cache.1);
+        let mut entries: Vec<&BrowserEntry> = Vec::new();
         if searching {
-            let mut scored: Vec<(i32, (usize, String, String, Payload))> = entries
-                .into_iter()
+            let mut scored: Vec<(i32, &BrowserEntry)> = all
+                .iter()
                 .filter_map(|e| super::palette::fuzzy_score(&query, &format!("{} {}", e.1, e.2)).map(|s| (s, e)))
                 .collect();
             scored.sort_by_key(|s| (s.1.0, std::cmp::Reverse(s.0)));
-            entries = scored.into_iter().map(|(_, e)| e).collect();
+            entries.extend(scored.into_iter().map(|(_, e)| e));
         } else {
-            entries.retain(|e| e.0 == self.sidebar_tab);
+            entries.extend(all.iter().filter(|e| e.0 == self.sidebar_tab));
         }
         if enter && let Some(e) = entries.first() {
             self.add_default(e.3.clone());
@@ -2446,7 +2465,7 @@ impl App {
         let mut last_cat = usize::MAX;
         let mut last_group = "";
         let lib_prefix = tr_fmt!("Library · {}", "");
-        for (k, (cat, name, detail, payload)) in entries.iter().enumerate() {
+        for (k, (cat, name, detail, payload)) in entries.iter().map(|e| (&e.0, &e.1, &e.2, &e.3)).enumerate() {
             // Samples: the library first, one heading per folder, then the rest;
             // plugins: instruments, then effects.
             let group = match (cat, payload) {
@@ -2494,6 +2513,8 @@ impl App {
         if plugins_tab {
             y = self.plugin_scan_rows(c, input, list, inner_x, w, y);
         }
+        drop(entries);
+        self.browser_cache.1 = all;
         let content_h = y + scroll - list.y + 16.0;
         self.sidebar_scroll = self.sidebar_scroll.min((content_h - list.h).max(0.0));
         c.set_clip(Some(inner));
