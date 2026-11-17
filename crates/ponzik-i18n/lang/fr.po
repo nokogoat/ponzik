@@ -6077,3 +6077,44 @@ msgstr "Warpé : suit le tempo du morceau"
 
 msgid "{} placed in the playlist · warped from {} BPM"
 msgstr "{} posé dans la playlist · warpé depuis {} BPM"
+
+# --- Browser: favorites, tags, preview ---
+
+msgid "Favorites"
+msgstr "Favoris"
+
+msgid "Add to the favorites"
+msgstr "Ajouter aux favoris"
+
+msgid "Remove from the favorites"
+msgstr "Retirer des favoris"
+
+msgid "Added to the favorites"
+msgstr "Ajouté aux favoris"
+
+msgid "Removed from the favorites"
+msgstr "Retiré des favoris"
+
+msgid "No favorites yet: click the star of a row"
+msgstr "Pas encore de favoris : cliquez sur l'étoile d'une ligne"
+
+msgid "Nothing used yet"
+msgstr "Rien d'utilisé pour l'instant"
+
+msgid "Auto-preview"
+msgstr "Écoute auto"
+
+msgid "Plays the sound under the pointer or picked with the arrow keys; loops follow the song tempo"
+msgstr "Joue le son sous la souris ou choisi avec les flèches ; les boucles suivent le tempo du morceau"
+
+msgid "Preview volume: {} %"
+msgstr "Volume d'écoute : {} %"
+
+msgid "Cymbal"
+msgstr "Cymbale"
+
+msgid "Perc"
+msgstr "Perc"
+
+msgid "Synth"
+msgstr "Synthé"

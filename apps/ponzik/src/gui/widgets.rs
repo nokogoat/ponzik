@@ -147,6 +147,23 @@ pub enum Icon {
     Midi,
     /// A closed loop with an arrow: a clip that starts over.
     Loop,
+    /// Five-pointed star, outlined: an item to keep among the favorites.
+    Star,
+    /// The same star filled: a favorite.
+    StarFilled,
+    /// A speaker with sound waves: preview volume.
+    Speaker,
+}
+
+/// Points of a five-pointed star of outer radius 7.5 (icon units), from the top.
+fn star_points(p: impl Fn(f32, f32) -> (f32, f32)) -> Vec<(f32, f32)> {
+    (0..10)
+        .map(|i| {
+            let r = if i % 2 == 0 { 7.6 } else { 3.3 };
+            let a = -PI / 2.0 + i as f32 * PI / 5.0;
+            p(r * a.cos(), r * a.sin() + 0.6)
+        })
+        .collect()
 }
 
 /// Dessine une icône au trait, dans un carré de `size` centré sur (`cx`, `cy`).
@@ -212,6 +229,23 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
             c.stroke_polyline(&[p(2.5, -7.0), p(2.5, -3.5)], stroke, col);
             c.fill_rrect(rr(-5.5, -3.5, 11.0, 6.0), 2.0 * s, col);
             c.stroke_polyline(&[p(0.0, 2.5), p(0.0, 7.0)], stroke, col);
+        }
+        Icon::Star => {
+            let mut pts = star_points(p);
+            pts.push(pts[0]);
+            c.stroke_polyline(&pts, stroke * 0.85, col);
+        }
+        Icon::StarFilled => {
+            let mut path = Path::new();
+            path.polygon(&star_points(p));
+            c.fill_path(&path, col);
+        }
+        Icon::Speaker => {
+            let mut path = Path::new();
+            path.polygon(&[p(-7.0, -2.5), p(-4.0, -2.5), p(0.0, -6.0), p(0.0, 6.0), p(-4.0, 2.5), p(-7.0, 2.5)]);
+            c.fill_path(&path, col);
+            c.stroke_arc(cx + 0.5 * s, cy, 3.5 * s, -0.3 * PI, 0.3 * PI, stroke * 0.9, col);
+            c.stroke_arc(cx + 0.5 * s, cy, 6.5 * s, -0.3 * PI, 0.3 * PI, stroke * 0.9, col.alpha(0.7));
         }
         Icon::Mute => {
             let mut path = Path::new();

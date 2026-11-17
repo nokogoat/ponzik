@@ -139,6 +139,7 @@ impl App {
 
     /// Clic sur un élément du navigateur : l'ajout le plus probable.
     pub(super) fn add_default(&mut self, payload: Payload) {
+        self.note_recent(&payload);
         match payload {
             Payload::Instrument { kind, name } => self.add_channel_kind(&kind, &name),
             Payload::Effect { kind, .. } => {
@@ -157,6 +158,7 @@ impl App {
     }
 
     fn drop_payload(&mut self, payload: Payload, target: DropTarget) {
+        self.note_recent(&payload);
         match (payload, target) {
             (Payload::Instrument { kind, name }, DropTarget::Rack) => self.add_channel_kind(&kind, &name),
             (Payload::Instrument { kind, name }, DropTarget::Channel(ch)) => {

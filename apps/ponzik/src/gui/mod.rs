@@ -10,6 +10,7 @@ mod assistant;
 mod automation;
 mod capture;
 mod autorec;
+mod browser;
 mod clip;
 mod compat;
 mod devices;
@@ -442,6 +443,7 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
         dirty |= app.poll_midi();
         app.autosave_tick(started.elapsed().as_secs_f64());
         dirty |= app.library_tick();
+        dirty |= app.browser_tick();
         dirty |= app.plugin_scan_tick();
         dirty |= app.editors_tick();
         dirty |= app.xrun_tick(started.elapsed().as_secs_f32());
@@ -539,6 +541,12 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // PONZIK_BROWSER=n: browser tab (0 instruments, 1 effects, 2 samples, 3 plugins).
     if let Some(i) = std::env::var("PONZIK_BROWSER").ok().and_then(|v| v.parse::<usize>().ok()) {
         app.sidebar_tab = i.min(3);
+    }
+    // PONZIK_BROWSE=fav|recent:0,2|tag:kick|star:0,3|play:2|sel:1|auto:off|vol:0.4 (";"-separated):
+    // the browser's filters, stars and preview.
+    if let Ok(spec) = std::env::var("PONZIK_BROWSE") {
+        let items = app.browser_tab_payloads();
+        app.screenshot_browser(&spec, &items);
     }
     let view = view_named(view).unwrap_or(View::Rack);
     if app.view_shown(view) {

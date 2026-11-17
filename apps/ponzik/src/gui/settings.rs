@@ -398,6 +398,7 @@ impl App {
     /// Charge `settings.json` ; un fichier absent ou abîmé laisse les valeurs par défaut.
     pub fn load_settings(&mut self) {
         let path = settings_path();
+        self.load_browser_prefs();
         let Ok(text) = std::fs::read_to_string(&path) else { return };
         let j = match json::parse(&text) {
             Ok(j) => j,
