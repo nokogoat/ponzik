@@ -417,7 +417,7 @@ impl Project {
                 });
                 Some(AudioClip {
                     sample,
-                    track: def.track.min(ponzik_engine::mixer::TRACKS - 1),
+                    track: def.track.min(ponzik_engine::mixer::MAX_TRACKS - 1),
                     start: l.start,
                     len: l.end.saturating_sub(l.start).max(1),
                     offset: def.offset,

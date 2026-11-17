@@ -217,13 +217,13 @@ impl App {
         let used: Vec<usize> = self.project.channels.iter().map(|c| c.track).collect();
         let track = (0..SESSION_SCENES)
             .find_map(|r| self.project.session_slot(col, r).audio.as_ref().map(|a| a.track))
-            .unwrap_or_else(|| (1..ponzik_engine::mixer::TRACKS).find(|t| !used.contains(t) && !self.track_in_use(*t)).unwrap_or(1));
+            .unwrap_or_else(|| (1..self.project.tracks.len()).find(|t| !used.contains(t) && !self.project.track_in_use(*t)).unwrap_or(1));
         let mut clip = AudioClipDef { path: path.to_string(), track, bpm: bpm.unwrap_or(0.0), warp, ..Default::default() };
         let tempo = self.project.session_tempo();
         let natural = clip.natural_len(secs, &tempo);
         clip.len = if warp { natural.div_ceil(TICKS_PER_BAR / 4).max(1) * (TICKS_PER_BAR / 4) } else { natural };
         let name = std::path::Path::new(path).file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
-        if !self.track_in_use(track) {
+        if !self.project.track_in_use(track) {
             self.project.tracks[track].name = name.clone();
         }
         self.project.set_session_audio(col, row, clip);
