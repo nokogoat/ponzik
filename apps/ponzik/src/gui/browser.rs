@@ -198,6 +198,7 @@ pub fn item_key(payload: &Payload) -> String {
         Payload::Instrument { kind, .. } => format!("instrument:{kind}"),
         Payload::Effect { kind, .. } => format!("effect:{kind}"),
         Payload::Sample(p) => format!("sample:{}", p.to_string_lossy()),
+        Payload::Files(_) => String::new(),
     }
 }
 
@@ -618,7 +619,7 @@ pub fn previewable(payload: &Payload) -> bool {
     match payload {
         Payload::Sample(_) => true,
         Payload::Instrument { kind, .. } => native_sound(kind),
-        Payload::Effect { .. } => false,
+        Payload::Effect { .. } | Payload::Files(_) => false,
     }
 }
 

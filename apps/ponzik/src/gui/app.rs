@@ -29,8 +29,9 @@ struct RowView<'a> {
     title: &'a str,
     detail: &'a str,
     badge: Option<&'a str>,
-    /// It can be listened to (a play button).
+    /// It can be listened to (a play button), or it lines up with those that can.
     preview: bool,
+    slot: bool,
     favorite: bool,
     playing: bool,
     /// Picked with the arrow keys.
@@ -1791,6 +1792,7 @@ impl App {
         if input.focus_lost {
             self.release_all_held();
         }
+        self.os_drag(input);
 
         let t = self.theme;
         let (w, h) = c.logical_size();
@@ -2716,7 +2718,7 @@ impl App {
             if row.bottom() > list.y && row.y < list.bottom() {
                 let badge = match payload {
                     Payload::Instrument { kind, .. } | Payload::Effect { kind, .. } => plugin_badge(kind),
-                    Payload::Sample(_) => None,
+                    Payload::Sample(_) | Payload::Files(_) => None,
                 };
                 let item = item_key(payload);
                 let view = RowView {
@@ -2724,6 +2726,7 @@ impl App {
                     detail,
                     badge,
                     preview: super::browser::previewable(payload),
+                    slot: matches!(payload, Payload::Sample(_) | Payload::Instrument { .. }),
                     favorite: self.browser.prefs.is_favorite(&item),
                     playing: self.browser.preview.playing.as_deref() == Some(item.as_str()),
                     selected: sel == Some(k),
@@ -2902,6 +2905,8 @@ impl App {
                 }
                 draw_icon(c, Icon::Play, play.x + 12.0, cy, 11.0, col);
             }
+        }
+        if v.preview || v.slot {
             title_x = row.x + 32.0;
         }
         let mut title_w = row.right() - 60.0 - title_x;

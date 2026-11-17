@@ -104,6 +104,10 @@ pub struct Input {
     pub physical: Vec<(u16, bool)>,
     /// La fenêtre a perdu le focus pendant cette image.
     pub focus_lost: bool,
+    /// Files dragged from another application hover the window.
+    pub file_hover: bool,
+    /// Files dropped from another application during this frame.
+    pub dropped: Option<Vec<std::path::PathBuf>>,
 }
 
 impl Input {
@@ -118,10 +122,16 @@ impl Input {
         self.text.clear();
         self.physical.clear();
         self.focus_lost = false;
+        self.dropped = None;
     }
 
     /// Renvoie vrai si l'événement change quelque chose à l'écran.
     fn apply(&mut self, ev: &Event) -> bool {
+        if let Event::FileDrop { x, y, paths } = ev {
+            (self.x, self.y, self.inside, self.file_hover) = (*x, *y, true, false);
+            self.dropped = Some(paths.clone());
+            return true;
+        }
         match *ev {
             Event::MouseMove { x, y } => {
                 (self.x, self.y, self.inside) = (x, y, true);
@@ -167,8 +177,9 @@ impl Input {
                 }
             }
             Event::KeyUp { .. } | Event::CloseRequested => return false,
-            // Files dragged from other applications: not taken yet.
-            Event::DragHover { .. } | Event::DragLeave | Event::FileDrop { .. } => return false,
+            Event::DragHover { x, y } => (self.x, self.y, self.inside, self.file_hover) = (x, y, true, true),
+            Event::DragLeave => (self.inside, self.file_hover) = (false, false),
+            Event::FileDrop { .. } => {}
             Event::Resized { .. } | Event::Redraw | Event::ScaleChanged { .. } => {}
         }
         true
@@ -183,6 +194,8 @@ fn to_logical(ev: Event, scale: f32) -> Event {
         Event::MouseDown { x, y, button, mods } => Event::MouseDown { x: l(x), y: l(y), button, mods },
         Event::MouseUp { x, y, button } => Event::MouseUp { x: l(x), y: l(y), button },
         Event::Wheel { x, y, delta, mods } => Event::Wheel { x: l(x), y: l(y), delta, mods },
+        Event::DragHover { x, y } => Event::DragHover { x: l(x), y: l(y) },
+        Event::FileDrop { x, y, paths } => Event::FileDrop { x: l(x), y: l(y), paths },
         other => other,
     }
 }
@@ -710,6 +723,16 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     }) {
         (input.x, input.y, input.inside) = (x, y, true);
     }
+    // PONZIK_FILE_DRAG=x,y: files from the file manager hover there;
+    // PONZIK_FILE_DROP=path|path: and are dropped early in the capture.
+    if let Some((x, y)) = std::env::var("PONZIK_FILE_DRAG").ok().and_then(|v| {
+        let (x, y) = v.split_once(',')?;
+        Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
+    }) {
+        (input.x, input.y, input.inside, input.file_hover) = (x, y, true, true);
+    }
+    let file_drop: Option<Vec<std::path::PathBuf>> =
+        std::env::var("PONZIK_FILE_DROP").ok().map(|v| v.split('|').map(std::path::PathBuf::from).collect());
     let mut audio = vec![0.0f32; 800 * 2];
     // ~1,6 s : la tête de lecture tombe sur un temps fort, les VU-mètres sont lancés.
     // PONZIK_BENCH : temps moyen d'une image, complète puis suivie (seules les
@@ -718,6 +741,12 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     let (mut drawing, mut ui, mut raster, mut dirty) = (Duration::ZERO, Duration::ZERO, Duration::ZERO, 0.0);
     let mut allocs = 0;
     for i in 0..96 {
+        if let Some(paths) = file_drop.as_ref().filter(|_| i == 8) {
+            input.dropped = Some(paths.clone());
+            input.file_hover = false;
+        } else if i == 9 {
+            input.dropped = None;
+        }
         engine.process(&mut audio, 2);
         app.editors_tick();
         let a0 = crate::alloc_count::allocations();
@@ -780,5 +809,29 @@ mod tests {
         // Tailles de fenêtre et le reste : inchangés.
         assert_eq!(to_logical(Event::Resized { width: 3200, height: 1920 }, 2.0), Event::Resized { width: 3200, height: 1920 });
         assert_eq!(to_logical(Event::MouseMove { x: 7.0, y: 9.0 }, 1.0), Event::MouseMove { x: 7.0, y: 9.0 });
+        // Files dragged from another application land where the pointer is.
+        assert_eq!(to_logical(Event::DragHover { x: 100.0, y: 60.0 }, 2.0), Event::DragHover { x: 50.0, y: 30.0 });
+        let paths = vec![std::path::PathBuf::from("/a.wav")];
+        assert_eq!(
+            to_logical(Event::FileDrop { x: 30.0, y: 12.0, paths: paths.clone() }, 1.5),
+            Event::FileDrop { x: 20.0, y: 8.0, paths }
+        );
+    }
+
+    #[test]
+    fn file_drags_reach_the_input() {
+        let mut input = Input::default();
+        assert!(input.apply(&Event::DragHover { x: 40.0, y: 50.0 }));
+        assert!(input.file_hover && input.inside);
+        assert_eq!((input.x, input.y), (40.0, 50.0));
+        assert!(input.apply(&Event::DragLeave));
+        assert!(!input.file_hover && !input.inside);
+        let paths = vec![std::path::PathBuf::from("/k.wav")];
+        input.apply(&Event::DragHover { x: 1.0, y: 1.0 });
+        assert!(input.apply(&Event::FileDrop { x: 9.0, y: 8.0, paths: paths.clone() }));
+        assert_eq!(input.dropped.as_deref(), Some(&paths[..]));
+        assert!(!input.file_hover);
+        input.begin_frame();
+        assert_eq!(input.dropped, None, "a drop lasts one frame");
     }
 }

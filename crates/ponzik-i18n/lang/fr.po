@@ -6118,3 +6118,20 @@ msgstr "Perc"
 
 msgid "Synth"
 msgstr "Synthé"
+
+# --- Files dropped from other applications ---
+
+msgid "Files"
+msgstr "Fichiers"
+
+msgid "{} files"
+msgstr "{} fichiers"
+
+msgid "Only WAV files can be read for now"
+msgstr "Seuls les fichiers WAV sont lus pour l'instant"
+
+msgid "Ponzik can't use these files"
+msgstr "Ponzik ne sait pas utiliser ces fichiers"
+
+msgid "\"{}\" placed in the playlist"
+msgstr "« {} » posé dans la playlist"
