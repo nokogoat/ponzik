@@ -88,7 +88,7 @@ pub struct Dnd {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileKind {
     Audio,
-    /// Audio in a format not read yet (FLAC, AIFF, MP3, OGG).
+    /// Audio in a format not read yet (AIFF, Opus, M4A).
     OtherAudio,
     Midi,
     Project,
@@ -99,8 +99,8 @@ pub enum FileKind {
 pub fn file_kind(path: &std::path::Path) -> FileKind {
     let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
     match ext.as_str() {
-        "wav" | "wave" => FileKind::Audio,
-        "flac" | "aif" | "aiff" | "mp3" | "ogg" | "opus" | "m4a" => FileKind::OtherAudio,
+        e if ponzik_engine::codecs::is_supported_extension(e) => FileKind::Audio,
+        "aif" | "aiff" | "opus" | "m4a" => FileKind::OtherAudio,
         "mid" | "midi" | "smf" => FileKind::Midi,
         "ponzik" => FileKind::Project,
         "flp" => FileKind::FlStudio,
@@ -311,8 +311,12 @@ impl App {
         }
         let (audio, midi) = (of(FileKind::Audio), of(FileKind::Midi));
         let other = paths.iter().filter(|p| file_kind(p) == FileKind::OtherAudio).count();
+        let unread = || {
+            let opus = paths.iter().any(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("opus")));
+            if opus { tr("Opus files are not supported yet") } else { tr("Only WAV, FLAC, MP3 and Ogg Vorbis files can be read for now") }
+        };
         if audio.is_empty() && midi.is_empty() {
-            self.toast(if other > 0 { tr("Only WAV files can be read for now") } else { tr("Ponzik can't use these files") });
+            self.toast(if other > 0 { unread() } else { tr("Ponzik can't use these files") });
             return;
         }
         for (i, path) in audio.iter().enumerate() {
@@ -358,7 +362,7 @@ impl App {
             }
         }
         if other > 0 {
-            self.toast(tr("Only WAV files can be read for now"));
+            self.toast(unread());
         }
     }
 
@@ -398,7 +402,10 @@ mod tests {
     #[test]
     fn dropped_files_are_told_by_their_extension() {
         assert_eq!(file_kind(Path::new("/a/Kick 01.WAV")), FileKind::Audio);
-        assert_eq!(file_kind(Path::new("/a/loop.flac")), FileKind::OtherAudio);
+        assert_eq!(file_kind(Path::new("/a/loop.flac")), FileKind::Audio);
+        assert_eq!(file_kind(Path::new("/a/beat.MP3")), FileKind::Audio);
+        assert_eq!(file_kind(Path::new("/a/vocal.ogg")), FileKind::Audio);
+        assert_eq!(file_kind(Path::new("/a/voice note.opus")), FileKind::OtherAudio);
         assert_eq!(file_kind(Path::new("/a/riff.MID")), FileKind::Midi);
         assert_eq!(file_kind(Path::new("/a/song.ponzik")), FileKind::Project);
         assert_eq!(file_kind(Path::new("/a/song.flp")), FileKind::FlStudio);

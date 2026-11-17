@@ -98,21 +98,19 @@ pub fn encode_sample(w: &mut impl Write, sample: &Sample) -> io::Result<()> {
     Ok(())
 }
 
-/// Charge un fichier WAV (or FLAC, recognized by its content) ; l'échantillon
-/// prend le nom du fichier sans extension.
+/// Loads an audio file (WAV, FLAC, MP3 or Ogg Vorbis, told by its content,
+/// then by its extension); the sample takes the file name without extension.
 pub fn load_wav(path: impl AsRef<Path>) -> Result<Sample, String> {
     let path = path.as_ref();
     let bytes = std::fs::read(path).map_err(|e| tr_fmt!("{}: {}", path.display().to_string(), e.to_string()))?;
     let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    if crate::flac::is_flac(&bytes) {
-        return crate::flac::decode_sample(&bytes, &name);
-    }
-    decode_wav(&bytes, &name)
+    let ext = path.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_default();
+    crate::codecs::decode_sample(&bytes, &name, &ext)
 }
 
-/// True for the audio files Ponzik loads (WAV and FLAC), by extension.
+/// True for the audio files Ponzik loads (WAV, FLAC, MP3, Ogg Vorbis), by extension.
 pub fn is_audio_file(path: &Path) -> bool {
-    path.extension().is_some_and(|x| x.eq_ignore_ascii_case("wav") || x.eq_ignore_ascii_case("flac"))
+    path.extension().is_some_and(|x| crate::codecs::is_supported_extension(&x.to_string_lossy()))
 }
 
 /// Décode un WAV : PCM entier 8/16/24/32 bits, flottant 32/64 bits, y compris

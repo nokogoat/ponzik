@@ -6301,8 +6301,8 @@ msgstr "Fichiers"
 msgid "{} files"
 msgstr "{} fichiers"
 
-msgid "Only WAV files can be read for now"
-msgstr "Seuls les fichiers WAV sont lus pour l'instant"
+msgid "Only WAV, FLAC, MP3 and Ogg Vorbis files can be read for now"
+msgstr "Seuls les fichiers WAV, FLAC, MP3 et Ogg Vorbis sont lus pour l'instant"
 
 msgid "Ponzik can't use these files"
 msgstr "Ponzik ne sait pas utiliser ces fichiers"
