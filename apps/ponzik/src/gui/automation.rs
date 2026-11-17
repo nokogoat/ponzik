@@ -123,8 +123,7 @@ impl App {
         snap: f32,
     ) {
         let t = self.theme;
-        let lanes: Vec<AutoTarget> =
-            self.project.automation.iter().filter(|a| a.scope == AutoScope::Song).map(|a| a.target).collect();
+        let lanes = self.song_lane_targets();
         for (k, target) in lanes.into_iter().enumerate() {
             let row = Rect::new(area.x, y0 + k as f32 * AUTO_LANE_H, area.w, AUTO_LANE_H - 4.0);
             if row.y > area.bottom() {
@@ -137,7 +136,15 @@ impl App {
             let val_at = |y: f32| info.from_norm((g.bottom() - y) / g.h);
 
             let points = self.project.automation_lane(target, AutoScope::Song).map(|a| a.points.clone()).unwrap_or_default();
+            let lane_id = wid("auto-lane", k, 0);
             if points.is_empty() {
+                // Created by the pass being recorded: its name and what it holds so far.
+                let tw = self.fonts.measure(self.f.sans_med, 11.0, &label) + 16.0;
+                let chip = Rect::new(area.x + 6.0, row.y + 4.0, tw, 18.0);
+                c.fill_rrect(chip, 6.0, t.bg_deep.alpha(0.85));
+                self.text(c, self.f.sans_med, 11.0, chip.x + 8.0, chip.y + 9.0, &label, t.negative);
+                self.lane_arm(c, input, k, chip.right() + 12.0, chip.y + 9.0, target);
+                self.draw_pass(c, target, x_of, &y_of, area);
                 continue;
             }
             // Courbe : plate avant le premier point et après le dernier.
@@ -152,7 +159,6 @@ impl App {
             c.fill_path(&path, t.select.alpha(0.12));
             c.stroke_polyline(&pts, 1.6, t.select);
 
-            let lane_id = wid("auto-lane", k, 0);
             let hover_point = points.iter().position(|p| {
                 (input.x - x_of(p.tick as f32)).abs() < POINT_HIT && (input.y - y_of(p.value)).abs() < POINT_HIT
             });
@@ -163,6 +169,11 @@ impl App {
             let chip = Rect::new(area.x + 6.0, row.y + 4.0, tw, 18.0);
             c.fill_rrect(chip, 6.0, t.bg_deep.alpha(0.85));
             self.text(c, self.f.sans_med, 11.0, chip.x + 8.0, chip.y + 9.0, &label, t.select);
+            if self.lane_arm(c, input, k, chip.right() + 12.0, chip.y + 9.0, target) {
+                continue;
+            }
+            let arm_r = Rect::new(chip.right() + 2.0, chip.y - 1.0, 20.0, 20.0);
+            let over = over && !arm_r.contains(input.x, input.y);
             if over && input.right_pressed && chip.contains(input.x, input.y) {
                 self.project.automation.retain(|a| !(a.target == target && a.scope == AutoScope::Song));
                 self.commit(tr("Remove an automation"));
@@ -199,6 +210,7 @@ impl App {
                 self.commit(tr("Erase an automation point"));
             }
 
+            self.draw_pass(c, target, x_of, &y_of, area);
             for (i, p) in points.iter().enumerate() {
                 let (px, py) = (x_of(p.tick as f32), y_of(p.value));
                 if px < area.x - 8.0 || px > area.right() + 8.0 {

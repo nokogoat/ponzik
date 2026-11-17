@@ -124,6 +124,8 @@ pub enum Popup {
     SessionAssign { col: usize, row: usize },
     /// Menu d'un paramètre (clic droit sur un potard).
     Param { target: ponzik_engine::AutoTarget, value: f32, default: f32 },
+    /// Automation recording mode (right-click on its transport button).
+    AutoMode,
     /// Right-click on a control that is not a parameter (sends, transport).
     Control(ponzik_project::midi_map::ControlTarget),
     /// Nouveau projet : choix d'un modèle.
@@ -311,6 +313,7 @@ pub enum Action {
     RescanPlugins,
     /// Opens or closes a plugin device's own window.
     ToggleEditor(super::devices::Device),
+    SetAutoMode(ponzik_project::auto_rec::AutoMode),
     /// Waits for a MIDI control to move, then links it.
     Learn(ponzik_project::midi_map::ControlTarget),
     Unlink(ponzik_project::midi_map::ControlTarget),
@@ -609,6 +612,8 @@ pub struct App {
     pub mod_ui: super::modulators::ModUi,
     /// MIDI learn and the controller links.
     pub ctl: super::learn::CtlUi,
+    /// Live automation recording.
+    pub autorec: super::autorec::AutoRec,
 }
 
 impl App {
@@ -731,6 +736,7 @@ impl App {
             rack_chip: None,
             mod_ui: Default::default(),
             ctl: Default::default(),
+            autorec: Default::default(),
         };
         // What the cache knows; the background scan brings the rest.
         app.set_plugins(super::plugins::cached());
@@ -954,7 +960,17 @@ impl App {
         if self.project == self.synced {
             return;
         }
-        let merge = self.last_edit.as_ref().is_some_and(|(l, t)| l == label && self.time - t < 1.0);
+        // Moves recorded as automation: one undo step for the whole pass.
+        let rec_label = tr("Record automation");
+        let recorded = self.record_moves();
+        let (label, merge) = if recorded {
+            let open = self.autorec.pass_open && self.past.last().is_some_and(|(l, _)| l == rec_label);
+            self.autorec.pass_open = true;
+            (rec_label, open)
+        } else {
+            self.autorec.pass_open = false;
+            (label, self.last_edit.as_ref().is_some_and(|(l, t)| l == label && self.time - t < 1.0))
+        };
         self.future.clear();
         if !merge {
             self.past.push((label.to_string(), self.synced.clone()));
@@ -1004,8 +1020,20 @@ impl App {
         }
     }
 
+    /// The state the engine has (the base of the next undo step).
+    pub fn synced_project(&self) -> &Project {
+        &self.synced
+    }
+
+    /// Steps that can be undone.
+    #[cfg(test)]
+    pub fn history_len(&self) -> usize {
+        self.past.len()
+    }
+
     fn after_history(&mut self, msg: &str) {
         self.last_edit = None;
+        self.autorec.pass_open = false;
         self.modified = true;
         self.clamp_selection();
         self.sync_engine();
@@ -1686,6 +1714,7 @@ impl App {
         self.cursor = ponzik_window::Cursor::Arrow;
         self.poll_engine(dt);
         self.learn_tick();
+        self.autorec_tick();
         if self.ctl.learn.is_active() && input.keys.iter().any(|(k, _)| *k == Key::Escape) {
             self.ctl.learn.cancel();
         }
@@ -1798,7 +1827,7 @@ impl App {
 
         // Transport, centré ; l'espace de travail choisit ses éléments.
         let on = |b: Bar| self.bar_shown(b);
-        let widths = [(Bar::Mode, 142.0), (Bar::Pattern, 198.0), (Bar::Tap, 50.0), (Bar::Position, 138.0), (Bar::Scale, 134.0), (Bar::Metronome, 40.0), (Bar::Record, 80.0), (Bar::Keyboard, 40.0)];
+        let widths = [(Bar::Mode, 142.0), (Bar::Pattern, 198.0), (Bar::Tap, 50.0), (Bar::Position, 138.0), (Bar::Scale, 134.0), (Bar::Metronome, 40.0), (Bar::Record, 120.0), (Bar::Keyboard, 40.0)];
         let cluster = 46.0 + 54.0 + 120.0 - 4.0 + widths.iter().filter(|(b, _)| on(*b)).map(|(_, w)| w).sum::<f32>();
         let mut x = ((r.w - cluster) * 0.5).round().max(70.0 + wordmark + 24.0);
         let start = x;
@@ -1907,6 +1936,8 @@ impl App {
                 let col = if self.rec.clipped { self.theme.negative } else { self.theme.accent };
                 c.fill_rrect(Rect::new(mic.x + 8.0, mic.bottom() - 5.0, (mic.w - 16.0) * lv, 2.0), 1.0, col);
             }
+            x += 40.0;
+            self.auto_arm_button(c, input, Rect::new(x, cy - 18.0, 36.0, 36.0));
             x += 40.0;
         }
         if self.bar_shown(Bar::Keyboard) {
@@ -2817,6 +2848,7 @@ impl App {
                 v.extend(self.mod_menu_items(*target));
                 (label, v)
             }
+            Popup::AutoMode => (tr("Record automation").into(), self.auto_mode_items()),
             Popup::Control(target) => {
                 let mut v = Vec::new();
                 if *target == ponzik_project::midi_map::ControlTarget::Transport(ponzik_project::midi_map::TransportAction::Record) {
@@ -3244,6 +3276,7 @@ impl App {
             Action::ToggleEditor(device) => self.toggle_editor(device),
             Action::Automate(target, value) => self.create_automation(target, value),
             Action::Learn(target) => self.start_learn(target),
+            Action::SetAutoMode(m) => self.set_auto_mode(m),
             Action::Unlink(target) => self.unlink(target),
             Action::SaveAs => {
                 let text = self.project.name.clone();

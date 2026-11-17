@@ -5868,3 +5868,54 @@ msgstr "Délier le contrôleur"
 
 msgid "Unlinked: {}"
 msgstr "Délié : {}"
+
+msgid "Arm the lane: moves are recorded while the song plays"
+msgstr "Armer le couloir : les gestes sont enregistrés pendant la lecture du morceau"
+
+msgid "Armed lanes are overwritten from play to stop"
+msgstr "Les couloirs armés sont réécrits de la lecture à l'arrêt"
+
+msgid "Automation armed"
+msgstr "Automation armée"
+
+msgid "Automation plays back, nothing is recorded"
+msgstr "L'automation est lue, rien n'est enregistré"
+
+msgid "Automation recorded: {} lane"
+msgstr "Automation enregistrée : {} couloir"
+
+msgid "Automation recorded: {} lanes"
+msgstr "Automation enregistrée : {} couloirs"
+
+msgid "Automation records while the song plays (Song mode)"
+msgstr "L'automation s'enregistre pendant la lecture du morceau (mode morceau)"
+
+msgid "Automation: read"
+msgstr "Automation : lecture"
+
+msgid "Click: arm · right-click: Touch, Latch, Write"
+msgstr "Clic : armer · clic droit : Touch, Latch, Write"
+
+msgid "Disarm the lane"
+msgstr "Désarmer le couloir"
+
+msgid "Latch"
+msgstr "Latch"
+
+msgid "Read"
+msgstr "Lecture"
+
+msgid "Record automation"
+msgstr "Enregistrer l'automation"
+
+msgid "Records from the first move until you stop"
+msgstr "Enregistre du premier geste jusqu'à l'arrêt"
+
+msgid "Records while you hold a control, then returns to the curve"
+msgstr "Enregistre tant que vous tenez une commande, puis revient à la courbe"
+
+msgid "Touch"
+msgstr "Touch"
+
+msgid "Write"
+msgstr "Write"

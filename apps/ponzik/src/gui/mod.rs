@@ -8,6 +8,7 @@ mod app;
 mod arrange;
 mod assistant;
 mod automation;
+mod autorec;
 mod compat;
 mod devices;
 mod dnd;
@@ -652,6 +653,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // PONZIK_LEARN=pending|linked|settings: MIDI learn, controller links.
     if let Ok(spec) = std::env::var("PONZIK_LEARN") {
         app.screenshot_learn(&spec);
+    }
+    // PONZIK_AUTOREC=latch|touch|write: an automation pass being recorded.
+    if let Ok(spec) = std::env::var("PONZIK_AUTOREC") {
+        app.screenshot_autorec(&spec);
     }
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {

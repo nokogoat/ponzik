@@ -219,7 +219,7 @@ impl App {
             .chain(self.project.audio_clips.iter().map(|c| c.lane + 1))
             .max()
             .unwrap_or(0);
-        let autos = self.project.automation.iter().filter(|a| a.scope == ponzik_engine::AutoScope::Song).count();
+        let autos = self.song_lane_targets().len();
         let fit = ((lanes_r.h - autos as f32 * super::automation::AUTO_LANE_H) / LANE_H).floor().max(1.0) as usize;
         let lanes = (lanes_used + 1).max(fit).min(64);
 
