@@ -12,6 +12,7 @@ mod capture;
 mod autorec;
 mod browser;
 mod clip;
+mod comp;
 mod compat;
 mod devices;
 mod dnd;
@@ -676,6 +677,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // en boucle ; =devices : la liste des entrées.
     if let Ok(mode) = std::env::var("PONZIK_RECORD") {
         app.screenshot_record(&mode);
+    }
+    // PONZIK_COMP=1|folded|menu|take|solo|flat: a take group of three synthetic
+    // vocal passes and its comp.
+    if let Ok(spec) = std::env::var("PONZIK_COMP") {
+        app.screenshot_comp(&spec);
     }
     // PONZIK_ARRANGE=1|menu|sig: sections, a tempo ramp and a 3/4 section.
     if let Ok(spec) = std::env::var("PONZIK_ARRANGE") {

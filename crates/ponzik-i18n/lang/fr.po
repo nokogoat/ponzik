@@ -3622,9 +3622,6 @@ msgstr "La prise a atteint sa durée maximale (10 min)"
 msgid "Nothing was recorded inside the punch range"
 msgstr "Rien n'a été enregistré dans la zone de punch"
 
-msgid "{} takes recorded ({}), last full pass active · Alt+click a take to switch"
-msgstr "{} prises enregistrées ({}), dernier passage complet actif · Alt+clic sur une prise pour changer"
-
 msgid "Take recorded: {} ({:.1} s, aligned by {:.1} ms)"
 msgstr "Prise enregistrée : {} ({:.1} s, recalée de {:.1} ms)"
 
@@ -6670,3 +6667,171 @@ msgstr "{} dégelé : ses appareils jouent de nouveau"
 
 msgid "Take {}"
 msgstr "Prise {}"
+
+msgid "Audition alone"
+msgstr "Écouter seule"
+
+msgid "Audition this take alone"
+msgstr "Écouter cette prise seule"
+
+msgid "Auditioning {} alone · click again for the comp"
+msgstr "Écoute de {} seule · cliquez à nouveau pour la compilation"
+
+msgid "Back to the comp"
+msgstr "Revenir à la compilation"
+
+msgid "Click: this whole take plays · Q: quick swipe on"
+msgstr "Clic : toute la prise joue · Q : balayage rapide activé"
+
+msgid "Comp\nSwipe a take lane: that take plays there · click: the region between edges\nDrag an edge: move it · Alt+click: next take here\n↑ ↓: take under the playhead · S: split · Q: quick swipe\nRight-click: flatten, crossfade, unused takes"
+msgstr "Compilation\nBalayer une prise : elle joue à cet endroit · clic : la zone entre deux bords\nGlisser un bord : le déplacer · Alt+clic : prise suivante ici\n↑ ↓ : prise sous la tête de lecture · S : couper · Q : balayage rapide\nClic droit : aplatir, fondu enchaîné, prises inutilisées"
+
+msgid "Comp crossfade"
+msgstr "Fondu de la compilation"
+
+msgid "Comp flattened to {} · the takes stay, muted, on lane {}"
+msgstr "Compilation aplatie dans {} · les prises restent, muettes, sur la ligne {}"
+
+msgid "Comp under the playhead: {}"
+msgstr "Sous la tête de lecture : {}"
+
+msgid "Comp · {}"
+msgstr "Compilation · {}"
+
+msgid "Crossfade between comp segments\nDrag or scroll · equal power"
+msgstr "Fondu enchaîné entre les segments\nGlisser ou molette · puissance constante"
+
+msgid "Crossfade {} ms"
+msgstr "Fondu enchaîné {} ms"
+
+msgid "Delete take"
+msgstr "Supprimer la prise"
+
+msgid "Delete take group"
+msgstr "Supprimer le groupe de prises"
+
+msgid "Delete the take"
+msgstr "Supprimer la prise"
+
+msgid "Delete the take group"
+msgstr "Supprimer le groupe de prises"
+
+msgid "Delete unused takes"
+msgstr "Supprimer les prises inutilisées"
+
+msgid "Drag: move this comp edge"
+msgstr "Glisser : déplacer ce bord de la compilation"
+
+msgid "Every take plays a part of the comp"
+msgstr "Chaque prise joue une partie de la compilation"
+
+msgid "Flatten comp"
+msgstr "Aplatir la compilation"
+
+msgid "Fold takes"
+msgstr "Replier les prises"
+
+msgid "Hide the take lanes"
+msgstr "Masquer les lignes de prises"
+
+msgid "Move comp edge"
+msgstr "Déplacer un bord de la compilation"
+
+msgid "Move take group"
+msgstr "Déplacer le groupe de prises"
+
+msgid "Mute take group"
+msgstr "Couper le groupe de prises"
+
+msgid "Mute the takes"
+msgstr "Couper les prises"
+
+msgid "No comp segment under the playhead"
+msgstr "Aucun segment sous la tête de lecture"
+
+msgid "No crossfade"
+msgstr "Sans fondu enchaîné"
+
+msgid "Nothing to flatten: the comp is empty or a take file is missing"
+msgstr "Rien à aplatir : la compilation est vide ou un fichier de prise manque"
+
+msgid "On: drag across a take lane to comp · off: a click picks the whole take"
+msgstr "Activé : balayez une prise pour compiler · désactivé : un clic choisit toute la prise"
+
+msgid "Plays this take instead of the comp"
+msgstr "Joue cette prise à la place de la compilation"
+
+msgid "Put the playhead inside a comp segment to split it"
+msgstr "Placez la tête de lecture dans un segment pour le couper"
+
+msgid "Quick swipe"
+msgstr "Balayage rapide"
+
+msgid "Quick swipe off: click a take lane to play the whole take"
+msgstr "Balayage rapide désactivé : cliquez une prise pour la jouer en entier"
+
+msgid "Quick swipe on: drag across a take lane to comp"
+msgstr "Balayage rapide activé : balayez une prise pour compiler"
+
+msgid "Rename take"
+msgstr "Renommer la prise"
+
+msgid "Renders the comp to one audio clip · the takes stay, muted"
+msgstr "Rend la compilation en un seul clip audio · les prises restent, muettes"
+
+msgid "Show the take lanes"
+msgstr "Afficher les lignes de prises"
+
+msgid "Split at the playhead"
+msgstr "Couper à la tête de lecture"
+
+msgid "Split comp"
+msgstr "Couper la compilation"
+
+msgid "Swipe comp"
+msgstr "Balayer la compilation"
+
+msgid "Swipe: this take plays there · click: between the comp edges\nRight-click: take menu · Q: quick swipe off"
+msgstr "Balayer : cette prise joue à cet endroit · clic : entre les bords de la compilation\nClic droit : menu de la prise · Q : balayage rapide désactivé"
+
+msgid "Switch take"
+msgstr "Changer de prise"
+
+msgid "Take color"
+msgstr "Couleur de la prise"
+
+msgid "Unmute the takes"
+msgstr "Rétablir les prises"
+
+msgid "Use the whole take"
+msgstr "Utiliser toute la prise"
+
+msgid "{} comp {}"
+msgstr "{} compilation {}"
+
+msgid "{} take"
+msgstr "{} prise"
+
+msgid "{} takes"
+msgstr "{} prises"
+
+msgid "{} takes recorded ({}), last full pass in the comp · swipe the take lanes to comp"
+msgstr "{} prises enregistrées ({}), dernier passage complet dans la compilation · balayez les prises pour compiler"
+
+msgid "{} unused take deleted"
+msgstr "{} prise inutilisée supprimée"
+
+msgid "{} unused takes deleted"
+msgstr "{} prises inutilisées supprimées"
+
+msgid "{} · auditioning {}"
+msgstr "{} · écoute de {}"
+
+msgid "{} · comp of {} take"
+msgstr "{} · compilation de {} prise"
+
+msgid "{} · comp of {} takes"
+msgstr "{} · compilation de {} prises"
+
+msgid "{} · flattened, muted"
+msgstr "{} · aplati, muet"

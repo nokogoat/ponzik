@@ -139,6 +139,7 @@ pub fn project_samples(project: &Project) -> HashMap<String, Arc<Sample>> {
         .iter()
         .flat_map(|c| c.instrument.sample_paths())
         .chain(project.audio_clips.iter().map(|c| &c.path))
+        .chain(project.take_groups.iter().flat_map(|g| g.takes.iter().map(|t| &t.clip.path)))
         .chain(project.freeze_paths());
     for path in paths {
         if !samples.contains_key(path)
@@ -284,7 +285,7 @@ pub fn export_stems(
     loader: &dyn Fn(&str) -> Option<Arc<Sample>>,
     format: FileFormat,
 ) -> Result<(PathBuf, usize), String> {
-    if project.clips.is_empty() && project.audio_clips.is_empty() {
+    if project.clips.is_empty() && project.audio_clips.is_empty() && project.take_groups.is_empty() {
         return Err(tr("The playlist is empty: place patterns before exporting").into());
     }
     let dir = projects_dir().join("Exports").join(file_name(&project.name));

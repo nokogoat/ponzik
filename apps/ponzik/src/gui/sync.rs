@@ -143,6 +143,7 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: Loader) -> V
         || old.swing != new.swing
         || old.automation != new.automation
         || old.audio_clips != new.audio_clips
+        || old.take_groups != new.take_groups
         || n_old != n_new
         || (0..TRACKS.min(old.tracks.len()).min(new.tracks.len()))
             .any(|t| track_freeze(old, t, loader).is_some() != track_freeze(new, t, loader).is_some())

@@ -195,7 +195,7 @@ pub struct RecordState {
     calibrating: Option<f32>,
     pub calibration: Option<Calibration>,
     /// Capture d'écran : niveaux simulés, fichiers dans le dossier temporaire.
-    demo: bool,
+    pub(super) demo: bool,
 }
 
 impl RecordState {
@@ -572,33 +572,43 @@ impl App {
         self.samples.insert(key.clone(), Arc::new(Sample { name: name.clone(), sample_rate: rec.sample_rate, left, right, markers: Vec::new() }));
         self.waveforms.remove(&key);
 
-        let group = if slices.len() > 1 { self.project.audio_clips.iter().map(|c| c.take).max().unwrap_or(0) + 1 } else { 0 };
-        let base = self.project.clips.iter().map(|c| c.lane + 1).chain(self.project.audio_clips.iter().map(|c| c.lane + 1)).max().unwrap_or(0);
+        let base = self.used_lanes();
         let longest = slices.iter().map(|s| s.to - s.from).max().unwrap_or(0);
         let active = slices.iter().rposition(|s| (s.to - s.from) * 2 >= longest).unwrap_or(0);
-        for (k, s) in slices.iter().enumerate() {
-            let (start, offset) = clip_placement(s, spt, sr);
-            let end = s.tick + (s.to - s.from) as f64 / spt;
-            self.project.audio_clips.push(AudioClipDef {
-                path: key.clone(),
-                lane: (base + k).min(63),
-                track,
-                start,
-                len: (end - start as f64).round().max(1.0) as u32,
-                offset,
-                gain: 1.0,
-                fade_in: 0.003,
-                fade_out: 0.003,
-                take: group,
-                muted: k != active,
-                ..Default::default()
-            });
+        let clips: Vec<AudioClipDef> = slices
+            .iter()
+            .map(|s| {
+                let (start, offset) = clip_placement(s, spt, sr);
+                let end = s.tick + (s.to - s.from) as f64 / spt;
+                AudioClipDef {
+                    path: key.clone(),
+                    lane: base.min(63),
+                    track,
+                    start,
+                    len: (end - start as f64).round().max(1.0) as u32,
+                    offset,
+                    gain: 1.0,
+                    fade_in: 0.003,
+                    fade_out: 0.003,
+                    ..Default::default()
+                }
+            })
+            .collect();
+        if clips.len() > 1 {
+            // Loop recording: one take per pass, the last full one in the comp.
+            let takes = clips.into_iter().enumerate().map(|(k, clip)| ponzik_project::Take { name: tr_fmt!("Take {}", k + 1), clip }).collect();
+            let mut group = ponzik_project::TakeGroup::new(base.min(63), track, takes);
+            group.choose_whole(active);
+            self.project.take_groups.push(group);
+            self.comp.selected = Some(self.project.take_groups.len() - 1);
+        } else {
+            self.project.audio_clips.extend(clips);
         }
         self.commit(tr("Record audio"));
         let secs = len as f64 / sr;
         let ms = Latency::ms(shift as u32, sr as u32);
         if slices.len() > 1 {
-            self.toast(&tr_fmt!("{} takes recorded ({}), last full pass active · Alt+click a take to switch", slices.len(), name));
+            self.toast(&tr_fmt!("{} takes recorded ({}), last full pass in the comp · swipe the take lanes to comp", slices.len(), name));
         } else {
             self.toast(&tr_fmt!("Take recorded: {} ({:.1} s, aligned by {:.1} ms)", name, secs, ms));
         }
@@ -1136,7 +1146,7 @@ impl App {
 }
 
 /// Nom de fichier sans caractères gênants.
-fn file_safe(name: &str) -> String {
+pub(super) fn file_safe(name: &str) -> String {
     name.chars().map(|c| if c.is_alphanumeric() || " -_".contains(c) { c } else { '_' }).collect::<String>().trim().to_string()
 }
 

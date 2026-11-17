@@ -16,7 +16,7 @@ use super::widgets::{Icon, draw_icon, wid};
 
 const PALETTE_W: f32 = 196.0;
 const RULER: f32 = 30.0;
-const LANE_H: f32 = 52.0;
+pub(super) const LANE_H: f32 = 52.0;
 const EDGE: f32 = 8.0;
 const PLAYLIST_HELP: &str = tr_noop("Playlist
 Click: place the chosen pattern · edge: length
@@ -218,6 +218,7 @@ impl App {
             .iter()
             .map(|c| c.lane + 1)
             .chain(self.project.audio_clips.iter().map(|c| c.lane + 1))
+            .chain(self.project.take_groups.iter().map(|g| g.lane + 1))
             .max()
             .unwrap_or(0);
         let autos = self.song_lane_targets().len();
@@ -246,14 +247,21 @@ impl App {
         let ppt = self.playlist.zoom / TICKS_PER_BAR as f32;
         let x_of = |tick: f32| area.x + (tick - sx) * ppt;
         let tick_at = |x: f32| sx + (x - area.x) / ppt;
-        let lane_at = |y: f32| ((y - lanes_r.y) / LANE_H).floor().max(0.0);
+        // Lanes: unfolded take groups add their take lanes under theirs.
+        let layout = self.lane_layout(lanes_r.y, lanes);
+        let lane_at = |y: f32| layout.lane_at(y);
+        let lane_y = |l: usize| layout.y(l);
 
         let prev = c.push_clip(area);
         // Fond des pistes et grille.
         for l in 0..lanes {
-            let ly = lanes_r.y + l as f32 * LANE_H;
+            let ly = lane_y(l);
             if l % 2 == 1 {
                 c.fill_rect(Rect::new(area.x, ly, area.w, LANE_H), t.panel.alpha(0.35));
+            }
+            let takes = lane_y(l + 1) - ly - LANE_H;
+            if takes > 0.0 {
+                c.fill_rect(Rect::new(area.x, ly + LANE_H, area.w, takes), t.bg_deep.alpha(0.35));
             }
         }
         // Bars and beats of the time signature map.
@@ -308,8 +316,10 @@ impl App {
 
         // Clips.
         let grid_id = wid("pl-grid", 0, 0);
-        let clip_zone = Rect::new(lanes_r.x, lanes_r.y, lanes_r.w, lanes as f32 * LANE_H);
-        let over = input.inside && clip_zone.contains(input.x, input.y) && (self.drag.is_none() || self.is_dragging(grid_id));
+        let clip_zone = Rect::new(lanes_r.x, lanes_r.y, lanes_r.w, layout.bottom() - lanes_r.y);
+        // Take groups first: their lanes keep the pointer from the clips.
+        let comp_hot = self.comp_input(input, &layout, area, &x_of, &tick_at, &snap_round);
+        let over = !comp_hot && input.inside && clip_zone.contains(input.x, input.y) && (self.drag.is_none() || self.is_dragging(grid_id));
         let hit = |app: &App, x: f32, y: f32| -> Option<(usize, bool)> {
             let lane = lane_at(y) as usize;
             app.project.clips.iter().enumerate().rev().find_map(|(i, cl)| {
@@ -325,13 +335,13 @@ impl App {
             let tick = snap_floor(tick_at(input.x)) as u32;
             let x = x_of(tick as f32);
             // La zone part du point aimanté et contient toujours le curseur.
-            let zone = Rect::new(x, lanes_r.y + lane as f32 * LANE_H + 2.0, (ppt * 96.0 * 4.0).max(input.x - x + 2.0), LANE_H - 4.0);
+            let zone = Rect::new(x, lane_y(lane) + 2.0, (ppt * 96.0 * 4.0).max(input.x - x + 2.0), LANE_H - 4.0);
             self.drop_zone(input, zone, DropTarget::Lane { lane, tick });
         }
 
         // Clips audio : prioritaires sur les clips de pattern.
         let audio_id = wid("pl-audio", 0, 0);
-        let over_audio = input.inside && clip_zone.contains(input.x, input.y) && (self.drag.is_none() || self.is_dragging(audio_id));
+        let over_audio = !comp_hot && input.inside && clip_zone.contains(input.x, input.y) && (self.drag.is_none() || self.is_dragging(audio_id));
         let hover_audio = if over_audio {
             let lane = lane_at(input.y) as usize;
             self.project.audio_clips.iter().enumerate().rev().find_map(|(i, cl)| {
@@ -345,6 +355,7 @@ impl App {
             if input.pressed && input.mods.alt && self.drag.is_none() {
                 self.choose_take(i);
             } else if input.pressed && self.drag.is_none() {
+                self.comp.selected = None;
                 self.begin_drag(audio_id, input, 0.0);
                 let cl = &self.project.audio_clips[i];
                 let tick0 = tick_at(input.x);
@@ -401,6 +412,7 @@ impl App {
         }
 
         if over && input.pressed && self.drag.is_none() {
+            self.comp.selected = None;
             self.begin_drag(grid_id, input, 0.0);
             let tick = tick_at(input.x);
             let lane = lane_at(input.y);
@@ -435,11 +447,11 @@ impl App {
         }
         // Clic droit sur la barre de titre : menu du clip ; ailleurs (ou en
         // balayant, bouton maintenu) : effacer, comme dans FL Studio.
-        let on_title = |cl: &ClipDef| input.y - (lanes_r.y + cl.lane as f32 * LANE_H + 3.0) < CLIP_TITLE;
+        let on_title = |cl: &ClipDef| input.y - (lane_y(cl.lane) + 3.0) < CLIP_TITLE;
         if over && input.right_pressed && let Some((i, _)) = hover_clip && on_title(&self.project.clips[i]) {
             self.playlist.selected = Some(i);
             let cl = self.project.clips[i];
-            let title = Rect::new(x_of(cl.start as f32), lanes_r.y + cl.lane as f32 * LANE_H + 3.0, 0.0, CLIP_TITLE);
+            let title = Rect::new(x_of(cl.start as f32), lane_y(cl.lane) + 3.0, 0.0, CLIP_TITLE);
             self.open_popup(Popup::ClipMenu(i), Rect::new(input.x, title.y, 0.0, title.h));
         } else if over && input.right_down && self.popup.is_none() && let Some((i, _)) = hover_clip {
             self.project.clips.remove(i);
@@ -488,6 +500,7 @@ impl App {
             _ => {}
         }
         if self.popup.is_none() && !self.sidebar_focus {
+            self.comp_keys(input);
             for &(key, mods) in &input.keys {
                 let sel = self.playlist.selected.filter(|&i| i < self.project.clips.len());
                 let audio_sel = match self.clip_panel_shown() {
@@ -546,7 +559,7 @@ impl App {
         for (i, cl) in self.project.clips.clone().iter().enumerate() {
             let r = Rect::new(
                 x_of(cl.start as f32) + 1.0,
-                lanes_r.y + cl.lane as f32 * LANE_H + 3.0,
+                lane_y(cl.lane) + 3.0,
                 (cl.len as f32 * ppt - 2.0).max(4.0),
                 LANE_H - 6.0,
             );
@@ -609,7 +622,7 @@ impl App {
         for (i, cl) in self.project.audio_clips.clone().iter().enumerate() {
             let r = Rect::new(
                 x_of(cl.start as f32) + 1.0,
-                lanes_r.y + cl.lane as f32 * LANE_H + 3.0,
+                lane_y(cl.lane) + 3.0,
                 (cl.len as f32 * ppt - 2.0).max(4.0),
                 LANE_H - 6.0,
             );
@@ -679,8 +692,11 @@ impl App {
             }
         }
 
+        // Take groups: comp lanes, take lanes.
+        self.draw_comps(c, input, &layout, area, &x_of, &tick_at);
+
         // Couloirs d'automation, sous les clips.
-        let auto_y = lanes_r.y + lanes as f32 * LANE_H + 4.0;
+        let auto_y = layout.bottom() + 4.0;
         if autos > 0 {
             c.fill_rect(Rect::new(area.x, auto_y - 3.0, area.w, 1.0), t.hairline.alpha(2.0));
             self.automation_lanes(c, input, area, auto_y, &x_of, &tick_at, 96.0);

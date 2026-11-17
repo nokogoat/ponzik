@@ -181,6 +181,11 @@ pub enum Popup {
     FrozenEdit(ponzik_project::FreezeTarget),
     /// Clic droit sur un pattern de la liste de la playlist.
     PatternMenu(usize),
+    /// Right-click on a take group's comp lane.
+    CompMenu(usize),
+    /// Right-click on a take lane: (group, take).
+    TakeMenu(usize, usize),
+    TakeColor(usize, usize),
     /// Couleur d'un pattern.
     PatternColor(usize),
     /// Réglages : espace de travail (0) ou raccourcis (1).
@@ -211,6 +216,8 @@ pub enum Rename {
     Pattern(usize),
     Track(usize),
     Marker(usize),
+    /// A take of a take group: (group, take).
+    Take(usize, usize),
 }
 
 /// Format badge of a plugin device kind (`CLAP`, `VST3`), none for native devices.
@@ -297,6 +304,8 @@ pub enum Action {
     /// One file per arrangement section.
     ExportSections(ponzik_project::ExportOptions),
     Marker(usize, super::arrange::MarkerOp),
+    /// An edit of a take group.
+    Comp(usize, super::comp::CompOp),
     /// Adds a marker at the playhead.
     AddMarkerHere,
     SetSignature(u32, u8, u8),
@@ -605,6 +614,8 @@ pub struct App {
     melodic: HashMap<String, bool>,
     pub piano_drag: Option<super::piano::PianoDrag>,
     pub clip_drag: Option<super::playlist::ClipDrag>,
+    /// Take comping: selected group, quick swipe, gesture.
+    pub comp: super::comp::CompUi,
     /// Gesture on the arrangement or tempo lane.
     pub arrange_drag: Option<super::arrange::ArrangeDrag>,
     /// Length of the count-in in progress, in ticks (one bar of the signature).
@@ -776,6 +787,7 @@ impl App {
             melodic: HashMap::new(),
             piano_drag: None,
             clip_drag: None,
+            comp: Default::default(),
             arrange_drag: None,
             count_bar: TICKS_PER_BAR as f64,
             preview: None,
@@ -1044,7 +1056,7 @@ impl App {
     }
 
     /// Envoie au moteur la différence entre ce qu'il a et le projet courant.
-    fn sync_engine(&mut self) {
+    pub(super) fn sync_engine(&mut self) {
         let cmds = {
             let loader = self.sample_loader();
             super::sync::diff(&self.synced, &self.project, self.sample_rate as f32, &loader)
@@ -1173,6 +1185,7 @@ impl App {
             .iter()
             .flat_map(|c| c.instrument.sample_paths().cloned())
             .chain(project.audio_clips.iter().map(|c| c.path.clone()))
+            .chain(project.take_groups.iter().flat_map(|g| g.takes.iter().map(|t| t.clip.path.clone())))
             .collect();
         for path in paths {
             self.ensure_sample(&path);
@@ -1777,6 +1790,7 @@ impl App {
                 self.mixer_sel.clear();
                 self.piano.selected.clear();
                 self.playlist.selected = None;
+                self.comp.selected = None;
                 if let Some((v, _, _)) = self.time_selection.take() {
                     self.set_loop(v, None);
                 }
@@ -3477,6 +3491,9 @@ impl App {
             Popup::AudioClipMenu(i) => self.audio_clip_menu(*i),
             Popup::FrozenEdit(target) => self.frozen_edit_menu(*target),
             Popup::MarkerMenu(i) => self.marker_menu(*i),
+            Popup::CompMenu(g) => self.comp_menu(*g),
+            Popup::TakeMenu(g, k) => self.take_menu(*g, *k),
+            Popup::TakeColor(g, k) => self.take_color_menu(*g, *k),
             Popup::MarkerColor(i) => self.marker_color_menu(*i),
             Popup::Signature(tick) => self.signature_menu(*tick),
             Popup::Tools => self.tools_menu(),
@@ -3715,6 +3732,7 @@ impl App {
             Action::ExportStems(format) => self.export_stems(format),
             Action::ExportSections(options) => self.export_sections(options),
             Action::Marker(i, op) => self.marker_op(i, op),
+            Action::Comp(g, op) => self.comp_op(g, op),
             Action::AddMarkerHere => {
                 let tick = self.project.tempo_map().snap_bar(self.playhead());
                 if self.project.markers.iter().any(|m| m.tick == tick) {
@@ -3848,6 +3866,13 @@ impl App {
                 if let Some(m) = self.project.markers.get_mut(i) {
                     m.name = text.into();
                     self.commit(tr("Rename marker"));
+                }
+                return;
+            }
+            Rename::Take(g, k) => {
+                if let Some(t) = self.project.take_groups.get_mut(g).and_then(|g| g.takes.get_mut(k)) {
+                    t.name = text.into();
+                    self.commit(tr("Rename take"));
                 }
                 return;
             }
