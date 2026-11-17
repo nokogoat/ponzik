@@ -16,7 +16,7 @@ use ponzik_i18n::{tr, tr_fmt, tr_fmt_n};
 
 use ponzik_audio::{DeviceInfo, Latency, OutputStream};
 use ponzik_engine::input::{CALIBRATION_SECONDS, clip_placement, measure_round_trip, take_slices};
-use ponzik_engine::mixer::{MASTER, TRACKS};
+use ponzik_engine::mixer::MASTER;
 use ponzik_engine::{Command, InputSource, InputStrip, PlayMode, RecordBuffer, Sample};
 use ponzik_project::{AudioClipDef, BitDepth};
 use ponzik_ui::{Canvas, Color, Rect};
@@ -203,6 +203,14 @@ impl RecordState {
         self.armed.iter().any(|&(t, _)| t == track)
     }
 
+    /// Armed tracks and takes follow their track to its new number; those of
+    /// a deleted track are dropped (the engine ends their take).
+    pub(super) fn follow_tracks(&mut self, map: impl Fn(usize) -> Option<usize>) {
+        self.armed = self.armed.iter().filter_map(|&(t, s)| Some((map(t)?, s))).collect();
+        self.in_engine = self.in_engine.iter().filter_map(|&(t, s)| Some((map(t)?, s))).collect();
+        self.granted = self.granted.iter().filter_map(|&(t, n, at)| Some((map(t)?, n, at))).collect();
+    }
+
     /// Vrai quand quelque chose bouge (VU-mètre, calibrage).
     pub fn needs_redraw(&self) -> bool {
         (self.input.is_some() && (self.panel || !self.armed.is_empty())) || self.calibrating.is_some()
@@ -330,10 +338,8 @@ impl App {
         if let Some(output) = self.rec.output.as_mut() {
             let _ = output.set_input(None);
         }
-        for track in 0..TRACKS {
-            if self.rec.is_armed(track) {
-                self.send(Command::SetMonitor { track, source: None });
-            }
+        for (track, _) in self.rec.armed.clone() {
+            self.send(Command::SetMonitor { track, source: None });
         }
     }
 
@@ -540,7 +546,7 @@ impl App {
             self.toast(tr("Nothing was recorded inside the punch range"));
             return;
         }
-        let track = rec.track.min(TRACKS - 1);
+        let track = rec.track.min(self.project.tracks.len() - 1);
         let track_name = self.project.tracks[track].name.clone();
         let dir = if self.rec.demo { std::env::temp_dir().join("ponzik-takes") } else { compat::projects_dir().join("Recordings") };
         let _ = std::fs::create_dir_all(&dir);

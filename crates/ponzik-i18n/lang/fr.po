@@ -1293,8 +1293,8 @@ msgstr "Déplier · {} piste"
 msgid "Fold · {} track"
 msgstr "Replier · {} piste"
 
-msgid "Double-click: rename · Ctrl+click: multi-select · right-click: menu"
-msgstr "Double-clic : renommer · Ctrl+clic : sélection multiple · clic droit : menu"
+msgid "Double-click: rename · drag: move · Ctrl+click: multi-select · right-click: menu"
+msgstr "Double-clic : renommer · glisser : déplacer · Ctrl+clic : sélection multiple · clic droit : menu"
 
 msgid "Bus: other tracks output into it, its effects process their sum"
 msgstr "Bus : d'autres pistes y sortent, ses effets traitent leur somme"
@@ -7012,3 +7012,53 @@ msgstr "{} · compilation de {} prises"
 
 msgid "{} · flattened, muted"
 msgstr "{} · aplati, muet"
+
+# --- Mixer tracks: add, insert, delete, move ---
+
+msgid "A mixer track of its own, at the end of the mixer"
+msgstr "Une piste de mixer à lui, au bout du mixer"
+
+msgid "Add track"
+msgstr "Ajouter une piste"
+
+msgid "Add track\n{} tracks in the mixer"
+msgstr "Ajouter une piste\n{} pistes dans le mixer"
+
+msgid "An empty track here, the next ones move right"
+msgstr "Une piste vide ici, les suivantes se décalent à droite"
+
+msgid "Compact strips"
+msgstr "Tranches compactes"
+
+msgid "Full strips"
+msgstr "Tranches complètes"
+
+msgid "Delete track"
+msgstr "Supprimer la piste"
+
+msgid "Insert track"
+msgstr "Insérer une piste"
+
+msgid "Move a track"
+msgstr "Déplacer une piste"
+
+msgid "Or drag the strip by its name"
+msgstr "Ou faites glisser la tranche par son nom"
+
+msgid "Route to new track"
+msgstr "Router vers une nouvelle piste"
+
+msgid "The mixer is full ({} tracks)"
+msgstr "Le mixer est plein ({} pistes)"
+
+msgid "Track"
+msgstr "Piste"
+
+msgid "What goes into it goes where it went · Ctrl+Z brings it back"
+msgstr "Ce qui y entre va là où elle sortait · Ctrl+Z la ramène"
+
+msgid "{}\nDouble-click: rename · drag: move · right-click: menu"
+msgstr "{}\nDouble-clic : renommer · glisser : déplacer · clic droit : menu"
+
+msgid "{} plays on track {}"
+msgstr "{} joue sur la piste {}"

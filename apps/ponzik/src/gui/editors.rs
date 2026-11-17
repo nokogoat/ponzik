@@ -105,6 +105,26 @@ impl PluginEditors {
                     None => self.inserts.remove(&(*track, *slot)),
                 };
             }
+            Command::RemapTracks(remap) => {
+                // The effects move with their track; those of a deleted track go.
+                let moved = |d: Device| match d {
+                    Device::Effect { track, slot } => remap.new_index(track).map(|track| Device::Effect { track, slot }),
+                    Device::RackUnit { track, slot, unit } => remap.new_index(track).map(|track| Device::RackUnit { track, slot, unit }),
+                    d => Some(d),
+                };
+                let gone: Vec<Device> = self.open.iter().map(|w| w.device).filter(|&d| moved(d).is_none()).collect();
+                for d in gone {
+                    self.discard(d);
+                }
+                for w in &mut self.open {
+                    w.device = moved(w.device).unwrap_or(w.device);
+                }
+                self.inserts = std::mem::take(&mut self.inserts)
+                    .into_iter()
+                    .filter_map(|((t, s), e)| Some(((remap.new_index(t)?, s), e)))
+                    .collect();
+                self.positions = std::mem::take(&mut self.positions).into_iter().filter_map(|(d, p)| Some((moved(d)?, p))).collect();
+            }
             Command::SetInstrumentParam { channel, id, value } => {
                 if let Some(Some(e)) = self.channels.get(*channel) {
                     e.param_changed(*id, *value);

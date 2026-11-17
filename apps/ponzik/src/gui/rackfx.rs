@@ -432,7 +432,7 @@ impl App {
     /// parallel, macros mapped), focused, the saturator open.
     pub fn screenshot_rack(&mut self, spec: &str) {
         use ponzik_engine::effects::fx_rack::unit_param;
-        let track = spec.trim().parse::<usize>().ok().filter(|&t| t > 0 && t < ponzik_engine::mixer::TRACKS).unwrap_or(1);
+        let track = spec.trim().parse::<usize>().ok().filter(|&t| t > 0 && t < self.project.tracks.len()).unwrap_or(1);
         let Some(slot) = self.project.tracks[track].inserts.iter().position(Option::is_none) else { return };
         let mut fx = ponzik_project::EffectDef::new_rack();
         for kind in ["eq", "saturator", "chorus"] {

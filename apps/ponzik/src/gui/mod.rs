@@ -45,6 +45,7 @@ mod warping;
 mod theme;
 mod tools;
 mod tour;
+mod tracks;
 mod widgets;
 
 use std::time::{Duration, Instant};
@@ -639,7 +640,7 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     if let Ok(spec) = std::env::var("PONZIK_INSERTS") {
         for part in spec.split(';') {
             let Some((track, list)) = part.split_once(':') else { continue };
-            let track = track.trim().parse::<usize>().ok().filter(|&t| t < ponzik_engine::mixer::TRACKS);
+            let track = track.trim().parse::<usize>().ok().filter(|&t| t < app.project.tracks.len());
             let Some(track) = track else { continue };
             for item in list.split(',') {
                 let (kind, key) = item.split_once('@').map_or((item, None), |(k, key)| (k, key.trim().parse().ok()));
@@ -677,6 +678,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // dernier bus, VCA, sélection et retours d'effet créés pour la capture.
     if let Ok(spec) = std::env::var("PONZIK_MIXER") {
         app.screenshot_mixer(&spec);
+    }
+    // PONZIK_TRACKS=64[,compact][,end][,drag:3>9][,menu:5]: the demo grown to
+    // that many mixer tracks, every track shown.
+    if let Ok(spec) = std::env::var("PONZIK_TRACKS") {
+        app.screenshot_tracks(&spec);
     }
     // PONZIK_SAMPLELAB=demo|<wav> : ouvre l'Atelier sur un échantillon.
     if let Ok(spec) = std::env::var("PONZIK_SAMPLELAB") {

@@ -6,9 +6,9 @@
 
 use std::sync::Arc;
 
-use ponzik_engine::mixer::{INSERT_SLOTS, SEND_SLOTS, TRACKS};
+use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS, default_order};
 use ponzik_engine::{Command, Frozen, NOTE_FX_SLOTS, Sample, registry};
-use ponzik_project::{InstrumentDef, Project};
+use ponzik_project::{InstrumentDef, Project, TrackDef};
 
 type Loader<'a> = &'a dyn Fn(&str) -> Option<Arc<Sample>>;
 
@@ -61,6 +61,34 @@ fn same_instrument(a: &InstrumentDef, b: &InstrumentDef) -> bool {
 
 pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: Loader) -> Vec<Command> {
     let mut cmds = Vec::new();
+
+    // Tracks added, deleted or moved: the engine takes the new layout first
+    // (it renumbers its channels and routing), then everything below compares
+    // each track with what it was (a new track with an empty one).
+    let layout = new.track_layout(old);
+    let was: Vec<Option<usize>> = match &layout {
+        Some(from) => from.clone(),
+        None => (0..new.tracks.len()).map(|t| (t < old.tracks.len()).then_some(t)).collect(),
+    };
+    if let Some(from) = &layout {
+        let order = new.routing_order().unwrap_or_else(|| default_order(new.tracks.len()));
+        cmds.push(ponzik_engine::track_remap(sample_rate, from, order));
+    }
+    let mut moved = vec![MASTER; old.tracks.len()];
+    for (t, &w) in was.iter().enumerate() {
+        if let Some(o) = w {
+            moved[o] = t;
+        }
+    }
+    // Where the engine has a track of `old` now.
+    let moved_track = |o: usize| moved.get(o).copied().unwrap_or(MASTER);
+    // Some track changed number (not just tracks added at the end): clips and lanes follow.
+    let renumbered = (0..old.tracks.len()).any(|o| moved_track(o) != o);
+    let blank = TrackDef::new("");
+    // Old place of the track now at `t` (`None`: a new track).
+    let was_at = |t: usize| was.get(t).copied().flatten();
+    let old_track = |t: usize| was_at(t).map_or(&blank, |o| &old.tracks[o]);
+    let old_freeze = |t: usize| was_at(t).and_then(|o| track_freeze(old, o, loader));
 
     // Canaux : par position ; un retrait au milieu remplace les suivants.
     let (n_old, n_new) = (old.channels.len(), new.channels.len());
@@ -122,7 +150,7 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: Loader) -> V
         if a.muted != b.muted {
             cmds.push(Command::SetChannelMute { channel: i, muted: b.muted });
         }
-        if a.track != b.track {
+        if moved_track(a.track) != b.track {
             cmds.push(Command::SetChannelTrack { channel: i, track: b.track });
         }
         // After the parameters: the set reads its base values from `new`.
@@ -147,8 +175,8 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: Loader) -> V
         || old.session_live != new.session_live
         || old.loop_range != new.loop_range
         || n_old != n_new
-        || (0..TRACKS.min(old.tracks.len()).min(new.tracks.len()))
-            .any(|t| track_freeze(old, t, loader).is_some() != track_freeze(new, t, loader).is_some())
+        || renumbered
+        || (0..new.tracks.len()).any(|t| old_freeze(t).is_some() != track_freeze(new, t, loader).is_some())
     {
         cmds.push(Command::SetSequence(Box::new(new.sequence_for(sample_rate, loader, &|job| ponzik_project::warp::cached(job.key)))));
     }
@@ -157,9 +185,9 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: Loader) -> V
     let mut routing = false;
     // Tracks frozen or thawed: their inserts and modulators are unloaded or come back.
     let mut refrozen = Vec::new();
-    for t in 0..TRACKS.min(old.tracks.len()).min(new.tracks.len()) {
+    for t in 0..new.tracks.len() {
         let frozen = track_freeze(new, t, loader);
-        if track_freeze(old, t, loader) != frozen {
+        if old_freeze(t) != frozen {
             refrozen.push(t);
             routing = true;
             let def = &new.tracks[t];
@@ -175,8 +203,8 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: Loader) -> V
             cmds.push(Command::SetTrackFrozen { track: t, frozen: player });
         }
     }
-    for t in 0..TRACKS.min(old.tracks.len()).min(new.tracks.len()) {
-        let (a, b) = (&old.tracks[t], &new.tracks[t]);
+    for t in 0..new.tracks.len() {
+        let (a, b) = (old_track(t), &new.tracks[t]);
         let unloaded = refrozen.contains(&t) || track_freeze(new, t, loader).is_some();
         if a.gain != b.gain {
             cmds.push(Command::SetTrackGain { track: t, gain: b.gain });
@@ -187,15 +215,19 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: Loader) -> V
         if a.muted != b.muted {
             cmds.push(Command::SetTrackMute { track: t, muted: b.muted });
         }
-        if a.output != b.output {
+        // The engine renumbered the links of a moved track: compare them renumbered.
+        let link = |x: usize| if was_at(t).is_some() { moved_track(x) } else { x };
+        if link(a.output) != b.output {
             cmds.push(Command::SetTrackOutput { track: t, output: b.output });
             routing = true;
         }
-        if a.vca != b.vca {
+        if a.vca.map(link).filter(|&v| v != MASTER) != b.vca {
             cmds.push(Command::SetTrackVca { track: t, vca: b.vca });
         }
         for s in 0..SEND_SLOTS {
-            if a.sends[s] != b.sends[s] {
+            let (x, level) = a.sends[s];
+            let sent = if x != MASTER && link(x) == MASTER { (MASTER, 0.0) } else { (link(x), level) };
+            if sent != b.sends[s] {
                 let (target, amount) = b.sends[s];
                 cmds.push(Command::SetTrackSend { track: t, slot: s, target, amount });
                 routing = true;
@@ -214,7 +246,7 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: Loader) -> V
                     if x.bypass != y.bypass {
                         cmds.push(Command::SetInsertBypass { track: t, slot, bypass: y.bypass });
                     }
-                    if x.sidechain != y.sidechain {
+                    if x.sidechain.map(link).filter(|&k| k != MASTER || x.sidechain == Some(MASTER)) != y.sidechain {
                         cmds.push(Command::SetInsertSidechain { track: t, slot, key: y.sidechain });
                         routing = true;
                     }
@@ -236,13 +268,15 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: Loader) -> V
         }
     }
     // Modulators after the inserts they drive; a replaced insert takes them again.
-    for t in 0..TRACKS.min(old.tracks.len()).min(new.tracks.len()) {
+    for t in 0..new.tracks.len() {
         if refrozen.contains(&t) || track_freeze(new, t, loader).is_some() {
             continue;
         }
-        let (a, b) = (&old.tracks[t], &new.tracks[t]);
+        let (a, b) = (old_track(t), &new.tracks[t]);
         let replaced = (0..INSERT_SLOTS).any(|s| a.inserts[s].as_ref().map(|f| &f.kind) != b.inserts[s].as_ref().map(|f| &f.kind));
-        if a.modulators != b.modulators || (replaced && !b.modulators.is_empty()) {
+        // A moved track: its modulator meters follow its new number.
+        let renumbered = was_at(t) != Some(t) && !b.modulators.is_empty();
+        if a.modulators != b.modulators || (replaced && !b.modulators.is_empty()) || renumbered {
             cmds.push(Command::SetTrackModulators { track: t, mods: new.make_track_mods(t) });
         }
     }
@@ -345,8 +379,8 @@ mod tests {
         let mut d = c.clone();
         let vca = d.add_vca(&[3, 4]).unwrap();
         let cmds = diff(&c, &d, 48_000.0, &none);
-        assert_eq!(names(&cmds), ["SetTrackVca", "SetTrackVca"]);
-        assert!(matches!(cmds[0], Command::SetTrackVca { track: 3, vca: Some(v) } if v == vca));
+        assert_eq!(names(&cmds), ["RemapTracks", "SetTrackVca", "SetTrackVca"], "a new track at the end");
+        assert!(matches!(cmds[1], Command::SetTrackVca { track: 3, vca: Some(v) } if v == vca));
     }
 
     #[test]
@@ -375,6 +409,67 @@ mod tests {
         e.tracks[3].inserts[6] = Some(EffectDef::new("reverb"));
         let n = names(&diff(&d, &e, 48_000.0, &none));
         assert_eq!(n.last().map(String::as_str), Some("SetTrackModulators"));
+    }
+
+    /// Renders `blocks` blocks of `p` from the start, after `edit` (commands
+    /// sent before the first block).
+    fn render_after(p: &Project, edit: Vec<Command>, blocks: usize) -> Vec<f32> {
+        let (mut engine, mut handle) = p.build_engine(48_000.0, &none);
+        for cmd in edit {
+            handle.send(cmd).unwrap();
+        }
+        handle.send(Command::Play).unwrap();
+        let mut buf = [0.0f32; 2 * 256];
+        let mut out = Vec::new();
+        for _ in 0..blocks {
+            engine.process(&mut buf, 2);
+            out.extend_from_slice(&buf);
+            handle.collect_garbage();
+        }
+        out
+    }
+
+    #[test]
+    fn track_layout_changes_play_like_a_fresh_engine() {
+        use ponzik_project::EffectDef;
+        let mut a = demo_project();
+        // Routing worth renumbering: a bus with a limiter, a return, a sidechain key, a VCA.
+        let bus = a.add_bus(&[2, 3]).unwrap();
+        a.tracks[bus].inserts[0] = Some(EffectDef::new("limiter"));
+        let ret = a.add_return("reverb", Some(1)).unwrap();
+        let mut duck = EffectDef::new("compressor");
+        duck.sidechain = Some(1);
+        a.tracks[4].inserts[2] = Some(duck);
+        a.add_vca(&[bus, 4]);
+        a.tracks[ret].gain = 0.7;
+        type Edit = (&'static str, fn(&mut Project));
+        let edits: [Edit; 5] = [
+            ("insert", |p| assert!(p.insert_track(2).is_some())),
+            ("delete", |p| assert!(p.delete_track(3))),
+            ("move", |p| assert!(p.move_track(1, 20))),
+            ("append", |p| assert!(p.add_track().is_some())),
+            ("move the bus", |p| assert!(p.move_track(p.track_count() - 3, 1))),
+        ];
+        for (what, edit) in edits {
+            let mut b = a.clone();
+            edit(&mut b);
+            let cmds = diff(&a, &b, 48_000.0, &none);
+            assert!(matches!(cmds.first(), Some(Command::RemapTracks(_))), "{what}: {:?}", names(&cmds));
+            let n = names(&cmds);
+            assert!(!n.iter().any(|c| c == "SetInsert" || c == "SetChannelTrack"), "{what}: the engine moves them: {n:?}");
+            let edited = render_after(&a, cmds, 120);
+            let fresh = render_after(&b, Vec::new(), 120);
+            assert!(edited.iter().any(|s| s.abs() > 0.01), "{what}");
+            let at = edited.iter().zip(&fresh).position(|(x, y)| x.to_bits() != y.to_bits());
+            assert_eq!(at, None, "{what}: the edited engine plays like one built for the new layout");
+            // Undo: back to the old layout.
+            let back = diff(&b, &a, 48_000.0, &none);
+            assert!(matches!(back.first(), Some(Command::RemapTracks(_))), "{what}");
+        }
+        // Nothing moved: no remap.
+        let mut c = a.clone();
+        c.tracks[5].gain = 0.5;
+        assert_eq!(names(&diff(&a, &c, 48_000.0, &none)), ["SetTrackGain"]);
     }
 
     #[test]

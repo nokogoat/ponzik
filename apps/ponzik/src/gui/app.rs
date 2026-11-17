@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use ponzik_dsp::loudness::LoudnessMeter;
 use ponzik_dsp::spectrum::SpectrumAnalyzer;
-use ponzik_engine::mixer::{MASTER, TRACKS};
+use ponzik_engine::mixer::MASTER;
 use ponzik_engine::registry;
 use ponzik_engine::{Command, EngineHandle, PlayMode, Sample, TICKS_PER_BAR, TICKS_PER_STEP};
 use ponzik_i18n::{tr, tr_ctx, tr_fmt, tr_noop};
@@ -270,6 +270,13 @@ pub enum Action {
     /// Piste clé d'un insert (piste, emplacement), ou aucune.
     SetSidechain(usize, usize, Option<usize>),
     ResetTrack(usize),
+    /// An empty mixer track at this place.
+    InsertTrack(usize),
+    DeleteTrack(usize),
+    /// Moves a track (from, to).
+    MoveTrack(usize, usize),
+    /// The channel gets a new track of its own.
+    RouteToNewTrack(usize),
     PlayStop,
     ToggleMode,
     ToggleMetronome,
@@ -552,6 +559,14 @@ pub struct App {
     pub mixer_scroll: f32,
     /// Tranches du mixer choisies par Ctrl+clic (à grouper dans un bus ou un VCA).
     pub mixer_sel: Vec<usize>,
+    /// Narrow mixer strips: name, pan, fader and meter only.
+    pub mixer_compact: bool,
+    /// Tracks added by hand this session (identities): shown even while empty.
+    pub mixer_shown: Vec<u32>,
+    /// Track whose strip is dragged by its name, to move it.
+    pub track_drag: Option<super::tracks::TrackDrag>,
+    /// Track to scroll into view at the next mixer frame.
+    pub mixer_reveal: Option<usize>,
     pub samples: HashMap<String, Arc<Sample>>,
     /// Background renders of the warped audio clips.
     pub warping: super::warping::Warping,
@@ -750,6 +765,10 @@ impl App {
             chain_scroll: 0.0,
             mixer_scroll: 0.0,
             mixer_sel: Vec::new(),
+            mixer_compact: false,
+            mixer_shown: Vec::new(),
+            track_drag: None,
+            mixer_reveal: None,
             samples: HashMap::new(),
             warping: Default::default(),
             onsets: HashMap::new(),
@@ -772,7 +791,7 @@ impl App {
             metronome: false,
             position: 0.0,
             channel_meters: vec![Meter::default(); channels],
-            track_meters: vec![Meter::default(); TRACKS],
+            track_meters: Vec::new(),
             scope: vec![0.0; SCOPE_LEN],
             scope_at: 0,
             scope_new: Vec::with_capacity(SCOPE_LEN),
@@ -1060,6 +1079,13 @@ impl App {
 
     /// Envoie au moteur la différence entre ce qu'il a et le projet courant.
     pub(super) fn sync_engine(&mut self) {
+        // Tracks added, deleted or moved (edit, undo, another project): what
+        // points at tracks in the interface follows them.
+        let layout = self.project.track_layout(&self.synced);
+        let solo = self.solo;
+        if let Some(from) = &layout {
+            self.follow_track_layout(from);
+        }
         let cmds = {
             let loader = self.sample_loader();
             super::sync::diff(&self.synced, &self.project, self.sample_rate as f32, &loader)
@@ -1079,6 +1105,9 @@ impl App {
             self.refresh_warps();
         }
         self.channel_meters.resize(self.project.channels.len(), Meter::default());
+        if layout.is_some() && solo.is_some() {
+            self.apply_solo();
+        }
     }
 
     /// À appeler après chaque modification du projet. Les gestes continus (même
@@ -1295,8 +1324,7 @@ impl App {
         let bpm = ponzik_project::warp::detect_tempo(&sample);
         let warp = bpm.is_some_and(|b| ponzik_project::warp::is_loop(&sample, b));
         let name = std::path::Path::new(path).file_stem().map_or(tr("Audio").to_string(), |s| s.to_string_lossy().into_owned());
-        let used: Vec<usize> = self.project.channels.iter().map(|c| c.track).collect();
-        let track = (1..TRACKS).find(|t| !used.contains(t) && !self.track_in_use(*t)).unwrap_or(1);
+        let track = self.project.free_or_new_track().unwrap_or(1);
         self.project.tracks[track].name = name.clone();
         let lane = self.project.clips.iter().map(|c| c.lane + 1).chain(self.project.audio_clips.iter().map(|c| c.lane + 1)).max().unwrap_or(0);
         let start = (self.start_marker.max(0.0) as u32 / 96) * 96;
@@ -1384,8 +1412,13 @@ impl App {
     /// Un second appui (ou un autre solo) rétablit l'état muet du projet.
     pub fn toggle_solo(&mut self, track: usize) {
         self.solo = if self.solo == Some(track) { None } else { Some(track) };
+        self.apply_solo();
+    }
+
+    /// Sends the mutes of the solo in place (or the project's, without solo).
+    pub(super) fn apply_solo(&mut self) {
         let keep = self.solo.map(|solo| self.solo_keep(solo)).unwrap_or_default();
-        for t in 0..TRACKS {
+        for t in 0..self.project.tracks.len() {
             let muted = if self.solo.is_some() { !keep.contains(&t) } else { self.project.tracks[t].muted };
             self.send(Command::SetTrackMute { track: t, muted: muted || self.project.tracks[t].muted });
         }
@@ -1401,8 +1434,9 @@ impl App {
         if p.tracks[solo].kind == TrackKind::Vca {
             roots.extend(p.vca_members(solo));
         }
+        let n = p.tracks.len();
         let reaches = |mut t: usize, target: usize| {
-            for _ in 0..TRACKS {
+            for _ in 0..n {
                 if t == target {
                     return true;
                 }
@@ -1417,7 +1451,7 @@ impl App {
         for &r in &roots {
             // Vers le master, puis tout ce qui y sort.
             let mut t = r;
-            for _ in 0..TRACKS {
+            for _ in 0..n {
                 keep.push(t);
                 let out = p.tracks[t].output;
                 if out == t || t == MASTER {
@@ -1425,7 +1459,7 @@ impl App {
                 }
                 t = out;
             }
-            keep.extend((1..TRACKS).filter(|&i| i != r && reaches(i, r)));
+            keep.extend((1..n).filter(|&i| i != r && reaches(i, r)));
         }
         let vcas: Vec<usize> = keep.iter().filter_map(|&t| p.tracks[t].vca).collect();
         keep.extend(vcas);
@@ -1741,6 +1775,7 @@ impl App {
         for (i, m) in self.channel_meters.iter_mut().enumerate() {
             m.feed(self.engine.take_channel_peak(i), dt);
         }
+        self.track_meters.resize(self.project.tracks.len(), Meter::default());
         for (i, m) in self.track_meters.iter_mut().enumerate() {
             m.feed(self.engine.take_track_peak(i), dt);
         }
@@ -1951,6 +1986,7 @@ impl App {
 
         if !input.down {
             self.drag = None;
+            self.track_drag = self.track_drag.filter(|d| d.pinned);
             self.release_preview();
         }
         if !input.middle_down {
@@ -3130,6 +3166,12 @@ impl App {
                     MenuItem::new(Icon::Duplicate, tr("Duplicate"), Action::DuplicateChannel(ch)).tip(tr("Same settings, without the notes")),
                 ];
                 v.extend(self.channel_freeze_items(ch));
+                v.push(
+                    MenuItem::new(Icon::Route, tr("Route to new track"), Action::RouteToNewTrack(ch))
+                        .detail(c.track.to_string())
+                        .tip(tr("A mixer track of its own, at the end of the mixer"))
+                        .sep(),
+                );
                 v.push(MenuItem::new(Icon::Trash, tr("Delete"), Action::DeleteChannel(ch)).tip(tr("Also removes its notes")).sep());
                 (c.name.clone(), v)
             }
@@ -3184,15 +3226,27 @@ impl App {
                 if let Some(item) = self.track_freeze_item(t) {
                     v.push(item.sep());
                 }
-                v.push(MenuItem::new(Icon::Reset, tr("Reset"), Action::ResetTrack(t)).tip(tr("Volume 0 dB, pan centered")));
+                if t != MASTER {
+                    let n = p.tracks.len();
+                    v.push(MenuItem::new(Icon::Plus, tr("Insert track"), Action::InsertTrack(t)).tip(tr("An empty track here, the next ones move right")).sep());
+                    if t > 1 {
+                        v.push(MenuItem::new(Icon::ChevronLeft, tr("Move left"), Action::MoveTrack(t, t - 1)).tip(tr("Or drag the strip by its name")));
+                    }
+                    if t + 1 < n {
+                        v.push(MenuItem::new(Icon::ChevronRight, tr("Move right"), Action::MoveTrack(t, t + 1)).tip(tr("Or drag the strip by its name")));
+                    }
+                    v.push(MenuItem::new(Icon::Trash, tr("Delete track"), Action::DeleteTrack(t)).tip(tr("What goes into it goes where it went · Ctrl+Z brings it back")));
+                }
+                v.push(MenuItem::new(Icon::Reset, tr("Reset"), Action::ResetTrack(t)).tip(tr("Volume 0 dB, pan centered")).sep());
                 (trk.name.clone(), v)
             }
             Popup::Output(t) | Popup::Send(t) => {
                 let t = *t;
                 let send = matches!(kind, Popup::Send(_));
-                let mut v: Vec<MenuItem> = (0..TRACKS)
+                let used = p.tracks_in_use();
+                let mut v: Vec<MenuItem> = (0..p.tracks.len())
+                    .filter(|&d| d == MASTER || used[d])
                     .filter(|&d| d != t && p.tracks[d].kind != TrackKind::Vca && self.routing_ok(t, d, send))
-                    .filter(|&d| d == MASTER || self.track_in_use(d))
                     .map(|d| {
                         let action = if send { Action::AddSend(t, d) } else { Action::SetOutput(t, d) };
                         let mut it = MenuItem::plain(&track_name(d), action)
@@ -3244,7 +3298,7 @@ impl App {
                 let t = *t;
                 let current = p.tracks[t].vca;
                 let mut v = vec![MenuItem::new(Icon::Close, tr("None"), Action::SetVca(t, None)).on(current.is_none())];
-                for d in (1..TRACKS).filter(|&d| p.tracks[d].kind == TrackKind::Vca) {
+                for d in (1..p.tracks.len()).filter(|&d| p.tracks[d].kind == TrackKind::Vca) {
                     let mut it = MenuItem::plain(&track_name(d), Action::SetVca(t, Some(d))).detail(d.to_string()).on(current == Some(d));
                     it.color = Some(self.track_tint(d));
                     v.push(it);
@@ -3259,7 +3313,8 @@ impl App {
                 let none = MenuItem::new(Icon::Close, tr_ctx("sidechain", "None"), Action::SetSidechain(t, slot, None));
                 let mut v = vec![none.on(current.is_none())];
                 let audible = |d: usize| p.tracks[d].kind != TrackKind::Vca;
-                for d in (1..TRACKS).filter(|&d| d != t && audible(d) && (self.track_in_use(d) || current == Some(d))) {
+                let used = p.tracks_in_use();
+                for d in (1..p.tracks.len()).filter(|&d| d != t && audible(d) && (used[d] || current == Some(d))) {
                     let ok = self.sidechain_ok(t, slot, d);
                     let detail = if ok { d.to_string() } else { tr("loop").into() };
                     let mut it = MenuItem::plain(&track_name(d), Action::SetSidechain(t, slot, Some(d)))
@@ -3520,10 +3575,6 @@ impl App {
         }
     }
 
-    pub fn track_in_use(&self, t: usize) -> bool {
-        self.project.track_in_use(t)
-    }
-
     /// Vrai si router `from` vers `to` (sortie ou envoi) ne crée pas de boucle.
     fn routing_ok(&self, from: usize, to: usize, send: bool) -> bool {
         let mut p = self.project.clone();
@@ -3668,6 +3719,10 @@ impl App {
                     self.commit(if key.is_some() { tr("Connect a sidechain") } else { tr("Disconnect the sidechain") });
                 }
             }
+            Action::InsertTrack(t) => self.insert_mixer_track(t),
+            Action::DeleteTrack(t) => self.delete_mixer_track(t),
+            Action::MoveTrack(from, to) => self.move_mixer_track(from, to),
+            Action::RouteToNewTrack(ch) => self.route_channel_to_new_track(ch),
             Action::ResetTrack(t) => {
                 self.project.tracks[t].gain = 1.0;
                 self.project.tracks[t].pan = 0.0;

@@ -6,7 +6,7 @@
 
 use std::f32::consts::PI;
 
-use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, TRACKS};
+use ponzik_engine::mixer::{INSERT_SLOTS, MASTER};
 use ponzik_engine::registry;
 use ponzik_i18n::{num, tr_ctx, tr_fmt, tr_fmt_n};
 use ponzik_project::TrackKind;
@@ -19,7 +19,15 @@ use super::theme::*;
 use super::widgets::{Icon, draw_icon, wid};
 
 const STRIP_W: f32 = 112.0;
+/// Compact strips: name, pan, fader and meter.
+const COMPACT_W: f32 = 64.0;
 const STRIP_GAP: f32 = 8.0;
+/// The "Add track" strip at the end of the mixer.
+const ADD_W: f32 = 64.0;
+/// Horizontal scroll bar under the strips, when they overflow.
+const SCROLL_H: f32 = 10.0;
+/// Pointer travel that turns a press on a strip's name into a move.
+const MOVE_SLOP: f32 = 6.0;
 const DB_TICKS: [f32; 6] = [6.0, 0.0, -6.0, -12.0, -24.0, -48.0];
 
 /// Position de fader (0..1) ↔ gain linéaire, loi cubique : 0 dB vers 79 %, +6 dB en haut.
@@ -75,12 +83,12 @@ pub fn track_color(t: usize) -> Color {
 }
 
 /// Place d'une tranche dans le mixer.
-struct Slot {
-    tr: usize,
+pub(super) struct Slot {
+    pub(super) tr: usize,
     /// Nombre de bus au-dessus d'elle.
     depth: usize,
     /// Un bus parent est replié.
-    hidden: bool,
+    pub(super) hidden: bool,
 }
 
 /// Espace réservé sous les tranches pour la barre des groupes.
@@ -124,6 +132,7 @@ impl App {
             self.focus = Focus::Track(t);
         }
         self.mixer_sel.clear();
+        self.mixer_reveal = Some(t);
     }
 
     /// Crée un bus et y fait sortir `members` (Ctrl+G, menus).
@@ -135,8 +144,8 @@ impl App {
             return;
         };
         let refused = members.iter().filter(|&&m| self.project.tracks[m].output != bus).count();
-        self.reveal_track(bus);
         self.commit(if members.is_empty() { ponzik_i18n::tr("New bus") } else { ponzik_i18n::tr("Group into a bus") });
+        self.reveal_track(bus);
         let name = self.project.tracks[bus].name.clone();
         let mut msg = tr_fmt!("{} created · double-click its name to rename it", name);
         if refused > 0 {
@@ -151,9 +160,9 @@ impl App {
             self.toast(ponzik_i18n::tr("No free track left in the mixer"));
             return;
         };
-        self.reveal_track(bus);
         self.panel = true;
         self.commit(ponzik_i18n::tr("New return bus"));
+        self.reveal_track(bus);
         let name = self.project.tracks[bus].name.clone();
         let msg = match from.filter(|&t| self.project.tracks[t].sends.iter().any(|s| s.0 == bus && s.1 > 0.0)) {
             Some(t) => tr_fmt!("{} created · sent from {}", name, self.project.tracks[t].name),
@@ -167,8 +176,8 @@ impl App {
             self.toast(ponzik_i18n::tr("No free track left in the mixer"));
             return;
         };
-        self.reveal_track(vca);
         self.commit(ponzik_i18n::tr("New VCA"));
+        self.reveal_track(vca);
         let name = self.project.tracks[vca].name.clone();
         let n = self.project.vca_members(vca).len();
         let msg = if n == 0 {
@@ -222,7 +231,8 @@ impl App {
 
     /// Capture d'écran : bus, VCA, repli et sélection décrits par `PONZIK_MIXER`.
     pub fn screenshot_mixer(&mut self, spec: &str) {
-        let list = |v: &str| v.split(',').filter_map(|x| x.trim().parse::<usize>().ok()).filter(|&x| x < TRACKS).collect::<Vec<_>>();
+        let n = self.project.tracks.len();
+        let list = |v: &str| v.split(',').filter_map(|x| x.trim().parse::<usize>().ok()).filter(|&x| x < n).collect::<Vec<_>>();
         let mut last = None;
         for op in spec.split(';').map(str::trim) {
             let (name, arg) = op.split_once(':').unwrap_or((op, ""));
@@ -246,49 +256,65 @@ impl App {
             }
         }
         // Les tranches arrivent déjà en place.
-        for t in 0..TRACKS {
+        for t in 0..self.project.tracks.len() {
             self.anim.set(wid("mx-born", t, 0), 0.0);
             self.anim.set(wid("mx-vis", t, 0), 1.0);
         }
     }
 
-    /// Pistes affichées : le master et celles qui servent (canaux, effets, bus, VCA…).
-    fn visible_tracks(&self, all: bool) -> Vec<usize> {
-        let mut out = vec![MASTER];
-        out.extend((1..TRACKS).filter(|&t| all || self.project.track_in_use(t)));
-        out
+    /// Pistes affichées : le master, celles qui servent (canaux, effets, bus,
+    /// VCA…) et celles ajoutées à la main, ou toutes.
+    fn shown_tracks(&self, all: bool) -> Vec<bool> {
+        let mut shown = if all { vec![true; self.project.tracks.len()] } else { self.project.tracks_in_use() };
+        for (s, tr) in shown.iter_mut().zip(&self.project.tracks) {
+            *s |= self.mixer_shown.contains(&tr.id);
+        }
+        shown
     }
 
     /// Ordre des tranches : chaque bus précède les pistes qui y sortent, et un
-    /// groupe prend la place de sa piste la plus à gauche.
-    fn mixer_layout(&self, all: bool) -> Vec<Slot> {
-        let shown = self.visible_tracks(all);
-        let parent = |t: usize| self.parent_bus(t).filter(|b| shown.contains(b));
+    /// groupe prend la place de sa piste la plus à gauche. Linear in the
+    /// number of tracks (a big mixer is laid out every frame).
+    pub(super) fn mixer_layout(&self, all: bool) -> Vec<Slot> {
+        let n = self.project.tracks.len();
+        let shown = self.shown_tracks(all);
+        let parent = |t: usize| self.parent_bus(t).filter(|&b| shown[b]);
         // Clé de tri : plus petit indice du sous-arbre.
-        let mut key: Vec<usize> = (0..TRACKS).collect();
-        for &t in &shown[1..] {
+        let mut key: Vec<usize> = (0..n).collect();
+        for t in (1..n).filter(|&t| shown[t]) {
             let mut p = parent(t);
-            for _ in 0..TRACKS {
+            for _ in 0..n {
                 let Some(b) = p else { break };
                 key[b] = key[b].min(t);
                 p = parent(b);
             }
         }
-        let children = |b: Option<usize>| {
-            let mut v: Vec<usize> = shown[1..].iter().copied().filter(|&t| parent(t) == b).collect();
-            v.sort_by_key(|&t| (key[t], t));
-            v
-        };
+        let mut roots = Vec::new();
+        let mut kids: Vec<Vec<usize>> = vec![Vec::new(); n];
+        for t in (1..n).filter(|&t| shown[t]) {
+            match parent(t) {
+                Some(b) => kids[b].push(t),
+                None => roots.push(t),
+            }
+        }
+        roots.sort_by_key(|&t| (key[t], t));
+        for k in &mut kids {
+            k.sort_by_key(|&t| (key[t], t));
+        }
         let mut out = vec![Slot { tr: MASTER, depth: 0, hidden: false }];
-        let mut stack: Vec<(usize, usize, bool)> = children(None).into_iter().rev().map(|t| (t, 0, false)).collect();
+        let mut stack: Vec<(usize, usize, bool)> = roots.into_iter().rev().map(|t| (t, 0, false)).collect();
         while let Some((t, depth, hidden)) = stack.pop() {
             out.push(Slot { tr: t, depth, hidden });
-            if depth < TRACKS && self.project.tracks[t].kind == TrackKind::Bus {
+            if depth < n && self.project.tracks[t].kind == TrackKind::Bus {
                 let fold = hidden || self.project.tracks[t].folded;
-                stack.extend(children(Some(t)).into_iter().rev().map(|c| (c, depth + 1, fold)));
+                stack.extend(kids[t].iter().rev().map(|&c| (c, depth + 1, fold)));
             }
         }
         out
+    }
+
+    fn strip_w(&self) -> f32 {
+        if self.mixer_compact { COMPACT_W } else { STRIP_W }
     }
 
     pub(super) fn mixer_view(&mut self, c: &mut Canvas, input: &Input, header: Rect, body: Rect) {
@@ -300,12 +326,19 @@ impl App {
         if self.icon_button(c, input, wid("mx-all-btn", 0, 0), toggle, Icon::Columns, all, tip) {
             self.anim.set(all_key, if all { 0.0 } else { 1.0 });
         }
+        let compact_r = Rect::new(toggle.x - 6.0 - 36.0, header.y, 36.0, header.h);
+        let compact = self.mixer_compact;
+        let tip = if compact { (ponzik_i18n::tr("Full strips"), "") } else { (ponzik_i18n::tr("Compact strips"), "") };
+        if self.icon_button(c, input, wid("mx-compact-btn", 0, 0), compact_r, Icon::Mixer, compact, tip) {
+            self.mixer_compact = !compact;
+        }
         // « + Bus » : nouveau bus, retour d'effet ou VCA.
-        let add = Rect::new(toggle.x - 8.0 - 76.0, header.y, 76.0, header.h);
+        let add = Rect::new(compact_r.x - 8.0 - 76.0, header.y, 76.0, header.h);
         if self.mixer_add_button(c, input, add) {
             self.open_popup(Popup::NewBus, add);
         }
-        self.mixer_sel.retain(|&s| s != MASTER && s < TRACKS);
+        let n_tracks = self.project.tracks.len();
+        self.mixer_sel.retain(|&s| s != MASTER && s < n_tracks);
         let n = self.mixer_sel.len();
         let selv = self.anim.to(wid("mx-sel-hint", 0, 0), (n > 0) as u8 as f32, T_HOVER);
         if selv > 0.01 {
@@ -319,10 +352,35 @@ impl App {
         c.stroke_rrect(body, 16.0, 1.0, t.hairline);
         let inner = body.inset(12.0);
         let layout = self.mixer_layout(all);
-        let target_w: f32 = layout.iter().filter(|s| !s.hidden).count() as f32 * (STRIP_W + STRIP_GAP) + 24.0;
-        let content_w = target_w;
-        if input.inside && inner.contains(input.x, input.y) && input.wheel != 0.0 && input.mods.shift {
-            self.mixer_scroll = (self.mixer_scroll - input.wheel * 80.0).clamp(0.0, (content_w - inner.w).max(0.0));
+        let sw = self.strip_w();
+        let content_w: f32 = layout.iter().filter(|s| !s.hidden).count() as f32 * (sw + STRIP_GAP) + 12.0 + ADD_W + 12.0;
+        let max_scroll = (content_w - inner.w).max(0.0);
+        let strip_h = inner.h - GROUP_BAR - if max_scroll > 0.0 { SCROLL_H } else { 0.0 };
+        // A track to bring into view (added, inserted, moved).
+        if let Some(r) = self.mixer_reveal.take() {
+            let mut x = 0.0;
+            for (k, slot) in layout.iter().enumerate() {
+                if slot.tr == r {
+                    if x < self.mixer_scroll {
+                        self.mixer_scroll = x;
+                    } else if x + sw + ADD_W + 24.0 > self.mixer_scroll + inner.w {
+                        self.mixer_scroll = x + sw + ADD_W + 24.0 - inner.w;
+                    }
+                    break;
+                }
+                if !slot.hidden {
+                    x += sw + STRIP_GAP;
+                }
+                if k == 0 {
+                    x += 12.0;
+                }
+            }
+        }
+        // Shift+wheel over the strips, the wheel alone under them (group bars, scroll bar).
+        let under = Rect::new(inner.x, inner.y + strip_h, inner.w, inner.bottom() - inner.y - strip_h);
+        let over = input.inside && inner.contains(input.x, input.y);
+        if over && input.wheel != 0.0 && (input.mods.shift || under.contains(input.x, input.y)) {
+            self.mixer_scroll = (self.mixer_scroll - input.wheel * 80.0).clamp(0.0, max_scroll);
         }
         // Bouton du milieu : faire glisser les tranches.
         let pan_id = wid("mx-pan-drag", 0, 0);
@@ -331,36 +389,57 @@ impl App {
         }
         if let Some((_, x0, _, s0, _)) = self.pan.filter(|p| p.0 == pan_id) {
             self.mixer_scroll = s0 - (input.x - x0);
-            self.anim.set(wid("mx-sx", 0, 0), self.mixer_scroll.clamp(0.0, (content_w - inner.w).max(0.0)));
+            self.anim.set(wid("mx-sx", 0, 0), self.mixer_scroll.clamp(0.0, max_scroll));
         }
-        self.mixer_scroll = self.mixer_scroll.clamp(0.0, (content_w - inner.w).max(0.0));
+        self.mixer_scroll = self.mixer_scroll.clamp(0.0, max_scroll);
         let sx = self.anim.to(wid("mx-sx", 0, 0), self.mixer_scroll, T_LAYOUT);
         let prev = c.push_clip(inner);
-        let strip_h = inner.h - GROUP_BAR;
         // Une tranche qui se replie glisse sous sa voisine de gauche.
         let masked = Input { inside: false, pressed: false, right_pressed: false, wheel: 0.0, double: false, ..input.clone() };
         let mut spans: Vec<(f32, f32)> = Vec::with_capacity(layout.len());
         let mut x = inner.x - sx;
         for (k, slot) in layout.iter().enumerate() {
+            // Off screen: no drawing, no animation (a mixer of hundreds of tracks).
+            let (left, right) = (x, x + sw + STRIP_GAP);
+            if right < inner.x - sw || left > inner.right() + sw {
+                let w = if slot.hidden { 0.0 } else { sw };
+                self.anim.set(wid("mx-vis", slot.tr, 0), if slot.hidden { 0.0 } else { 1.0 });
+                spans.push((x, x + w));
+                x += if slot.hidden { 0.0 } else { sw + STRIP_GAP };
+                if k == 0 {
+                    x += 12.0;
+                }
+                continue;
+            }
             let vis = self.anim.to(wid("mx-vis", slot.tr, 0), if slot.hidden { 0.0 } else { 1.0 }, T_LAYOUT);
-            let w = STRIP_W * vis;
+            let w = sw * vis;
             spans.push((x, x + w));
             if vis > 0.01 {
-                let r = Rect::new(x - STRIP_W * (1.0 - vis), inner.y, STRIP_W, strip_h);
+                let r = Rect::new(x - sw * (1.0 - vis), inner.y, sw, strip_h);
                 // L'écart compris : un bus replié y montre ses tranches empilées.
                 let clip = Rect::new(x, inner.y, w + STRIP_GAP * vis, strip_h);
                 if clip.right() > inner.x && clip.x < inner.right() {
                     let inp = if vis > 0.98 { input } else { &masked };
                     let before = c.push_clip(clip);
-                    self.mixer_strip(c, inp, r, slot.tr);
+                    if self.mixer_compact {
+                        self.mixer_strip_compact(c, inp, r, slot.tr);
+                    } else {
+                        self.mixer_strip(c, inp, r, slot.tr);
+                    }
                     c.set_clip(Some(before));
                 }
             }
-            x += (STRIP_W + STRIP_GAP) * vis;
+            x += (sw + STRIP_GAP) * vis;
             if k == 0 {
                 x += 12.0;
             }
         }
+        // "Add track" after the last strip.
+        let add_r = Rect::new(x + 4.0, inner.y, ADD_W, strip_h);
+        if add_r.right() > inner.x && add_r.x < inner.right() {
+            self.add_track_strip(c, input, add_r);
+        }
+        self.track_move(c, input, &layout, &spans, Rect::new(inner.x, inner.y, inner.w, strip_h));
         // Barres des groupes : du bus à sa dernière piste visible.
         let bar_y = inner.y + strip_h + 4.0;
         for (k, slot) in layout.iter().enumerate() {
@@ -376,7 +455,108 @@ impl App {
             let a = if folded { 0.45 } else { 0.85 };
             c.fill_rrect(Rect::new(spans[k].0 + 4.0, bar_y, x1 - spans[k].0 - 8.0, 3.0), 1.5, self.track_tint(slot.tr).alpha(a));
         }
+        if max_scroll > 0.0 {
+            self.mixer_scrollbar(c, input, Rect::new(inner.x, inner.bottom() - SCROLL_H + 3.0, inner.w, SCROLL_H - 3.0), content_w);
+        }
         c.set_clip(Some(prev));
+    }
+
+    /// The ghost strip at the end of the mixer: a click adds a track.
+    fn add_track_strip(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
+        let t = self.theme;
+        let id = wid("mx-add-track", 0, 0);
+        let hov = self.hovered(input, id, r);
+        let hv = self.hover_anim(id, hov);
+        c.fill_rrect(r, 12.0, t.raised.alpha(0.25 * hv));
+        c.stroke_rrect(r, 12.0, 1.0, t.hairline.mix(t.accent, hv * 0.7));
+        let (cx, cy) = (r.x + r.w * 0.5, r.y + r.h * 0.5);
+        c.fill_circle(cx, cy - 12.0, 15.0, t.raised.mix(t.accent, 0.18 * hv));
+        draw_icon(c, Icon::Plus, cx, cy - 12.0, 15.0, t.text2.mix(t.accent, hv));
+        let label = ponzik_i18n::tr("Track");
+        self.text_center(c, self.f.sans_med, 11.0, cx, cy + 16.0, label, t.text2.mix(t.text, hv));
+        if hov {
+            let n = self.project.tracks.len() - 1;
+            self.set_tip(&tr_fmt!("Add track\n{} tracks in the mixer", n), "");
+            if input.pressed {
+                self.add_mixer_track();
+            }
+        }
+    }
+
+    /// Horizontal scroll bar of a mixer wider than the view: drag the thumb,
+    /// or click the bar to jump.
+    fn mixer_scrollbar(&mut self, c: &mut Canvas, input: &Input, r: Rect, content_w: f32) {
+        let t = self.theme;
+        let id = wid("mx-scrollbar", 0, 0);
+        let max_scroll = (content_w - r.w).max(1.0);
+        let thumb_w = (r.w * r.w / content_w).max(32.0).min(r.w);
+        let travel = (r.w - thumb_w).max(1.0);
+        let thumb = Rect::new(r.x + travel * (self.mixer_scroll / max_scroll).clamp(0.0, 1.0), r.y, thumb_w, r.h);
+        let hov = self.hovered(input, id, r.inset(-3.0));
+        if hov && input.pressed {
+            let grab = if thumb.contains(input.x, input.y) { input.x - thumb.x } else { thumb_w * 0.5 };
+            self.begin_drag(id, input, grab);
+        }
+        if let Some(d) = self.drag.filter(|d| d.id == id) {
+            self.mixer_scroll = ((input.x - d.v0 - r.x) / travel * max_scroll).clamp(0.0, max_scroll);
+            self.anim.set(wid("mx-sx", 0, 0), self.mixer_scroll);
+        }
+        let hv = self.hover_anim(id, hov || self.is_dragging(id));
+        c.fill_rrect(r, r.h * 0.5, t.well.alpha(0.6 + 0.4 * hv));
+        c.fill_rrect(thumb, r.h * 0.5, t.raised_hi.mix(t.text2, 0.25 + 0.35 * hv));
+    }
+
+    /// A strip dragged by its name: where it would land, then the move on release.
+    fn track_move(&mut self, c: &mut Canvas, input: &Input, layout: &[Slot], spans: &[(f32, f32)], area: Rect) {
+        let Some(mut d) = self.track_drag else { return };
+        let move_id = wid("mx-move", 0, 0);
+        if !d.active && input.down && (input.x - d.x0).abs() > MOVE_SLOP {
+            d.active = true;
+            self.begin_drag(move_id, input, 0.0);
+        }
+        if d.active {
+            // The gap nearest the pointer, between visible strips (never before the master).
+            let visible: Vec<(usize, (f32, f32))> =
+                layout.iter().zip(spans).filter(|(s, sp)| !s.hidden && sp.1 > sp.0).map(|(s, &sp)| (s.tr, sp)).skip(1).collect();
+            let at = visible.iter().position(|(_, sp)| input.x < (sp.0 + sp.1) * 0.5).unwrap_or(visible.len());
+            let n = self.project.tracks.len();
+            d.to = match visible.get(at) {
+                Some(&(t, _)) if t > d.from => Some(t - 1),
+                Some(&(t, _)) => Some(t),
+                None => Some(n - 1),
+            };
+            let gap_x = match (at.checked_sub(1).and_then(|k| visible.get(k)), visible.get(at)) {
+                (_, Some((_, sp))) => sp.0 - STRIP_GAP * 0.5,
+                (Some((_, sp)), None) => sp.1 + STRIP_GAP * 0.5,
+                (None, None) => area.x,
+            };
+            let t = self.theme;
+            let tint = self.track_tint(d.from);
+            // The strip being moved fades where it was.
+            if let Some(sp) = layout.iter().zip(spans).find(|(s, _)| s.tr == d.from).map(|(_, sp)| *sp) {
+                c.fill_rrect(Rect::new(sp.0, area.y, sp.1 - sp.0, area.h), 12.0, t.bg_deep.alpha(0.5));
+            }
+            c.fill_rrect(Rect::new(gap_x - 1.5, area.y + 4.0, 3.0, area.h - 8.0), 1.5, t.accent);
+            c.fill_circle(gap_x, area.y + 4.0, 4.0, t.accent);
+            // The dragged strip's name follows the pointer.
+            let name = self.project.tracks[d.from].name.clone();
+            let w = self.fonts.measure(self.f.sans_med, 12.0, &name) + 20.0;
+            let chip = Rect::new(input.x - w * 0.5, input.y - 34.0, w, 24.0);
+            c.fill_rrect(chip, 8.0, t.raised_hi);
+            c.stroke_rrect(chip, 8.0, 1.0, tint);
+            self.text_center(c, self.f.sans_med, 12.0, chip.x + w * 0.5, chip.y + 12.0, &name, t.text);
+            self.set_cursor(ponzik_window::Cursor::Grab);
+        }
+        if input.down || d.pinned {
+            self.track_drag = Some(d);
+            return;
+        }
+        self.track_drag = None;
+        if d.active
+            && let Some(to) = d.to.filter(|&to| to != d.from)
+        {
+            self.move_mixer_track(d.from, to);
+        }
     }
 
     /// Bouton « + Bus » de l'en-tête du mixer.
@@ -494,6 +674,8 @@ impl App {
             if input.double {
                 let text = self.project.tracks[tr].name.clone();
                 self.open_popup(Popup::Rename { target: super::app::Rename::Track(tr), text }, name_r);
+            } else if tr != MASTER {
+                self.track_drag = Some(super::tracks::TrackDrag { from: tr, x0: input.x, active: false, to: None, pinned: false });
             }
         }
         if nhov && input.right_pressed {
@@ -501,7 +683,7 @@ impl App {
             self.open_popup(Popup::TrackMenu(tr), Rect::new(input.x, input.y, 0.0, 0.0));
         }
         if nhov {
-            self.set_tip(ponzik_i18n::tr("Double-click: rename · Ctrl+click: multi-select · right-click: menu"), "");
+            self.set_tip(ponzik_i18n::tr("Double-click: rename · drag: move · Ctrl+click: multi-select · right-click: menu"), "");
         }
         let name = self.project.tracks[tr].name.clone();
         // Centré, ou entre la pastille et l'armement quand la gauche est occupée.
@@ -557,7 +739,7 @@ impl App {
             self.text_center(c, self.f.mono, 10.0, cx, ny, &num, t.muted);
         }
         // Piste pilotée par un VCA : le pictogramme du VCA à gauche du numéro.
-        if let Some(v) = self.project.tracks[tr].vca.filter(|&v| v < TRACKS) {
+        if let Some(v) = self.project.tracks[tr].vca.filter(|&v| v < self.project.tracks.len()) {
             let vx = cx - 16.0;
             draw_icon(c, Icon::Vca, vx, ny, 11.0, self.track_tint(v));
             if self.hovered(input, wid("mx-vca-tag", tr, 0), Rect::new(vx - 7.0, ny - 7.0, 14.0, 14.0)) {
@@ -685,7 +867,7 @@ impl App {
         let readout_y = out_r.y - 12.0;
         let fader = Rect::new(inner.x, pan_y + 22.0, inner.w, readout_y - 12.0 - pan_y - 22.0);
         if fader.h > 40.0 {
-            self.track_fader(c, input, fader, tr);
+            self.track_fader(c, input, fader, tr, false);
         }
         let gain = self.project.tracks[tr].gain;
         self.text_center(c, self.f.mono, 12.0, inner.x + inner.w * 0.5, readout_y, &fmt_db(gain), t.text2);
@@ -754,6 +936,163 @@ impl App {
         }
     }
 
+    /// Compact strip: name and number, the inserts as dots, pan, fader and
+    /// meter, mute and solo. Gestures as on a full strip.
+    fn mixer_strip_compact(&mut self, c: &mut Canvas, input: &Input, r: Rect, tr: usize) {
+        let t = self.theme;
+        let kind = self.project.tracks[tr].kind;
+        let tint = self.track_tint(tr);
+        let focused = self.focused_track() == tr && matches!(self.focus, Focus::Track(_));
+        let fv = self.anim.to(wid("mx-focus", tr, 0), focused as u8 as f32, T_HOVER);
+        let selected = self.mixer_sel.contains(&tr);
+        let sv = self.anim.to(wid("mx-sel", tr, 0), selected as u8 as f32, T_HOVER);
+        let born = self.anim.to(wid("mx-born", tr, 0), 0.0, 0.35);
+        c.fill_rrect(r, 10.0, t.strip.mix(t.raised, fv * 0.6).mix(t.select, sv * 0.08));
+        let band = if kind == TrackKind::Normal && self.project.tracks[tr].color == 0 { 0.45 } else { 0.95 };
+        c.fill_rrect(Rect::new(r.x + 8.0, r.y + 4.0, r.w - 16.0, 3.0), 1.5, tint.alpha(band));
+        let edge = if selected || focused { t.select.alpha(0.6 + 0.3 * sv) } else { t.hairline };
+        c.stroke_rrect(r, 10.0, 1.0, edge.mix(tint, born));
+        if born > 0.01 {
+            c.stroke_rrect(r.inset(-1.0), 11.0, 2.0, tint.alpha(born * 0.8));
+        }
+        if kind != TrackKind::Vca {
+            self.drop_zone(input, r, DropTarget::Track(tr));
+        }
+        let inner = r.inset(6.0);
+        let cx = inner.x + inner.w * 0.5;
+
+        // Name and number: the same gestures as a full strip.
+        let name_r = Rect::new(inner.x, inner.y + 4.0, inner.w, 30.0);
+        let nid = wid("mx-name", tr, 0);
+        let nhov = self.hovered(input, nid, name_r);
+        if nhov && input.pressed && input.mods.ctrl && tr != MASTER {
+            if selected {
+                self.mixer_sel.retain(|&x| x != tr);
+            } else {
+                self.mixer_sel.push(tr);
+            }
+        } else if nhov && input.pressed {
+            self.mixer_sel.clear();
+            self.focus = Focus::Track(tr);
+            self.panel = true;
+            if input.double {
+                let text = self.project.tracks[tr].name.clone();
+                self.open_popup(Popup::Rename { target: super::app::Rename::Track(tr), text }, name_r);
+            } else if tr != MASTER {
+                self.track_drag = Some(super::tracks::TrackDrag { from: tr, x0: input.x, active: false, to: None, pinned: false });
+            }
+        }
+        if nhov && input.right_pressed {
+            self.focus = Focus::Track(tr);
+            self.open_popup(Popup::TrackMenu(tr), Rect::new(input.x, input.y, 0.0, 0.0));
+        }
+        let name = self.project.tracks[tr].name.clone();
+        if nhov {
+            let tip = tr_fmt!("{}\nDouble-click: rename · drag: move · right-click: menu", name);
+            self.set_tip(&tip, "");
+        }
+        let (size, label) = self.fit_shrink(self.f.sans_med, 11.0, &name, inner.w);
+        self.text_center(c, self.f.sans_med, size, cx, inner.y + 13.0, &label, t.text);
+        let num = if tr == MASTER { tr_ctx("master track", "M").to_string() } else { tr.to_string() };
+        let ny = inner.y + 27.0;
+        match kind {
+            TrackKind::Bus | TrackKind::Vca => {
+                let icon = if kind == TrackKind::Bus { Icon::Bus } else { Icon::Vca };
+                draw_icon(c, icon, cx - 9.0, ny, 10.0, tint);
+                self.text(c, self.f.mono, 9.0, cx - 2.0, ny, &num, t.text2);
+            }
+            TrackKind::Normal => self.text_center(c, self.f.mono, 9.0, cx, ny, &num, t.muted),
+        }
+        if self.project.tracks[tr].frozen.is_some() && tr != MASTER {
+            self.frost_badge(c, input, inner.right() - 5.0, ny, 9.0, ponzik_project::FreezeTarget::Track(tr), tr);
+        }
+
+        // Inserts: one dot per slot (lit, bypassed or empty); a click shows them.
+        let mut y = inner.y + 40.0;
+        if kind != TrackKind::Vca {
+            let dots = Rect::new(inner.x, y - 5.0, inner.w, 20.0);
+            let step = (inner.w - 16.0) / 3.0;
+            for slot in 0..INSERT_SLOTS {
+                let (dx, dy) = (inner.x + 8.0 + (slot % 4) as f32 * step, y + (slot / 4) as f32 * 9.0);
+                match &self.project.tracks[tr].inserts[slot] {
+                    Some(fx) => c.fill_circle(dx, dy, 2.6, if fx.bypass { t.muted } else { t.accent }),
+                    None => c.stroke_circle(dx, dy, 2.2, 1.0, t.hairline.alpha(1.6)),
+                }
+            }
+            let did = wid("mx-dots", tr, 0);
+            if self.hovered(input, did, dots) {
+                let names: Vec<&str> = self.project.tracks[tr]
+                    .inserts
+                    .iter()
+                    .flatten()
+                    .map(|d| registry::effect_kind(&d.kind).map_or(d.kind.as_str(), |k| ponzik_i18n::tr(k.name)))
+                    .collect();
+                let tip = if names.is_empty() { ponzik_i18n::tr("Add an effect").to_string() } else { names.join("\n") };
+                self.set_tip(&tip, "");
+                if input.pressed {
+                    self.focus = Focus::Track(tr);
+                    self.panel = true;
+                }
+            }
+        }
+        y += 22.0;
+
+        // Pan.
+        let pan_y = y + 14.0;
+        if kind != TrackKind::Vca {
+            let pan = self.project.tracks[tr].pan;
+            if let Some(v) = self.mini_knob(c, input, wid("mx-pan", tr, 0), (cx, pan_y), (pan + 1.0) * 0.5, true) {
+                self.project.tracks[tr].pan = ((v * 2.0 - 1.0) * 100.0).round() / 100.0;
+                self.commit(ponzik_i18n::tr("Track pan"));
+            }
+            self.knob_menu(input, (cx, pan_y), 14.0, ponzik_engine::AutoTarget::TrackPan(tr));
+            self.tip_zone(input, Rect::new(inner.x, pan_y - 14.0, inner.w, 28.0), &tr_fmt!("Pan {}", fmt_pan(pan)), "");
+        }
+
+        // Bottom: mute and solo; the value above; the fader between.
+        let ms = Rect::new(inner.x, inner.bottom() - 22.0, inner.w, 22.0);
+        let readout_y = ms.y - 10.0;
+        let fader = Rect::new(inner.x, pan_y + 18.0, inner.w, readout_y - 10.0 - pan_y - 18.0);
+        if fader.h > 40.0 {
+            self.track_fader(c, input, fader, tr, true);
+        }
+        let gain = self.project.tracks[tr].gain;
+        let db = fmt_db(gain).replace(" dB", "");
+        self.text_center(c, self.f.mono, 10.0, cx, readout_y, &db, t.text2);
+        let half = if tr == MASTER || kind == TrackKind::Vca { ms.w } else { (ms.w - 3.0) * 0.5 };
+        let mute_r = Rect::new(ms.x, ms.y, half, ms.h);
+        let muted = self.project.tracks[tr].muted;
+        let mid = wid("mx-mute", tr, 0);
+        let hov = self.hovered(input, mid, mute_r);
+        if hov && input.pressed {
+            self.project.tracks[tr].muted = !muted;
+            self.commit(ponzik_i18n::tr("Track mute"));
+        }
+        let hv = self.hover_anim(mid, hov);
+        let (fill, ink) = if muted { (t.text.mix(WHITE, hv * 0.2), t.bg_deep) } else { (t.raised.mix(t.raised_hi, hv), t.text2) };
+        c.fill_rrect(mute_r, 6.0, fill);
+        draw_icon(c, Icon::Mute, mute_r.x + mute_r.w * 0.5, mute_r.y + mute_r.h * 0.5, 12.0, ink);
+        if hov {
+            self.set_tip(if muted { ponzik_i18n::tr("Unmute") } else { ponzik_i18n::tr("Mute") }, "");
+        }
+        if half < ms.w {
+            let solo_r = Rect::new(ms.x + half + 3.0, ms.y, half, ms.h);
+            let sid = wid("mx-solo", tr, 0);
+            let shov = self.hovered(input, sid, solo_r);
+            if shov && input.pressed {
+                self.toggle_solo(tr);
+            }
+            let shv = self.hover_anim(sid, shov);
+            let on = self.solo == Some(tr);
+            let (fill, ink) = if on { (t.select, t.bg_deep) } else { (t.raised.mix(t.raised_hi, shv), t.text2) };
+            c.fill_rrect(solo_r, 6.0, fill);
+            draw_icon(c, Icon::Solo, solo_r.x + solo_r.w * 0.5, solo_r.y + solo_r.h * 0.5, 12.0, ink);
+            if shov {
+                self.set_tip(ponzik_i18n::tr("Solo"), "");
+            }
+        }
+    }
+
     /// Corps d'une tranche VCA : la liste des pistes pilotées, le fader et le muet.
     fn vca_strip_body(&mut self, c: &mut Canvas, input: &Input, inner: Rect, tr: usize) {
         let t = self.theme;
@@ -796,7 +1135,7 @@ impl App {
         let top = inner.y + 38.0 + 22.0 * INSERT_SLOTS as f32 + 4.0 + 52.0 + 42.0;
         let fader = Rect::new(inner.x, top, inner.w, readout_y - 12.0 - top);
         if fader.h > 40.0 {
-            self.track_fader(c, input, fader, tr);
+            self.track_fader(c, input, fader, tr, false);
         }
         let gain = self.project.tracks[tr].gain;
         self.text_center(c, self.f.mono, 12.0, inner.x + inner.w * 0.5, readout_y, &fmt_db(gain), t.text2);
@@ -907,17 +1246,18 @@ impl App {
         }
     }
 
-    fn track_fader(&mut self, c: &mut Canvas, input: &Input, area: Rect, tr: usize) {
+    /// Fader and meter of a track; `compact`: narrow, without the dB scale.
+    fn track_fader(&mut self, c: &mut Canvas, input: &Input, area: Rect, tr: usize, compact: bool) {
         let t = self.theme;
-        const CAP_W: f32 = 34.0;
+        let cap_w: f32 = if compact { 24.0 } else { 34.0 };
         const CAP_H: f32 = 18.0;
         let travel = (area.h - CAP_H).max(1.0);
         let y_of = |pos: f32| area.bottom() - CAP_H * 0.5 - pos * travel;
-        let track_x = area.x + 42.0;
+        let track_x = if compact { area.x + area.w * 0.5 - 12.0 } else { area.x + 42.0 };
         let gain = self.project.tracks[tr].gain;
         let pos = gain_to_pos(gain);
-        let cap = Rect::new(track_x + 2.0 - CAP_W * 0.5, y_of(pos) - CAP_H * 0.5, CAP_W, CAP_H);
-        let zone = Rect::new(area.x + 24.0, area.y, 40.0, area.h);
+        let cap = Rect::new(track_x + 2.0 - cap_w * 0.5, y_of(pos) - CAP_H * 0.5, cap_w, CAP_H);
+        let zone = Rect::new(track_x - 18.0, area.y, 40.0, area.h);
         let id = wid("mx-fader", tr, 0);
         let hov = self.hovered(input, id, zone);
         if hov && input.pressed {
@@ -944,7 +1284,7 @@ impl App {
             self.open_popup(popup, Rect::new(input.x, input.y, 0.0, 0.0));
         }
 
-        for d in DB_TICKS {
+        for d in DB_TICKS.iter().copied().filter(|_| !compact) {
             let y = y_of(gain_to_pos(10f32.powf(d / 20.0)));
             c.fill_rect(Rect::new(track_x - 10.0, y.round(), 5.0, 1.0), t.hairline.alpha(2.0));
             let label = fmt_tick(d);
@@ -967,8 +1307,9 @@ impl App {
         };
         let warn = y_of(gain_to_pos(10f32.powf(-6.0 / 20.0)));
         let bottom = y_of(0.0);
+        let meter_x = track_x + if compact { 16.0 } else { 22.0 };
         for side in 0..2 {
-            let x = track_x + 22.0 + side as f32 * 7.0;
+            let x = meter_x + side as f32 * 7.0;
             c.fill_rrect(Rect::new(x, area.y + CAP_H * 0.5, 5.0, travel), 2.0, t.well);
             let top = y_of(gain_to_pos(meter.level[side]));
             if bottom - top > 0.5 {
@@ -987,7 +1328,7 @@ impl App {
         }
         let hv = self.hover_anim(id, (hov && cap.contains(input.x, input.y)) || self.is_dragging(id));
         c.fill_rrect_vgrad(cap, 6.0, t.text.mix(WHITE, hv * 0.5), t.text.mix(t.raised_hi, 0.25).mix(WHITE, hv * 0.3));
-        c.fill_rect(Rect::new(cap.x + 6.0, cap.y + CAP_H * 0.5 - 1.0, CAP_W - 12.0, 2.0), t.bg_deep.alpha(0.55));
+        c.fill_rect(Rect::new(cap.x + 6.0, cap.y + CAP_H * 0.5 - 1.0, cap_w - 12.0, 2.0), t.bg_deep.alpha(0.55));
         self.ctl_mark(c, (cap.right() - 3.0, cap.y + 3.0), 4.0, ponzik_project::midi_map::ControlTarget::Param(target));
     }
 }
@@ -1037,7 +1378,7 @@ mod tests {
         let ctrl = Modifiers { ctrl: true, ..Modifiers::default() };
         let keys = Input { keys: vec![(Key::Char('g'), ctrl)], ..Input::default() };
         app.frame(&mut c, &keys, 1.0 / 60.0);
-        let bus = TRACKS - 1;
+        let bus = ponzik_engine::mixer::DEFAULT_TRACKS;
         assert_eq!(app.project.tracks[bus].kind, TrackKind::Bus);
         assert_eq!(app.project.bus_members(bus), [1, 2]);
         assert!(app.mixer_sel.is_empty());
@@ -1054,7 +1395,7 @@ mod tests {
         assert!(!app.project.tracks[bus].folded);
         app.undo();
         assert_eq!(app.project.tracks[1].output, MASTER);
-        assert_eq!(app.project.tracks[bus].kind, TrackKind::Normal);
+        assert_eq!(app.project.track_count(), bus, "the bus track goes with the undo");
     }
 
     #[test]
@@ -1070,9 +1411,9 @@ mod tests {
         }
         assert!(!keep.contains(&3));
         // Solo d'une piste du bus imbriqué : la chaîne jusqu'au master.
-        assert_eq!(app.solo_keep(1), [MASTER, 1, inner, outer]);
+        assert_eq!(app.solo_keep(1), [MASTER, 1, outer, inner]);
         // Solo d'un VCA : ses pistes et leur chemin.
-        assert_eq!(app.solo_keep(vca), [MASTER, 2, vca, outer]);
+        assert_eq!(app.solo_keep(vca), [MASTER, 2, outer, vca]);
     }
 
     #[test]
