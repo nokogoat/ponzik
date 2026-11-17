@@ -119,6 +119,40 @@ impl Project {
         true
     }
 
+    /// [`Project::track_in_use`] for every track at once, in one pass (a big
+    /// mixer is drawn every frame).
+    pub fn tracks_in_use(&self) -> Vec<bool> {
+        let n = self.tracks.len();
+        let mut used: Vec<bool> = self
+            .tracks
+            .iter()
+            .enumerate()
+            .map(|(i, t)| {
+                i == MASTER || t.kind != crate::TrackKind::Normal || !is_default_track_name(&t.name) || t.inserts.iter().any(Option::is_some)
+            })
+            .collect();
+        let mut mark = |t: usize| {
+            if t < n {
+                used[t] = true;
+            }
+        };
+        self.channels.iter().for_each(|c| mark(c.track));
+        self.audio_clips.iter().for_each(|c| mark(c.track));
+        self.take_groups.iter().for_each(|g| mark(g.track));
+        for (i, t) in self.tracks.iter().enumerate() {
+            if t.output != i {
+                mark(t.output);
+            }
+            if let Some(v) = t.vca.filter(|&v| v != i) {
+                mark(v);
+            }
+            for s in t.sends.iter().filter(|s| s.1 > 0.0 && s.0 != i) {
+                mark(s.0);
+            }
+        }
+        used
+    }
+
     /// Appends an empty track; `None` when the mixer is full.
     pub fn add_track(&mut self) -> Option<usize> {
         let t = self.tracks.len();
@@ -373,6 +407,17 @@ mod tests {
         assert_eq!(d.track_layout(&a), None);
         d.add_track();
         assert_eq!(d.track_layout(&a).unwrap()[33], None);
+    }
+
+    #[test]
+    fn tracks_in_use_match_one_by_one() {
+        let mut p = wired();
+        p.tracks[9].sends[1] = (12, 0.4);
+        p.tracks[14].vca = Some(15);
+        p.add_track();
+        let one_by_one: Vec<bool> = (0..p.track_count()).map(|t| p.track_in_use(t)).collect();
+        assert_eq!(p.tracks_in_use(), one_by_one);
+        assert!(one_by_one[12] && one_by_one[15] && !one_by_one[33]);
     }
 
     #[test]
