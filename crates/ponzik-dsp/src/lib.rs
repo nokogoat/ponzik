@@ -4,7 +4,7 @@
 //!
 //! Aucune allocation après construction, aucune dépendance : tout ici est utilisable
 //! directement dans le thread audio, sauf les outils d'édition hors ligne
-//! ([`onset`], [`tempo`], [`stretch`]) qui allouent leurs résultats.
+//! ([`onset`], [`tempo`], [`stretch`], [`warp`]) qui allouent leurs résultats.
 
 #![forbid(unsafe_code)]
 
@@ -26,3 +26,4 @@ pub mod stretch;
 pub mod tempo;
 pub mod tuner;
 pub mod util;
+pub mod warp;
