@@ -144,6 +144,8 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: Loader) -> V
         || old.automation != new.automation
         || old.audio_clips != new.audio_clips
         || old.take_groups != new.take_groups
+        || old.session_live != new.session_live
+        || old.loop_range != new.loop_range
         || n_old != n_new
         || (0..TRACKS.min(old.tracks.len()).min(new.tracks.len()))
             .any(|t| track_freeze(old, t, loader).is_some() != track_freeze(new, t, loader).is_some())
@@ -284,6 +286,17 @@ mod tests {
         let cmds = names(&diff(&a, &c, 48_000.0, &none));
         assert!(cmds.contains(&"RemoveChannel".to_string()));
         assert!(cmds.contains(&"SetSequence".to_string()));
+    }
+
+    #[test]
+    fn session_launches_and_loop_range_reach_the_engine() {
+        let a = demo_project();
+        let mut b = a.clone();
+        b.session_live.push(ponzik_project::SessionSlot { pattern: 0, start: 384, end: u32::MAX });
+        assert_eq!(names(&diff(&a, &b, 48_000.0, &none)), ["SetSequence"]);
+        let mut c = a.clone();
+        c.loop_range = Some((0, 768));
+        assert_eq!(names(&diff(&a, &c, 48_000.0, &none)), ["SetSequence"]);
     }
 
     #[test]
