@@ -103,6 +103,7 @@ pub const IPLUG_VIEW_CONTENT_SCALE_SUPPORT_IID: Tuid = uid(0x65ED9690, 0x8AC4452
 /// `Steinberg::Linux::IRunLoop`, obtenu par `queryInterface` sur l'`IPlugFrame`.
 pub const IRUN_LOOP_IID: Tuid = uid(0x18C35366, 0x97764F1A, 0x9C5B8385, 0x7A871389);
 pub const IEVENT_HANDLER_IID: Tuid = uid(0x561E65C9, 0x13A0496F, 0x813A2C35, 0x654D7983);
+pub const IMIDI_MAPPING_IID: Tuid = uid(0xDF0FF9F7, 0x49B74669, 0xB63AB732, 0x7ADBF5E5);
 pub const ITIMER_HANDLER_IID: Tuid = uid(0x10BDD94F, 0x41424774, 0x821FAD8F, 0xECA72CA9);
 
 // --- Constantes ---------------------------------------------------------------
@@ -141,6 +142,12 @@ pub const K_IS_BYPASS: i32 = 1 << 16;
 pub const K_IS_LIVE: u16 = 1 << 0;
 pub const K_NOTE_ON_EVENT: u16 = 0;
 pub const K_NOTE_OFF_EVENT: u16 = 1;
+pub const K_NOTE_EXPRESSION_VALUE_EVENT: u16 = 4;
+/// Note expression types: tuning (normalized 0.5 + semitones / 240) and pan.
+pub const K_TUNING_TYPE_ID: u32 = 2;
+pub const K_PAN_TYPE_ID: u32 = 3;
+/// `IMidiMapping` controller numbers past the 128 CCs.
+pub const K_PITCH_BEND: i16 = 129;
 
 pub const K_IB_SEEK_SET: i32 = 0;
 pub const K_IB_SEEK_CUR: i32 = 1;
@@ -201,6 +208,7 @@ interface! {
     IComponent => IComponentVtbl, ICOMPONENT_IID;
     IAudioProcessor => IAudioProcessorVtbl, IAUDIO_PROCESSOR_IID;
     IEditController => IEditControllerVtbl, IEDIT_CONTROLLER_IID;
+    IMidiMapping => IMidiMappingVtbl, IMIDI_MAPPING_IID;
     IComponentHandler => IComponentHandlerVtbl, ICOMPONENT_HANDLER_IID;
     IConnectionPoint => IConnectionPointVtbl, ICONNECTION_POINT_IID;
     IMessage => IMessageVtbl, IMESSAGE_IID;
@@ -500,6 +508,14 @@ pub struct IComponentHandlerVtbl {
 
 // --- ivstmessage.h, ivstattributes.h -----------------------------------------
 
+/// `IMidiMapping`: the parameter a MIDI controller drives.
+#[repr(C)]
+pub struct IMidiMappingVtbl {
+    pub unknown: FUnknownVtbl,
+    pub get_midi_controller_assignment:
+        unsafe extern "system" fn(this: *mut c_void, bus_index: i32, channel: i16, controller: i16, id: *mut ParamId) -> TResult,
+}
+
 #[repr(C)]
 pub struct IConnectionPointVtbl {
     pub unknown: FUnknownVtbl,
@@ -595,12 +611,21 @@ pub struct NoteOffEvent {
     pub tuning: f32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct NoteExpressionValueEvent {
+    pub type_id: u32,
+    pub note_id: i32,
+    pub value: f64,
+}
+
 /// Union des charges utiles ; `raw` en fixe la taille (24 octets) et l'alignement.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub union EventData {
     pub note_on: NoteOnEvent,
     pub note_off: NoteOffEvent,
+    pub expression: NoteExpressionValueEvent,
     pub raw: [u64; 3],
 }
 

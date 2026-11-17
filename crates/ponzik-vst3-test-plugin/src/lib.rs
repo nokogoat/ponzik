@@ -676,6 +676,10 @@ fn apply_event(p: &mut Plugin, e: &Event) {
                 p.freq = 440.0 * 2f64.powf((n.pitch as f64 - 69.0) / 12.0);
                 p.amp = n.velocity as f64;
             }
+            K_NOTE_EXPRESSION_VALUE_EVENT if e.data.expression.type_id == K_TUNING_TYPE_ID && e.data.expression.note_id == p.key as i32 => {
+                let semitones = 240.0 * (e.data.expression.value - 0.5);
+                p.freq = 440.0 * 2f64.powf((p.key as f64 + semitones - 69.0) / 12.0);
+            }
             K_NOTE_OFF_EVENT if e.data.note_off.pitch == p.key => p.amp = 0.0,
             _ => {}
         }

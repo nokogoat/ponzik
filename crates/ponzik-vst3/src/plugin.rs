@@ -12,7 +12,7 @@ use std::ptr::null_mut;
 use std::sync::{Arc, Mutex};
 
 use ponzik_engine::ring::Producer;
-use ponzik_engine::{Editor, Effect, Instrument, ParamInfo, Params, Unit};
+use ponzik_engine::{Controller, Editor, Effect, Instrument, NoteExpression, ParamInfo, Params, TuningRamps, Unit};
 
 use crate::abi::*;
 use crate::com::*;
@@ -23,6 +23,8 @@ use crate::library::Module;
 pub const MAX_BLOCK: usize = 4096;
 /// Capacité des listes d'événements : au-delà, les événements du bloc sont perdus.
 const EVENT_CAPACITY: usize = 1024;
+/// Samples between two values of a gliding note's tuning.
+const RAMP_STEP: usize = 32;
 /// Files de sortie réservées en plus des paramètres connus.
 const EXTRA_QUEUES: usize = 16;
 
@@ -130,6 +132,12 @@ struct Core {
     outputs: Buses,
     context: Box<ProcessContext>,
     has_events: bool,
+    /// Parameter driven by each MIDI controller (`IMidiMapping`): CCs 0 to
+    /// 127, then aftertouch (128) and pitch bend ([`K_PITCH_BEND`]).
+    midi_map: Box<[Option<ParamId>; 130]>,
+    /// Tuning of each key (slides, portamento), sent every [`RAMP_STEP`].
+    tuning: Box<TuningRamps>,
+    sample_rate: f32,
     /// `IAudioProcessor::getLatencySamples`, lu à l'activation.
     latency: usize,
     held: u128,
@@ -287,6 +295,15 @@ impl Core {
             eprintln!("VST 3: \"{class_id}\" has no audio input");
         }
 
+        let mut midi_map: Box<[Option<ParamId>; 130]> = Box::new([None; 130]);
+        if let Some(mapping) = controller.as_ref().and_then(|c| c.query::<IMidiMapping>()) {
+            for (n, slot) in midi_map.iter_mut().enumerate() {
+                let mut id: ParamId = 0;
+                if call!(mapping, IMidiMappingVtbl, get_midi_controller_assignment, 0, 0, n as i16, &mut id) == K_RESULT_OK {
+                    *slot = Some(id);
+                }
+            }
+        }
         let kind = crate::kind_for(bundle, class_id);
         let (kind, infos) = shared_infos(kind, controller.as_ref());
         let mut values: Vec<Param> = Vec::with_capacity(infos.len());
@@ -318,7 +335,7 @@ impl Core {
             connection,
             kind,
             infos,
-            in_changes: ParamChanges::new(values.len()),
+            in_changes: ParamChanges::new(values.len() + EXTRA_QUEUES),
             out_changes: ParamChanges::new(values.len() + EXTRA_QUEUES),
             values,
             in_events: EventList::new(EVENT_CAPACITY),
@@ -327,6 +344,9 @@ impl Core {
             outputs: Buses::new(&outs),
             context,
             has_events,
+            midi_map,
+            tuning: Box::default(),
+            sample_rate: 48_000.0,
             held: 0,
             latency: 0,
             active: false,
@@ -340,6 +360,7 @@ impl Core {
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
         self.stop();
         let mut setup = ProcessSetup {
             process_mode: K_REALTIME,
@@ -387,11 +408,13 @@ impl Core {
             return;
         }
         let velocity = velocity.clamp(0.0, 1.0);
+        // The key is the note's id: note expressions address it.
         let (kind, data) = if on {
-            let note_on = NoteOnEvent { channel: 0, pitch: key as i16, tuning: 0.0, velocity, length: 0, note_id: -1 };
+            self.tuning.reset(key);
+            let note_on = NoteOnEvent { channel: 0, pitch: key as i16, tuning: 0.0, velocity, length: 0, note_id: key as i32 };
             (K_NOTE_ON_EVENT, EventData { note_on })
         } else {
-            let note_off = NoteOffEvent { channel: 0, pitch: key as i16, velocity, note_id: -1, tuning: 0.0 };
+            let note_off = NoteOffEvent { channel: 0, pitch: key as i16, velocity, note_id: key as i32, tuning: 0.0 };
             (K_NOTE_OFF_EVENT, EventData { note_off })
         };
         let e = Event { bus_index: 0, sample_offset: offset, ppq_position: 0.0, flags: K_IS_LIVE, kind, data };
@@ -409,6 +432,45 @@ impl Core {
                 self.note(false, key, 0.0, 0);
             }
         }
+    }
+
+    fn note_expression(&mut self, key: u8, expr: NoteExpression) {
+        let key = key.min(127);
+        match expr {
+            NoteExpression::Tuning { semitones, secs } => {
+                if let Some(v) = self.tuning.set(key, semitones, secs, self.sample_rate) {
+                    let _ = self.in_events.get().push(expression_event(K_TUNING_TYPE_ID, key, tuning_norm(v), 0));
+                }
+            }
+            NoteExpression::Pan(p) => {
+                let v = 0.5 * (p.clamp(-1.0, 1.0) as f64 + 1.0);
+                let _ = self.in_events.get().push(expression_event(K_PAN_TYPE_ID, key, v, 0));
+            }
+        }
+    }
+
+    /// Pitch bend and CCs: to the parameter the plugin maps them to, if any.
+    fn controller(&mut self, ctl: Controller) {
+        let (n, v) = match ctl {
+            Controller::PitchBend(b) => (K_PITCH_BEND as usize, 0.5 * (b.clamp(-1.0, 1.0) as f64 + 1.0)),
+            Controller::Cc(cc, v) => (usize::from(cc.min(127)), v.clamp(0.0, 1.0) as f64),
+        };
+        if let Some(id) = self.midi_map[n] {
+            self.in_changes.get().add(id, 0, v);
+        }
+    }
+
+    /// Values of the gliding notes over the next `frames` samples.
+    fn ramp_tuning(&mut self, frames: usize) {
+        if !self.has_events || !self.tuning.is_busy() {
+            return;
+        }
+        let Self { tuning, in_events, .. } = self;
+        let events = in_events.get();
+        tuning.advance(frames, RAMP_STEP, |off, key, v| {
+            // A full list drops the step: the next one corrects it.
+            let _ = events.push(expression_event(K_TUNING_TYPE_ID, key, tuning_norm(v), off as i32));
+        });
     }
 
     /// Un appel `process` sur `frames` échantillons, tampons déjà remplis.
@@ -459,6 +521,16 @@ impl Core {
         out.clear();
         status == K_RESULT_OK || status == K_RESULT_FALSE
     }
+}
+
+/// Normalized tuning of a note expression.
+fn tuning_norm(semitones: f32) -> f64 {
+    (0.5 + semitones as f64 / 240.0).clamp(0.0, 1.0)
+}
+
+fn expression_event(type_id: u32, key: u8, value: f64, offset: i32) -> Event {
+    let expression = NoteExpressionValueEvent { type_id, note_id: key as i32, value };
+    Event { bus_index: 0, sample_offset: offset, ppq_position: 0.0, flags: K_IS_LIVE, kind: K_NOTE_EXPRESSION_VALUE_EVENT, data: EventData { expression } }
 }
 
 impl Drop for Core {
@@ -631,6 +703,20 @@ impl Instrument for Vst3Instrument {
         self.0.note(false, note, 0.0, 0);
     }
 
+    fn supports_expression(&self) -> bool {
+        self.0.has_events
+    }
+
+    fn note_expression(&mut self, key: u8, expr: NoteExpression) {
+        if self.0.has_events {
+            self.0.note_expression(key, expr);
+        }
+    }
+
+    fn controller(&mut self, ctl: Controller) {
+        self.0.controller(ctl);
+    }
+
     fn all_notes_off(&mut self) {
         self.0.all_notes_off();
     }
@@ -648,6 +734,7 @@ impl Instrument for Vst3Instrument {
         for (l, r) in left.chunks_mut(MAX_BLOCK).zip(right.chunks_mut(MAX_BLOCK)) {
             let n = l.len();
             core.inputs.clear(n);
+            core.ramp_tuning(n);
             if !core.run(n) {
                 return;
             }
