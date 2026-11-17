@@ -580,6 +580,9 @@ fn intern_atom(stream: &mut UnixStream, name: &str) -> Result<u32, WindowError> 
 
 /// Taille d'une requête ShmPutImage, en octets.
 const SHM_PUT_IMAGE_LEN: usize = 40;
+/// Octet `send_event` d'une requête ShmPutImage : en-tête (4), drawable et gc
+/// (8), tailles et zone source (12), destination (4), depth et format (2).
+const SHM_SEND_EVENT: usize = 30;
 
 struct Shm {
     seg: u32,
@@ -1112,8 +1115,8 @@ impl Window {
                 Err(_) => self.shm_busy = false,
             }
         }
-        if self.shm_failed {
-            self.shm = None;
+        if self.shm_failed && self.shm.take().is_some() {
+            eprintln!("ponzik-window: MIT-SHM refused, images now go through the socket (slower)");
         }
 
         if let (Some((seg, addr)), Some(major)) = (self.shm.as_ref().map(|s| (s.seg, s.addr)), self.shm_major) {
@@ -1152,8 +1155,8 @@ impl Window {
                 reqs.extend_from_slice(r.finish());
             }
             let Some(last) = reqs.len().checked_sub(SHM_PUT_IMAGE_LEN) else { return Ok(()) };
-            // Le serveur prévient quand il a lu la dernière zone (send_event, octet 34).
-            reqs[last + 34] = 1;
+            // Le serveur prévient quand il a lu la dernière zone (send_event, octet 30 : après depth et format).
+            reqs[last + SHM_SEND_EVENT] = 1;
             self.shm_busy = true;
             self.shm_image = (width, height);
             return self.send(&reqs);
@@ -1231,6 +1234,17 @@ impl Drop for Window {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shm_put_image_layout() {
+        let mut r = Req::new(130, SHM_PUT_IMAGE);
+        r.u32(7).u32(8).u16(100).u16(50).u16(1).u16(2).u16(3).u16(4).i16(5).i16(6);
+        r.u8(24).u8(2).u8(1).u8(0).u32(0xabcd).u32(0);
+        let bytes = r.finish().to_vec();
+        assert_eq!(bytes.len(), SHM_PUT_IMAGE_LEN);
+        assert_eq!(bytes[SHM_SEND_EVENT], 1, "send_event");
+        assert_eq!(u32::from_le_bytes(bytes[32..36].try_into().unwrap()), 0xabcd, "shmseg untouched");
+    }
 
     const ALL: [Cursor; CURSOR_SHAPES] = [
         Cursor::Arrow,
