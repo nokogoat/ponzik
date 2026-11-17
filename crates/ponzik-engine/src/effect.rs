@@ -52,6 +52,13 @@ pub trait Effect: Params + Send {
         None
     }
 
+    /// Restores a plugin's opaque state ([`PluginEditor::save_state`](crate::PluginEditor::save_state))
+    /// on an instance not sent to the engine yet, before `set_sample_rate`
+    /// activates it; the parameter values are read back from the plugin.
+    fn load_state(&mut self, _data: &[u8]) -> Result<(), String> {
+        Err("this device has no state".into())
+    }
+
     /// Traitement sur place d'un bloc stéréo (`left.len() == right.len()`).
     fn process(&mut self, left: &mut [f32], right: &mut [f32]);
 }

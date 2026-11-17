@@ -10,6 +10,10 @@
 //! own work from: timers (`clap.timer-support`, `ITimerHandler`) and file
 //! descriptors (`clap.posix-fd-support`, `IEventHandler`), pumped by
 //! [`PluginEditor::idle`].
+//!
+//! The editor is also the main-thread handle on the plugin's opaque state
+//! ([`PluginEditor::save_state`], [`PluginEditor::load_state`]): CLAP
+//! `clap.state`, VST 3 component and controller states.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -81,6 +85,18 @@ pub enum EditorEvent {
     Closed,
 }
 
+/// Why a plugin's state is saved or loaded (CLAP `clap.state-context`):
+/// some plugins leave things out of a preset that a project keeps.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StateContext {
+    /// Inside a project, restored with it.
+    Project,
+    /// A preset, loaded later into another instance.
+    Preset,
+    /// A copy of the instance (duplicated device).
+    Duplicate,
+}
+
 /// A plugin's own interface. All methods run on the UI thread.
 pub trait PluginEditor: Send + Sync {
     /// The plugin offers an embeddable interface for this platform.
@@ -113,6 +129,21 @@ pub trait PluginEditor: Send + Sync {
     /// The host changed a parameter (knob in Ponzik, undo, automation): the
     /// interface follows. Same unit as [`EditorEvent::Param`].
     fn param_changed(&self, id: u32, value: f32);
+
+    /// The plugin's opaque state (everything a patch is made of, parameters
+    /// included), or `None` if it has none or fails to write it. Calls into
+    /// the plugin: never on every edit, only when saving.
+    fn save_state(&self, _context: StateContext) -> Option<Vec<u8>> {
+        None
+    }
+
+    /// Restores a state written by [`PluginEditor::save_state`] while the
+    /// instance plays, and returns the parameter values read back from the
+    /// plugin (same unit as [`EditorEvent::Param`]): the host takes them as
+    /// its own values.
+    fn load_state(&self, _data: &[u8], _context: StateContext) -> Result<Vec<(u32, f32)>, String> {
+        Err("this plugin has no state".into())
+    }
 }
 
 /// Shared handle on an instance's editor.

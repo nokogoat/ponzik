@@ -29,7 +29,7 @@ pub mod sequence;
 pub mod tempo_map;
 pub mod wav;
 
-pub use editor::{Editor, EditorEvent, EditorSize, ParentWindow, PluginEditor, RunLoop};
+pub use editor::{Editor, EditorEvent, EditorSize, ParentWindow, PluginEditor, RunLoop, StateContext};
 pub use denormal::FlushDenormals;
 pub use effect::Effect;
 pub use effects::fx_rack::{MacroMap, RackLayout};
