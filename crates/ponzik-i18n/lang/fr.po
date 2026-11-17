@@ -4815,8 +4815,8 @@ msgstr "« {} » : routages vers les pistes au-delà de {} abandonnés"
 msgid "'{}': sample not found on this computer: {}"
 msgstr "« {} » : échantillon introuvable sur cet ordinateur : {}"
 
-msgid "'{}': sample {} is not a WAV file (only WAV is supported)"
-msgstr "« {} » : l'échantillon {} n'est pas un WAV (seul le WAV est pris en charge)"
+msgid "'{}': sample {} is not a WAV or FLAC file (only these are supported)"
+msgstr "« {} » : l'échantillon {} n'est ni un WAV ni un FLAC (seuls ces formats sont pris en charge)"
 
 msgid "'{}': {} routes beyond {} sends dropped"
 msgstr "« {} » : {} routages au-delà de {} envois abandonnés"
@@ -6460,3 +6460,25 @@ msgstr "{} · {}"
 
 msgid "{} → {}"
 msgstr "{} → {}"
+# --- FLAC export ---
+
+msgid "Export as FLAC"
+msgstr "Exporter en FLAC"
+
+msgid "Lossless, 24 bits, about half the size of a WAV"
+msgstr "Sans perte, 24 bits, environ moitié moins lourd qu'un WAV"
+
+msgid "Export FLAC (lossless, 24-bit)"
+msgstr "Exporter en FLAC (sans perte, 24 bits)"
+
+msgid "Export FLAC in 16 bits (TPDF dither)"
+msgstr "Exporter en FLAC 16 bits (dither TPDF)"
+
+msgid "Export FLAC for streaming (−14 LUFS, −1 dBTP)"
+msgstr "Exporter en FLAC pour le streaming (−14 LUFS, −1 dBTP)"
+
+msgid "Export separate tracks (stems) as FLAC"
+msgstr "Exporter les pistes séparées (stems) en FLAC"
+
+msgid "Export each section as its own FLAC (render by regions)"
+msgstr "Exporter chaque section dans son propre FLAC (rendu par régions)"

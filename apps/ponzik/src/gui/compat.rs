@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use ponzik_engine::Sample;
 use ponzik_i18n::tr;
-use ponzik_project::{BitDepth, ExportOptions, Project, RenderMode};
+use ponzik_project::{BitDepth, ExportOptions, FileFormat, Project, RenderMode};
 
 const SAMPLE_SCAN_LIMIT: usize = 400;
 
@@ -54,8 +54,9 @@ pub fn default_project_path(name: &str) -> PathBuf {
     projects_dir().join(format!("{}.ponzik", file_name(name)))
 }
 
-pub fn default_export_path(name: &str) -> PathBuf {
-    projects_dir().join("Exports").join(format!("{}.wav", file_name(name)))
+/// `Exports/<project>.<ext>` (`ext`: "wav" or "flac").
+pub fn default_export_path(name: &str, ext: &str) -> PathBuf {
+    projects_dir().join("Exports").join(format!("{}.{ext}", file_name(name)))
 }
 
 pub fn list_projects() -> Vec<PathBuf> {
@@ -81,7 +82,7 @@ pub fn load_project(path: &Path) -> Result<Project, String> {
     ponzik_project::load_from_file(path)
 }
 
-/// Rend tout le morceau en WAV 24 bits ; renvoie sa durée en secondes.
+/// Rend tout le morceau en WAV ou FLAC ; renvoie sa durée en secondes et le gain de normalisation.
 pub fn export_song(
     project: &Project,
     sample_rate: u32,
@@ -96,13 +97,13 @@ pub fn export_song(
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     let mut audio = ponzik_project::render_song(project, sample_rate, loader, RenderMode::Song);
-    let gain = ponzik_project::export_wav(path, &mut audio, sample_rate, options)
+    let gain = ponzik_project::export_audio(path, &mut audio, sample_rate, options)
         .map_err(|e| format!("{}: {e}", path.display()))?;
     Ok((audio.len() as f32 / 2.0 / sample_rate as f32, gain))
 }
 
-/// Renders each section (marker to marker) to "<project> - <section>.wav" in
-/// the exports folder; returns the folder and the number of files.
+/// Renders each section (marker to marker) to "<project> - <section>.wav" (or
+/// .flac) in the exports folder; returns the folder and the number of files.
 pub fn export_regions(
     project: &Project,
     sample_rate: u32,
@@ -116,9 +117,9 @@ pub fn export_regions(
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let mut taken = Vec::new();
     for (i, (name, mut audio)) in ponzik_project::render_regions(project, sample_rate, loader).into_iter().enumerate() {
-        let file = ponzik_project::region_file_name(&project.name, &name, i, &taken);
+        let file = ponzik_project::region_file_name(&project.name, &name, i, &taken, options.format.extension());
         let path = dir.join(&file);
-        ponzik_project::export_wav(&path, &mut audio, sample_rate, options).map_err(|e| format!("{}: {e}", path.display()))?;
+        ponzik_project::export_audio(&path, &mut audio, sample_rate, options).map_err(|e| format!("{}: {e}", path.display()))?;
         taken.push(file);
     }
     Ok((dir, taken.len()))
@@ -260,7 +261,7 @@ fn walk(dir: &Path, depth: usize, skip: Option<&Path>, out: &mut Vec<PathBuf>) {
         }
         if p.is_dir() {
             walk(&p, depth + 1, skip, out);
-        } else if p.extension().is_some_and(|x| x.eq_ignore_ascii_case("wav")) {
+        } else if ponzik_engine::wav::is_audio_file(&p) {
             out.push(p);
             if out.len() >= SAMPLE_SCAN_LIMIT {
                 return;
@@ -269,11 +270,14 @@ fn walk(dir: &Path, depth: usize, skip: Option<&Path>, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Rend une piste de mixer par fichier dans `Exports/<projet>/` ; renvoie le dossier et le nombre de fichiers.
+/// Rend une piste de mixer par fichier dans `Exports/<projet>/` (24-bit WAV or
+/// FLAC, never normalized: the stems add up to the mix) ; renvoie le dossier
+/// et le nombre de fichiers.
 pub fn export_stems(
     project: &Project,
     sample_rate: u32,
     loader: &dyn Fn(&str) -> Option<Arc<Sample>>,
+    format: FileFormat,
 ) -> Result<(PathBuf, usize), String> {
     if project.clips.is_empty() && project.audio_clips.is_empty() {
         return Err(tr("The playlist is empty: place patterns before exporting").into());
@@ -282,9 +286,10 @@ pub fn export_stems(
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let stems = ponzik_project::render_stems(project, sample_rate, loader, RenderMode::Song);
     for (track, audio) in &stems {
-        let name = format!("{:02} {}.wav", track, file_name(&project.tracks[*track].name));
+        let name = format!("{:02} {}.{}", track, file_name(&project.tracks[*track].name), format.extension());
         let path = dir.join(name);
-        ponzik_project::write_wav(&path, audio, sample_rate, BitDepth::Pcm24).map_err(|e| format!("{}: {e}", path.display()))?;
+        let options = ExportOptions { depth: BitDepth::Pcm24, format, ..Default::default() };
+        ponzik_project::write_audio(&path, audio, sample_rate, options).map_err(|e| format!("{}: {e}", path.display()))?;
     }
     Ok((dir, stems.len()))
 }

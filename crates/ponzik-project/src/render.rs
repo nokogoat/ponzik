@@ -192,16 +192,16 @@ pub fn render_regions(project: &Project, sample_rate: u32, loader: SampleLoader)
         .collect()
 }
 
-/// File name of a region export: "<project> - <section>.wav", with a number
+/// File name of a region export: "<project> - <section>.<ext>", with a number
 /// for unnamed or repeated sections (`index` is 0-based).
-pub fn region_file_name(project: &str, section: &str, index: usize, taken: &[String]) -> String {
+pub fn region_file_name(project: &str, section: &str, index: usize, taken: &[String], ext: &str) -> String {
     let clean = |s: &str| s.chars().map(|c| if "/\\\\:*?\"<>|".contains(c) || c.is_control() { '_' } else { c }).collect::<String>();
     let section = section.trim();
     let base = if section.is_empty() { format!("{:02}", index + 1) } else { clean(section) };
-    let mut name = format!("{} - {}.wav", clean(project.trim()), base);
+    let mut name = format!("{} - {}.{ext}", clean(project.trim()), base);
     let mut k = 2;
     while taken.contains(&name) {
-        name = format!("{} - {} {}.wav", clean(project.trim()), base, k);
+        name = format!("{} - {} {}.{ext}", clean(project.trim()), base, k);
         k += 1;
     }
     name
@@ -235,18 +235,50 @@ pub enum Normalize {
     Loudness { lufs: f32, ceiling: f32 },
 }
 
-/// Réglages d'un export WAV.
+/// Container of an export.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FileFormat {
+    #[default]
+    Wav,
+    /// Lossless and about half the size; integers only (32-bit float is
+    /// written as 24 bits).
+    Flac,
+}
+
+impl FileFormat {
+    pub fn extension(self) -> &'static str {
+        match self {
+            FileFormat::Wav => "wav",
+            FileFormat::Flac => "flac",
+        }
+    }
+}
+
+/// Réglages d'un export WAV or FLAC.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ExportOptions {
     pub depth: BitDepth,
     pub normalize: Normalize,
     /// Dither TPDF avant la réduction en 16 bits (sans effet en 24 bits et en flottant).
     pub dither: bool,
+    pub format: FileFormat,
 }
 
 impl Default for ExportOptions {
     fn default() -> Self {
-        Self { depth: BitDepth::Pcm24, normalize: Normalize::Off, dither: true }
+        Self { depth: BitDepth::Pcm24, normalize: Normalize::Off, dither: true, format: FileFormat::Wav }
+    }
+}
+
+impl ExportOptions {
+    /// Lossless FLAC, 24 bits.
+    pub fn flac() -> Self {
+        Self { format: FileFormat::Flac, ..Self::default() }
+    }
+
+    /// Bit depth actually written: FLAC has no floating point.
+    pub fn written_depth(&self) -> BitDepth {
+        if self.format == FileFormat::Flac && self.depth == BitDepth::Float32 { BitDepth::Pcm24 } else { self.depth }
     }
 }
 
@@ -299,6 +331,70 @@ pub fn normalize(samples: &mut [f32], sample_rate: u32, mode: Normalize) -> f32 
         samples.iter_mut().for_each(|s| *s *= k);
     }
     gain
+}
+
+/// Normalizes then writes the render as WAV or FLAC (`options.format`);
+/// returns the normalization gain (dB).
+pub fn export_audio(
+    path: impl AsRef<Path>,
+    samples: &mut [f32],
+    sample_rate: u32,
+    options: ExportOptions,
+) -> io::Result<f32> {
+    match options.format {
+        FileFormat::Wav => export_wav(path, samples, sample_rate, options),
+        FileFormat::Flac => {
+            let gain = normalize(samples, sample_rate, options.normalize);
+            let mut w = BufWriter::new(File::create(path)?);
+            encode_flac(&mut w, samples, 2, sample_rate, options.written_depth(), options.dither)?;
+            w.flush()?;
+            Ok(gain)
+        }
+    }
+}
+
+/// Writes interleaved stereo without normalization (stems), WAV or FLAC.
+pub fn write_audio(path: impl AsRef<Path>, samples: &[f32], sample_rate: u32, options: ExportOptions) -> io::Result<()> {
+    let mut w = BufWriter::new(File::create(path)?);
+    match options.format {
+        FileFormat::Wav => encode_wav_with(&mut w, samples, sample_rate, options.depth, options.dither)?,
+        FileFormat::Flac => encode_flac(&mut w, samples, 2, sample_rate, options.written_depth(), options.dither)?,
+    }
+    w.flush()
+}
+
+/// Encodes `channels` interleaved channels as FLAC in 16 or 24 bits (32-bit
+/// float becomes 24 bits), quantized exactly like the WAV of the same depth
+/// (same TPDF dither in 16 bits): both decode to the same integers.
+pub fn encode_flac(
+    w: &mut impl Write,
+    samples: &[f32],
+    channels: u16,
+    sample_rate: u32,
+    depth: BitDepth,
+    dither: bool,
+) -> io::Result<()> {
+    let depth = if depth == BitDepth::Float32 { BitDepth::Pcm24 } else { depth };
+    let pcm = quantize(samples, depth, dither);
+    let opts = ponzik_engine::flac::EncodeOptions::default();
+    w.write_all(&ponzik_engine::flac::encode(&pcm, channels.max(1) as usize, sample_rate, depth.bits() as u32, opts))
+}
+
+/// Integer samples of a 16- or 24-bit file, bounded to ±1 first (the same
+/// TPDF dither as [`encode_wav_channels`] in 16 bits when asked).
+fn quantize(samples: &[f32], depth: BitDepth, dither: bool) -> Vec<i32> {
+    let mut noise = WhiteNoise::new(0x5EED_D17E);
+    let mut tpdf = || if dither { 0.5 * (noise.next_sample() + noise.next_sample()) } else { 0.0 };
+    samples
+        .iter()
+        .map(|&s| {
+            let s = if s.is_finite() { s.clamp(-1.0, 1.0) } else { 0.0 };
+            match depth {
+                BitDepth::Pcm16 => (s * 32_767.0 + tpdf()).round().clamp(-32_768.0, 32_767.0) as i32,
+                _ => (s as f64 * 8_388_607.0).round().clamp(-8_388_608.0, 8_388_607.0) as i32,
+            }
+        })
+        .collect()
 }
 
 /// Normalise puis écrit le rendu ; renvoie le gain de normalisation (dB).
@@ -491,9 +587,10 @@ mod tests {
             assert!(peak(&out[2 * bar..2 * (bar + 64)]) > 0.05, "{name}");
         }
         let taken = vec!["Song - Drop.wav".to_string()];
-        assert_eq!(region_file_name("Song", "Drop", 1, &taken), "Song - Drop 2.wav");
-        assert_eq!(region_file_name("Song", " ", 0, &[]), "Song - 01.wav");
-        assert_eq!(region_file_name("A/B", "x:y", 0, &[]), "A_B - x_y.wav");
+        assert_eq!(region_file_name("Song", "Drop", 1, &taken, "wav"), "Song - Drop 2.wav");
+        assert_eq!(region_file_name("Song", "Drop", 1, &taken, "flac"), "Song - Drop.flac");
+        assert_eq!(region_file_name("Song", " ", 0, &[], "wav"), "Song - 01.wav");
+        assert_eq!(region_file_name("A/B", "x:y", 0, &[], "wav"), "A_B - x_y.wav");
     }
 
     #[test]
@@ -804,13 +901,50 @@ mod tests {
     fn export_normalizes_then_writes() {
         let path = std::env::temp_dir().join(format!("ponzik-export-{}.wav", std::process::id()));
         let mut audio = sine(0.5, 0.5, 48_000);
-        let options = ExportOptions { depth: BitDepth::Pcm16, normalize: Normalize::Peak(0.0), dither: true };
+        let options = ExportOptions { depth: BitDepth::Pcm16, normalize: Normalize::Peak(0.0), dither: true, ..Default::default() };
         let gain = export_wav(&path, &mut audio, 48_000, options).unwrap();
         assert!((gain - 6.02).abs() < 0.05, "{gain}");
         let bytes = std::fs::read(&path).unwrap();
         assert_eq!(bytes.len(), 44 + audio.len() * 2);
         let max = bytes[44..].chunks(2).map(|c| i16::from_le_bytes([c[0], c[1]]).unsigned_abs()).max().unwrap();
         assert!(max >= 32_700, "{max}");
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn flac_export_decodes_to_the_same_integers_as_the_wav() {
+        let p = demo_project();
+        let render = render_song(&p, SR, &no_samples, RenderMode::Pattern(0, 2));
+        assert!(peak(&render) > 0.05);
+        for (depth, bytes) in [(BitDepth::Pcm16, 2usize), (BitDepth::Pcm24, 3)] {
+            let mut wav = Vec::new();
+            encode_wav_with(&mut wav, &render, SR, depth, true).unwrap();
+            let pcm: Vec<i32> = wav[44..]
+                .chunks(bytes)
+                .map(|c| if bytes == 2 { i16::from_le_bytes([c[0], c[1]]) as i32 } else { i32::from_le_bytes([0, c[0], c[1], c[2]]) >> 8 })
+                .collect();
+            let mut flac = Vec::new();
+            encode_flac(&mut flac, &render, 2, SR, depth, true).unwrap();
+            let s = ponzik_engine::flac::decode(&flac).unwrap();
+            assert_eq!((s.bits, s.channels, s.sample_rate), (depth.bits() as u32, 2, SR));
+            assert!(s.samples == pcm, "{depth:?}: FLAC and WAV hold the same audio");
+            assert!(s.md5_ok());
+            // A real render compresses well below the WAV.
+            let ratio = flac.len() as f64 / wav.len() as f64;
+            assert!(ratio < 0.75, "{depth:?}: {ratio:.3}");
+        }
+        // Float asked of FLAC: written in 24 bits.
+        let path = std::env::temp_dir().join(format!("ponzik-export-{}.flac", std::process::id()));
+        let mut audio = render.clone();
+        let options = ExportOptions { depth: BitDepth::Float32, normalize: Normalize::Peak(-1.0), ..ExportOptions::flac() };
+        let gain = export_audio(&path, &mut audio, SR, options).unwrap();
+        assert!(gain != 0.0);
+        let s = ponzik_engine::flac::decode(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!((s.bits, s.frames()), (24, render.len() / 2));
+        let loaded = ponzik_engine::wav::load_wav(&path).unwrap();
+        assert!((peak(&loaded.left).max(peak(&loaded.right)) - 10f32.powf(-1.0 / 20.0)).abs() < 1e-3);
+        write_audio(&path, &render, SR, ExportOptions { depth: BitDepth::Pcm16, ..ExportOptions::flac() }).unwrap();
+        assert_eq!(ponzik_engine::flac::decode(&std::fs::read(&path).unwrap()).unwrap().bits, 16);
         std::fs::remove_file(&path).unwrap();
     }
 

@@ -749,7 +749,7 @@ fn library_files() -> Vec<PathBuf> {
             let p = e.path();
             if p.is_dir() {
                 walk(&p, depth + 1, out);
-            } else if p.extension().is_some_and(|x| x.eq_ignore_ascii_case("wav")) {
+            } else if ponzik_engine::wav::is_audio_file(&p) {
                 out.push(p);
             }
         }

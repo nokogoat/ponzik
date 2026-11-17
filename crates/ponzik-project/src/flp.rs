@@ -866,8 +866,9 @@ pub fn import_flp(
         let sample_like =
             ch.kind == TYPE_SAMPLER || (ch.internal.is_empty() && matches!(ch.kind, TYPE_NATIVE | TYPE_INSTRUMENT));
         let wav = ch.sample.as_deref().and_then(|raw| {
-            if !raw.to_lowercase().ends_with(".wav") {
-                report.skipped.push(tr_fmt!("'{}': sample {} is not a WAV file (only WAV is supported)", label, raw));
+            let lower = raw.to_lowercase();
+            if !lower.ends_with(".wav") && !lower.ends_with(".flac") {
+                report.skipped.push(tr_fmt!("'{}': sample {} is not a WAV or FLAC file (only these are supported)", label, raw));
                 return None;
             }
             let found = resolve(raw);
@@ -1508,7 +1509,7 @@ mod tests {
         assert!(p.channels[0].instrument.sample.is_none());
         let lines = report.lines().join("\n");
         assert!(lines.contains("sample not found on this computer: %FLStudioFactoryData%\\Hat.wav"), "{lines}");
-        assert!(lines.contains("is not a WAV file"), "{lines}");
+        assert!(lines.contains("is not a WAV or FLAC file"), "{lines}");
     }
 
     #[test]

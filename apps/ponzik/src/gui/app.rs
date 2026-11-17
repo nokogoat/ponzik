@@ -280,7 +280,7 @@ pub enum Action {
     /// Nouveau projet à partir du modèle n.
     NewFromTemplate(usize),
     Export,
-    /// Export WAV avec un format et une normalisation.
+    /// Export WAV or FLAC avec un format et une normalisation.
     ExportWith(ponzik_project::ExportOptions),
     Undo,
     Redo,
@@ -288,8 +288,9 @@ pub enum Action {
     SetTheme(usize),
     Automate(ponzik_engine::AutoTarget, f32),
     SaveAs,
-    ExportStems,
-    /// One WAV per arrangement section.
+    /// One file per mixer track, WAV or FLAC.
+    ExportStems(ponzik_project::FileFormat),
+    /// One file per arrangement section.
     ExportSections(ponzik_project::ExportOptions),
     Marker(usize, super::arrange::MarkerOp),
     /// Adds a marker at the playhead.
@@ -1404,11 +1405,11 @@ impl App {
         }
     }
 
-    pub fn export_stems(&mut self) {
+    pub fn export_stems(&mut self, format: ponzik_project::FileFormat) {
         self.capture_plugin_states();
         let result = {
             let loader = self.sample_loader();
-            compat::export_stems(&self.project, self.sample_rate, &loader)
+            compat::export_stems(&self.project, self.sample_rate, &loader, format)
         };
         match result {
             Ok((dir, n)) => self.toast(&tr_fmt!("{} stems exported to {}", n, dir.display().to_string())),
@@ -1664,7 +1665,7 @@ impl App {
     pub fn export_with(&mut self, options: ponzik_project::ExportOptions) {
         // The render builds its own instances: they start from the states of now.
         self.capture_plugin_states();
-        let path = compat::default_export_path(&self.project.name);
+        let path = compat::default_export_path(&self.project.name, options.format.extension());
         let result = {
             let loader = self.sample_loader();
             compat::export_song(&self.project, self.sample_rate, &loader, &path, options)
@@ -3367,7 +3368,9 @@ impl App {
                         MenuItem::new(Icon::Save, tr("Save"), Action::Save).detail(key(S::Save)),
                         MenuItem::new(Icon::Pencil, tr("Save as"), Action::SaveAs).detail(key(S::SaveAs)),
                         MenuItem::new(Icon::Export, tr("Export as WAV"), Action::Export).detail(key(S::Export)).sep(),
-                        MenuItem::new(Icon::Columns, tr("Export stems"), Action::ExportStems).tip(tr("One WAV per mixer track")),
+                        MenuItem::new(Icon::Export, tr("Export as FLAC"), Action::ExportWith(ponzik_project::ExportOptions::flac()))
+                            .tip(tr("Lossless, 24 bits, about half the size of a WAV")),
+                        MenuItem::new(Icon::Columns, tr("Export stems"), Action::ExportStems(Default::default())).tip(tr("One WAV per mixer track")),
                         MenuItem::new(Icon::Columns, tr("Export sections"), Action::ExportSections(Default::default()))
                             .tip(tr("One WAV per arrangement section: \"<project> - <section>.wav\"")),
                         MenuItem::new(Icon::Piano, tr("Import MIDI"), Action::ImportMidiMenu).sep(),
@@ -3677,7 +3680,7 @@ impl App {
                 let text = self.project.name.clone();
                 self.open_popup(Popup::Rename { target: Rename::SaveAs, text }, anchor);
             }
-            Action::ExportStems => self.export_stems(),
+            Action::ExportStems(format) => self.export_stems(format),
             Action::ExportSections(options) => self.export_sections(options),
             Action::Marker(i, op) => self.marker_op(i, op),
             Action::AddMarkerHere => {

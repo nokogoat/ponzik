@@ -199,6 +199,12 @@ impl App {
             let exports = [
                 (tr("Export to 16-bit WAV (TPDF dither)"), ExportOptions { depth: BitDepth::Pcm16, ..wav }),
                 (tr("Export to 32-bit float WAV"), ExportOptions { depth: BitDepth::Float32, ..wav }),
+                (tr("Export FLAC (lossless, 24-bit)"), ExportOptions::flac()),
+                (tr("Export FLAC in 16 bits (TPDF dither)"), ExportOptions { depth: BitDepth::Pcm16, ..ExportOptions::flac() }),
+                (
+                    tr("Export FLAC for streaming (−14 LUFS, −1 dBTP)"),
+                    ExportOptions { normalize: Normalize::Loudness { lufs: -14.0, ceiling: -1.0 }, ..ExportOptions::flac() },
+                ),
                 (tr("Export normalized (peak at −0.3 dBFS)"), ExportOptions { normalize: Normalize::Peak(-0.3), ..wav }),
                 (
                     tr("Export for streaming (−14 LUFS, −1 dBTP)"),
@@ -213,8 +219,15 @@ impl App {
                 add(title.into(), tr("File"), none(), Action::ExportWith(options));
             }
         }
-        add(tr("Export separate tracks (stems)").into(), tr("File"), none(), Action::ExportStems);
+        add(tr("Export separate tracks (stems)").into(), tr("File"), none(), Action::ExportStems(ponzik_project::FileFormat::Wav));
+        add(tr("Export separate tracks (stems) as FLAC").into(), tr("File"), none(), Action::ExportStems(ponzik_project::FileFormat::Flac));
         add(tr("Export each section as its own WAV (render by regions)").into(), tr("File"), none(), Action::ExportSections(Default::default()));
+        add(
+            tr("Export each section as its own FLAC (render by regions)").into(),
+            tr("File"),
+            none(),
+            Action::ExportSections(ponzik_project::ExportOptions::flac()),
+        );
         add(tr("Import a MIDI file").into(), tr("File"), none(), Action::ImportMidiMenu);
         add(tr("Import an FL Studio project (.flp)").into(), tr("File"), none(), Action::ImportFlpMenu);
         add(tr("Show the FL Studio import report").into(), tr("File"), none(), Action::Popup(Popup::ImportReport));
