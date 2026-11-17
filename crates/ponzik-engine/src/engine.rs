@@ -2116,7 +2116,7 @@ fn write_interleaved(out: &mut [f32], channels: usize, left: &[f32], right: &[f3
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mixer::DEFAULT_TRACKS as TRACKS;
+    use crate::mixer::DEFAULT_TRACKS;
     use crate::input::{CALIBRATION_SECONDS, InputProducer, input_channel, measure_round_trip, take_slices};
     use crate::sample::Sample;
     use crate::sequence::{AutoPoint, AutoScope, AutomationLane, Clip, Note, Pattern, TICKS_PER_STEP};
@@ -2355,7 +2355,7 @@ mod tests {
         handle.send(Command::SetInsert { track: 3, slot: 2, effect: Some(fx) }).unwrap();
         handle.send(Command::SetInsertSidechain { track: 3, slot: 2, key: Some(5) }).unwrap();
         handle.send(Command::SetMonitor { track: 4, source: Some(InputSource::Left) }).unwrap();
-        let mut edges = vec![vec![MASTER]; TRACKS];
+        let mut edges = vec![vec![MASTER]; DEFAULT_TRACKS];
         edges[MASTER].clear();
         edges[1] = vec![3, 5];
         handle.send(Command::SetRoutingOrder(crate::mixer::routing_order(&edges).unwrap())).unwrap();
@@ -2367,7 +2367,7 @@ mod tests {
 
         // A new track at 1 (the others move up by one), track 5 deleted, two appended.
         let mut from: Vec<Option<usize>> = vec![Some(MASTER), None];
-        from.extend((1..TRACKS).filter(|&t| t != 5).map(Some));
+        from.extend((1..DEFAULT_TRACKS).filter(|&t| t != 5).map(Some));
         from.extend([None, None]);
         let count = from.len();
         let mut edges = vec![vec![MASTER]; count];
@@ -2377,7 +2377,7 @@ mod tests {
         handle.send(track_remap(SR, &from, order)).unwrap();
         run(&mut engine, 256, 256);
         let m = &engine.mixer;
-        assert_eq!(m.len(), TRACKS + 2);
+        assert_eq!(m.len(), DEFAULT_TRACKS + 2);
         assert_eq!(engine.channels[0].track, 2, "the channel follows its track");
         assert_eq!((m.tracks[2].gain, m.tracks[2].output), (0.5, 4));
         assert_eq!(m.tracks[2].sends[0], (MASTER, 0.0), "the send to the deleted track goes");
@@ -2393,7 +2393,7 @@ mod tests {
             Garbage::Mixer(old) => Some(old),
             _ => None,
         });
-        assert_eq!(old.expect("the old mixer comes back").len(), TRACKS);
+        assert_eq!(old.expect("the old mixer comes back").len(), DEFAULT_TRACKS);
     }
 
     #[test]
@@ -2410,7 +2410,7 @@ mod tests {
             fx.set_param(1, 20.0);
             handle.send(Command::SetInsert { track: 1, slot: 0, effect: Some(fx) }).unwrap();
             handle.send(Command::SetInsertSidechain { track: 1, slot: 0, key: Some(2) }).unwrap();
-            let mut edges = vec![vec![MASTER]; TRACKS];
+            let mut edges = vec![vec![MASTER]; DEFAULT_TRACKS];
             edges[MASTER].clear();
             edges[2].push(1);
             let order = crate::mixer::routing_order(&edges).unwrap();
@@ -3473,15 +3473,15 @@ mod tests {
         handle.send(Command::Play).unwrap();
         for block in 0..2_000usize {
             let order: Box<[usize]> = match block % 4 {
-                0 => crate::mixer::default_order(TRACKS),
-                1 => (1..TRACKS).collect(),
+                0 => crate::mixer::default_order(DEFAULT_TRACKS),
+                1 => (1..DEFAULT_TRACKS).collect(),
                 2 => [3, 1, 2, 1, 40].into(),
                 _ => Box::new([]),
             };
             handle.send(Command::SetRoutingOrder(order)).unwrap();
             let track = 1 + block % 5;
-            handle.send(Command::SetTrackOutput { track, output: (block * 7) % TRACKS }).unwrap();
-            handle.send(Command::SetTrackSend { track, slot: 0, target: (block * 3) % TRACKS, amount: 0.5 }).unwrap();
+            handle.send(Command::SetTrackOutput { track, output: (block * 7) % DEFAULT_TRACKS }).unwrap();
+            handle.send(Command::SetTrackSend { track, slot: 0, target: (block * 3) % DEFAULT_TRACKS, amount: 0.5 }).unwrap();
             handle.send(Command::SetInsertSidechain { track: 2, slot: 0, key: Some(1 + block % 4) }).unwrap();
             run(&mut engine, 1 + block % 300, 256);
             handle.collect_garbage();

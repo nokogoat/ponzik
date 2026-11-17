@@ -35,8 +35,6 @@ use crate::pool::{Graph, MAX_TASKS, WorkerPool};
 pub const DEFAULT_TRACKS: usize = 33;
 /// Most tracks a mixer holds: the master + 999.
 pub const MAX_TRACKS: usize = 1_000;
-/// Former fixed track count, kept while the callers move to the project's count.
-pub const TRACKS: usize = DEFAULT_TRACKS;
 pub const MASTER: usize = 0;
 pub const INSERT_SLOTS: usize = 8;
 pub const SEND_SLOTS: usize = 4;
