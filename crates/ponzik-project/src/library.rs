@@ -1392,6 +1392,26 @@ pub fn library_order() -> Vec<PathBuf> {
     library_items().iter().map(LibraryItem::relative_path).collect()
 }
 
+/// The library sound a sample path refers to, rendered in memory: `path` is
+/// either relative to the library root (`FX/Risers/Riser - Noise 8s.wav`) or
+/// any path ending that way. Lets projects use library sounds before (or
+/// without) the files on disk. `None` if no library file matches.
+pub fn library_sample(path: &str) -> Option<ponzik_engine::Sample> {
+    let path = path.replace('\\', "/");
+    let item = library_items().into_iter().find(|it| {
+        let rel = it.relative_path().to_string_lossy().replace('\\', "/");
+        path == rel || path.ends_with(&format!("/{rel}"))
+    })?;
+    let buf = item.render();
+    Some(ponzik_engine::Sample {
+        name: item.name.clone(),
+        sample_rate: LIBRARY_SAMPLE_RATE as f32,
+        left: buf.l,
+        right: buf.r,
+        markers: Vec::new(),
+    })
+}
+
 fn synth_bass_note(v: u32) -> u8 {
     [29, 33, 36, 28, 31, 38][v as usize % 6]
 }
@@ -1461,6 +1481,18 @@ pub fn generate_library(dir: &Path, threads: usize, progress: &(dyn Fn(usize, us
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn library_samples_resolve_from_relative_or_absolute_paths() {
+        let rel = "FX/Impacts/Impact - Sub Drop.wav";
+        let s = library_sample(rel).expect("library sound");
+        assert_eq!(s.sample_rate, LIBRARY_SAMPLE_RATE as f32);
+        assert!(s.len() > LIBRARY_SAMPLE_RATE as usize && s.left.iter().any(|&x| x.abs() > 0.1));
+        let abs = library_sample(&format!("/home/someone/Music/Ponzik/Library/{rel}")).expect("absolute path");
+        assert_eq!(abs.left, s.left);
+        assert!(library_sample("FX/Impacts/Nope.wav").is_none());
+        assert!(library_sample("Not FX/Impacts/Impact - Sub Drop.wav").is_none());
+    }
 
     #[test]
     fn names_are_unique_and_clean() {
