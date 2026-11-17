@@ -550,10 +550,41 @@ impl App {
     pub fn save_preset(&mut self, device: Device, name: &str) {
         let (kind, _) = self.device_kind(device);
         let params = self.device_params(device);
-        match super::compat::save_preset(&kind, name, &params, self.device_rack(device).as_ref()) {
+        // A plugin's preset keeps its whole patch.
+        let editor = self.editors.editor(device).filter(|e| e.is_alive());
+        let state = editor.and_then(|e| e.save_state(ponzik_engine::StateContext::Preset));
+        match super::compat::save_preset(&kind, name, &params, self.device_rack(device).as_ref(), state.as_deref()) {
             Ok(_) => self.toast(&tr_fmt!("Preset saved: {}", name)),
             Err(e) => self.toast(&e),
         }
+    }
+
+    /// A plugin preset: the plugin loads its state, and the values it reads
+    /// back become the device's (one undo step for the values; the patch
+    /// itself stays loaded). Without a live instance, the values of the file
+    /// apply and the state waits for the next instance.
+    pub fn apply_plugin_preset(&mut self, device: Device, params: &[(u32, f32)], state: ponzik_project::PluginState) {
+        let editor = self.editors.editor(device).filter(|e| e.is_alive()).cloned();
+        let values = match editor.map(|e| e.load_state(&state, ponzik_engine::StateContext::Preset)) {
+            Some(Ok(read)) => {
+                // Like every definition, only the values off their default.
+                let (kind, inst) = self.device_kind(device);
+                let infos = params_of(&kind, inst);
+                read.into_iter()
+                    .filter(|&(id, v)| infos.iter().find(|p| p.id == id).is_some_and(|p| (p.clamp(v) - p.default).abs() > f32::EPSILON))
+                    .map(|(id, v)| (id, infos.iter().find(|p| p.id == id).map_or(v, |p| p.clamp(v))))
+                    .collect()
+            }
+            Some(Err(e)) => {
+                self.toast(&tr_fmt!("The plugin refused the preset: {}", e));
+                params.to_vec()
+            }
+            None => params.to_vec(),
+        };
+        if let Some(slot) = super::editors::state_slot(&mut self.project, device) {
+            *slot = Some(state);
+        }
+        self.apply_preset(device, &values, None);
     }
 
     /// Remplace tous les réglages de l'appareil par ceux du preset.

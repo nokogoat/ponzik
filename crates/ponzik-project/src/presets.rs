@@ -2,9 +2,11 @@
 //! presets shipped in `assets/presets/<kind>/<name>.json` (embedded at build).
 //!
 //! A preset is `{"kind": …, "name": …, "params": [[id, value], …]}`; params it
-//! leaves out keep their default.
+//! leaves out keep their default. A CLAP or VST 3 plugin's preset also keeps
+//! the plugin's opaque state (`"state"`, base64): the whole patch, which the
+//! params alone cannot rebuild.
 
-use crate::RackDef;
+use crate::{PluginState, RackDef};
 use crate::json::{self, Json};
 
 include!(concat!(env!("OUT_DIR"), "/factory_presets.rs"));
@@ -32,6 +34,17 @@ pub fn preset_json(kind: &str, name: &str, params: &[(u32, f32)]) -> String {
 /// Writes a preset file; a rack preset also keeps its chains and mappings
 /// (`params` then holds the macro values and every device's settings).
 pub fn rack_preset_json(kind: &str, name: &str, params: &[(u32, f32)], rack: Option<&RackDef>) -> String {
+    device_preset_json(kind, name, params, rack, None)
+}
+
+/// Writes a preset file of any device: a rack's chains, a plugin's state.
+pub fn device_preset_json(
+    kind: &str,
+    name: &str,
+    params: &[(u32, f32)],
+    rack: Option<&RackDef>,
+    state: Option<&[u8]>,
+) -> String {
     let mut pairs = vec![
         ("kind".into(), Json::Str(kind.into())),
         ("name".into(), Json::Str(name.into())),
@@ -43,7 +56,23 @@ pub fn rack_preset_json(kind: &str, name: &str, params: &[(u32, f32)], rack: Opt
     if let Some(rack) = rack {
         pairs.push(("rack".into(), crate::io::rack_json(rack)));
     }
+    if let Some(state) = state {
+        pairs.push(("state".into(), crate::io::state_json(state)));
+    }
     Json::Obj(pairs).pretty()
+}
+
+/// The plugin state of a preset (`None` for other presets, or a malformed one).
+pub fn parse_state(text: &str) -> Option<PluginState> {
+    let doc = json::parse(text).ok()?;
+    crate::io::load_state(doc.get("state"))
+}
+
+/// Folder name of a device kind's presets: a plugin's own id (CLAP plugin
+/// id, VST 3 class id), so that its presets follow it wherever it is
+/// installed; the kind itself for native devices.
+pub fn preset_folder(kind: &str) -> &str {
+    ponzik_clap::parse_kind(kind).or_else(|| ponzik_vst3::parse_kind(kind)).map_or(kind, |(_, id)| id)
 }
 
 /// Chains and mappings of a rack preset (`None` for other presets).
@@ -67,6 +96,21 @@ pub fn factory_preset(kind: &str, name: &str) -> Option<Vec<(u32, f32)>> {
 mod tests {
     use super::*;
     use ponzik_engine::registry;
+
+    #[test]
+    fn plugin_presets_keep_the_state_under_the_plugin_id() {
+        let kind = "clap:/usr/lib/clap/Surge XT.clap#org.surge-synth-team.surge-xt";
+        let state = [0u8, 7, 255, 42];
+        let text = device_preset_json(kind, "Pad", &[(3, 0.5)], None, Some(&state));
+        assert_eq!(parse_state(&text).as_deref(), Some(&state[..]));
+        assert_eq!(parse_preset(&text).unwrap(), [(3, 0.5)]);
+        assert_eq!(parse_state(&preset_json("eq", "x", &[])), None);
+        assert_eq!(parse_state(r#"{"state": "a!"}"#), None);
+        assert_eq!(preset_folder(kind), "org.surge-synth-team.surge-xt");
+        let vst = "vst3:/usr/lib/vst3/Surge XT.vst3#0123456789ABCDEF0123456789ABCDEF";
+        assert_eq!(preset_folder(vst), "0123456789ABCDEF0123456789ABCDEF");
+        assert_eq!(preset_folder("eq"), "eq");
+    }
 
     #[test]
     fn rack_presets_keep_chains_mappings_and_macros() {

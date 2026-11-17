@@ -285,6 +285,15 @@ impl PluginEditors {
     }
 }
 
+/// Where a device's plugin state lives in a project.
+pub(super) fn state_slot(p: &mut ponzik_project::Project, device: Device) -> Option<&mut Option<ponzik_project::PluginState>> {
+    match device {
+        Device::Instrument(c) => Some(&mut p.channels.get_mut(c)?.instrument.state),
+        Device::Effect { track, slot } => Some(&mut p.tracks.get_mut(track)?.inserts.get_mut(slot)?.as_mut()?.state),
+        Device::RackUnit { .. } => None,
+    }
+}
+
 impl App {
     /// `<Plugin> — <Track>`.
     pub fn editor_title(&self, device: Device) -> String {
@@ -377,14 +386,7 @@ impl App {
     /// undo history (states are not diffed: the engine already has it).
     /// True if it changed.
     pub fn store_plugin_state(&mut self, device: Device, state: Vec<u8>) -> bool {
-        fn slot(p: &mut ponzik_project::Project, device: Device) -> Option<&mut Option<ponzik_project::PluginState>> {
-            match device {
-                Device::Instrument(c) => Some(&mut p.channels.get_mut(c)?.instrument.state),
-                Device::Effect { track, slot } => Some(&mut p.tracks.get_mut(track)?.inserts.get_mut(slot)?.as_mut()?.state),
-                Device::RackUnit { .. } => None,
-            }
-        }
-        let Some(current) = slot(&mut self.project, device) else { return false };
+        let Some(current) = state_slot(&mut self.project, device) else { return false };
         if current.as_deref() == Some(&state[..]) {
             return false;
         }
@@ -392,7 +394,7 @@ impl App {
         *current = Some(state.clone());
         // The engine's copy of the project follows, so that the state alone
         // never looks like an edit.
-        if let Some(synced) = slot(&mut self.synced, device) {
+        if let Some(synced) = state_slot(&mut self.synced, device) {
             *synced = Some(state);
         }
         true
@@ -446,6 +448,10 @@ mod tests {
         }
         fn save_state(&self, _: StateContext) -> Option<Vec<u8>> {
             self.state.lock().unwrap().clone()
+        }
+        fn load_state(&self, data: &[u8], _: StateContext) -> Result<Vec<(u32, f32)>, String> {
+            *self.state.lock().unwrap() = Some(data.to_vec());
+            Ok(vec![(1, 0.5)])
         }
     }
 
@@ -543,5 +549,12 @@ mod tests {
         assert!(!app.store_plugin_state(Device::Instrument(0), vec![1, 2, 3]));
         assert!(app.store_plugin_state(Device::Instrument(0), vec![4]));
         assert!(!app.store_plugin_state(Device::Effect { track: 5, slot: 3 }, vec![4]), "no device there");
+
+        // A plugin preset goes into the live plugin and into the project.
+        let preset: ponzik_project::PluginState = vec![7, 7].into();
+        app.apply_plugin_preset(Device::Instrument(0), &[], preset.clone());
+        assert_eq!(inst.state.lock().unwrap().as_deref(), Some(&[7u8, 7][..]));
+        assert_eq!(app.project.channels[0].instrument.state, Some(preset));
+        assert!(app.modified);
     }
 }

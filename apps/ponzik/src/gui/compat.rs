@@ -289,29 +289,57 @@ pub fn export_stems(
     Ok((dir, stems.len()))
 }
 
-/// Dossier des presets d'un type d'appareil.
+/// Dossier des presets d'un type d'appareil : `Presets/<id du plugin>` pour un
+/// plugin CLAP ou VST 3 (ses presets le suivent s'il change de place).
 pub fn presets_dir(kind: &str) -> PathBuf {
-    projects_dir().join("Presets").join(file_name(kind))
+    projects_dir().join("Presets").join(file_name(ponzik_project::presets::preset_folder(kind)))
 }
 
 pub fn list_presets(kind: &str) -> Vec<PathBuf> {
-    let mut files: Vec<PathBuf> = std::fs::read_dir(presets_dir(kind))
-        .map(|it| it.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.extension().is_some_and(|e| e == "json")).collect())
-        .unwrap_or_default();
-    files.sort();
+    // Plugin presets saved before were filed under the whole kind.
+    let legacy = projects_dir().join("Presets").join(file_name(kind));
+    let mut dirs = vec![presets_dir(kind)];
+    if !dirs.contains(&legacy) {
+        dirs.push(legacy);
+    }
+    let mut files: Vec<PathBuf> = dirs
+        .iter()
+        .filter_map(|d| std::fs::read_dir(d).ok())
+        .flat_map(|it| it.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.extension().is_some_and(|e| e == "json")))
+        .collect();
+    files.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
     files
 }
 
-/// Enregistre les réglages d'un appareil : `{"kind": …, "params": [[id, valeur], …]}`.
-pub fn save_preset(kind: &str, name: &str, params: &[(u32, f32)], rack: Option<&ponzik_project::RackDef>) -> Result<PathBuf, String> {
+/// Enregistre les réglages d'un appareil : `{"kind": …, "params": [[id, valeur], …]}`,
+/// plus les chaînes d'un rack ou l'état d'un plugin.
+pub fn save_preset(
+    kind: &str,
+    name: &str,
+    params: &[(u32, f32)],
+    rack: Option<&ponzik_project::RackDef>,
+    state: Option<&[u8]>,
+) -> Result<PathBuf, String> {
     let dir = presets_dir(kind);
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let path = dir.join(format!("{}.json", file_name(name)));
-    std::fs::write(&path, ponzik_project::presets::rack_preset_json(kind, name, params, rack)).map_err(|e| format!("{}: {e}", path.display()))?;
+    let text = ponzik_project::presets::device_preset_json(kind, name, params, rack, state);
+    std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(path)
 }
 
-pub fn load_preset(path: &Path) -> Result<Vec<(u32, f32)>, String> {
+/// A preset file: its values, and a rack's chains or a plugin's state.
+pub struct LoadedPreset {
+    pub params: Vec<(u32, f32)>,
+    pub rack: Option<ponzik_project::RackDef>,
+    pub state: Option<ponzik_project::PluginState>,
+}
+
+pub fn load_preset(path: &Path) -> Result<LoadedPreset, String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    ponzik_project::presets::parse_preset(&text)
+    Ok(LoadedPreset {
+        params: ponzik_project::presets::parse_preset(&text)?,
+        rack: ponzik_project::presets::parse_rack(&text),
+        state: ponzik_project::presets::parse_state(&text),
+    })
 }

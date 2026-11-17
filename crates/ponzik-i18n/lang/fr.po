@@ -1098,6 +1098,9 @@ msgstr "Aucun réglage"
 msgid "Preset saved: {}"
 msgstr "Preset enregistré : {}"
 
+msgid "The plugin refused the preset: {}"
+msgstr "Le plugin a refusé le preset : {}"
+
 msgid "Load a preset"
 msgstr "Charger un preset"
 

@@ -3266,9 +3266,11 @@ impl App {
                 Err(e) => self.toast(&e),
             },
             Action::LoadPreset(device, path) => match compat::load_preset(&path) {
-                Ok(params) => {
-                    let rack = std::fs::read_to_string(&path).ok().and_then(|t| ponzik_project::presets::parse_rack(&t));
-                    self.apply_preset(device, &params, rack);
+                Ok(preset) => {
+                    match preset.state {
+                        Some(state) => self.apply_plugin_preset(device, &preset.params, state),
+                        None => self.apply_preset(device, &preset.params, preset.rack),
+                    }
                     let name = path.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
                     self.toast(&tr_fmt!("Preset loaded: {}", name));
                 }
