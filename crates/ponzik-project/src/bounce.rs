@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use ponzik_engine::mixer::{MASTER, TRACKS};
+use ponzik_engine::mixer::MASTER;
 use ponzik_engine::{Sample, Tap};
 use ponzik_i18n::{tr, tr_fmt};
 
@@ -179,7 +179,7 @@ impl Project {
     ) -> Option<usize> {
         let name = self.bounce_name(source);
         let track = match track {
-            Some(t) => t.min(TRACKS - 1),
+            Some(t) => t.min(self.tracks.len() - 1),
             None => self.claim_bounce_track(&name)?,
         };
         let lane = match source {
@@ -252,9 +252,10 @@ impl Project {
 
     /// A free mixer track for a bounce, named after it, straight to the master.
     fn claim_bounce_track(&mut self, name: &str) -> Option<usize> {
-        let t = (1..TRACKS).find(|&t| !self.track_in_use(t))?;
+        let t = self.free_or_new_track()?;
         let mut def = TrackDef::new(tr_fmt!("{} (bounce)", name));
         def.color = crate::BUS_COLORS[t % crate::BUS_COLORS.len()];
+        def.id = self.tracks[t].id;
         self.tracks[t] = def;
         Some(t)
     }

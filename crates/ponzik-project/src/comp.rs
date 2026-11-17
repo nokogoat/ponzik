@@ -420,7 +420,7 @@ pub(crate) fn engine_clip(c: &AudioClipDef, sample: std::sync::Arc<Sample>, warp
         reverse: c.reverse,
         looped: c.looped,
         warp,
-        track: c.track.min(ponzik_engine::mixer::TRACKS - 1),
+        track: c.track,
         start: c.start,
         len: c.len,
         offset: c.offset,

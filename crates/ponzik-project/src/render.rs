@@ -1177,6 +1177,37 @@ mod tests {
         }
     }
 
+    #[test]
+    fn two_hundred_tracks_render_bit_identical_on_one_or_several_threads() {
+        let mut p = demo_project();
+        while p.track_count() < 200 {
+            p.add_track();
+        }
+        // The channels spread over the mixer, into buses past track 150, sends
+        // to a reverb return, effects here and there, a VCA.
+        let n = p.channels.len();
+        for c in 0..n {
+            p.channels[c].track = 40 + c * 13;
+        }
+        let buses: Vec<usize> = (0..4).map(|_| p.add_bus(&[]).unwrap()).collect();
+        for c in 0..n {
+            let t = p.channels[c].track;
+            p.tracks[t].output = buses[c % 4];
+            p.tracks[t].sends[0] = (199, 0.3);
+            p.tracks[t].inserts[0] = Some(crate::EffectDef::new(["eq", "saturator", "compressor"][c % 3]));
+        }
+        p.tracks[199].inserts[0] = Some(crate::EffectDef::new("reverb"));
+        p.tracks[buses[1]].inserts[0] = Some(crate::EffectDef::new("limiter"));
+        p.tracks[buses[2]].output = buses[3];
+        p.add_vca(&[buses[0], buses[3]]);
+        assert!(p.track_count() > 200 && p.routing_order().is_some());
+        let single = render_blocks(&p, 0, 300);
+        assert!(peak(&single) > 0.05);
+        let multi = render_blocks(&p, 3, 300);
+        let diff = single.iter().zip(&multi).position(|(a, b)| a.to_bits() != b.to_bits());
+        assert_eq!((single.len(), diff), (multi.len(), None));
+    }
+
     /// `cargo test --release -p ponzik-project bench_threads -- --ignored --nocapture`
     #[test]
     #[ignore]

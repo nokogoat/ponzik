@@ -6,7 +6,7 @@
 //! (per song) or in the settings (the controller layout), with the same JSON.
 
 use ponzik_engine::AutoTarget;
-use ponzik_engine::mixer::{SEND_SLOTS, TRACKS};
+use ponzik_engine::mixer::{MAX_TRACKS, SEND_SLOTS};
 
 use crate::io::{load_target, target_json};
 use crate::json::Json;
@@ -516,7 +516,7 @@ pub fn load_mapping(v: &Json, channels: usize) -> Option<MidiMapping> {
     let t = v.get("target")?;
     let target = match t.get("kind")?.as_str()? {
         "param" => ControlTarget::Param(load_target(t.get("param")?, channels)?),
-        "send" => ControlTarget::Send { track: index(t.get("track"), TRACKS)?, slot: index(t.get("slot"), SEND_SLOTS)? },
+        "send" => ControlTarget::Send { track: index(t.get("track"), MAX_TRACKS)?, slot: index(t.get("slot"), SEND_SLOTS)? },
         "transport" => ControlTarget::Transport(TransportAction::from_id(t.get("action")?.as_str()?)?),
         "scene" => ControlTarget::Scene(index(t.get("row"), crate::SESSION_SCENES)?),
         "slot" => ControlTarget::Slot { col: index(t.get("col"), crate::SESSION_COLUMNS)?, row: index(t.get("row"), crate::SESSION_SCENES)? },

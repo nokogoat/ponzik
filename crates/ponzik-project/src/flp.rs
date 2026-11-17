@@ -30,7 +30,10 @@ use std::path::Path;
 
 use ponzik_i18n::{tr, tr_fmt};
 
-use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS, TRACKS};
+use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS};
+
+/// Mixer tracks an FL project can fill: the master and FL's 125 inserts.
+const FL_TRACKS: usize = 126;
 use ponzik_engine::{Note, PPQ, PlayMode, TICKS_PER_BAR, TICKS_PER_STEP};
 
 use crate::{AudioClipDef, ChannelDef, ClipDef, EffectDef, InstrumentDef, PatternDef, Project};
@@ -823,13 +826,13 @@ pub fn import_flp(
 
     let track_of = |insert: Option<i8>, what: &str, report: &mut ImportReport| -> usize {
         match insert {
-            Some(i) if i > 0 && (i as usize) < TRACKS => i as usize,
-            Some(i) if i as usize >= TRACKS => {
+            Some(i) if i > 0 && (i as usize) < FL_TRACKS => i as usize,
+            Some(i) if i as usize >= FL_TRACKS => {
                 report.approximated.push(tr_fmt!(
                     "{}: FL insert {} does not exist in Ponzik ({} tracks), routed to Master",
                     what,
                     i,
-                    TRACKS - 1
+                    FL_TRACKS - 1
                 ));
                 MASTER
             }
@@ -1084,16 +1087,36 @@ pub fn import_flp(
         }
     }
 
-    // Mixer.
+    // Mixer: as many tracks as the inserts in use (named, with effects, fed
+    // by a channel or a clip, or the target of a route), up to FL's 125.
+    let has_fx = |ins: &FlInsert| ins.slots.iter().any(|s| !s.internal.is_empty());
+    let needed = fl
+        .inserts
+        .iter()
+        .enumerate()
+        .filter(|(_, ins)| ins.name.is_some() || has_fx(ins))
+        .flat_map(|(i, ins)| {
+            let routes = ins.routes.iter().enumerate().filter(|&(to, &on)| on && to != MASTER).map(|(to, _)| to);
+            std::iter::once(i).chain(routes)
+        })
+        .chain(p.channels.iter().map(|c| c.track))
+        .chain(p.audio_clips.iter().map(|c| c.track))
+        .filter(|&t| t < FL_TRACKS)
+        .max()
+        .map_or(0, |t| t + 1);
+    while p.track_count() < needed {
+        p.add_track();
+    }
+    let count = p.track_count();
     let mut used_inserts = 0;
     let (mut fx_direct, mut sends) = (0, 0);
     for (i, ins) in fl.inserts.iter().enumerate() {
         let label = ins.name.clone().unwrap_or_else(|| if i == 0 { "Master".into() } else { format!("Insert {i}") });
         let routed = p.channels.iter().any(|c| c.track == i) || p.audio_clips.iter().any(|c| c.track == i);
-        let has_fx = ins.slots.iter().any(|s| !s.internal.is_empty());
-        if i >= TRACKS {
+        let has_fx = has_fx(ins);
+        if i >= count {
             if ins.name.is_some() || has_fx {
-                report.skipped.push(tr_fmt!("Mixer insert {} '{}': Ponzik has {} tracks", i, label, TRACKS - 1));
+                report.skipped.push(tr_fmt!("Mixer insert {} '{}': Ponzik has {} tracks", i, label, FL_TRACKS - 1));
             }
             continue;
         }
@@ -1125,9 +1148,9 @@ pub fn import_flp(
                     (to == MASTER || level > 0.0).then_some((to, level.clamp(0.0, 1.25)))
                 })
                 .collect();
-            if targets.iter().any(|&(to, _)| to >= TRACKS) {
-                report.skipped.push(tr_fmt!("'{}': routes to inserts above {} dropped", label, TRACKS - 1));
-                targets.retain(|&(to, _)| to < TRACKS);
+            if targets.iter().any(|&(to, _)| to >= count) {
+                report.skipped.push(tr_fmt!("'{}': routes to inserts above {} dropped", label, count - 1));
+                targets.retain(|&(to, _)| to < count);
             }
             if !ins.routes.is_empty() && targets.is_empty() {
                 if interesting {
@@ -1361,6 +1384,36 @@ mod tests {
         params.extend(param(PARAM_SLOT_ENABLED, 3, 0, 0));
         w.data(MIXER_PARAMS, &params);
         w.file(192)
+    }
+
+    #[test]
+    fn inserts_beyond_32_become_tracks() {
+        let mut w = W::default();
+        w.ascii(FL_VERSION, "21.2.3.4004").dword(TEMPO, 120_000);
+        w.word(CH_NEW, 0).byte(CH_TYPE, TYPE_NATIVE).text(PLUGIN_INTERNAL_NAME, "3x Osc").text(PLUGIN_NAME, "Vox");
+        w.byte(CH_ROUTED_TO, 100);
+        // 127 inserts: 100 is named and goes to 120 (a bus without a name); 126 is beyond FL's 125.
+        for i in 0..127u16 {
+            match i {
+                100 => {
+                    w.text(INS_NAME, "Vox");
+                }
+                126 => {
+                    w.text(INS_NAME, "Extra");
+                }
+                _ => {}
+            }
+            w.data(INS_FLAGS, &[0; 12]);
+            let mut routes = vec![0u8; 127];
+            routes[if i == 100 { 120 } else { 0 }] = u8::from(i > 0);
+            w.data(INS_ROUTING, &routes).dword(INS_OUTPUT, u32::MAX);
+        }
+        let (p, report) = import_flp(&w.file(96), "file", &|_| None).unwrap();
+        assert_eq!(p.track_count(), 121, "up to the last insert in use");
+        assert_eq!(p.channels[0].track, 100);
+        assert_eq!((p.tracks[100].name.as_str(), p.tracks[100].output), ("Vox", 120));
+        assert!(report.skipped.iter().any(|s| s.contains("Extra")), "{:?}", report.skipped);
+        assert!(p.routing_order().is_some());
     }
 
     #[test]

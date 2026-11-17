@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use ponzik_i18n::{tr, tr_fmt, tr_noop};
 
-use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS, TRACKS, routing_order};
+use ponzik_engine::mixer::{DEFAULT_TRACKS, INSERT_SLOTS, MASTER, SEND_SLOTS, routing_order};
 use ponzik_engine::registry;
 use ponzik_engine::{
     AudioClip, AutomationLane, Channel, Clip, ClipWarp, Effect, Engine, EngineHandle, Frozen, Instrument, NOTE_FX_SLOTS,
@@ -49,6 +49,7 @@ pub mod render;
 pub mod scale;
 pub mod session;
 pub mod templates;
+mod tracks;
 pub mod transform;
 pub mod warp;
 
@@ -407,8 +408,12 @@ pub const RETURN_EFFECTS: [ReturnEffect; 2] = [
     ("delay", tr_noop("Delay"), &[(0, 9.0), (2, 0.35), (3, 1.0), (4, 200.0), (5, 6_000.0), (6, 1.0)]),
 ];
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct TrackDef {
+    /// Identity of the track while the project is open (not saved): it
+    /// follows the track when tracks are added, deleted or moved, so that the
+    /// engine can move the track's state with it. Unique in the process.
+    pub id: u32,
     pub name: String,
     pub gain: f32,
     pub pan: f32,
@@ -441,9 +446,33 @@ pub fn is_default_track_name(name: &str) -> bool {
     [current.as_str(), "Track ", "Piste "].iter().any(|p| name.starts_with(p))
 }
 
+/// Content equality: the identity of a track does not count.
+impl PartialEq for TrackDef {
+    fn eq(&self, o: &Self) -> bool {
+        let Self { id: _, name, gain, pan, muted, output, sends, inserts, color, kind, folded, vca, modulators, frozen } = self;
+        *name == o.name
+            && *gain == o.gain
+            && *pan == o.pan
+            && *muted == o.muted
+            && *output == o.output
+            && *sends == o.sends
+            && *inserts == o.inserts
+            && *color == o.color
+            && *kind == o.kind
+            && *folded == o.folded
+            && *vca == o.vca
+            && *modulators == o.modulators
+            && *frozen == o.frozen
+    }
+}
+
+/// Next track identity.
+static NEXT_TRACK_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+
 impl TrackDef {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
+            id: NEXT_TRACK_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             name: name.into(),
             gain: 1.0,
             pan: 0.0,
@@ -472,7 +501,7 @@ pub struct Project {
     pub channels: Vec<ChannelDef>,
     pub patterns: Vec<PatternDef>,
     pub clips: Vec<ClipDef>,
-    /// `TRACKS` pistes, la 0 est le master.
+    /// Mixer tracks, the master first ([`DEFAULT_TRACKS`] in a new project).
     pub tracks: Vec<TrackDef>,
     pub mode: PlayMode,
     pub current_pattern: usize,
@@ -531,7 +560,7 @@ impl Default for Project {
 
 impl Project {
     pub fn empty() -> Self {
-        let mut tracks: Vec<TrackDef> = (0..TRACKS).map(|i| TrackDef::new(default_track_name(i))).collect();
+        let mut tracks: Vec<TrackDef> = (0..DEFAULT_TRACKS).map(|i| TrackDef::new(default_track_name(i))).collect();
         tracks[MASTER].name = tr("Master").into();
         Self {
             name: tr("Untitled").into(),
@@ -940,8 +969,9 @@ impl Project {
     pub fn build_engine_with(&self, sample_rate: f32, loader: SampleLoader, warps: WarpLookup) -> (Engine, EngineHandle) {
         let channels = (0..self.channels.len()).map(|i| self.make_channel(i, sample_rate, loader)).collect();
         let (mut engine, handle) = Engine::new(sample_rate, channels, self.sequence_for(sample_rate, loader, warps));
+        engine.set_track_count(self.tracks.len());
         let mixer = engine.mixer_mut();
-        for (i, def) in self.tracks.iter().enumerate().take(TRACKS) {
+        for (i, def) in self.tracks.iter().enumerate().take(mixer.len()) {
             let t = &mut mixer.tracks[i];
             t.gain = def.gain;
             t.pan = def.pan;
@@ -1019,11 +1049,12 @@ impl Project {
         self.pattern_notes(pattern, channel).sort_by_key(|n| (n.start, n.key));
     }
 
-    /// Ajoute un canal et sa piste de mixer libre suivante.
+    /// Ajoute un canal et sa piste de mixer libre suivante (a new one at the
+    /// end when none is free).
     pub fn add_channel(&mut self, name: impl Into<String>, instrument: InstrumentDef, root_note: u8) -> usize {
         let used: Vec<usize> = self.channels.iter().map(|c| c.track).collect();
         let free = |t: &usize| !used.contains(t) && self.tracks[*t].kind == TrackKind::Normal;
-        let track = (1..TRACKS).find(free).unwrap_or(1);
+        let track = (1..self.tracks.len()).find(free).or_else(|| self.add_track()).unwrap_or(1);
         let name = name.into();
         if is_default_track_name(&self.tracks[track].name) {
             self.tracks[track].name = name.clone();
@@ -1248,20 +1279,19 @@ impl Project {
             })
     }
 
-    /// Piste libre pour un nouveau bus, prise par la fin comme dans FL (les
-    /// canaux prennent les premières).
+    /// Last unused track, if any.
     pub fn free_track(&self) -> Option<usize> {
-        (1..TRACKS).rev().find(|&t| !self.track_in_use(t))
+        (1..self.tracks.len()).rev().find(|&t| !self.track_in_use(t))
     }
 
     /// Pistes qui sortent dans `bus`.
     pub fn bus_members(&self, bus: usize) -> Vec<usize> {
-        (1..TRACKS).filter(|&t| t != bus && self.tracks[t].output == bus).collect()
+        (1..self.tracks.len()).filter(|&t| t != bus && self.tracks[t].output == bus).collect()
     }
 
     /// Pistes pilotées par le VCA `vca`.
     pub fn vca_members(&self, vca: usize) -> Vec<usize> {
-        (1..TRACKS).filter(|&t| self.tracks[t].vca == Some(vca)).collect()
+        (1..self.tracks.len()).filter(|&t| self.tracks[t].vca == Some(vca)).collect()
     }
 
     /// Premier nom libre de la forme « Bus 1 », « Bus 2 »…
@@ -1269,8 +1299,9 @@ impl Project {
         (1..).map(|n| format!("{base} {n}")).find(|name| self.tracks.iter().all(|t| &t.name != name)).unwrap_or_default()
     }
 
+    /// A new track at the end for a bus or a VCA, in its own color.
     fn claim_track(&mut self, kind: TrackKind, name: String) -> Option<usize> {
-        let t = self.free_track()?;
+        let t = self.add_track()?;
         // Première couleur pas encore prise, sinon chacune à son tour.
         let others = self.tracks.iter().filter(|t| t.kind != TrackKind::Normal).count();
         let color = BUS_COLORS
@@ -1279,7 +1310,7 @@ impl Project {
             .find(|&c| self.tracks.iter().all(|t| t.color != c))
             .unwrap_or(BUS_COLORS[others % BUS_COLORS.len()]);
         let tr = &mut self.tracks[t];
-        *tr = TrackDef::new(name);
+        tr.name = name;
         tr.kind = kind;
         tr.color = color;
         Some(t)
@@ -1290,7 +1321,7 @@ impl Project {
     /// même bus, le nouveau s'y range à leur place. `None` si plus aucune piste
     /// n'est libre.
     pub fn add_bus(&mut self, members: &[usize]) -> Option<usize> {
-        let members: Vec<usize> = members.iter().copied().filter(|&m| m != MASTER && m < TRACKS).collect();
+        let members: Vec<usize> = members.iter().copied().filter(|&m| m != MASTER && m < self.tracks.len()).collect();
         let name = self.numbered_name(tr("Bus"));
         let bus = self.claim_track(TrackKind::Bus, name)?;
         let mut outputs = members.iter().map(|&m| self.tracks[m].output);
@@ -1309,7 +1340,7 @@ impl Project {
 
     /// Fait sortir `track` dans `bus`, sauf si cela crée une boucle.
     pub fn route_into(&mut self, track: usize, bus: usize) -> bool {
-        if track == MASTER || track == bus || track >= TRACKS || bus >= TRACKS {
+        if track == MASTER || track == bus || track >= self.tracks.len() || bus >= self.tracks.len() {
             return false;
         }
         let old = self.tracks[track].output;
@@ -1332,7 +1363,7 @@ impl Project {
             fx.set(id, v);
         }
         self.tracks[bus].inserts[0] = Some(fx);
-        if let Some(src) = from.filter(|&t| t != MASTER && t != bus && t < TRACKS) {
+        if let Some(src) = from.filter(|&t| t != MASTER && t != bus && t < self.tracks.len()) {
             let sends = &mut self.tracks[src].sends;
             if let Some(slot) = sends.iter().position(|s| s.1 <= 0.0) {
                 sends[slot] = (bus, 0.3);
@@ -1346,7 +1377,7 @@ impl Project {
         let name = self.numbered_name(tr("VCA"));
         let vca = self.claim_track(TrackKind::Vca, name)?;
         for &m in members {
-            if m != MASTER && m != vca && m < TRACKS && self.tracks[m].kind != TrackKind::Vca {
+            if m != MASTER && m != vca && m < self.tracks.len() && self.tracks[m].kind != TrackKind::Vca {
                 self.tracks[m].vca = Some(vca);
             }
         }
@@ -1356,7 +1387,7 @@ impl Project {
     /// Défait un bus ou un VCA : ses pistes sortent là où il sortait, les envois
     /// et les clés qui le visaient sont retirés, et la piste redevient libre.
     pub fn dissolve(&mut self, t: usize) {
-        if t == MASTER || t >= TRACKS || self.tracks[t].kind == TrackKind::Normal {
+        if t == MASTER || t >= self.tracks.len() || self.tracks[t].kind == TrackKind::Normal {
             return;
         }
         let output = self.tracks[t].output;
@@ -1380,7 +1411,8 @@ impl Project {
         }
         self.automation.retain(|a| !matches!(a.target, AutoTarget::TrackGain(x) | AutoTarget::TrackPan(x) if x == t));
         self.automation.retain(|a| !matches!(a.target, AutoTarget::EffectParam { track, .. } if track == t));
-        self.tracks[t] = TrackDef::new(default_track_name(t));
+        let id = self.tracks[t].id;
+        self.tracks[t] = TrackDef { id, ..TrackDef::new(default_track_name(t)) };
     }
 
     pub fn add_pattern(&mut self) -> usize {
@@ -1627,7 +1659,7 @@ mod tests {
         assert!(p.routing_order().is_none());
         p.tracks[5].inserts[2] = keyed("gate", MASTER);
         assert!(p.routing_order().is_none());
-        p.tracks[5].inserts[2] = keyed("gate", TRACKS);
+        p.tracks[5].inserts[2] = keyed("gate", p.track_count());
         assert!(p.routing_order().is_none());
         // Le master peut écouter n'importe quelle piste.
         p.tracks[5].inserts[2] = None;
@@ -1748,7 +1780,7 @@ mod tests {
         let b = p.add_channel("Snare", InstrumentDef::new("drumsynth"), 60);
         let (ta, tb) = (p.channels[a].track, p.channels[b].track);
         let bus = p.add_bus(&[ta, tb, MASTER]).unwrap();
-        assert_eq!(bus, TRACKS - 1, "les bus se prennent par la fin");
+        assert_eq!(bus, DEFAULT_TRACKS, "a new bus is a new track at the end");
         assert_eq!((p.tracks[bus].kind, p.tracks[bus].name.as_str()), (TrackKind::Bus, "Bus 1"));
         assert_ne!(p.tracks[bus].color, 0);
         assert_eq!(p.bus_members(bus), [ta, tb]);
@@ -1794,9 +1826,10 @@ mod tests {
     #[test]
     fn tracks_run_out_gracefully() {
         let mut p = Project::empty();
-        let made = (0..TRACKS).filter_map(|_| p.add_bus(&[])).count();
-        assert_eq!(made, TRACKS - 1);
+        let made = (0..ponzik_engine::mixer::MAX_TRACKS).filter_map(|_| p.add_bus(&[])).count();
+        assert_eq!(made, ponzik_engine::mixer::MAX_TRACKS - DEFAULT_TRACKS);
         assert!(p.add_vca(&[]).is_none());
+        assert!(p.free_or_new_track().is_some(), "the 32 first tracks are still free");
     }
 
     #[test]

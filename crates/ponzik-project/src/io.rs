@@ -8,7 +8,7 @@ use std::path::Path;
 
 use ponzik_i18n::{tr, tr_fmt};
 
-use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS, TRACKS};
+use ponzik_engine::mixer::{DEFAULT_TRACKS, INSERT_SLOTS, MASTER, MAX_TRACKS, SEND_SLOTS};
 use ponzik_engine::instruments::drum_pads::{LAYERS, PADS as PAD_LIMIT};
 use ponzik_engine::{MAX_RATCHET, NOTE_FX_SLOTS, Note, NoteCond, PlayMode, TICKS_PER_BAR};
 
@@ -340,6 +340,7 @@ pub fn save(project: &Project) -> String {
         ("channels", Json::Arr(project.channels.iter().map(channel_json).collect())),
         ("patterns", Json::Arr(project.patterns.iter().map(pattern_json).collect())),
         ("clips", Json::Arr(project.clips.iter().map(clip_json).collect())),
+        ("track_count", project.tracks.len().into()),
         ("tracks", Json::Arr(project.tracks.iter().map(track_json).collect())),
         ("automation", Json::Arr(project.automation.iter().map(automation_json).collect())),
         ("audio_clips", Json::Arr(project.audio_clips.iter().map(audio_clip_json).collect())),
@@ -502,7 +503,7 @@ fn load_channel(v: &Json) -> ChannelDef {
         gain: gain(v.get("gain"), 0.8),
         pan: pan(v.get("pan")),
         muted: bool_or(v.get("muted"), false),
-        track: usize_or(v.get("track"), 1).min(TRACKS - 1),
+        track: usize_or(v.get("track"), 1).min(MAX_TRACKS - 1),
         root_note: u32_or(v.get("root_note"), 60).min(127) as u8,
         color: u32_or(v.get("color"), 0),
         modulators: load_modulators(v.get("modulators"), 1),
@@ -623,7 +624,7 @@ fn load_effect(v: &Json) -> Option<EffectDef> {
         kind,
         params: load_params(v.get("params")),
         bypass: bool_or(v.get("bypass"), false),
-        sidechain: index(v.get("sidechain"), TRACKS),
+        sidechain: index(v.get("sidechain"), MAX_TRACKS),
         ab: crate::ab::load_ab(v.get("ab"), load_params, rack.is_some()),
         rack,
         state: load_state(v.get("state")),
@@ -637,7 +638,7 @@ fn load_track(v: &Json, index: usize) -> TrackDef {
     t.pan = pan(v.get("pan"));
     t.muted = bool_or(v.get("muted"), false);
     t.output = if index == MASTER { MASTER } else { usize_or(v.get("output"), MASTER) };
-    if t.output >= TRACKS || t.output == index {
+    if t.output >= MAX_TRACKS || t.output == index {
         t.output = MASTER;
     }
     t.color = u32_or(v.get("color"), 0);
@@ -645,7 +646,7 @@ fn load_track(v: &Json, index: usize) -> TrackDef {
         let s = arr(Some(s));
         let target = usize_or(s.first(), MASTER);
         let amount = f32_or(s.get(1), 0.0).clamp(0.0, 16.0);
-        t.sends[slot] = if target < TRACKS && target != index { (target, amount) } else { (MASTER, 0.0) };
+        t.sends[slot] = if target < MAX_TRACKS && target != index { (target, amount) } else { (MASTER, 0.0) };
     }
     if index != MASTER {
         t.kind = match v.get("kind") {
@@ -653,7 +654,7 @@ fn load_track(v: &Json, index: usize) -> TrackDef {
             _ => TrackKind::Normal,
         };
         t.folded = t.kind == TrackKind::Bus && bool_or(v.get("folded"), false);
-        t.vca = crate::io::index(v.get("vca"), TRACKS).filter(|&x| x != index && x != MASTER);
+        t.vca = crate::io::index(v.get("vca"), MAX_TRACKS).filter(|&x| x != index && x != MASTER);
     }
     for (slot, fx) in arr(v.get("inserts")).iter().take(INSERT_SLOTS).enumerate() {
         t.inserts[slot] = load_effect(fx);
@@ -678,7 +679,7 @@ fn index(v: Option<&Json>, limit: usize) -> Option<usize> {
 
 pub(crate) fn load_target(v: &Json, channels: usize) -> Option<AutoTarget> {
     let channel = || index(v.get("channel"), channels);
-    let track = || index(v.get("track"), TRACKS);
+    let track = || index(v.get("track"), MAX_TRACKS);
     let id = || num(v.get("id")).filter(|n| *n >= 0.0 && n.fract() == 0.0 && *n <= u32::MAX as f64).map(|n| n as u32);
     Some(match v.get("kind")?.as_str()? {
         "instrument_param" => AutoTarget::InstrumentParam { channel: channel()?, id: id()? },
@@ -733,7 +734,7 @@ fn load_audio_clip(v: &Json) -> Option<AudioClipDef> {
         .collect();
     Some(AudioClipDef {
         lane: usize_or(v.get("lane"), 0),
-        track: usize_or(v.get("track"), 1).min(TRACKS - 1),
+        track: usize_or(v.get("track"), 1).min(MAX_TRACKS - 1),
         start: u32_or(v.get("start"), 0),
         len: u32_or(v.get("len"), TICKS_PER_BAR).max(1),
         offset: num(v.get("offset")).unwrap_or(0.0).max(0.0),
@@ -769,7 +770,7 @@ fn load_take_group(v: &Json) -> Option<crate::TakeGroup> {
     if takes.is_empty() {
         return None;
     }
-    let mut g = crate::TakeGroup::new(usize_or(v.get("lane"), 0).min(63), usize_or(v.get("track"), 1).min(TRACKS - 1), takes);
+    let mut g = crate::TakeGroup::new(usize_or(v.get("lane"), 0).min(63), usize_or(v.get("track"), 1).min(MAX_TRACKS - 1), takes);
     g.crossfade = f32_or(v.get("crossfade"), crate::comp::DEFAULT_CROSSFADE).clamp(0.0, crate::comp::MAX_CROSSFADE);
     g.folded = bool_or(v.get("folded"), false);
     g.muted = bool_or(v.get("muted"), false);
@@ -826,12 +827,24 @@ pub fn load(text: &str) -> Result<Project, String> {
     let np = p.patterns.len();
     p.clips = arr(root.get("clips")).iter().filter_map(|c| load_clip(c, np)).collect();
 
+    // Older projects always held 33 tracks (shorter lists are padded); newer
+    // ones say how many.
     let tracks = arr(root.get("tracks"));
+    let count = match num(root.get("track_count")) {
+        Some(n) => (n.max(1.0) as usize).min(MAX_TRACKS),
+        None => tracks.len().clamp(DEFAULT_TRACKS, MAX_TRACKS),
+    };
+    p.tracks.truncate(count);
+    while p.tracks.len() < count {
+        let i = p.tracks.len();
+        p.tracks.push(crate::TrackDef::new(crate::default_track_name(i)));
+    }
     for (i, t) in p.tracks.iter_mut().enumerate() {
         if let Some(v) = tracks.get(i) {
             *t = load_track(v, i);
         }
     }
+    p.clamp_track_refs();
     // Un VCA ne suit que les VCA : une piste pilotée par une piste qui n'en est pas un est libérée.
     let kinds: Vec<TrackKind> = p.tracks.iter().map(|t| t.kind).collect();
     for t in &mut p.tracks {
@@ -898,6 +911,7 @@ pub fn load(text: &str) -> Result<Project, String> {
         p.markers[i].color = u32_or(v.get("color"), p.markers[i].color) & 0xff_ffff;
     }
     p.midi_map = crate::midi_map::load_mappings(root.get("midi_map"), n);
+    p.clamp_track_refs();
     Ok(p)
 }
 
@@ -1072,7 +1086,7 @@ mod tests {
         assert_eq!(p.bpm, 999.0);
         assert_eq!(p.swing, 0.0);
         assert_eq!(p.channels.len(), 2);
-        assert_eq!(p.channels[0].track, TRACKS - 1);
+        assert_eq!(p.channels[0].track, DEFAULT_TRACKS - 1);
         assert_eq!(p.channels[0].root_note, 127);
         assert_eq!(p.channels[0].pan, -1.0);
         assert_eq!(p.channels[1].name, "Channel");
@@ -1091,7 +1105,7 @@ mod tests {
         assert_eq!(p.patterns[1].notes.len(), 2);
         assert_eq!(p.clips.len(), 1);
         assert_eq!(p.clips[0].pattern, 1);
-        assert_eq!(p.tracks.len(), TRACKS);
+        assert_eq!(p.tracks.len(), DEFAULT_TRACKS);
         assert_eq!(p.tracks[MASTER].name, "Principal");
         assert_eq!(p.tracks[MASTER].output, MASTER);
         assert_eq!(p.tracks[5].name, "Track 5");
@@ -1224,7 +1238,7 @@ mod tests {
         assert_eq!((p.automation[1].target, p.automation[1].scope), (AutoTarget::Tempo, AutoScope::Pattern(0)));
         assert_eq!(p.audio_clips.len(), 2);
         let c = &p.audio_clips[0];
-        assert_eq!((c.track, c.len, c.offset, c.gain, c.fade_in), (TRACKS - 1, 1, 0.0, 16.0, 0.0));
+        assert_eq!((c.track, c.len, c.offset, c.gain, c.fade_in), (DEFAULT_TRACKS - 1, 1, 0.0, 16.0, 0.0));
         assert!(!c.warp && c.warp_markers.is_empty() && c.bpm == 0.0);
         let w = &p.audio_clips[1];
         assert!(w.warp && !w.reverse);
@@ -1436,10 +1450,62 @@ mod tests {
     }
 
     #[test]
-    fn too_many_tracks_are_truncated() {
-        let tracks = vec!["{}"; TRACKS + 5].join(",");
-        let p = load(&format!(r#"{{"format": "ponzik-project", "tracks": [{tracks}]}}"#)).unwrap();
-        assert_eq!(p.tracks.len(), TRACKS);
+    fn track_counts_load_within_the_limits() {
+        let file = |tracks: usize, count: &str| {
+            let tracks = vec!["{}"; tracks].join(",");
+            load(&format!(r#"{{"format": "ponzik-project", {count} "tracks": [{tracks}]}}"#)).unwrap()
+        };
+        // Older files: at least the 33 tracks they always had.
+        assert_eq!(file(5, "").tracks.len(), DEFAULT_TRACKS);
+        assert_eq!(file(40, "").tracks.len(), 40);
+        assert_eq!(file(MAX_TRACKS + 5, "").tracks.len(), MAX_TRACKS);
+        // Newer files say how many.
+        assert_eq!(file(5, r#""track_count": 5,"#).tracks.len(), 5);
+        assert_eq!(file(5, r#""track_count": 8,"#).tracks.len(), 8);
+        assert_eq!(file(0, r#""track_count": 0,"#).tracks.len(), 1);
+        assert_eq!(file(3, r#""track_count": 1e9,"#).tracks.len(), MAX_TRACKS);
+        // References beyond the mixer come back inside.
+        let p = load(
+            r#"{"format": "ponzik-project", "track_count": 4,
+              "channels": [{"track": 9}], "audio_clips": [{"path": "a.wav", "track": 7}],
+              "tracks": [{}, {"output": 6, "sends": [[5, 0.5], [2, 0.5]], "vca": 8,
+                              "inserts": [{"kind": "gate", "sidechain": 4}]}, {}, {}],
+              "automation": [{"target": {"kind": "track_gain", "track": 5}, "points": [[0, 1]]},
+                             {"target": {"kind": "track_pan", "track": 3}, "points": [[0, 1]]}]}"#,
+        )
+        .unwrap();
+        assert_eq!((p.channels[0].track, p.audio_clips[0].track), (3, 3));
+        let t = &p.tracks[1];
+        assert_eq!((t.output, t.sends[0], t.sends[1], t.vca), (MASTER, (MASTER, 0.0), (2, 0.5), None));
+        assert_eq!(t.inserts[0].as_ref().unwrap().sidechain, None);
+        assert_eq!(p.automation.len(), 1);
+    }
+
+    #[test]
+    fn projects_round_trip_their_tracks() {
+        // An older project: 33 tracks, saved before the count was.
+        let mut old = crate::demo_project();
+        old.tracks[7].output = 3;
+        old.tracks[12].name = "Pads".into();
+        let text = save(&old).replace(r#""track_count": 33,"#, "");
+        assert!(!text.contains("track_count"));
+        let back = load(&text).unwrap();
+        assert_eq!(back.tracks.len(), DEFAULT_TRACKS);
+        assert_eq!(back, old);
+        assert_eq!(load(&save(&back)).unwrap(), old);
+        // A big one, and a small one.
+        let mut big = old.clone();
+        for _ in 0..200 {
+            big.add_track();
+        }
+        big.tracks[230].output = 7;
+        big.tracks[3].sends[0] = (231, 0.5);
+        assert_eq!(load(&save(&big)).unwrap(), big);
+        let mut small = old.clone();
+        while small.track_count() > 12 {
+            small.delete_track(small.track_count() - 1);
+        }
+        assert_eq!(load(&save(&small)).unwrap(), small);
     }
 
     #[test]
