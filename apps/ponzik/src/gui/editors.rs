@@ -7,10 +7,15 @@
 //! replaced or removed). [`App::editors_tick`] pumps them every frame and turns
 //! the edits made in a plugin's interface into project edits: undo,
 //! automation and the device card follow.
+//!
+//! The editors are also the main-thread handles on the plugins' opaque
+//! states: they are read when the project is saved (and autosaved or
+//! rendered), when the user closes a plugin window, and for "Save preset" —
+//! never on every edit.
 
 use std::collections::HashMap;
 
-use ponzik_engine::{AutoTarget, Command, Editor, EditorEvent, Engine, ParentWindow};
+use ponzik_engine::{AutoTarget, Command, Editor, EditorEvent, Engine, ParentWindow, StateContext};
 use ponzik_i18n::{tr, tr_fmt};
 use ponzik_window::{Event, NativeHandle, PluginWindow, PluginWindowOptions};
 
@@ -37,6 +42,8 @@ pub struct PluginEditors {
     positions: HashMap<Device, (i32, i32)>,
     /// Main window, which plugin windows stay above.
     owner: Option<NativeHandle>,
+    /// States read as the user closed plugin windows, for the project.
+    captured: Vec<(Device, Vec<u8>)>,
 }
 
 impl PluginEditors {
@@ -64,7 +71,7 @@ impl PluginEditors {
             Command::AddChannel(ch) => self.channels.push(ch.instrument.editor()),
             Command::RemoveChannel(i) => {
                 let i = *i;
-                self.close(Device::Instrument(i));
+                self.discard(Device::Instrument(i));
                 if i < self.channels.len() {
                     self.channels.remove(i);
                 }
@@ -85,14 +92,14 @@ impl PluginEditors {
                     .collect();
             }
             Command::ReplaceInstrument { channel, instrument } => {
-                self.close(Device::Instrument(*channel));
+                self.discard(Device::Instrument(*channel));
                 if self.channels.len() <= *channel {
                     self.channels.resize(*channel + 1, None);
                 }
                 self.channels[*channel] = instrument.editor();
             }
             Command::SetInsert { track, slot, effect } => {
-                self.close(Device::Effect { track: *track, slot: *slot });
+                self.discard(Device::Effect { track: *track, slot: *slot });
                 match effect.as_ref().and_then(|fx| fx.editor()) {
                     Some(e) => self.inserts.insert((*track, *slot), e),
                     None => self.inserts.remove(&(*track, *slot)),
@@ -168,8 +175,39 @@ impl PluginEditors {
         Ok(())
     }
 
-    /// Closes the device's window: the interface goes first, then the window.
+    /// The user closes the device's window: the plugin's state is read first
+    /// (see [`PluginEditors::take_captured`]), then the window goes.
     pub fn close(&mut self, device: Device) {
+        let Some(w) = self.open.iter().find(|w| w.device == device) else { return };
+        if w.editor.is_alive()
+            && let Some(state) = w.editor.save_state(StateContext::Project)
+        {
+            self.captured.retain(|c| c.0 != device);
+            self.captured.push((device, state));
+        }
+        self.discard(device);
+    }
+
+    /// States read by [`PluginEditors::close`] since the last call.
+    pub fn take_captured(&mut self) -> Vec<(Device, Vec<u8>)> {
+        std::mem::take(&mut self.captured)
+    }
+
+    /// The state of every live plugin instance (`context`: why).
+    pub fn states(&self, context: StateContext) -> Vec<(Device, Vec<u8>)> {
+        let channels = self.channels.iter().enumerate().filter_map(|(c, e)| Some((Device::Instrument(c), e.as_ref()?)));
+        let inserts = self.inserts.iter().map(|(&(track, slot), e)| (Device::Effect { track, slot }, e));
+        channels
+            .chain(inserts)
+            .filter(|(_, e)| e.is_alive())
+            .filter_map(|(d, e)| Some((d, e.save_state(context)?)))
+            .collect()
+    }
+
+    /// Closes the device's window without reading its state (the device is
+    /// replaced or removed, or Ponzik quits): the interface goes first, then
+    /// the window.
+    fn discard(&mut self, device: Device) {
         let Some(i) = self.open.iter().position(|w| w.device == device) else { return };
         let mut w = self.open.remove(i);
         if let Some(p) = w.window.position() {
@@ -181,7 +219,7 @@ impl PluginEditors {
 
     pub fn close_all(&mut self) {
         while let Some(d) = self.open.first().map(|w| w.device) {
-            self.close(d);
+            self.discard(d);
         }
     }
 
@@ -266,6 +304,7 @@ impl App {
     pub fn toggle_editor(&mut self, device: Device) {
         if self.editors.is_open(device) {
             self.editors.close(device);
+            self.absorb_closed_states();
             return;
         }
         let title = self.editor_title(device);
@@ -278,6 +317,7 @@ impl App {
     /// edits (one undo step per gesture). True when the interface must redraw.
     pub fn editors_tick(&mut self) -> bool {
         let (events, closed) = self.editors.tick();
+        self.absorb_closed_states();
         let mut edited = false;
         for (device, e) in &events {
             // Only a window the user works in edits the project (a closed
@@ -315,6 +355,49 @@ impl App {
         closed || !events.is_empty()
     }
 
+    /// States read as plugin windows closed go to the project: a patch
+    /// changed in the plugin's interface makes the project modified.
+    fn absorb_closed_states(&mut self) {
+        for (device, state) in self.editors.take_captured() {
+            if self.store_plugin_state(device, state) {
+                self.modified = true;
+            }
+        }
+    }
+
+    /// Reads every plugin's state into the project, before it is saved,
+    /// autosaved or rendered.
+    pub fn capture_plugin_states(&mut self) {
+        for (device, state) in self.editors.states(StateContext::Project) {
+            self.store_plugin_state(device, state);
+        }
+    }
+
+    /// Keeps a plugin's state in the device's definition, outside of the
+    /// undo history (states are not diffed: the engine already has it).
+    /// True if it changed.
+    pub fn store_plugin_state(&mut self, device: Device, state: Vec<u8>) -> bool {
+        fn slot(p: &mut ponzik_project::Project, device: Device) -> Option<&mut Option<ponzik_project::PluginState>> {
+            match device {
+                Device::Instrument(c) => Some(&mut p.channels.get_mut(c)?.instrument.state),
+                Device::Effect { track, slot } => Some(&mut p.tracks.get_mut(track)?.inserts.get_mut(slot)?.as_mut()?.state),
+                Device::RackUnit { .. } => None,
+            }
+        }
+        let Some(current) = slot(&mut self.project, device) else { return false };
+        if current.as_deref() == Some(&state[..]) {
+            return false;
+        }
+        let state: ponzik_project::PluginState = state.into();
+        *current = Some(state.clone());
+        // The engine's copy of the project follows, so that the state alone
+        // never looks like an edit.
+        if let Some(synced) = slot(&mut self.synced, device) {
+            *synced = Some(state);
+        }
+        true
+    }
+
     /// The plugin parameter last moved in a plugin window, for the palette.
     pub fn last_plugin_param(&self) -> Option<(AutoTarget, f32)> {
         self.last_plugin_param
@@ -333,6 +416,8 @@ mod tests {
     #[derive(Default)]
     struct Fake {
         changed: Mutex<Vec<(u32, f32)>>,
+        /// The plugin's opaque state.
+        state: Mutex<Option<Vec<u8>>>,
     }
 
     impl PluginEditor for Fake {
@@ -358,6 +443,9 @@ mod tests {
         fn idle(&self, _: &mut Vec<EditorEvent>) {}
         fn param_changed(&self, id: u32, value: f32) {
             self.changed.lock().unwrap().push((id, value));
+        }
+        fn save_state(&self, _: StateContext) -> Option<Vec<u8>> {
+            self.state.lock().unwrap().clone()
         }
     }
 
@@ -427,5 +515,33 @@ mod tests {
         assert!(eds.editor(Device::Effect { track: 3, slot: 1 }).is_none());
         assert!(!eds.has_editors());
         assert!(eds.open(Device::Instrument(1), "x").is_err(), "not a plugin anymore");
+    }
+
+    #[test]
+    fn plugin_states_reach_the_project_without_an_edit() {
+        let project = ponzik_project::demo_project();
+        let (_engine, handle) = project.build_engine(48_000.0, &|_| None);
+        let mut app = App::new(handle, project, 48_000);
+        let (inst, fx) = (Arc::new(Fake::default()), Arc::new(Fake::default()));
+        *inst.state.lock().unwrap() = Some(vec![1, 2, 3]);
+        *fx.state.lock().unwrap() = Some(vec![9]);
+        app.editors.capture(&Command::ReplaceInstrument { channel: 0, instrument: Box::new(Plug(inst.clone())) });
+        app.editors.capture(&Command::SetInsert { track: 1, slot: 0, effect: Some(Box::new(Plug(fx.clone()))) });
+        app.editors.capture(&Command::SetInsert { track: 2, slot: 0, effect: Some(Box::new(Plug(Arc::new(Fake::default())))) });
+        app.project.tracks[1].inserts[0] = Some(ponzik_project::EffectDef::new("fake"));
+        app.synced = app.project.clone();
+        let states = app.editors.states(StateContext::Project);
+        assert_eq!(states.len(), 2, "a plugin without a state has none to give");
+
+        app.capture_plugin_states();
+        assert_eq!(app.project.channels[0].instrument.state.as_deref(), Some(&[1u8, 2, 3][..]));
+        assert_eq!(app.project.tracks[1].inserts[0].as_ref().unwrap().state.as_deref(), Some(&[9u8][..]));
+        // Not an edit: the engine's copy follows, nothing is sent or undoable.
+        assert!(app.project == app.synced);
+        assert!(!app.modified);
+        // Same state again: nothing changes.
+        assert!(!app.store_plugin_state(Device::Instrument(0), vec![1, 2, 3]));
+        assert!(app.store_plugin_state(Device::Instrument(0), vec![4]));
+        assert!(!app.store_plugin_state(Device::Effect { track: 5, slot: 3 }, vec![4]), "no device there");
     }
 }

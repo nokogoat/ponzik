@@ -461,7 +461,7 @@ pub struct App {
     pub engine: EngineHandle,
     pub project: Project,
     /// État que le moteur a reçu : sert de base aux différences et à l'annulation.
-    synced: Project,
+    pub(super) synced: Project,
     past: Vec<(String, Project)>,
     future: Vec<(String, Project)>,
     last_edit: Option<(String, f32)>,
@@ -849,6 +849,10 @@ impl App {
 
     /// `now` : secondes depuis le démarrage.
     pub fn autosave_tick(&mut self, now: f64) {
+        // Plugins are asked for their state only when an autosave is due.
+        if self.autosaver.as_ref().is_some_and(|a| a.due(now)) {
+            self.capture_plugin_states();
+        }
         if let Some(a) = &mut self.autosaver
             && let Err(e) = a.tick(&self.project, now)
         {
@@ -1252,6 +1256,7 @@ impl App {
 
     /// Renders every section (marker to marker) to its own WAV file.
     pub fn export_sections(&mut self, options: ponzik_project::ExportOptions) {
+        self.capture_plugin_states();
         let result = {
             let loader = self.sample_loader();
             compat::export_regions(&self.project, self.sample_rate, &loader, options)
@@ -1263,6 +1268,7 @@ impl App {
     }
 
     pub fn export_stems(&mut self) {
+        self.capture_plugin_states();
         let result = {
             let loader = self.sample_loader();
             compat::export_stems(&self.project, self.sample_rate, &loader)
@@ -1483,6 +1489,7 @@ impl App {
     // --- Fichiers ---
 
     pub fn save(&mut self) {
+        self.capture_plugin_states();
         let path = self.project_path.clone().unwrap_or_else(|| compat::default_project_path(&self.project.name));
         match compat::save_project(&self.project, &path) {
             Ok(()) => {
@@ -1528,6 +1535,8 @@ impl App {
     }
 
     pub fn export_with(&mut self, options: ponzik_project::ExportOptions) {
+        // The render builds its own instances: they start from the states of now.
+        self.capture_plugin_states();
         let path = compat::default_export_path(&self.project.name);
         let result = {
             let loader = self.sample_loader();
@@ -3102,7 +3111,13 @@ impl App {
             Action::Popup(kind) => self.open_popup(kind, anchor),
             Action::DuplicateChannel(ch) => {
                 let src = self.project.channels[ch].clone();
-                let idx = self.project.add_channel(tr_fmt!("{} (copy)", src.name.as_str()), src.instrument.clone(), src.root_note);
+                let mut instrument = src.instrument.clone();
+                // A plugin's copy starts from the patch it has now.
+                let editor = self.editors.editor(super::devices::Device::Instrument(ch)).filter(|e| e.is_alive());
+                if let Some(state) = editor.and_then(|e| e.save_state(ponzik_engine::StateContext::Duplicate)) {
+                    instrument.state = Some(state.into());
+                }
+                let idx = self.project.add_channel(tr_fmt!("{} (copy)", src.name.as_str()), instrument, src.root_note);
                 let c = &mut self.project.channels[idx];
                 c.gain = src.gain;
                 c.pan = src.pan;

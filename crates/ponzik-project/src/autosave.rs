@@ -72,6 +72,13 @@ impl Autosaver {
         self.last_text = io::save(project);
     }
 
+    /// The next [`Autosaver::tick`] at `now` checks the project (the
+    /// interval has elapsed): the moment to refresh what it is made of, such
+    /// as plugin states.
+    pub fn due(&self, now: f64) -> bool {
+        now < self.last_check || now - self.last_check >= self.interval
+    }
+
     /// Écrit le projet si l'intervalle est écoulé depuis la dernière vérification
     /// et s'il a changé ; renvoie le fichier écrit. `now` : secondes, horloge
     /// quelconque mais croissante. Après un échec, on réessaie à l'intervalle suivant.
@@ -314,7 +321,9 @@ mod tests {
         let tmp = TempDir::new("interval");
         let mut p = project("Morceau", 120.0);
         let mut saver = Autosaver::start(&tmp.0, &p, 0.0).unwrap();
+        assert!(!saver.due(60.0) && saver.due(120.0));
         assert_eq!(saver.tick(&p, 500.0).unwrap(), None, "inchangé");
+        assert!(!saver.due(550.0) && saver.due(620.0));
         p.bpm = 130.0;
         assert_eq!(saver.tick(&p, 550.0).unwrap(), None, "intervalle pas écoulé");
         let path = saver.tick(&p, 620.0).unwrap().expect("modifié : écrit");
