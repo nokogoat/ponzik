@@ -8,7 +8,7 @@ use std::path::Path;
 
 use ponzik_dsp::loudness::LoudnessMeter;
 use ponzik_dsp::noise::WhiteNoise;
-use ponzik_engine::{Command, PPQ, PlayMode, Sequence, TICKS_PER_BAR, default_worker_threads};
+use ponzik_engine::{Command, PPQ, PlayMode, Sequence, TICKS_PER_BAR, Tap, default_worker_threads};
 
 use ponzik_i18n::tr;
 
@@ -143,6 +143,119 @@ pub fn render_song_threads(
     // On retire ce retard pour que l'export commence au premier temps.
     out.drain(..(2 * latency).min(out.len()));
     out
+}
+
+/// Like [`render_song`], but captures `taps` instead of the master output:
+/// the song (or the region) and then the tail, until every tap has gone
+/// silent. Track taps are moved back by their latency, so that every capture
+/// starts with the range; all have the same length, at least the range's.
+pub fn render_taps(project: &Project, sample_rate: u32, loader: SampleLoader, mode: RenderMode, taps: &[Tap]) -> Vec<Vec<f32>> {
+    let sample_rate = sample_rate.max(1);
+    let (from, to, play_mode) = span(project, mode);
+    let mut project = project.clone();
+    project.mode = play_mode;
+    project.loop_range = matches!(mode, RenderMode::Region(..)).then_some((from, to));
+    let (mut engine, mut handle) = project.build_engine(sample_rate as f32, loader);
+    engine.set_worker_threads(default_worker_threads());
+    engine.set_taps(taps);
+    // On the frame grid of the song played from its start: the render's first
+    // sample is the first one at or after `from`, as in playback. The engine
+    // starts one frame earlier (what starts on `from` is not skipped) and that
+    // frame is dropped.
+    let early = from > 0 && {
+        let map = project.tempo_map();
+        let sr = sample_rate as f64;
+        let frame = (map.secs_at(from as f64) * sr - 1e-6).ceil();
+        let _ = handle.send(Command::Locate(map.tick_at_secs((frame - 1.0).max(0.0) / sr)));
+        frame >= 1.0
+    };
+    let _ = handle.send(Command::Play);
+    let mut block = [0.0f32; 2 * BLOCK];
+    let mut caps: Vec<Vec<f32>> = vec![Vec::new(); taps.len()];
+    let collect = |engine: &mut ponzik_engine::Engine, caps: &mut Vec<Vec<f32>>| {
+        for (c, t) in caps.iter_mut().zip(engine.take_taps(taps)) {
+            c.extend_from_slice(&t);
+        }
+    };
+    let mut body = 0;
+    if early {
+        // Two frames: what starts on `from` falls on the second one, which is kept.
+        engine.process(&mut block[..4], 2);
+        for (c, t) in caps.iter_mut().zip(engine.take_taps(taps)) {
+            c.extend_from_slice(t.get(2..).unwrap_or(&[]));
+        }
+        body = 1;
+    }
+    if play_mode == PlayMode::Song {
+        loop {
+            let n = engine.process_to_loop_end(&mut block, 2);
+            body += n;
+            collect(&mut engine, &mut caps);
+            handle.collect_garbage();
+            if n < BLOCK {
+                break;
+            }
+        }
+    } else {
+        let frames = ticks_to_frames(to - from, project.bpm, sample_rate);
+        while body < frames {
+            let n = (frames - body).min(BLOCK);
+            engine.process(&mut block[..2 * n], 2);
+            body += n;
+            collect(&mut engine, &mut caps);
+            handle.collect_garbage();
+        }
+    }
+    // Latency of each capture (a track's inserts, the paths into it).
+    let latency: Vec<usize> = taps
+        .iter()
+        .map(|t| match *t {
+            Tap::Track(t) => engine.mixer_mut().track_latency(t),
+            _ => 0,
+        })
+        .collect();
+
+    let last_bpm = if play_mode == PlayMode::Song { project.tempo_map().bpm_at(to as f64) } else { project.bpm as f64 };
+    let silent = Sequence {
+        patterns: Vec::new(),
+        clips: Vec::new(),
+        mode: PlayMode::Pattern(0),
+        tempo: ponzik_engine::TempoMap::constant(last_bpm as f32),
+        ..Sequence::default()
+    };
+    let _ = handle.send(Command::SetSequence(Box::new(silent)));
+    let max_tail = (MAX_TAIL * sample_rate as f64) as usize + latency.iter().copied().max().unwrap_or(0);
+    let hold = (SILENCE_HOLD * sample_rate as f64) as usize;
+    // Frames up to the last loud one of each capture (or its body).
+    let last_loud = |cap: &[f32], lat: usize| {
+        let loud = cap.chunks_exact(2).rposition(|f| f[0].abs() >= SILENCE || f[1].abs() >= SILENCE).map_or(0, |i| i + 1);
+        loud.max(lat + body)
+    };
+    let mut done = body;
+    let mut tail = 0;
+    while tail < max_tail && caps.iter().zip(&latency).any(|(c, &lat)| done < last_loud(c, lat) + hold) {
+        let n = (max_tail - tail).min(BLOCK);
+        engine.process(&mut block[..2 * n], 2);
+        collect(&mut engine, &mut caps);
+        done += n;
+        tail += n;
+        handle.collect_garbage();
+    }
+    let len = caps.iter().zip(&latency).map(|(c, &lat)| last_loud(c, lat) - lat).max().unwrap_or(body);
+    for (c, &lat) in caps.iter_mut().zip(&latency) {
+        c.drain(..(2 * lat).min(c.len()));
+        c.resize(2 * len, 0.0);
+    }
+    caps
+}
+
+/// Writes an offline render (freeze, bounce) as a 32-bit float WAV, without
+/// bounding the samples: a hot render plays back exactly as it was made.
+pub fn write_render(path: impl AsRef<Path>, samples: &[f32], sample_rate: u32) -> io::Result<()> {
+    let clean: Vec<f32> = samples.iter().map(|&s| if s.is_finite() { s } else { 0.0 }).collect();
+    let mut w = BufWriter::new(File::create(path)?);
+    encode_wav_raw(&mut w, &clean, 2, sample_rate, BitDepth::Float32, false, false)?;
+    w.flush()
 }
 
 /// Une piste par piste de mixer utilisée par un canal audible ou (morceau) un
@@ -461,6 +574,19 @@ pub fn encode_wav_channels(
     depth: BitDepth,
     dither: bool,
 ) -> io::Result<()> {
+    encode_wav_raw(w, samples, channels, sample_rate, depth, dither, true)
+}
+
+/// [`encode_wav_channels`]; `bound`: floats are bounded to ±1 too.
+fn encode_wav_raw(
+    w: &mut impl Write,
+    samples: &[f32],
+    channels: u16,
+    sample_rate: u32,
+    depth: BitDepth,
+    dither: bool,
+    bound: bool,
+) -> io::Result<()> {
     let channels = channels.max(1);
     let bytes = (depth.bits() / 8) as usize;
     let data_len = u32::try_from(samples.len() * bytes)
@@ -499,8 +625,9 @@ pub fn encode_wav_channels(
     let mut buf = Vec::with_capacity(BLOCK * 4);
     for chunk in samples.chunks(BLOCK) {
         buf.clear();
-        for &s in chunk {
-            let s = if s.is_finite() { s.clamp(-1.0, 1.0) } else { 0.0 };
+        for &raw in chunk {
+            let s = if raw.is_finite() { raw.clamp(-1.0, 1.0) } else { 0.0 };
+            let s = if !bound && depth == BitDepth::Float32 && raw.is_finite() { raw } else { s };
             match depth {
                 BitDepth::Pcm16 => {
                     let v = (s * 32_767.0 + tpdf()).round().clamp(-32_768.0, 32_767.0) as i16;
@@ -564,7 +691,7 @@ mod tests {
         let a = p.add_channel("A", InstrumentDef::new("pulse"), 60);
         p.add_note(0, a, Note { start: 0, len: TICKS_PER_STEP, key: 60, vel: 0.5, ..Note::DEFAULT });
         for bar in 0..6 {
-            p.clips.push(crate::ClipDef { pattern: 0, lane: 0, start: bar * TICKS_PER_BAR, len: TICKS_PER_BAR, offset: 0 });
+            p.clips.push(crate::ClipDef { pattern: 0, lane: 0, start: bar * TICKS_PER_BAR, len: TICKS_PER_BAR, offset: 0, muted: false });
         }
         p.set_tempo_change(2 * TICKS_PER_BAR, 90.0, false);
         p.set_tempo_change(4 * TICKS_PER_BAR, 150.0, true);

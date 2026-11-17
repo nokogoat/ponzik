@@ -101,6 +101,7 @@ pub fn demo_project() -> Project {
         start: start_bar * bar,
         len: bars * bar,
         offset: 0,
+        muted: false,
     };
     p.clips = vec![clip(intro, 0, 0, 4), clip(0, 0, 4, 8), clip(brk, 1, 12, 4), clip(0, 0, 16, 8)];
     p.mode = PlayMode::Pattern(0);

@@ -473,7 +473,7 @@ mod tests {
     use ponzik_engine::{TICKS_PER_BAR as BAR, TICKS_PER_STEP};
 
     fn clip(pattern: usize, start: u32, len: u32) -> ClipDef {
-        ClipDef { pattern, lane: 0, start, len, offset: 0 }
+        ClipDef { pattern, lane: 0, start, len, offset: 0, muted: false }
     }
 
     /// Three sections of two bars: A (pattern 0), B (pattern 1), C (pattern 2).

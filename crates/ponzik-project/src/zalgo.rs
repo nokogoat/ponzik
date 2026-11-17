@@ -457,7 +457,7 @@ pub fn demo_zalgo() -> Project {
     hits(&mut p, intro, clap, 3, &[(12, 0.5)]);
 
     // --- Playlist ---
-    let clip = |pattern: usize, lane: usize, start: u32, bars: u32| ClipDef { pattern, lane, start: start * BAR, len: bars * BAR, offset: 0 };
+    let clip = |pattern: usize, lane: usize, start: u32, bars: u32| ClipDef { pattern, lane, start: start * BAR, len: bars * BAR, offset: 0, muted: false };
     let (l_drums, l_bass, l_acid, l_lead, l_arp, l_bell, l_pad) = (0, 1, 2, 3, 4, 5, 6);
     let mut clips = vec![
         // Intro.

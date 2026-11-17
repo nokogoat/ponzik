@@ -194,7 +194,7 @@ pub fn demo_breakcore() -> Project {
     roll(&mut p, drill, kick, 0, 8, 16, 58, 6);
 
     let bar = TICKS_PER_BAR;
-    let clip = |pattern, lane, start: u32, bars: u32| ClipDef { pattern, lane, start: start * bar, len: bars * bar, offset: 0 };
+    let clip = |pattern, lane, start: u32, bars: u32| ClipDef { pattern, lane, start: start * bar, len: bars * bar, offset: 0, muted: false };
     p.clips = vec![
         clip(breath, 2, 0, 4),
         clip(acid_p, 1, 2, 2),

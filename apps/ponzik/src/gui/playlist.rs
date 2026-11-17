@@ -417,7 +417,7 @@ impl App {
                     let p = self.playlist.brush.min(self.project.patterns.len() - 1);
                     let start = snap_floor(tick) as u32;
                     let len = self.project.patterns[p].len.max(96);
-                    let clip = ClipDef { pattern: p, lane: lane as usize, start, len, offset: 0 };
+                    let clip = ClipDef { pattern: p, lane: lane as usize, start, len, offset: 0, muted: false };
                     self.project.clips.push(clip);
                     let i = self.project.clips.len() - 1;
                     self.playlist.selected = Some(i);

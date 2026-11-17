@@ -6482,3 +6482,14 @@ msgstr "Exporter les pistes séparées (stems) en FLAC"
 
 msgid "Export each section as its own FLAC (render by regions)"
 msgstr "Exporter chaque section dans son propre FLAC (rendu par régions)"
+
+# --- Freeze and bounce ---
+
+msgid "Clips"
+msgstr "Clips"
+
+msgid "Selection"
+msgstr "Sélection"
+
+msgid "{} (bounce)"
+msgstr "{} (rendu)"

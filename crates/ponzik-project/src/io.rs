@@ -137,6 +137,9 @@ fn channel_json(c: &ChannelDef) -> Json {
     if !c.modulators.is_empty() {
         pairs.push(("modulators", modulators_json(&c.modulators)));
     }
+    if let Some(path) = &c.frozen {
+        pairs.push(("frozen", path.as_str().into()));
+    }
     obj(pairs)
 }
 
@@ -172,13 +175,17 @@ fn pattern_json(p: &PatternDef) -> Json {
 }
 
 fn clip_json(c: &ClipDef) -> Json {
-    obj(vec![
+    let mut pairs = vec![
         ("pattern", c.pattern.into()),
         ("lane", c.lane.into()),
         ("start", c.start.into()),
         ("len", c.len.into()),
         ("offset", c.offset.into()),
-    ])
+    ];
+    if c.muted {
+        pairs.push(("muted", true.into()));
+    }
+    obj(pairs)
 }
 
 fn track_json(t: &TrackDef) -> Json {
@@ -229,6 +236,9 @@ fn track_json(t: &TrackDef) -> Json {
     }
     if !t.modulators.is_empty() {
         pairs.push(("modulators", modulators_json(&t.modulators)));
+    }
+    if let Some(path) = &t.frozen {
+        pairs.push(("frozen", path.as_str().into()));
     }
     obj(pairs)
 }
@@ -473,6 +483,7 @@ fn load_channel(v: &Json) -> ChannelDef {
         root_note: u32_or(v.get("root_note"), 60).min(127) as u8,
         color: u32_or(v.get("color"), 0),
         modulators: load_modulators(v.get("modulators"), 1),
+        frozen: v.get("frozen").and_then(Json::as_str).filter(|p| !p.is_empty()).map(String::from),
     }
 }
 
@@ -519,6 +530,7 @@ fn load_clip(v: &Json, patterns: usize) -> Option<ClipDef> {
         start: u32_or(v.get("start"), 0),
         len: u32_or(v.get("len"), TICKS_PER_BAR).max(1),
         offset: u32_or(v.get("offset"), 0),
+        muted: bool_or(v.get("muted"), false),
     })
 }
 
@@ -628,6 +640,9 @@ fn load_track(v: &Json, index: usize) -> TrackDef {
         }
     }
     t.modulators = load_modulators(v.get("modulators"), INSERT_SLOTS);
+    if index != MASTER {
+        t.frozen = v.get("frozen").and_then(Json::as_str).filter(|p| !p.is_empty()).map(String::from);
+    }
     t
 }
 

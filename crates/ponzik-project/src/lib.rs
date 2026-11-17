@@ -11,8 +11,8 @@ use ponzik_i18n::{tr, tr_fmt, tr_noop};
 use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS, TRACKS, routing_order};
 use ponzik_engine::registry;
 use ponzik_engine::{
-    AudioClip, AutomationLane, Channel, Clip, ClipWarp, Effect, Engine, EngineHandle, Instrument, NOTE_FX_SLOTS, Note,
-    NoteFx, PPQ, Pattern, PlayMode, Sample, Sequence, TICKS_PER_BAR, TICKS_PER_STEP,
+    AudioClip, AutomationLane, Channel, Clip, ClipWarp, Effect, Engine, EngineHandle, Frozen, Instrument, NOTE_FX_SLOTS,
+    Note, NoteFx, PPQ, Pattern, PlayMode, Sample, Sequence, TICKS_PER_BAR, TICKS_PER_STEP,
 };
 pub use ponzik_dsp::warp::WarpAlgo;
 pub use ponzik_engine::{WarpMap, WarpMarker};
@@ -25,6 +25,7 @@ pub const SESSION_SCENES: usize = 8;
 
 mod arrange;
 pub mod base64;
+pub mod bounce;
 pub mod auto_rec;
 pub mod autosave;
 pub mod capture;
@@ -49,6 +50,7 @@ pub mod transform;
 pub mod warp;
 
 pub use arrange::{MARKER_COLORS, Placement, TimeSlice};
+pub use bounce::{BounceSource, FreezeTarget, SourceAction};
 pub use breakcore::demo_breakcore;
 pub use zalgo::demo_zalgo;
 pub use demo::demo_project;
@@ -202,6 +204,9 @@ pub struct ChannelDef {
     pub color: u32,
     /// Modulators of the instrument's parameters.
     pub modulators: Vec<ModulatorDef>,
+    /// Frozen: the audio file of its render, played instead of its
+    /// instrument and note effects (kept here, unloaded from the engine).
+    pub frozen: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -222,6 +227,8 @@ pub struct ClipDef {
     pub start: u32,
     pub len: u32,
     pub offset: u32,
+    /// Kept in the playlist, not played (a bounced source, for instance).
+    pub muted: bool,
 }
 
 /// Courbe d'automation : points triés par tick, un seul point par tick.
@@ -407,6 +414,9 @@ pub struct TrackDef {
     pub vca: Option<usize>,
     /// Modulators of the track's inserts.
     pub modulators: Vec<ModulatorDef>,
+    /// Frozen: the audio file of its render (everything that reaches it,
+    /// through its inserts), played instead of its input and inserts.
+    pub frozen: Option<String>,
 }
 
 /// Nom par défaut d'une piste de mixer (« Track 3 », « Piste 3 » en français).
@@ -436,6 +446,7 @@ impl TrackDef {
             folded: false,
             vca: None,
             modulators: Vec::new(),
+            frozen: None,
         }
     }
 }
@@ -675,6 +686,7 @@ impl Project {
             clips: self
                 .clips
                 .iter()
+                .filter(|c| !c.muted)
                 .map(|c| Clip { pattern: c.pattern, start: c.start, len: c.len, offset: c.offset })
                 .collect(),
             mode: self.mode,
@@ -691,7 +703,7 @@ impl Project {
             audio_clips: self
                 .audio_clips
                 .iter()
-                .filter(|c| !c.muted)
+                .filter(|c| !c.muted && self.frozen_track(c.track, loader).is_none())
                 .filter_map(|c| {
                     let sample = loader(&c.path)?;
                     let warp = c.warp.then(|| ClipWarp {
@@ -862,6 +874,19 @@ impl Project {
 
     pub fn make_channel(&self, idx: usize, sample_rate: f32, loader: SampleLoader) -> Channel {
         let c = &self.channels[idx];
+        if !self.channel_live(idx, loader) {
+            // Frozen, by itself or with its track: a placeholder that plays its
+            // render (nothing at all when the track's render covers it).
+            let mut ch = Channel::new(c.name.clone(), ponzik_engine::silent_instrument())
+                .with_gain(c.gain)
+                .with_pan(c.pan)
+                .with_track(c.track);
+            ch.muted = c.muted;
+            if self.frozen_track(c.track, loader).is_none() {
+                ch.frozen = self.frozen_channel(idx, loader).map(|s| Box::new(Frozen::new(s)));
+            }
+            return ch;
+        }
         let mut ch = Channel::new(c.name.clone(), Self::make_instrument(&c.instrument, sample_rate, loader))
             .with_gain(c.gain)
             .with_pan(c.pan)
@@ -892,6 +917,11 @@ impl Project {
             t.output = def.output;
             t.sends = def.sends;
             t.vca = def.vca;
+            if let Some(sample) = self.frozen_track(i, loader) {
+                // Frozen: its render replaces its input and inserts, which stay unloaded.
+                t.frozen = Some(Box::new(Frozen::new(sample)));
+                continue;
+            }
             for (slot, fx) in def.inserts.iter().enumerate() {
                 t.inserts[slot] = fx.as_ref().and_then(|d| Self::make_effect(d, sample_rate, self.bpm));
                 t.bypass[slot] = fx.as_ref().is_some_and(|d| d.bypass);
@@ -977,6 +1007,7 @@ impl Project {
             root_note,
             color: 0,
             modulators: Vec::new(),
+            frozen: None,
         });
         for p in &mut self.patterns {
             p.notes.resize(self.channels.len(), Vec::new());
@@ -1406,7 +1437,7 @@ mod tests {
     fn song_length_and_routing() {
         let mut p = Project::empty();
         assert_eq!(p.song_len(), TICKS_PER_BAR);
-        p.clips.push(ClipDef { pattern: 0, lane: 0, start: TICKS_PER_BAR * 2, len: TICKS_PER_BAR / 2, offset: 0 });
+        p.clips.push(ClipDef { pattern: 0, lane: 0, start: TICKS_PER_BAR * 2, len: TICKS_PER_BAR / 2, offset: 0, muted: false });
         assert_eq!(p.song_len(), TICKS_PER_BAR * 3);
         assert!(p.routing_order().is_some());
         p.tracks[1].output = 2;
@@ -1420,7 +1451,7 @@ mod tests {
         let ch = p.add_channel("Kick", InstrumentDef::new("drumsynth"), 60);
         p.set_step(0, ch, 0, true);
         p.patterns[0].color = 0x123456;
-        let clip = ClipDef { pattern: 0, lane: 0, start: 0, len: TICKS_PER_BAR, offset: 0 };
+        let clip = ClipDef { pattern: 0, lane: 0, start: 0, len: TICKS_PER_BAR, offset: 0, muted: false };
         p.clips.extend([clip, ClipDef { start: TICKS_PER_BAR, ..clip }]);
         assert_eq!(p.make_unique(1), Some(1));
         assert_eq!(p.clips[1].pattern, 1);
@@ -1442,11 +1473,11 @@ mod tests {
         p.bpm = 120.0;
         let bar = TICKS_PER_BAR;
         // Un clip dans la plage, un à cheval sur son début, un après.
-        p.clips.push(ClipDef { pattern: 0, lane: 0, start: bar, len: bar, offset: 0 });
-        p.clips.push(ClipDef { pattern: 0, lane: 1, start: 0, len: 2 * bar, offset: 0 });
-        p.clips.push(ClipDef { pattern: 0, lane: 2, start: 3 * bar, len: bar, offset: 0 });
+        p.clips.push(ClipDef { pattern: 0, lane: 0, start: bar, len: bar, offset: 0, muted: false });
+        p.clips.push(ClipDef { pattern: 0, lane: 1, start: 0, len: 2 * bar, offset: 0, muted: false });
+        p.clips.push(ClipDef { pattern: 0, lane: 2, start: 3 * bar, len: bar, offset: 0, muted: false });
         // Celui-ci traverse la destination : il est coupé autour de la copie.
-        p.clips.push(ClipDef { pattern: 0, lane: 4, start: bar + 96, len: 3 * bar, offset: 0 });
+        p.clips.push(ClipDef { pattern: 0, lane: 4, start: bar + 96, len: 3 * bar, offset: 0, muted: false });
         p.audio_clips.push(AudioClipDef {
             path: "a.wav".into(),
             lane: 3,
@@ -1471,9 +1502,9 @@ mod tests {
         assert_eq!(p.duplicate_time(bar, 2 * bar), 4);
         let lane4: Vec<_> = p.clips.iter().filter(|c| c.lane == 4).map(|c| (c.start, c.len, c.offset)).collect();
         assert_eq!(lane4, [(bar + 96, bar - 96, 0), (3 * bar, bar + 96, 2 * bar - 96), (2 * bar + 96, bar - 96, 0)]);
-        assert!(p.clips.contains(&ClipDef { pattern: 0, lane: 0, start: 2 * bar, len: bar, offset: 0 }));
-        assert!(p.clips.contains(&ClipDef { pattern: 0, lane: 1, start: 2 * bar, len: bar, offset: bar }));
-        assert!(p.clips.contains(&ClipDef { pattern: 0, lane: 2, start: 3 * bar, len: bar, offset: 0 }));
+        assert!(p.clips.contains(&ClipDef { pattern: 0, lane: 0, start: 2 * bar, len: bar, offset: 0, muted: false }));
+        assert!(p.clips.contains(&ClipDef { pattern: 0, lane: 1, start: 2 * bar, len: bar, offset: bar, muted: false }));
+        assert!(p.clips.contains(&ClipDef { pattern: 0, lane: 2, start: 3 * bar, len: bar, offset: 0, muted: false }));
         // Le clip audio commence avant la plage : la copie saute une demi-mesure (1 s à 120 BPM).
         let a = p.audio_clips.last().unwrap();
         assert_eq!((a.start, a.len, a.lane), (2 * bar, bar / 2, 3));
@@ -1596,7 +1627,7 @@ mod tests {
     #[test]
     fn audio_clips_extend_the_song_and_need_their_sample() {
         let mut p = Project::empty();
-        p.clips.push(ClipDef { pattern: 0, lane: 0, start: 0, len: TICKS_PER_BAR, offset: 0 });
+        p.clips.push(ClipDef { pattern: 0, lane: 0, start: 0, len: TICKS_PER_BAR, offset: 0, muted: false });
         p.audio_clips.push(audio("a.wav", TICKS_PER_BAR * 4, 10));
         p.audio_clips.push(audio("absent.wav", 0, 10));
         assert_eq!(p.song_len(), TICKS_PER_BAR * 5);

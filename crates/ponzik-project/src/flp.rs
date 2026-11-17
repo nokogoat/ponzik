@@ -924,6 +924,7 @@ pub fn import_flp(
             root_note: ch.root.unwrap_or(60).min(127) as u8,
             color: ch.color.unwrap_or(0),
             modulators: Vec::new(),
+            frozen: None,
         });
     }
     if !p.channels.is_empty() {
@@ -1037,7 +1038,7 @@ pub fn import_flp(
                 };
                 let offset = if (it.start_offset as i32) > 0 { tick(it.start_offset) } else { 0 };
                 let len = if it.len == 0 { p.patterns[pattern].len } else { tick(it.len).clamp(1, MAX_TICK) };
-                p.clips.push(ClipDef { pattern, lane: lane(it.track), start, len, offset });
+                p.clips.push(ClipDef { pattern, lane: lane(it.track), start, len, offset, muted: false });
             } else if let Some((path, track)) = audio_map.get(&it.index) {
                 p.audio_clips.push(AudioClipDef {
                     path: path.clone(),
@@ -1451,7 +1452,7 @@ mod tests {
         // Playlist: two pattern clips, the automation clip is reported.
         assert_eq!(p.mode, PlayMode::Song);
         assert_eq!(p.clips.len(), 2);
-        assert_eq!(p.clips[0], ClipDef { pattern: 0, lane: 2, start: 384, len: 384, offset: 0 });
+        assert_eq!(p.clips[0], ClipDef { pattern: 0, lane: 2, start: 384, len: 384, offset: 0, muted: false });
         assert_eq!(p.clips[1].lane, 0);
 
         // Mixer.
