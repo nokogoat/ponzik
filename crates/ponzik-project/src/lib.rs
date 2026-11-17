@@ -34,6 +34,7 @@ mod demo;
 pub mod history;
 pub mod io;
 pub mod flp;
+pub mod generate;
 pub mod json;
 pub mod library;
 pub mod midi_file;
