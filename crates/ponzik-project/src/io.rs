@@ -10,7 +10,7 @@ use ponzik_i18n::{tr, tr_fmt};
 
 use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS, TRACKS};
 use ponzik_engine::instruments::drum_pads::{LAYERS, PADS as PAD_LIMIT};
-use ponzik_engine::{NOTE_FX_SLOTS, Note, PlayMode, TICKS_PER_BAR};
+use ponzik_engine::{MAX_RATCHET, NOTE_FX_SLOTS, Note, NoteCond, PlayMode, TICKS_PER_BAR};
 
 use ponzik_engine::effects::fx_rack::{CHAIN_LEN, CHAINS, MACROS, MAX_MAPPINGS, UNITS};
 use ponzik_engine::{MacroMap, ModKind};
@@ -140,6 +140,16 @@ fn channel_json(c: &ChannelDef) -> Json {
     obj(pairs)
 }
 
+/// `[start, len, key, vel]`, followed by `[chance %, condition, repeats]`
+/// only when the note has any of them.
+fn note_json(n: &Note) -> Json {
+    let mut v = vec![n.start.into(), n.len.into(), n.key.into(), n.vel.into()];
+    if n.is_varied() {
+        v.extend([n.prob.into(), n.cond.id().as_str().into(), n.ratchet.into()]);
+    }
+    Json::Arr(v)
+}
+
 fn pattern_json(p: &PatternDef) -> Json {
     let notes = p
         .notes
@@ -148,7 +158,7 @@ fn pattern_json(p: &PatternDef) -> Json {
             Json::Arr(
                 notes
                     .iter()
-                    .map(|n| Json::Arr(vec![n.start.into(), n.len.into(), n.key.into(), n.vel.into()]))
+                    .map(note_json)
                     .collect(),
             )
         })
@@ -473,7 +483,9 @@ fn load_note(v: &Json) -> Option<Note> {
         len: u32_or(n.get(1), 1).max(1),
         key: u32_or(n.get(2), 60).min(127) as u8,
         vel: f32_or(n.get(3), 0.8).clamp(0.0, 1.0),
-        ..Note::DEFAULT
+        prob: u32_or(n.get(4), 100).min(100) as u8,
+        cond: n.get(5).and_then(Json::as_str).and_then(NoteCond::from_id).unwrap_or_default(),
+        ratchet: u32_or(n.get(6), 1).clamp(1, u32::from(MAX_RATCHET)) as u8,
     })
 }
 
@@ -946,6 +958,29 @@ mod tests {
     }
 
     #[test]
+    fn note_chances_conditions_and_ratchets() {
+        let mut p = Project::empty();
+        p.add_channel("A", InstrumentDef::new("pulse"), 60);
+        let varied = Note { prob: 35, cond: NoteCond::Every(3, 4), ratchet: 6, ..Note::new(24, 24, 64, 0.5) };
+        p.add_note(0, 0, Note::new(0, 24, 60, 0.8));
+        p.add_note(0, 0, varied);
+        let text = save(&p);
+        assert!(text.contains(r#"[24, 24, 64, 0.5, 35, "3:4", 6]"#) || text.contains(r#"[24,24,64,0.5,35,"3:4",6]"#), "{text}");
+        assert_eq!(load(&text).unwrap().patterns[0].notes[0], [Note::new(0, 24, 60, 0.8), varied]);
+        // Out of range or malformed: clamped or dropped back to the default.
+        let text = r#"{"format": "ponzik-project", "version": 1, "channels": [{}], "patterns": [{"notes": [[
+            [0, 24, 60, 1, 300, "9:4", 99], [24, 24, 60, 1, -5, 7, 0], [48, 24, 60, 1, 50, "first"], [72, 24, 60, 1, "x", "!first", 2]
+        ]]}]}"#;
+        let notes = load(text).unwrap().patterns[0].notes[0].clone();
+        assert_eq!(notes.iter().map(|n| (n.prob, n.cond, n.ratchet)).collect::<Vec<_>>(), [
+            (100, NoteCond::Always, MAX_RATCHET),
+            (0, NoteCond::Always, 1),
+            (50, NoteCond::First, 1),
+            (100, NoteCond::NotFirst, 2),
+        ]);
+    }
+
+    #[test]
     fn tolerant_loading() {
         let text = r#"{
           "format": "ponzik-project", "version": 1.4, "futur": {"x": [1, 2]},
@@ -981,6 +1016,7 @@ mod tests {
         assert_eq!(notes[0].len, 1);
         assert_eq!(notes[0].vel, 0.8);
         assert_eq!(notes[2].vel, 1.0);
+        assert!(notes.iter().all(|n| !n.is_varied()), "no chance, condition or repeats");
         assert_eq!(p.patterns[1].name, "Pattern 2");
         assert_eq!(p.patterns[1].notes.len(), 2);
         assert_eq!(p.clips.len(), 1);
