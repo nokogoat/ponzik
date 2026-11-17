@@ -95,6 +95,12 @@ const ARR_NAME: u8 = TEXT + 49;
 const TRACK_DATA: u8 = DATA + 30;
 /// Playlist item index base: items above it are patterns (`PlaylistEvent.pattern_base`).
 const PATTERN_BASE: u16 = 20480;
+/// Size of one playlist item: 32 bytes before FL Studio 21, 60 in FL 21 to 24
+/// (PyFLP), 80 in FL 25 (20 more bytes at the end, found in an FL 25.1.4
+/// project: the 32-byte head is unchanged).
+const ITEM_SIZES: [usize; 3] = [80, 60, 32];
+/// Playlist tracks of FL Studio 12.9.1 and later.
+const FL_PLAYLIST_TRACKS: usize = 500;
 
 // Mixer (PyFLP `mixer.py`, `InsertID`, `MixerID`, `SlotID`). An insert's events
 // run from its name/colour to its `INS_OUTPUT` event; each effect slot's plugin
@@ -308,8 +314,35 @@ struct FlItem {
     index: u16,
     len: u32,
     track: usize,
-    /// Raw start offset: ticks (i32) for patterns, -1 when unset.
+    /// Raw start offset: ticks (i32) for patterns, -1 when unset; for audio
+    /// clips a float, in milliseconds of the file (-1.0 when unset).
     start_offset: u32,
+}
+
+impl FlItem {
+    /// Start of an audio clip in its file, in seconds (0 when unset).
+    fn audio_offset(&self) -> f64 {
+        let ms = f32::from_bits(self.start_offset);
+        if ms.is_finite() && ms > 0.0 { ms as f64 / 1000.0 } else { 0.0 }
+    }
+}
+
+/// Size of the playlist items of an `ARR_PLAYLIST` event: the size for which
+/// every item carries the pattern base (always 20480), else the size of the
+/// version.
+fn item_size(d: &[u8], version: Option<(u32, u32, u32)>) -> usize {
+    let fits = |size: usize| {
+        d.len() % size == 0 && d.chunks_exact(size).all(|it| u16_at(it, 4) == Some(PATTERN_BASE))
+    };
+    if let Some(size) = ITEM_SIZES.into_iter().find(|&s| fits(s)) {
+        return size;
+    }
+    match version {
+        Some(v) if v >= (25, 0, 0) => 80,
+        Some(v) if v >= (21, 0, 0) => 60,
+        Some(_) => 32,
+        None => ITEM_SIZES.into_iter().find(|&s| d.len() % s == 0).unwrap_or(32),
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -491,15 +524,11 @@ fn read_project(bytes: &[u8]) -> Result<FlProject, String> {
                     p.arrangements.push(FlArrangement::default());
                 }
                 let new_tracks = p.version.is_none_or(|v| v >= (12, 9, 1));
-                let max_track: u16 = if new_tracks { 499 } else { 198 };
+                let max_track = if new_tracks { FL_PLAYLIST_TRACKS as u16 - 1 } else { 198 };
                 let d = e.value.data();
-                // PyFLP `PlaylistEvent`: 32 bytes per item, 60 from FL Studio 21.
-                let size = match p.version {
-                    Some(v) if v >= (21, 0, 0) => 60,
-                    Some(_) => 32,
-                    None if d.len() % 60 == 0 => 60,
-                    None => 32,
-                };
+                // PyFLP `PlaylistEvent`: position, pattern base, index, length,
+                // reversed track, group, flags, start and end offsets.
+                let size = item_size(d, p.version);
                 let items = d.chunks_exact(size).filter_map(|it| {
                     Some(FlItem {
                         pos: u32_at(it, 0)?,
@@ -573,27 +602,70 @@ fn read_project(bytes: &[u8]) -> Result<FlProject, String> {
 pub struct ImportReport {
     pub mapped: Vec<String>,
     pub approximated: Vec<String>,
+    /// Files the project keeps but cannot play yet (missing on this computer,
+    /// or in a format not supported yet): one entry per file.
+    pub offline: Vec<String>,
     pub skipped: Vec<String>,
+}
+
+/// Category of report entries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReportKind {
+    Mapped,
+    Approximated,
+    Offline,
+    Skipped,
+}
+
+/// The entries of one category, under a title that counts them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ReportGroup<'a> {
+    pub kind: ReportKind,
+    pub title: String,
+    pub entries: &'a [String],
 }
 
 impl ImportReport {
     /// One line for a toast.
     pub fn summary(&self) -> String {
         tr_fmt!(
-            "FL Studio import: {} mapped, {} approximated, {} skipped",
+            "FL Studio import: {} mapped, {} approximated, {} offline, {} skipped",
             self.mapped.len(),
             self.approximated.len(),
+            self.offline.len(),
             self.skipped.len()
         )
     }
 
-    /// Every entry, prefixed by its category.
+    fn offline_title(&self) -> String {
+        tr_fmt!("Offline: {} files missing (locate later)", self.offline.len())
+    }
+
+    /// The categories that have entries.
+    pub fn groups(&self) -> Vec<ReportGroup<'_>> {
+        [
+            (ReportKind::Mapped, tr_fmt!("Mapped ({})", self.mapped.len()), &self.mapped),
+            (ReportKind::Approximated, tr_fmt!("Approximated ({})", self.approximated.len()), &self.approximated),
+            (ReportKind::Offline, self.offline_title(), &self.offline),
+            (ReportKind::Skipped, tr_fmt!("Skipped ({})", self.skipped.len()), &self.skipped),
+        ]
+        .into_iter()
+        .filter(|(_, _, entries)| !entries.is_empty())
+        .map(|(kind, title, entries)| ReportGroup { kind, title, entries })
+        .collect()
+    }
+
+    /// Every entry, prefixed by its category; the offline files come after a
+    /// line that counts them.
     pub fn lines(&self) -> Vec<String> {
         let tag = |t: &'static str| move |s: &String| tr_fmt!("{}: {}", t, s);
+        let offline_head = (!self.offline.is_empty()).then(|| self.offline_title());
         self.mapped
             .iter()
             .map(tag(tr("Mapped")))
             .chain(self.approximated.iter().map(tag(tr("Approximated"))))
+            .chain(offline_head)
+            .chain(self.offline.iter().map(tag(tr("Offline"))))
             .chain(self.skipped.iter().map(tag(tr("Skipped"))))
             .collect()
     }
@@ -601,24 +673,27 @@ impl ImportReport {
     /// [`ImportReport::lines`] wrapped at `width` characters for narrow
     /// lists: (text, true when the row continues the previous entry).
     pub fn rows(&self, width: usize) -> Vec<(String, bool)> {
-        let mut rows = Vec::new();
-        for line in self.lines() {
-            let mut row = String::new();
-            let mut more = false;
-            for word in line.split(' ') {
-                if !row.is_empty() && row.chars().count() + 1 + word.chars().count() > width {
-                    rows.push((std::mem::take(&mut row), more));
-                    more = true;
-                }
-                if !row.is_empty() {
-                    row.push(' ');
-                }
-                row.push_str(word);
-            }
-            rows.push((row, more));
-        }
-        rows
+        let lines = self.lines();
+        lines.iter().flat_map(|l| wrap(l, width).into_iter().enumerate().map(|(i, row)| (row, i > 0))).collect()
     }
+}
+
+/// `line` cut between words into rows of at most `width` characters (a longer
+/// word gets a row of its own).
+pub fn wrap(line: &str, width: usize) -> Vec<String> {
+    let mut rows = Vec::new();
+    let mut row = String::new();
+    for word in line.split(' ') {
+        if !row.is_empty() && row.chars().count() + 1 + word.chars().count() > width {
+            rows.push(std::mem::take(&mut row));
+        }
+        if !row.is_empty() {
+            row.push(' ');
+        }
+        row.push_str(word);
+    }
+    rows.push(row);
+    rows
 }
 
 // --- Device mapping ---
@@ -775,6 +850,81 @@ pub fn resolve_sample(raw: &str, project_dir: Option<&Path>) -> Option<String> {
     find(dir, file, 2).map(|p| p.to_string_lossy().into_owned())
 }
 
+/// File name of a path written on Windows or on Unix.
+pub fn file_name_of(path: &str) -> &str {
+    path.rsplit(['/', '\\']).next().unwrap_or(path)
+}
+
+/// True for a sample of FL Studio's factory content, which only exists where
+/// FL Studio is installed.
+fn is_factory_sample(raw: &str) -> bool {
+    let lower = raw.to_lowercase().replace('\\', "/");
+    lower.contains("%flstudiofactorydata%") || (lower.contains("image-line/fl studio") && lower.contains("/packs/"))
+}
+
+/// The samples of an FL Studio project, each looked up once: found on this
+/// computer, replaced by a library sound (factory samples) or kept offline.
+#[derive(Default)]
+struct MediaLookup {
+    done: BTreeMap<String, String>,
+    /// Kept paths that cannot play yet.
+    offline: std::collections::BTreeSet<String>,
+}
+
+impl MediaLookup {
+    /// The path the project keeps for the sample `raw` of channel `label`.
+    fn locate(
+        &mut self,
+        raw: &str,
+        label: &str,
+        resolve: &dyn Fn(&str) -> Option<String>,
+        report: &mut ImportReport,
+    ) -> String {
+        if let Some(path) = self.done.get(raw) {
+            return path.clone();
+        }
+        let file = file_name_of(raw);
+        // Loaded through the app's sample loader, which retries offline files:
+        // formats it learns later play without importing again.
+        let readable = ponzik_engine::wav::is_audio_file(Path::new(file));
+        let unsupported = || tr_fmt!("'{}': {} (format not yet supported)", label, raw);
+        let path = match resolve(raw) {
+            Some(found) if readable => {
+                self.done.insert(raw.to_string(), found.clone());
+                return found;
+            }
+            Some(found) => {
+                report.offline.push(unsupported());
+                found
+            }
+            None => match is_factory_sample(raw).then(|| crate::library::closest_library_sound(file)).flatten() {
+                Some(sound) => {
+                    let name = file_name_of(&sound).trim_end_matches(".wav");
+                    report.approximated.push(tr_fmt!(
+                        "'{}': FL Studio factory sample {} replaced by library sound {}",
+                        label,
+                        file,
+                        name
+                    ));
+                    self.done.insert(raw.to_string(), sound.clone());
+                    return sound;
+                }
+                None if readable => {
+                    report.offline.push(tr_fmt!("'{}': {} not found on this computer", label, raw));
+                    raw.to_string()
+                }
+                None => {
+                    report.offline.push(unsupported());
+                    raw.to_string()
+                }
+            },
+        };
+        self.done.insert(raw.to_string(), path.clone());
+        self.offline.insert(path.clone());
+        path
+    }
+}
+
 // --- Conversion ---
 
 /// Converts an FL Studio project into a new Ponzik project. `resolve` turns a
@@ -845,6 +995,7 @@ pub fn import_flp(
     // FL channel iid → (WAV path, mixer track) for audio clips.
     let mut audio_map: BTreeMap<u16, (String, usize)> = BTreeMap::new();
     let mut skipped_channels: BTreeMap<u16, String> = BTreeMap::new();
+    let mut media = MediaLookup::default();
     let mut generators = 0;
     let mut empty_samplers = Vec::new();
     for ch in &fl.channels {
@@ -868,18 +1019,9 @@ pub fn import_flp(
         }
         let sample_like =
             ch.kind == TYPE_SAMPLER || (ch.internal.is_empty() && matches!(ch.kind, TYPE_NATIVE | TYPE_INSTRUMENT));
-        let wav = ch.sample.as_deref().and_then(|raw| {
-            let lower = raw.to_lowercase();
-            if !lower.ends_with(".wav") && !lower.ends_with(".flac") {
-                report.skipped.push(tr_fmt!("'{}': sample {} is not a WAV or FLAC file (only these are supported)", label, raw));
-                return None;
-            }
-            let found = resolve(raw);
-            if found.is_none() {
-                report.skipped.push(tr_fmt!("'{}': sample not found on this computer: {}", label, raw));
-            }
-            found
-        });
+        // A file that is missing or not readable yet stays in the project
+        // (offline): it plays silence until it is located or supported.
+        let wav = ch.sample.as_deref().map(|raw| media.locate(raw, &label, resolve, &mut report));
         let track = track_of(ch.insert, &tr_fmt!("Channel '{}'", label), &mut report);
         if sample_like && in_playlist(ch.iid) {
             match &wav {
@@ -1016,17 +1158,34 @@ pub fn import_flp(
                 arr.name.as_deref().unwrap_or(tr("the current arrangement"))
             ));
         }
-        // Playlist tracks map to lanes; spread-out projects are compacted.
+        // Playlist tracks map to lanes, one to one (packed together only
+        // beyond Ponzik's lanes, which FL Studio never reaches).
         let mut used: Vec<usize> = arr.items.iter().map(|i| i.track).collect();
         used.sort_unstable();
         used.dedup();
-        let compact = used.last().is_some_and(|&t| t >= 64);
+        let compact = used.last().is_some_and(|&t| t >= crate::PLAYLIST_LANES);
         let lane = |t: usize| {
             if compact { used.binary_search(&t).unwrap_or(0) } else { t }
         };
         if compact {
-            report.approximated.push(tr("Playlist tracks beyond 64 were packed together").into());
+            report
+                .approximated
+                .push(tr_fmt!("Playlist tracks beyond {} were packed together", crate::PLAYLIST_LANES));
         }
+        // Pattern clip offsets are ticks; read as a float if they cannot be.
+        let file_ticks = |raw: u32| -> u32 {
+            let limit = (MAX_TICK as u64 * ppq / PPQ as u64) as i64;
+            let int = raw as i32 as i64;
+            let float = f32::from_bits(raw);
+            if int > 0 && int < limit {
+                tick(int as u32)
+            } else if float.is_finite() && float >= 1.0 && (float as i64) < limit {
+                tick(float as u32)
+            } else {
+                0
+            }
+        };
+        let mut offline_clips = 0;
         let (mut automation_items, mut missing_items, mut far_items, mut sampleless_items) = (0, 0, 0, 0);
         for it in &arr.items {
             let start = tick(it.pos);
@@ -1039,17 +1198,18 @@ pub fn import_flp(
                     missing_items += 1;
                     continue;
                 };
-                let offset = if (it.start_offset as i32) > 0 { tick(it.start_offset) } else { 0 };
+                let offset = file_ticks(it.start_offset);
                 let len = if it.len == 0 { p.patterns[pattern].len } else { tick(it.len).clamp(1, MAX_TICK) };
                 p.clips.push(ClipDef { pattern, lane: lane(it.track), start, len, offset, muted: false });
             } else if let Some((path, track)) = audio_map.get(&it.index) {
+                offline_clips += media.offline.contains(path) as usize;
                 p.audio_clips.push(AudioClipDef {
                     path: path.clone(),
                     lane: lane(it.track),
                     track: *track,
                     start,
                     len: tick(it.len).clamp(1, MAX_TICK),
-                    offset: 0.0,
+                    offset: it.audio_offset(),
                     gain: 1.0,
                     fade_in: 0.0,
                     fade_out: 0.0,
@@ -1063,14 +1223,22 @@ pub fn import_flp(
                 missing_items += 1;
             }
         }
-        if !p.clips.is_empty() {
+        if !p.clips.is_empty() || !p.audio_clips.is_empty() {
             p.mode = PlayMode::Song;
+        }
+        if !p.clips.is_empty() {
             report.mapped.push(tr_fmt!("{} pattern clips in the playlist", p.clips.len()));
         }
         if !p.audio_clips.is_empty() {
             report.approximated.push(tr_fmt!(
-                "{} audio clips: placed whole from their start (trims, stretching and fades are not imported)",
+                "{} audio clips with their start in the file (stretching and fades are not imported)",
                 p.audio_clips.len()
+            ));
+        }
+        if offline_clips > 0 {
+            report.approximated.push(tr_fmt!(
+                "{} audio clips are offline: they stay in the playlist, silent until their files are located",
+                offline_clips
             ));
         }
         if automation_items > 0 {
@@ -1556,14 +1724,124 @@ mod tests {
         let resolve = |raw: &str| raw.contains("Vocal").then(|| "/vox/Vocal take.wav".to_string());
         let (p, report) = import_flp(&w.file(96), "Song", &resolve).unwrap();
         assert_eq!(p.name, "Song");
+        assert_eq!(p.mode, PlayMode::Song);
         assert_eq!(p.audio_clips.len(), 1);
         let a = &p.audio_clips[0];
         assert_eq!((a.path.as_str(), a.lane, a.start, a.len), ("/vox/Vocal take.wav", 1, 96 * 8, 96 * 16));
+        assert_eq!(a.offset, 0.0, "offset -1 (NaN as a float): from the start");
         assert_eq!(p.channels.len(), 2, "the vocal is only an audio clip");
-        assert!(p.channels[0].instrument.sample.is_none());
+        // The factory hat became a library hat; the MP3 stays, offline.
+        let hat = p.channels[0].instrument.sample.as_deref().unwrap();
+        assert!(hat.starts_with("Drums/Hats/") && hat.ends_with(".wav"), "{hat}");
+        assert!(crate::library::library_sample(hat).is_some());
+        assert_eq!(p.channels[1].instrument.sample.as_deref(), Some("C:\\loop.mp3"));
+        assert_eq!(report.offline, ["'Loop': C:\\loop.mp3 (format not yet supported)"]);
         let lines = report.lines().join("\n");
-        assert!(lines.contains("sample not found on this computer: %FLStudioFactoryData%\\Hat.wav"), "{lines}");
-        assert!(lines.contains("is not a WAV or FLAC file"), "{lines}");
+        assert!(lines.contains("Approximated: 'Hat': FL Studio factory sample Hat.wav replaced by library sound"), "{lines}");
+        assert!(lines.contains("Offline: 1 files missing (locate later)"), "{lines}");
+        assert!(!lines.contains("Skipped"), "{lines}");
+    }
+
+    /// One FL Studio 25 playlist item: the 32-byte head of older versions,
+    /// 28 bytes added in FL 21 and 20 more in FL 25 (80 bytes).
+    fn item25(pos: u32, index: u16, len: u32, track: u16, start_ms: f32, end_ms: f32) -> Vec<u8> {
+        let mut it = item(pos, index, len, track);
+        it[24..28].copy_from_slice(&start_ms.to_le_bytes());
+        it[28..32].copy_from_slice(&end_ms.to_le_bytes());
+        // As found in FL 25.1.4: an item number, then 1.0 (f32) and 1.0 (f64).
+        it.extend_from_slice(&1u32.to_le_bytes());
+        it.extend_from_slice(&[0; 16]);
+        it.extend_from_slice(&1.0f32.to_le_bytes());
+        it.extend_from_slice(&[0; 8]);
+        it.extend_from_slice(&1.0f64.to_le_bytes());
+        it.extend_from_slice(&[0; 8]);
+        assert_eq!(it.len(), 80);
+        it
+    }
+
+    #[test]
+    fn fl25_playlist_items() {
+        let mut w = W::default();
+        w.ascii(FL_VERSION, "25.1.4.4951").dword(TEMPO, 130_000);
+        w.word(PAT_NEW, 1).data(PAT_NOTES, &note(0, 0, 0, 60, 100)).text(PAT_NAME, "Drums");
+        w.word(CH_NEW, 0).byte(CH_TYPE, TYPE_SAMPLER).text(PLUGIN_INTERNAL_NAME, "").text(PLUGIN_NAME, "Kick");
+        w.text(CH_SAMPLE_PATH, "%FLStudioFactoryData%\\Data\\Patches\\Packs\\Legacy\\Drums\\Dance\\Basic 808 Kick.wav");
+        w.word(CH_NEW, 1).byte(CH_TYPE, TYPE_INSTRUMENT).text(PLUGIN_INTERNAL_NAME, "").text(PLUGIN_NAME, "Take 1");
+        w.text(CH_SAMPLE_PATH, "G:\\sons\\Audio\\Take 1_REC.wav");
+        w.word(CH_NEW, 2).byte(CH_TYPE, TYPE_INSTRUMENT).text(PLUGIN_INTERNAL_NAME, "").text(PLUGIN_NAME, "Beat");
+        w.text(CH_SAMPLE_PATH, "G:\\sons\\Beat.mp3");
+        w.word(ARR_NEW, 0).text(ARR_NAME, "Arrangement");
+        // Four items: the size is told by the pattern base, not by FL 21's 60
+        // bytes (320 is a multiple of 80 but not of 60; 240 bytes would be both).
+        let mut pl = item25(0, 2, 96 * 4 * 64, 0, -1.0, -1.0);
+        pl.extend(item25(96 * 4 * 8, 1, 1414, 3, 1384.615, 8182.335));
+        pl.extend(item25(96 * 4 * 12, PATTERN_BASE + 1, 0, 120, -1.0, -1.0));
+        let mut fourth = item25(96 * 4 * 63, 1, 96, 2, 0.0, 400.0);
+        fourth[32] = 4;
+        pl.extend(fourth);
+        w.data(ARR_PLAYLIST, &pl);
+        let (p, report) = import_flp(&w.file(96), "x", &|_| None).unwrap();
+        assert_eq!(p.audio_clips.len(), 3);
+        let a = &p.audio_clips;
+        assert_eq!((a[0].path.as_str(), a[0].lane, a[0].start, a[0].len), ("G:\\sons\\Beat.mp3", 0, 0, 96 * 4 * 64));
+        assert_eq!((a[1].path.as_str(), a[1].lane, a[1].start, a[1].len), ("G:\\sons\\Audio\\Take 1_REC.wav", 3, 96 * 32, 1414));
+        assert!((a[1].offset - 1.384_615).abs() < 1e-5, "start offset in milliseconds: {}", a[1].offset);
+        assert_eq!((a[2].lane, a[2].start, a[2].offset), (2, 96 * 4 * 63, 0.0));
+        // Track 121 stays track 121: no packing.
+        assert_eq!(p.clips.len(), 1);
+        assert_eq!((p.clips[0].lane, p.clips[0].start), (120, 96 * 4 * 12));
+        assert_eq!(p.patterns[p.clips[0].pattern].name, "Drums");
+        let kick = p.channels.iter().find(|c| c.name == "Kick").unwrap();
+        assert_eq!(kick.instrument.sample.as_deref(), Some("Drums/Kicks/Kick - 808 Long 01.wav"));
+        assert_eq!(report.offline.len(), 2);
+        let lines = report.lines().join("\n");
+        assert!(lines.contains("Offline: 2 files missing (locate later)"), "{lines}");
+        assert!(lines.contains("'Take 1': G:\\sons\\Audio\\Take 1_REC.wav not found on this computer"), "{lines}");
+        assert!(lines.contains("'Beat': G:\\sons\\Beat.mp3 (format not yet supported)"), "{lines}");
+        assert!(lines.contains("3 audio clips are offline"), "{lines}");
+        assert!(!lines.contains("packed") && !lines.contains("too far"), "{lines}");
+        // Offline files survive a save / load round trip.
+        let back = crate::load(&crate::save(&p)).unwrap();
+        assert_eq!(back.audio_clips, p.audio_clips);
+        assert_eq!(back.channels, p.channels);
+    }
+
+    #[test]
+    fn item_sizes() {
+        let one = |size: usize| {
+            let mut it = item(0, PATTERN_BASE + 1, 0, 0);
+            it.resize(size, 0);
+            it
+        };
+        assert_eq!(item_size(&one(32).repeat(15), Some((20, 8, 4))), 32);
+        assert_eq!(item_size(&one(60).repeat(4), Some((21, 0, 3))), 60);
+        assert_eq!(item_size(&one(80).repeat(3), Some((25, 1, 4))), 80);
+        // 240 bytes: three FL 25 items, or four FL 21 items.
+        assert_eq!(item_size(&one(80).repeat(3), Some((21, 0, 0))), 80);
+        assert_eq!(item_size(&one(60).repeat(4), Some((25, 0, 0))), 60);
+        // No pattern base anywhere: the version decides.
+        assert_eq!(item_size(&[0; 240], Some((25, 0, 0))), 80);
+        assert_eq!(item_size(&[0; 240], Some((22, 0, 0))), 60);
+        assert_eq!(item_size(&[0; 64], None), 32);
+    }
+
+    #[test]
+    fn report_groups() {
+        let report = ImportReport {
+            mapped: vec!["a".into(), "b".into()],
+            approximated: Vec::new(),
+            offline: vec!["x.wav".into(); 3],
+            skipped: vec!["c".into()],
+        };
+        let groups = report.groups();
+        let kinds: Vec<ReportKind> = groups.iter().map(|g| g.kind).collect();
+        assert_eq!(kinds, [ReportKind::Mapped, ReportKind::Offline, ReportKind::Skipped]);
+        assert_eq!(groups[0].title, "Mapped (2)");
+        assert_eq!(groups[1].title, "Offline: 3 files missing (locate later)");
+        assert_eq!(groups[1].entries.len(), 3);
+        assert_eq!(report.summary(), "FL Studio import: 2 mapped, 0 approximated, 3 offline, 1 skipped");
+        assert_eq!(wrap("one two three", 7), ["one two", "three"]);
+        assert_eq!(wrap("unbreakable", 4), ["unbreakable"]);
     }
 
     #[test]
@@ -1714,6 +1992,13 @@ mod tests {
             p.patterns.len(),
             p.clips.len(),
             p.audio_clips.len()
+        );
+        let lanes = p.clips.iter().map(|c| c.lane).chain(p.audio_clips.iter().map(|c| c.lane));
+        let ends = p.clips.iter().map(|c| c.start + c.len).chain(p.audio_clips.iter().map(|c| c.start + c.len));
+        println!(
+            "Lanes used: up to {}, song end: bar {}",
+            lanes.max().map_or(0, |l| l + 1),
+            ends.max().unwrap_or(0).div_ceil(TICKS_PER_BAR)
         );
         assert!(p.routing_order().is_some());
     }

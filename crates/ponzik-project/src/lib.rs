@@ -20,6 +20,8 @@ pub use ponzik_engine::{TempoMap, TempoPoint, TimeSig};
 pub use ponzik_engine::{AutoPoint, AutoScope, AutoTarget, SessionSlot};
 
 /// Dimensions de la grille de la vue Session.
+/// Lanes of the playlist (as many as FL Studio's playlist tracks).
+pub const PLAYLIST_LANES: usize = 500;
 pub const SESSION_COLUMNS: usize = 8;
 pub const SESSION_SCENES: usize = 8;
 
@@ -60,7 +62,7 @@ pub use comp::{CompSegment, Take, TakeGroup};
 pub use zalgo::demo_zalgo;
 pub use demo::demo_project;
 pub use history::History;
-pub use flp::{ImportReport, import_flp, resolve_sample};
+pub use flp::{ImportReport, ReportGroup, ReportKind, import_flp, resolve_sample};
 pub use io::{load, load_from_file, save, save_to_file};
 pub use midi_file::{MidiFile, MidiTrack, import_midi, read_smf, write_smf};
 pub use render::{

@@ -4986,12 +4986,6 @@ msgstr "« {} » : {} de FL remplacé par {} (réglages non importés)"
 msgid "'{}': routes to inserts above {} dropped"
 msgstr "« {} » : routages vers les pistes au-delà de {} abandonnés"
 
-msgid "'{}': sample not found on this computer: {}"
-msgstr "« {} » : échantillon introuvable sur cet ordinateur : {}"
-
-msgid "'{}': sample {} is not a WAV or FLAC file (only these are supported)"
-msgstr "« {} » : l'échantillon {} n'est ni un WAV ni un FLAC (seuls ces formats sont pris en charge)"
-
 msgid "'{}': {} routes beyond {} sends dropped"
 msgstr "« {} » : {} routages au-delà de {} envois abandonnés"
 
@@ -5042,9 +5036,6 @@ msgstr "Dépose un WAV sur un pad"
 
 msgid "FL Studio import report"
 msgstr "Rapport d'import FL Studio"
-
-msgid "FL Studio import: {} mapped, {} approximated, {} skipped"
-msgstr "Import FL Studio : {} repris, {} approchés, {} ignorés"
 
 msgid "FL Studio {}.{}.{} project, {} PPQ converted to {}"
 msgstr "Projet FL Studio {}.{}.{}, {} PPQ convertis en {}"
@@ -5105,9 +5096,6 @@ msgstr "Coller un pad"
 
 msgid "Paste pad"
 msgstr "Coller le pad"
-
-msgid "Playlist tracks beyond 64 were packed together"
-msgstr "Les pistes de playlist au-delà de 64 ont été regroupées"
 
 msgid "Plugin settings, envelopes and channel effects are not converted: devices start from their defaults"
 msgstr "Les réglages des plugins, les enveloppes et les effets de canal ne sont pas convertis : les appareils partent de leurs réglages par défaut"
@@ -5256,9 +5244,6 @@ msgstr "{} sources de clips audio"
 
 msgid "{} audio clips whose sample is missing or unsupported"
 msgstr "{} clips audio dont l'échantillon manque ou n'est pas pris en charge"
-
-msgid "{} audio clips: placed whole from their start (trims, stretching and fades are not imported)"
-msgstr "{} clips audio : posés entiers depuis leur début (coupes, étirements et fondus ne sont pas importés)"
 
 msgid "{} automation clips in the playlist"
 msgstr "{} clips d'automation dans la playlist"
@@ -7062,3 +7047,39 @@ msgstr "{}\nDouble-clic : renommer · glisser : déplacer · clic droit : menu"
 
 msgid "{} plays on track {}"
 msgstr "{} joue sur la piste {}"
+
+msgid "'{}': FL Studio factory sample {} replaced by library sound {}"
+msgstr "« {} » : échantillon d'usine FL Studio {} remplacé par le son de la bibliothèque {}"
+
+msgid "'{}': {} (format not yet supported)"
+msgstr "« {} » : {} (format pas encore pris en charge)"
+
+msgid "'{}': {} not found on this computer"
+msgstr "« {} » : {} introuvable sur cet ordinateur"
+
+msgid "Approximated ({})"
+msgstr "Approchés ({})"
+
+msgid "FL Studio import: {} mapped, {} approximated, {} offline, {} skipped"
+msgstr "Import FL Studio : {} repris, {} approchés, {} hors ligne, {} ignorés"
+
+msgid "Mapped ({})"
+msgstr "Repris ({})"
+
+msgid "Offline"
+msgstr "Hors ligne"
+
+msgid "Offline: {} files missing (locate later)"
+msgstr "Hors ligne : {} fichiers manquants (à retrouver plus tard)"
+
+msgid "Playlist tracks beyond {} were packed together"
+msgstr "Les pistes de playlist au-delà de {} ont été regroupées"
+
+msgid "Skipped ({})"
+msgstr "Ignorés ({})"
+
+msgid "{} audio clips are offline: they stay in the playlist, silent until their files are located"
+msgstr "{} clips audio sont hors ligne : ils restent dans la playlist, muets jusqu'à ce que leurs fichiers soient retrouvés"
+
+msgid "{} audio clips with their start in the file (stretching and fades are not imported)"
+msgstr "{} clips audio avec leur début dans le fichier (étirements et fondus ne sont pas importés)"
