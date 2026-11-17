@@ -147,7 +147,7 @@ Proprietary instruments cannot be copied, so Ponzik builds its own equivalents.
 | Peak meters | FL · AB | ✅ |
 | RMS / LUFS meters | FL · AB | 🟡 RMS on the output, integrated and short-term LUFS on the master |
 | Per-track effect inserts (10 slots in FL) | FL · AB | ✅ 8 inserts |
-| Dynamic mixer tracks (up to 500 in FL) | FL | ⬜ fixed at 32 plus master |
+| Dynamic mixer tracks (up to 500 in FL) | FL | ✅ master plus up to 999 tracks: add, insert, delete, move by dragging, route a channel to a new track, compact strips |
 | Sends and return tracks | FL · AB | ✅ 4 sends, reverb and delay return buses in one click |
 | Free routing from any track to any other | FL | ✅ with loop rejection |
 | Track groups, buses and VCAs | FL · AB | ✅ one-gesture buses (Ctrl+G), return buses with an effect ready, foldable groups, VCA faders |
@@ -226,7 +226,7 @@ A real-time engine; in-house ALSA and WASAPI drivers for playback and capture;
 MIDI input; in-house windowing and rendering. Channel Rack with swing, piano roll
 with scale tools, chord stamps, chord grid, humanize and velocity lane, playlist
 (patterns, audio, automation, make unique, time selection duplication), Session
-view, a 33-track mixer (inserts, sends, routing, solo, sidechain, PDC, master
+view, a mixer of up to 1,000 tracks (inserts, sends, routing, solo, sidechain, PDC, master
 LUFS and spectrum), devices with visuals in stacked floating windows. 12 native
 instruments (Pulse, DrumSynth, FM, Wave, Sampler, Acid 303, Kick, Slicer,
 Granular, Plucked Strings, Electric Piano, Drum Machine), 26 native effects (EQ,

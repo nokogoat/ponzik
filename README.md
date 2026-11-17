@@ -45,7 +45,8 @@ It runs on Linux and Windows.
   interface in a window of its own (edits there are undoable and automatable),
   their parameters in the device panel and their latency compensated. Plugins are
   scanned in separate processes, so a broken one can't take Ponzik down.
-- **Mixer**: master plus 32 tracks, 8 inserts and 4 sends per track, free routing
+- **Mixer**: master plus up to 999 tracks (added, inserted, deleted and moved as you
+  go, compact strips for big sessions), 8 inserts and 4 sends per track, free routing
   with loop rejection, solo, sidechain key per insert, plugin delay compensation
   (PDC) on tracks, sends and keys, master LUFS meter and spectrum analyzer.
 - **Recording**: computer keyboard played like a piano, hardware MIDI controllers,
