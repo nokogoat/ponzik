@@ -34,6 +34,9 @@ const SPECTRUM_SIZE: usize = 4_096;
 /// Échantillons par paquet de crêtes des formes d'onde.
 pub const WAVE_BUCKET: usize = 256;
 const HISTORY_CAP: usize = 200;
+/// Mémoire au-delà de laquelle les plus vieilles étapes d'annulation sont
+/// oubliées : un gros projet garde moins d'étapes qu'un petit.
+const HISTORY_BYTES: usize = 32 << 20;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum View {
@@ -937,13 +940,11 @@ impl App {
             return;
         }
         let merge = self.last_edit.as_ref().is_some_and(|(l, t)| l == label && self.time - t < 1.0);
+        self.future.clear();
         if !merge {
             self.past.push((label.to_string(), self.synced.clone()));
-            if self.past.len() > HISTORY_CAP {
-                self.past.remove(0);
-            }
+            trim_history(&mut self.past, HISTORY_CAP, HISTORY_BYTES);
         }
-        self.future.clear();
         self.last_edit = Some((label.to_string(), self.time));
         self.modified = true;
         self.sync_engine();
@@ -3686,6 +3687,18 @@ fn master_loudness(sample_rate: u32) -> LoudnessMeter {
     m
 }
 
+/// Oublie les plus vieilles étapes au-delà de `steps` étapes ou de `bytes`
+/// octets (estimés), en gardant toujours la dernière.
+fn trim_history(past: &mut Vec<(String, Project)>, steps: usize, bytes: usize) {
+    let mut total: usize = past.iter().map(|(_, p)| p.approx_bytes()).sum();
+    let mut old = 0;
+    while past.len() - old > 1 && (past.len() - old > steps || total > bytes) {
+        total -= past[old].1.approx_bytes();
+        old += 1;
+    }
+    past.drain(..old);
+}
+
 /// Analyseur du master : 4096 points, 75 % de recouvrement, pente de 4,5 dB/octave
 /// comme les analyseurs d'EQ (un mix équilibré paraît à plat).
 fn master_spectrum(sample_rate: u32) -> SpectrumAnalyzer {
@@ -3702,6 +3715,33 @@ mod tests {
     fn recovery_detail_strips_the_timestamp() {
         let detail = recovery_detail(std::path::Path::new("/nulle/part/Mon-morceau-20261116-143200-123.ponzik"));
         assert_eq!(detail, "Mon-morceau");
+    }
+
+    #[test]
+    fn undo_history_is_bounded_in_steps_and_memory() {
+        let mut big = Project::empty();
+        let note = ponzik_engine::Note { start: 0, len: 24, key: 60, vel: 0.8 };
+        big.patterns[0].notes = vec![vec![note; 10_000]; 4];
+        let size = big.approx_bytes();
+        assert!(size > 40_000 * std::mem::size_of::<ponzik_engine::Note>(), "{size}");
+        let mut past: Vec<(String, Project)> = Vec::new();
+        for i in 0..50 {
+            past.push((i.to_string(), big.clone()));
+            trim_history(&mut past, 200, size * 10 + size / 2);
+        }
+        // Ten copies fit in the budget; the newest ones are kept.
+        assert_eq!(past.len(), 10);
+        assert_eq!(past.last().unwrap().0, "49");
+        let small = Project::empty();
+        for i in 0..300 {
+            past.push((i.to_string(), small.clone()));
+            trim_history(&mut past, 200, usize::MAX);
+        }
+        assert_eq!(past.len(), 200);
+        // Even a single step above the budget is kept.
+        past.truncate(1);
+        trim_history(&mut past, 200, 0);
+        assert_eq!(past.len(), 1);
     }
 
     #[test]

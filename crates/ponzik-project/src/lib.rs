@@ -403,6 +403,53 @@ impl Project {
         }
     }
 
+    /// Mémoire occupée par le projet, à peu près (tailles des listes et des
+    /// textes, sans les parcourir élément par élément) : de quoi borner
+    /// l'historique d'annulation, qui en garde des copies.
+    pub fn approx_bytes(&self) -> usize {
+        use std::mem::{size_of, size_of_val};
+        fn vec<T>(v: &[T]) -> usize {
+            size_of_val(v)
+        }
+        let params = |p: &[(u32, f32)]| vec(p);
+        let channels: usize = self
+            .channels
+            .iter()
+            .map(|c| {
+                let i = &c.instrument;
+                let pads: usize = i.pads.iter().map(|p| vec(p) + p.iter().map(String::len).sum::<usize>()).sum();
+                let fx: usize = c.note_fx.iter().flatten().map(|f| f.kind.len() + params(&f.params)).sum();
+                c.name.len() + i.kind.len() + params(&i.params) + i.sample.as_ref().map_or(0, String::len) + pads + fx + vec(&c.note_fx)
+            })
+            .sum();
+        let patterns: usize =
+            self.patterns.iter().map(|p| p.name.len() + vec(&p.notes) + p.notes.iter().map(|n| vec(n)).sum::<usize>()).sum();
+        let tracks: usize = self
+            .tracks
+            .iter()
+            .map(|t| t.name.len() + t.inserts.iter().flatten().map(|e| e.kind.len() + params(&e.params)).sum::<usize>())
+            .sum();
+        let automation: usize = self.automation.iter().map(|a| vec(&a.points)).sum();
+        let audio: usize = self.audio_clips.iter().map(|c| c.path.len()).sum();
+        let grid: usize = self.session_grid.iter().map(|c| vec(c)).sum();
+        size_of::<Self>()
+            + self.name.len()
+            + vec(&self.channels)
+            + channels
+            + vec(&self.patterns)
+            + patterns
+            + vec(&self.clips)
+            + vec(&self.tracks)
+            + tracks
+            + vec(&self.automation)
+            + automation
+            + vec(&self.audio_clips)
+            + audio
+            + vec(&self.session_grid)
+            + grid
+            + vec(&self.session_live)
+    }
+
     /// Fin du morceau : fin du dernier clip (pattern ou audio), arrondie à la
     /// mesure (of the time signature map), one bar at least.
     pub fn song_len(&self) -> u32 {
