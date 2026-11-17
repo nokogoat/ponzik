@@ -1069,7 +1069,9 @@ impl App {
             self.editors.capture(&cmd);
             self.send(cmd);
         }
-        let warps = self.synced.audio_clips != self.project.audio_clips || self.synced.tempo_map() != self.project.tempo_map();
+        let warps = self.synced.audio_clips != self.project.audio_clips
+            || self.synced.session_slots != self.project.session_slots
+            || self.synced.tempo_map() != self.project.tempo_map();
         self.synced = self.project.clone();
         if warps {
             self.refresh_warps();

@@ -26,6 +26,8 @@ pub struct Warping {
     pending: Vec<u64>,
     /// Render needed by each audio clip (`None`: none, or plays as is).
     pub keys: Vec<Option<u64>>,
+    /// Renders needed by the audio clips of the session's slots.
+    session_keys: Vec<u64>,
 }
 
 impl Default for Warping {
@@ -38,6 +40,7 @@ impl Default for Warping {
             wanted: Arc::default(),
             pending: Vec::new(),
             keys: Vec::new(),
+            session_keys: Vec::new(),
         }
     }
 }
@@ -103,8 +106,16 @@ impl App {
                 Some(key)
             })
             .collect();
+        let session = {
+            let loader = |p: &str| self.samples.get(p).cloned();
+            self.project.session_warp_jobs(sr, &loader)
+        };
+        let session_keys: Vec<u64> = session.iter().map(|j| j.key).collect();
+        jobs.extend(session);
         let w = &mut self.warping;
-        let wanted: Vec<u64> = keys.iter().flatten().copied().collect();
+        let mut wanted: Vec<u64> = keys.iter().flatten().copied().collect();
+        wanted.extend(&session_keys);
+        w.session_keys = session_keys;
         if let Ok(mut list) = w.wanted.lock() {
             list.clone_from(&wanted);
         }
@@ -122,7 +133,7 @@ impl App {
         let mut landed = false;
         while let Ok(key) = self.warping.done.try_recv() {
             self.warping.pending.retain(|&k| k != key);
-            landed |= self.warping.keys.contains(&Some(key));
+            landed |= self.warping.keys.contains(&Some(key)) || self.warping.session_keys.contains(&key);
         }
         if landed {
             let seq = {
