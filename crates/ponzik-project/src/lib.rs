@@ -33,6 +33,7 @@ pub mod flp;
 pub mod json;
 pub mod library;
 pub mod midi_file;
+pub mod midi_map;
 pub mod plugins;
 pub mod presets;
 pub mod rack;
@@ -375,6 +376,8 @@ pub struct Project {
     /// Arrangement markers, sorted by tick: each one starts a section that
     /// runs to the next marker (the last one to the end of the song).
     pub markers: Vec<Marker>,
+    /// MIDI controller links saved with this project (see [`midi_map`]).
+    pub midi_map: Vec<midi_map::MidiMapping>,
 }
 
 /// A named section start on the arrangement lane.
@@ -419,6 +422,7 @@ impl Project {
             tempo_changes: Vec::new(),
             signatures: Vec::new(),
             markers: Vec::new(),
+            midi_map: Vec::new(),
         }
     }
 

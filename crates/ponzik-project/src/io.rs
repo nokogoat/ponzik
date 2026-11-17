@@ -223,7 +223,7 @@ fn track_json(t: &TrackDef) -> Json {
     obj(pairs)
 }
 
-fn target_json(t: AutoTarget) -> Json {
+pub(crate) fn target_json(t: AutoTarget) -> Json {
     let kind = |k: &str, rest: Vec<(&str, Json)>| {
         let mut pairs = vec![("kind", k.into())];
         pairs.extend(rest);
@@ -322,6 +322,7 @@ pub fn save(project: &Project) -> String {
                     .collect(),
             ),
         ),
+        ("midi_map", crate::midi_map::mappings_json(&project.midi_map)),
         (
             "session",
             Json::Arr(
@@ -612,7 +613,7 @@ fn index(v: Option<&Json>, limit: usize) -> Option<usize> {
     (n >= 0.0 && n.fract() == 0.0 && n < limit as f64).then_some(n as usize)
 }
 
-fn load_target(v: &Json, channels: usize) -> Option<AutoTarget> {
+pub(crate) fn load_target(v: &Json, channels: usize) -> Option<AutoTarget> {
     let channel = || index(v.get("channel"), channels);
     let track = || index(v.get("track"), TRACKS);
     let id = || num(v.get("id")).filter(|n| *n >= 0.0 && n.fract() == 0.0 && *n <= u32::MAX as f64).map(|n| n as u32);
@@ -782,6 +783,7 @@ pub fn load(text: &str) -> Result<Project, String> {
         let i = p.add_marker(tick, string_or(v.get("name"), ""));
         p.markers[i].color = u32_or(v.get("color"), p.markers[i].color) & 0xff_ffff;
     }
+    p.midi_map = crate::midi_map::load_mappings(root.get("midi_map"), n);
     Ok(p)
 }
 
