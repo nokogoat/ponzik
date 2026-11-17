@@ -1142,6 +1142,7 @@ pub fn import_flp(
             len,
             notes,
             color: pat.color.unwrap_or(0),
+            groove: None,
         });
     }
     if !patterns.is_empty() {

@@ -499,7 +499,7 @@ mod tests {
     /// Three sections of two bars: A (pattern 0), B (pattern 1), C (pattern 2).
     fn song() -> Project {
         let mut p = Project::empty();
-        p.patterns = (0..3).map(|i| crate::PatternDef { name: format!("P{i}"), len: BAR, notes: Vec::new(), color: 0 }).collect();
+        p.patterns = (0..3).map(|i| crate::PatternDef { name: format!("P{i}"), len: BAR, notes: Vec::new(), color: 0, groove: None }).collect();
         for (i, start) in [0, 2 * BAR, 4 * BAR].into_iter().enumerate() {
             p.clips.push(clip(i, start, 2 * BAR));
             p.add_marker(start, ["A", "B", "C"][i]);

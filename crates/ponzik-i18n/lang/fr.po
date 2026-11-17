@@ -7181,3 +7181,6 @@ msgstr "Pitch bend · {}"
 
 msgid "Sustain pedal"
 msgstr "Pédale de sustain"
+
+msgid "Swing {}%"
+msgstr "Swing {} %"

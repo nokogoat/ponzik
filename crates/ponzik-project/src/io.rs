@@ -15,6 +15,7 @@ use ponzik_engine::{MAX_FINE, MAX_RATCHET, NOTE_FX_SLOTS, Note, NoteCond, PlayMo
 use ponzik_engine::effects::fx_rack::{CHAIN_LEN, CHAINS, MACROS, MAX_MAPPINGS, UNITS};
 use ponzik_engine::{MacroMap, ModKind};
 
+use crate::groove::{GROOVE_STEPS, Groove, PatternGroove};
 use crate::json::{self, Json};
 use crate::rack::{ModTarget, ModulatorDef, RackDef, RackDevice, rack_accepts};
 use crate::{
@@ -177,12 +178,18 @@ fn pattern_json(p: &PatternDef) -> Json {
             )
         })
         .collect();
-    obj(vec![
+    let mut pairs = vec![
         ("name", p.name.as_str().into()),
         ("len", p.len.into()),
         ("color", p.color.into()),
         ("notes", Json::Arr(notes)),
-    ])
+    ];
+    if let Some(g) = &p.groove {
+        let mut groove = groove_json(&g.groove);
+        groove.extend([("timing_amount", g.timing.into()), ("velocity_amount", g.velocity.into())]);
+        pairs.push(("groove", obj(groove)));
+    }
+    obj(pairs)
 }
 
 fn clip_json(c: &ClipDef) -> Json {
@@ -386,6 +393,7 @@ pub fn save(project: &Project) -> String {
             ),
         ),
         ("midi_map", crate::midi_map::mappings_json(&project.midi_map)),
+        ("grooves", Json::Arr(project.grooves.iter().map(|g| obj(groove_json(g))).collect())),
         (
             "session",
             Json::Arr(
@@ -554,7 +562,38 @@ fn load_pattern(v: &Json, index: usize, channels: usize) -> PatternDef {
         len: u32_or(v.get("len"), TICKS_PER_BAR).max(1),
         notes,
         color: u32_or(v.get("color"), 0),
+        groove: v.get("groove").and_then(|g| {
+            Some(PatternGroove {
+                groove: load_groove(g)?,
+                timing: f32_or(g.get("timing_amount"), 1.0).clamp(0.0, 1.0),
+                velocity: f32_or(g.get("velocity_amount"), 1.0).clamp(0.0, 1.0),
+            })
+        }),
     }
+}
+
+/// `{"name", "timing": [16 ticks], "velocity": [16 ratios]}`.
+fn groove_json(g: &Groove) -> Vec<(&'static str, Json)> {
+    vec![
+        ("name", g.name.as_str().into()),
+        ("timing", Json::Arr(g.timing.iter().map(|&t| t.into()).collect())),
+        ("velocity", Json::Arr(g.velocity.iter().map(|&v| v.into()).collect())),
+    ]
+}
+
+fn load_groove(v: &Json) -> Option<Groove> {
+    let mut g = Groove::straight(string_or(v.get("name"), "Groove"));
+    let (timing, velocity) = (arr(v.get("timing")), arr(v.get("velocity")));
+    if timing.is_empty() && velocity.is_empty() {
+        return None;
+    }
+    for (i, t) in timing.iter().take(GROOVE_STEPS).enumerate() {
+        g.timing[i] = f32_or(Some(t), 0.0).clamp(-(TICKS_PER_BAR as f32), TICKS_PER_BAR as f32);
+    }
+    for (i, t) in velocity.iter().take(GROOVE_STEPS).enumerate() {
+        g.velocity[i] = f32_or(Some(t), 1.0).clamp(0.0, 4.0);
+    }
+    Some(g)
 }
 
 fn load_clip(v: &Json, patterns: usize) -> Option<ClipDef> {
@@ -928,6 +967,7 @@ pub fn load(text: &str) -> Result<Project, String> {
     }
     p.midi_map = crate::midi_map::load_mappings(root.get("midi_map"), n);
     p.clamp_track_refs();
+    p.grooves = arr(root.get("grooves")).iter().filter_map(load_groove).collect();
     Ok(p)
 }
 
@@ -1078,6 +1118,19 @@ mod tests {
             (50, NoteCond::First, 1),
             (100, NoteCond::NotFirst, 2),
         ]);
+    }
+
+    #[test]
+    fn grooves_round_trip() {
+        let mut p = Project::empty();
+        p.add_channel("A", InstrumentDef::new("pulse"), 60);
+        p.add_note(0, 0, Note::new(24, 24, 60, 0.8));
+        p.patterns[0].groove = Some(PatternGroove { groove: Groove::swing(62.0), timing: 0.5, velocity: 0.25 });
+        let mut extracted = Groove::swing(54.0);
+        extracted.name = "Break".into();
+        extracted.velocity[4] = 1.5;
+        p.grooves.push(extracted);
+        assert_eq!(load(&save(&p)).unwrap(), p);
     }
 
     #[test]

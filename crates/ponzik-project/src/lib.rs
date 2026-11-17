@@ -40,6 +40,7 @@ pub mod history;
 pub mod io;
 pub mod flp;
 pub mod generate;
+pub mod groove;
 pub mod harmony;
 pub mod json;
 pub mod library;
@@ -237,6 +238,8 @@ pub struct PatternDef {
     /// Notes par canal, triées par début.
     pub notes: Vec<Vec<Note>>,
     pub color: u32,
+    /// Groove the pattern plays with, its notes untouched.
+    pub groove: Option<groove::PatternGroove>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -539,6 +542,8 @@ pub struct Project {
     pub markers: Vec<Marker>,
     /// MIDI controller links saved with this project (see [`midi_map`]).
     pub midi_map: Vec<midi_map::MidiMapping>,
+    /// Grooves extracted into the project's pool (after the built-in ones).
+    pub grooves: Vec<groove::Groove>,
 }
 
 /// A named section start on the arrangement lane.
@@ -578,7 +583,7 @@ impl Project {
             key: 0,
             scale: ScaleKind::Chromatic,
             channels: Vec::new(),
-            patterns: vec![PatternDef { name: tr_fmt!("Pattern {}", 1), len: TICKS_PER_BAR, notes: Vec::new(), color: 0 }],
+            patterns: vec![PatternDef { name: tr_fmt!("Pattern {}", 1), len: TICKS_PER_BAR, notes: Vec::new(), color: 0, groove: None }],
             clips: Vec::new(),
             tracks,
             mode: PlayMode::Pattern(0),
@@ -596,6 +601,7 @@ impl Project {
             signatures: Vec::new(),
             markers: Vec::new(),
             midi_map: Vec::new(),
+            grooves: Vec::new(),
         }
     }
 
@@ -742,7 +748,10 @@ impl Project {
             .patterns
             .iter()
             .map(|p| {
-                let mut notes = p.notes.clone();
+                let mut notes = match &p.groove {
+                    Some(g) => p.notes.iter().map(|n| g.apply(n)).collect(),
+                    None => p.notes.clone(),
+                };
                 notes.resize(n, Vec::new());
                 let mut pat = Pattern { len: p.len, notes, ratchet_span: 0 };
                 pat.sort();
@@ -1435,6 +1444,7 @@ impl Project {
             len: TICKS_PER_BAR,
             notes: vec![Vec::new(); self.channels.len()],
             color: 0,
+            groove: None,
         });
         self.patterns.len() - 1
     }

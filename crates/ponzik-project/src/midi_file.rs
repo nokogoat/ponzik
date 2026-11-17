@@ -263,6 +263,7 @@ pub fn import_midi(project: &mut Project, file: &MidiFile, name: &str) -> usize 
         len,
         notes: vec![Vec::new(); project.channels.len()],
         color: 0,
+        groove: None,
     });
     let pattern = project.patterns.len() - 1;
     for t in &file.tracks {
