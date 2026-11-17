@@ -55,11 +55,21 @@ pub(crate) fn binary_path(bundle: &Path) -> Result<PathBuf, String> {
         };
         vec![contents.join(format!("{arch}-linux")).join(so)]
     };
-    candidates
-        .iter()
-        .find(|c| c.is_file())
-        .cloned()
-        .ok_or_else(|| format!("{}: no binary for this platform in the bundle", bundle.display()))
+    if let Some(found) = candidates.iter().find(|c| c.is_file()) {
+        return Ok(found.clone());
+    }
+    // Renamed bundle: the binary keeps its own name; take the only one there.
+    let ext = if cfg!(windows) { "vst3" } else { "so" };
+    let only = candidates.iter().filter_map(|c| c.parent()).find_map(|dir| {
+        let bins: Vec<PathBuf> = std::fs::read_dir(dir)
+            .ok()?
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_file() && p.extension().is_some_and(|x| x.eq_ignore_ascii_case(ext)))
+            .collect();
+        (bins.len() == 1).then(|| bins[0].clone())
+    });
+    only.ok_or_else(|| format!("{}: no binary for this platform in the bundle", bundle.display()))
 }
 
 impl Module {

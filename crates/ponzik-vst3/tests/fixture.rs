@@ -206,6 +206,15 @@ fn wrong_kinds_are_errors() {
     assert!(effect_from_kind("vst3:sans-identifiant").is_err());
 }
 
+#[test]
+fn renamed_bundle_finds_its_binary() {
+    let Some(path) = fixture("renamed", true) else { return };
+    let bin = path.join("Contents").join(arch_dir());
+    let ext = if cfg!(windows) { "vst3" } else { "so" };
+    std::fs::rename(bin.join(format!("test.{ext}")), bin.join(format!("other.{ext}"))).unwrap();
+    assert_eq!(scan_dir(path.parent().unwrap()).len(), 2);
+}
+
 #[cfg(target_os = "macos")]
 const PARENT: ParentWindow = ParentWindow::Cocoa(0x1234);
 #[cfg(windows)]
