@@ -180,7 +180,7 @@ pub fn melody(len: u32, spec: MelodySpec, seed: u64) -> Vec<Note> {
         } else {
             0.3
         };
-        if i == 0 || rng.chance(density * pull * 1.3) {
+        if i == 0 || rng.chance(density * pull * 1.6) {
             starts.push(i * TICKS_PER_STEP);
         }
     }
