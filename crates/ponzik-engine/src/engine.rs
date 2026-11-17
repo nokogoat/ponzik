@@ -1741,7 +1741,13 @@ impl Engine {
                 }
                 self.publish_record_room();
             }
-            Command::Audition(Some(voice)) => {
+            Command::Audition(Some(mut voice)) => {
+                // A loop previewed in time starts on the next beat of the song.
+                if voice.wants_beat() && self.playing && self.count_in <= 0.0 {
+                    let next = ((self.pos / PPQ as f64).floor() + 1.0) * PPQ as f64;
+                    let wait = self.frames_to(next).clamp(0.0, 8.0 * self.sample_rate as f64);
+                    voice.set_wait(wait as usize);
+                }
                 if let Some(old) = self.audition.replace(voice) {
                     self.trash(Garbage::Audition(old));
                 }
@@ -2787,6 +2793,27 @@ mod tests {
         assert_eq!(buf[2 * 1_000], 0.0);
         assert_eq!(handle.audition_position(), None);
         assert!(matches!(handle.garbage.pop(), Some(Garbage::Audition(_))));
+    }
+
+    #[test]
+    fn audition_on_beat_waits_for_the_next_beat() {
+        let (mut engine, mut handle) = Engine::new(SR, Vec::new(), Sequence::default());
+        let dc = Arc::new(Sample { name: "dc".into(), sample_rate: SR, left: vec![0.5; 48_000], right: vec![0.5; 48_000], markers: Vec::new() });
+        // Stopped: it plays at once.
+        handle.send(Command::Audition(Some(Box::new(Audition::new(dc.clone(), 0, 48_000, None, 1.0).on_next_beat())))).unwrap();
+        let mut buf = vec![0.0; 2 * 512];
+        engine.process(&mut buf, 2);
+        assert!(buf[2 * 500] > 0.4);
+        // Playing: silent until the next beat.
+        handle.send(Command::Play).unwrap();
+        engine.process(&mut buf, 2);
+        let beat = engine.frames_to(PPQ as f64).max(0.0) as usize;
+        handle.send(Command::Audition(Some(Box::new(Audition::new(dc, 0, 48_000, None, 1.0).on_next_beat())))).unwrap();
+        let mut long = vec![0.0; 2 * 48_000];
+        engine.process(&mut long, 2);
+        assert!(beat > 1_000, "{beat}");
+        assert_eq!(long[2 * (beat - 600)], 0.0, "waits for the beat");
+        assert!(long[2 * (beat + 600)] > 0.4, "then plays");
     }
 
     fn limiter() -> Box<dyn Effect> {

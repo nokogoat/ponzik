@@ -22,6 +22,10 @@ pub struct Audition {
     /// Niveau du fondu (0 à 1) et sens : vrai pendant l'arrêt.
     fade: f32,
     stopping: bool,
+    /// Start on the next beat of the song when the transport plays (a loop
+    /// previewed in time), and the frames of silence left before it.
+    on_beat: bool,
+    wait: usize,
 }
 
 impl Audition {
@@ -30,7 +34,23 @@ impl Audition {
         let len = sample.len();
         let end = end.min(len);
         let looped = looped.map(|(a, b)| (a.min(len), b.min(len))).filter(|(a, b)| b > a);
-        Self { sample, end, looped, gain, pos: start.min(end) as f64, fade: 0.0, stopping: false }
+        Self { sample, end, looped, gain, pos: start.min(end) as f64, fade: 0.0, stopping: false, on_beat: false, wait: 0 }
+    }
+
+    /// Starts on the next beat when the song is playing (the engine sets the wait).
+    pub fn on_next_beat(mut self) -> Self {
+        self.on_beat = true;
+        self
+    }
+
+    /// True when the voice waits for the next beat.
+    pub fn wants_beat(&self) -> bool {
+        self.on_beat
+    }
+
+    /// Silence before the voice starts, in output frames.
+    pub fn set_wait(&mut self, frames: usize) {
+        self.wait = frames;
     }
 
     /// Position de lecture en images de l'échantillon.
@@ -51,7 +71,14 @@ impl Audition {
         }
         let rate = s.sample_rate as f64 / sample_rate.max(1.0) as f64;
         let step = 1.0 / (FADE * sample_rate.max(1.0));
-        for frame in out.chunks_mut(channels) {
+        let frames = out.len() / channels;
+        let skip = self.wait.min(frames);
+        self.wait -= skip;
+        if self.stopping && skip > 0 {
+            // Stopped before it started: nothing to fade.
+            return false;
+        }
+        for frame in out[skip * channels..].chunks_mut(channels) {
             let end = self.looped.map_or(self.end, |(_, b)| b);
             if self.pos >= end as f64 - 1.0 {
                 match self.looped {
@@ -111,5 +138,25 @@ mod tests {
         a.stop();
         let mut out = vec![0.0f32; 4_000];
         assert!(!a.render_add(&mut out, 1, 48_000.0));
+    }
+
+    #[test]
+    fn waits_before_starting() {
+        let mut a = Audition::new(ramp(), 200, 900, None, 1.0).on_next_beat();
+        assert!(a.wants_beat());
+        a.set_wait(300);
+        let mut out = vec![0.0f32; 2 * 256];
+        assert!(a.render_add(&mut out, 2, 48_000.0));
+        assert!(out.iter().all(|&v| v == 0.0), "silent while waiting");
+        assert_eq!(a.position(), 200.0);
+        let mut out = vec![0.0f32; 2 * 256];
+        assert!(a.render_add(&mut out, 2, 48_000.0));
+        assert_eq!(out[2 * 43], 0.0, "starts at frame 44 of the second block");
+        assert!(out[2 * 255] > 0.0);
+        // Stopped while still waiting: ends at once.
+        let mut b = Audition::new(ramp(), 0, 900, None, 1.0);
+        b.set_wait(10_000);
+        b.stop();
+        assert!(!b.render_add(&mut out, 2, 48_000.0));
     }
 }
