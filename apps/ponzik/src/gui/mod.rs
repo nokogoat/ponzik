@@ -220,7 +220,15 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
         .start_duplex(move |input, in_ch, out, ch| engine.process_duplex(input, in_ch, out, ch))
         .map_err(|e| e.to_string())?;
 
-    let mut window = Window::open("Ponzik", 1600, 960).map_err(|e| e.to_string())?;
+    // PONZIK_WINDOW=1880x992 : taille logique de la fenêtre à l'ouverture.
+    let (ww, wh) = std::env::var("PONZIK_WINDOW")
+        .ok()
+        .and_then(|v| {
+            let (w, h) = v.split_once('x')?;
+            Some((w.trim().parse().ok()?, h.trim().parse().ok()?))
+        })
+        .unwrap_or((1600, 960));
+    let mut window = Window::open("Ponzik", ww, wh).map_err(|e| e.to_string())?;
     let mut app = App::new(handle, project, config.sample_rate);
     app.editors = editors;
     app.editors.set_owner(window.native_handle());
@@ -238,7 +246,16 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     let (play, find) = (app.key_label(keymap::Shortcut::PlayStop), app.key_label(keymap::Shortcut::Palette));
     app.toast(&tr_fmt!("{} to play · {} to find anything", play, find));
     eprintln!("Ponzik · {} · {} Hz · {}", window.backend_name(), config.sample_rate, output_name);
-    // PONZIK_AUTOPLAY=1 : lecture lancée dès l'ouverture (mesures de charge).
+    // PONZIK_VIEW=playlist : vue affichée à l'ouverture ; PONZIK_AUTOPLAY=1 :
+    // lecture lancée aussitôt (mesures de charge).
+    if let Some(view) = std::env::var("PONZIK_VIEW").ok().and_then(|v| view_named(&v)) {
+        if app.view_shown(view) {
+            app.set_view(view);
+        }
+        if view == View::Playlist {
+            app.set_mode(ponzik_engine::PlayMode::Song);
+        }
+    }
     if std::env::var_os("PONZIK_AUTOPLAY").is_some() {
         app.toggle_play();
     }
@@ -279,7 +296,7 @@ impl Profile {
         }
     }
 
-    fn frame(&mut self, start: Instant, ui: Instant, raster: Instant, end: Instant, dirty: f64, ops: usize) {
+    fn frame(&mut self, start: Instant, ui: Instant, raster: Instant, end: Instant, dirty: f64, ops: usize, size: (u32, u32)) {
         self.frames += 1;
         self.ui += ui - start;
         self.raster += raster - ui;
@@ -293,7 +310,9 @@ impl Profile {
             let ms = |d: Duration| d.as_secs_f64() * 1000.0 / n;
             let busy = (self.ui + self.raster + self.present).as_secs_f64() / span.as_secs_f64();
             eprintln!(
-                "profile: {:.1} fps · ui {:.2} ms · raster {:.2} ms · present {:.2} ms · worst {:.2} ms · dirty {:.1} % · {} ops · thread {:.1} %",
+                "profile: {}×{} · {:.1} fps · ui {:.2} ms · raster {:.2} ms · present {:.2} ms · worst {:.2} ms · dirty {:.1} % · {} ops · thread {:.1} %",
+                size.0,
+                size.1,
                 n / span.as_secs_f64(),
                 ms(self.ui),
                 ms(self.raster),
@@ -426,12 +445,24 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
             }
             if let Some(p) = profile.as_mut() {
                 let area: usize = canvas.dirty_rects().iter().map(|d| (d.2 - d.0) * (d.3 - d.1)).sum();
-                p.frame(now, t_frame, t_raster, Instant::now(), area as f64 / (w as f64 * h as f64), canvas.recorded_ops());
+                p.frame(now, t_frame, t_raster, Instant::now(), area as f64 / (w as f64 * h as f64), canvas.recorded_ops(), (w, h));
             }
             // Taille de l'interface changée pendant l'image : la suivante suit tout de suite.
             dirty = system_scale(Some(window)) * app.ui_scale() != scale;
         }
     }
+}
+
+fn view_named(name: &str) -> Option<View> {
+    Some(match name {
+        "rack" => View::Rack,
+        "piano" => View::Piano,
+        "playlist" => View::Playlist,
+        "mixer" => View::Mixer,
+        "session" => View::Session,
+        "lab" => View::Lab,
+        _ => return None,
+    })
 }
 
 /// Rend l'interface hors écran, en pleine lecture, dans un PNG. `width` × `height`
@@ -472,14 +503,7 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     if let Some(i) = std::env::var("PONZIK_BROWSER").ok().and_then(|v| v.parse::<usize>().ok()) {
         app.sidebar_tab = i.min(3);
     }
-    let view = match view {
-        "piano" => View::Piano,
-        "playlist" => View::Playlist,
-        "mixer" => View::Mixer,
-        "session" => View::Session,
-        "lab" => View::Lab,
-        _ => View::Rack,
-    };
+    let view = view_named(view).unwrap_or(View::Rack);
     if app.view_shown(view) {
         app.set_view(view);
     }
