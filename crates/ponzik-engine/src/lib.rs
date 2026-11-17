@@ -6,6 +6,7 @@
 //! [`Garbage`] pour être libérés hors du thread audio.
 
 pub mod audition;
+pub mod codecs;
 pub mod denormal;
 pub mod effect;
 pub mod editor;

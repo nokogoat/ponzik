@@ -3552,6 +3552,12 @@ msgstr "fichier FLAC abîmé"
 msgid "Unsupported FLAC file"
 msgstr "fichier FLAC non pris en charge"
 
+msgid "Corrupt MP3 file"
+msgstr "fichier MP3 abîmé"
+
+msgid "Unsupported audio format"
+msgstr "format audio non pris en charge"
+
 msgid "Missing \"fmt\" chunk"
 msgstr "bloc « fmt » manquant"
 
