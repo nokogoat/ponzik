@@ -7,6 +7,8 @@ pub struct Anim {
     values: HashMap<u64, f32>,
     dt: f32,
     moving: bool,
+    /// Une valeur suivie par [`Anim::to_ambient`] bouge encore.
+    ambient: bool,
 }
 
 impl Anim {
@@ -18,6 +20,7 @@ impl Anim {
     pub fn begin_frame(&mut self, dt: f32) {
         self.dt = dt.clamp(0.0, 0.1);
         self.moving = false;
+        self.ambient = false;
     }
 
     /// Fait tendre la valeur `id` vers `target` ; `tau` = constante de temps en secondes
@@ -35,10 +38,23 @@ impl Anim {
         *v
     }
 
-    /// Force une valeur (déclenchement d'un flash, par exemple).
+    /// Comme [`Anim::to`], pour une animation d'ambiance qui suit la lecture
+    /// (LED de temps, éclats rythmiques) : elle demande des images, mais pas la
+    /// cadence pleine (voir [`Anim::is_ambient`]).
+    pub fn to_ambient(&mut self, id: u64, target: f32, tau: f32) -> f32 {
+        let moving = std::mem::take(&mut self.moving);
+        let v = self.to(id, target, tau);
+        self.ambient |= self.moving;
+        self.moving = moving;
+        v
+    }
+
+    /// Force une valeur (déclenchement d'un flash, par exemple). Redonner la
+    /// même valeur ne demande pas d'image : rien n'a bougé.
     pub fn set(&mut self, id: u64, value: f32) {
-        self.values.insert(id, value);
-        self.moving = true;
+        if self.values.insert(id, value) != Some(value) {
+            self.moving = true;
+        }
     }
 
     pub fn get(&self, id: u64) -> Option<f32> {
@@ -48,6 +64,11 @@ impl Anim {
     /// Vrai si une valeur n'a pas encore atteint sa cible : il faut redessiner.
     pub fn is_moving(&self) -> bool {
         self.moving
+    }
+
+    /// Vrai si seule une animation d'ambiance bouge encore : une cadence réduite suffit.
+    pub fn is_ambient(&self) -> bool {
+        self.ambient
     }
 }
 
@@ -70,6 +91,28 @@ mod tests {
             a.begin_frame(1.0 / 60.0);
             a.to(1, 1.0, 0.05);
         }
+        assert!(!a.is_moving());
+    }
+
+    #[test]
+    fn ambient_values_do_not_count_as_moving() {
+        let mut a = Anim::new();
+        a.begin_frame(1.0 / 60.0);
+        a.to_ambient(1, 0.0, 0.1);
+        a.begin_frame(1.0 / 60.0);
+        a.to_ambient(1, 1.0, 0.1);
+        assert!(a.is_ambient() && !a.is_moving());
+        a.to(2, 0.0, 0.1);
+        a.begin_frame(1.0 / 60.0);
+        a.to(2, 1.0, 0.1);
+        a.to_ambient(1, 1.0, 0.1);
+        assert!(a.is_moving() && a.is_ambient());
+        // La même valeur redonnée ne demande pas d'image.
+        a.begin_frame(1.0 / 60.0);
+        a.set(3, 0.5);
+        assert!(a.is_moving());
+        a.begin_frame(1.0 / 60.0);
+        a.set(3, 0.5);
         assert!(!a.is_moving());
     }
 }
