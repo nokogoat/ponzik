@@ -300,6 +300,20 @@ fn audio_clip_json(c: &AudioClipDef) -> Json {
     ])
 }
 
+fn take_group_json(g: &crate::TakeGroup) -> Json {
+    let takes = g.takes.iter().map(|t| obj(vec![("name", t.name.as_str().into()), ("clip", audio_clip_json(&t.clip))])).collect();
+    let comp = g.comp.iter().map(|s| Json::Arr(vec![s.take.into(), s.start.into(), s.end.into()])).collect();
+    obj(vec![
+        ("lane", g.lane.into()),
+        ("track", g.track.into()),
+        ("crossfade", g.crossfade.into()),
+        ("folded", g.folded.into()),
+        ("muted", g.muted.into()),
+        ("takes", Json::Arr(takes)),
+        ("comp", Json::Arr(comp)),
+    ])
+}
+
 /// Projet → texte JSON indenté.
 pub fn save(project: &Project) -> String {
     let mode = match project.mode {
@@ -323,6 +337,7 @@ pub fn save(project: &Project) -> String {
         ("tracks", Json::Arr(project.tracks.iter().map(track_json).collect())),
         ("automation", Json::Arr(project.automation.iter().map(automation_json).collect())),
         ("audio_clips", Json::Arr(project.audio_clips.iter().map(audio_clip_json).collect())),
+        ("take_groups", Json::Arr(project.take_groups.iter().map(take_group_json).collect())),
         (
             "tempo_changes",
             Json::Arr(
@@ -734,6 +749,33 @@ fn load_audio_clip(v: &Json) -> Option<AudioClipDef> {
     })
 }
 
+fn load_take_group(v: &Json) -> Option<crate::TakeGroup> {
+    let takes: Vec<crate::Take> = arr(v.get("takes"))
+        .iter()
+        .filter_map(|t| {
+            let clip = AudioClipDef { take: 0, muted: false, ..load_audio_clip(t.get("clip")?)? };
+            Some(crate::Take { name: string_or(t.get("name"), ""), clip })
+        })
+        .collect();
+    if takes.is_empty() {
+        return None;
+    }
+    let mut g = crate::TakeGroup::new(usize_or(v.get("lane"), 0).min(63), usize_or(v.get("track"), 1).min(TRACKS - 1), takes);
+    g.crossfade = f32_or(v.get("crossfade"), crate::comp::DEFAULT_CROSSFADE).clamp(0.0, crate::comp::MAX_CROSSFADE);
+    g.folded = bool_or(v.get("folded"), false);
+    g.muted = bool_or(v.get("muted"), false);
+    g.comp = arr(v.get("comp"))
+        .iter()
+        .filter_map(|s| {
+            let s = arr(Some(s));
+            let n = |i: usize| num(s.get(i)).filter(|x| *x >= 0.0);
+            Some(crate::CompSegment { take: n(0)? as usize, start: n(1)?.min(u32::MAX as f64) as u32, end: n(2)?.min(u32::MAX as f64) as u32 })
+        })
+        .collect();
+    g.normalize();
+    Some(g)
+}
+
 /// Texte JSON → projet.
 pub fn load(text: &str) -> Result<Project, String> {
     let root = json::parse(text).map_err(|e| tr_fmt!("Unreadable project file: {}", e))?;
@@ -821,6 +863,9 @@ pub fn load(text: &str) -> Result<Project, String> {
         }
     }
     p.audio_clips = arr(root.get("audio_clips")).iter().filter_map(load_audio_clip).collect();
+    p.take_groups = arr(root.get("take_groups")).iter().filter_map(load_take_group).collect();
+    // Older loop recordings: muted clips of a take group.
+    p.convert_take_clips();
     // Tempo, meter and markers: optional (older projects: one tempo, 4/4, no markers).
     for v in arr(root.get("tempo_changes")) {
         if let Some(bpm) = num(v.get("bpm")).filter(|_| v.get("tick").is_some()) {
@@ -1095,6 +1140,43 @@ mod tests {
         // Champs absents (projet d'une version précédente) : vides.
         let old = load(r#"{"format": "ponzik-project", "version": 1}"#).unwrap();
         assert!(old.automation.is_empty() && old.audio_clips.is_empty());
+    }
+
+    #[test]
+    fn take_groups_round_trip_and_old_take_clips_convert() {
+        let mut p = demo_project();
+        let take = |k: u32| crate::Take {
+            name: format!("Lead take {k}"),
+            clip: AudioClipDef { path: "rec/lead.wav".into(), start: 768, len: 384, offset: 4.0 * k as f64, fade_in: 0.003, color: k * 0x10, ..Default::default() },
+        };
+        let mut g = crate::TakeGroup::new(4, 6, vec![take(0), take(1), take(2)]);
+        g.swipe(0, 768, 1152);
+        g.swipe(2, 900, 1000);
+        g.crossfade = 0.025;
+        g.folded = true;
+        p.take_groups.push(g.clone());
+        let text = save(&p);
+        let back = load(&text).unwrap();
+        assert_eq!(back, p);
+        assert_eq!(save(&back), text);
+        // Audition is not saved.
+        p.take_groups[0].solo = Some(1);
+        assert_eq!(load(&save(&p)).unwrap().take_groups[0].solo, None);
+
+        // A project of the previous version: the passes are muted clips of take group 1.
+        let old = r#"{"format": "ponzik-project", "version": 1, "audio_clips": [
+            {"path": "a.wav", "lane": 2, "track": 3, "start": 0, "len": 384, "offset": 0, "take": 1, "muted": true},
+            {"path": "a.wav", "lane": 3, "track": 3, "start": 0, "len": 384, "offset": 2, "take": 1, "muted": false},
+            {"path": "b.wav", "lane": 0, "track": 2, "start": 0, "len": 96}
+        ], "take_groups": [{"takes": [], "comp": [[0, 1, 2]]}, {"takes": [{"clip": {"path": "c.wav", "len": 96}}], "comp": [[0, 0, 50], [3, 0, 9], "x"]}]}"#;
+        let p = load(old).unwrap();
+        assert_eq!(p.audio_clips.len(), 1);
+        assert_eq!(p.take_groups.len(), 2);
+        let segs = |g: &crate::TakeGroup| g.comp.iter().map(|s| (s.take, s.start, s.end)).collect::<Vec<_>>();
+        assert_eq!(segs(&p.take_groups[0]), [(0, 0, 50)]);
+        let g = &p.take_groups[1];
+        assert_eq!((g.lane, g.track, g.takes.len()), (2, 3, 2));
+        assert_eq!(segs(g), [(1, 0, 384)]);
     }
 
     #[test]

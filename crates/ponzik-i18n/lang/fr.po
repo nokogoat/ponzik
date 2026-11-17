@@ -6664,3 +6664,9 @@ msgstr "{} est gelé"
 
 msgid "{} unfrozen: its devices play again"
 msgstr "{} dégelé : ses appareils jouent de nouveau"
+
+
+# --- Take comping ---
+
+msgid "Take {}"
+msgstr "Prise {}"

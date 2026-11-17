@@ -342,6 +342,9 @@ pub fn frozen_content_changed(old: &Project, new: &Project) -> Option<FreezeTarg
             .collect();
         let clips: Vec<AudioClipDef> =
             p.audio_clips.iter().filter(|a| feeds(a.track)).map(|a| AudioClipDef { lane: 0, color: 0, ..a.clone() }).collect();
+        // Take groups: what plays (the comp or an auditioned take), not where they show.
+        let takes: Vec<crate::TakeGroup> =
+            p.take_groups.iter().filter(|g| feeds(g.track)).map(|g| crate::TakeGroup { lane: 0, folded: false, ..g.clone() }).collect();
         let lanes: Vec<crate::AutomationDef> = p
             .automation
             .iter()
@@ -361,7 +364,7 @@ pub fn frozen_content_changed(old: &Project, new: &Project) -> Option<FreezeTarg
             .map(|fx| fx.as_ref().map(|f| (f.kind.clone(), f.params.clone(), f.bypass, f.sidechain, f.rack.clone())))
             .collect();
         let member_mix: Vec<_> = members.iter().map(|&m| (m, p.tracks[m].gain, p.tracks[m].pan, p.tracks[m].muted, p.tracks[m].inserts.clone())).collect();
-        (inserts, def.modulators.clone(), channels, clips, lanes, member_mix)
+        (inserts, def.modulators.clone(), channels, clips, takes, lanes, member_mix)
     };
     for c in (0..old.channels.len()).filter(|&c| same_channels && old.channels[c].frozen.is_some()) {
         if new.channels[c].frozen == old.channels[c].frozen && (tempo_changed || channel(old, c) != channel(new, c)) {
@@ -438,6 +441,7 @@ pub fn render_bounce(
                 ch.muted = i != *c;
             }
             p.audio_clips.iter_mut().for_each(|a| a.muted = true);
+            p.take_groups.iter_mut().for_each(|g| g.muted = true);
             (Tap::Track(MASTER), None, RenderMode::Song)
         }
         BounceSource::Clips { patterns, audio } => {
@@ -446,6 +450,7 @@ pub fn render_bounce(
             for (i, a) in p.audio_clips.iter_mut().enumerate() {
                 a.muted = !audio.contains(&i);
             }
+            p.take_groups.iter_mut().for_each(|g| g.muted = true);
             let tracks: Vec<usize> = audio.iter().filter_map(|&i| project.audio_clips.get(i)).map(|a| a.track).collect();
             let one_track = tracks.first().filter(|&&t| tracks.iter().all(|&x| x == t)).copied();
             match one_track.filter(|_| !with_fx && patterns.is_empty()) {

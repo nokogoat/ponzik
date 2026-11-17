@@ -270,6 +270,7 @@ pub fn render_stems(
     let mut tracks: Vec<usize> = project.channels.iter().filter(|c| !c.muted).map(|c| c.track).collect();
     if !matches!(mode, RenderMode::Pattern(..)) {
         tracks.extend(project.audio_clips.iter().map(|c| c.track));
+        tracks.extend(project.take_groups.iter().map(|g| g.track));
     }
     tracks.sort_unstable();
     tracks.dedup();
@@ -283,6 +284,9 @@ pub fn render_stems(
             // Gain nul plutôt que retrait : la longueur du morceau ne change pas.
             for c in p.audio_clips.iter_mut().filter(|c| c.track != track) {
                 c.gain = 0.0;
+            }
+            for g in p.take_groups.iter_mut().filter(|g| g.track != track) {
+                g.muted = true;
             }
             (track, render_song(&p, sample_rate, loader, mode))
         })

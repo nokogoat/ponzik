@@ -6,7 +6,7 @@
 
 use ponzik_engine::{AutoPoint, AutoScope, AutoTarget, TempoPoint, TimeSig};
 
-use crate::{AudioClipDef, ClipDef, Marker, Project};
+use crate::{AudioClipDef, ClipDef, Marker, Project, TakeGroup};
 
 /// Colors offered for markers, in order (a new marker takes the next one).
 pub const MARKER_COLORS: [u32; 8] = [0x3fd45a, 0x3ccfc4, 0xf0b44a, 0xe878b4, 0x2fb6e0, 0xa98cf0, 0xf08a5d, 0xc7e85a];
@@ -17,6 +17,8 @@ pub struct TimeSlice {
     pub len: u32,
     pub clips: Vec<ClipDef>,
     pub audio: Vec<AudioClipDef>,
+    /// Take groups that lie whole inside the range.
+    pub takes: Vec<TakeGroup>,
     /// Song automation lanes: points relative to the start, with the value at
     /// the start and just before the end pinned.
     pub lanes: Vec<(AutoTarget, Vec<AutoPoint>)>,
@@ -213,6 +215,16 @@ impl Project {
                 Some(AudioClipDef { start: s - a, len, offset, fade_in, fade_out, ..c.clone() })
             })
             .collect();
+        let takes = self
+            .take_groups
+            .iter()
+            .filter(|g| g.span().0 >= a && g.span().1 <= b)
+            .map(|g| {
+                let mut g = g.clone();
+                g.shift(-(a as i64));
+                g
+            })
+            .collect();
         let len = b - a;
         let lanes = self
             .automation
@@ -242,7 +254,7 @@ impl Project {
             .filter(|m| m.tick >= a && m.tick < b)
             .map(|m| Marker { tick: m.tick - a, ..m.clone() })
             .collect();
-        TimeSlice { len, clips, audio, lanes, tempos, sigs, markers }
+        TimeSlice { len, clips, audio, takes, lanes, tempos, sigs, markers }
     }
 
     /// Empties `[a, b)`: clips are cut, automation points, tempo and signature
@@ -288,6 +300,9 @@ impl Project {
         }
         for c in self.audio_clips.iter_mut().filter(|c| c.start >= at) {
             c.start = shifted(c.start, delta);
+        }
+        for g in self.take_groups.iter_mut().filter(|g| g.span().0 >= at) {
+            g.shift(delta);
         }
         for lane in self.automation.iter_mut().filter(|l| l.scope == AutoScope::Song) {
             for p in lane.points.iter_mut().filter(|p| p.tick >= at) {
@@ -370,6 +385,11 @@ impl Project {
         let (tail_bpm, tail_sig) = (lane_map.bpm_at(end as f64) as f32, lane_map.sig_at(end as f64));
         self.clips.extend(slice.clips.iter().map(|c| ClipDef { start: c.start + at, ..*c }));
         self.audio_clips.extend(slice.audio.iter().map(|c| AudioClipDef { start: c.start + at, ..c.clone() }));
+        self.take_groups.extend(slice.takes.iter().map(|g| {
+            let mut g = g.clone();
+            g.shift(at as i64);
+            g
+        }));
         for (target, pts) in &slice.lanes {
             if self.automation_lane(*target, AutoScope::Song).is_none() {
                 self.automation.push(crate::AutomationDef { target: *target, scope: AutoScope::Song, points: Vec::new() });

@@ -11,7 +11,7 @@ use ponzik_i18n::{tr, tr_fmt, tr_noop};
 use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS, TRACKS, routing_order};
 use ponzik_engine::registry;
 use ponzik_engine::{
-    AudioClip, AutomationLane, Channel, Clip, ClipWarp, Effect, Engine, EngineHandle, Frozen, Instrument, NOTE_FX_SLOTS,
+    AutomationLane, Channel, Clip, ClipWarp, Effect, Engine, EngineHandle, Frozen, Instrument, NOTE_FX_SLOTS,
     Note, NoteFx, PPQ, Pattern, PlayMode, Sample, Sequence, TICKS_PER_BAR, TICKS_PER_STEP,
 };
 pub use ponzik_dsp::warp::WarpAlgo;
@@ -29,6 +29,7 @@ pub mod bounce;
 pub mod auto_rec;
 pub mod autosave;
 pub mod capture;
+pub mod comp;
 mod breakcore;
 mod zalgo;
 mod demo;
@@ -52,6 +53,7 @@ pub mod warp;
 pub use arrange::{MARKER_COLORS, Placement, TimeSlice};
 pub use bounce::{BounceSource, FreezeTarget, SourceAction, frozen_content_changed};
 pub use breakcore::demo_breakcore;
+pub use comp::{CompSegment, Take, TakeGroup};
 pub use zalgo::demo_zalgo;
 pub use demo::demo_project;
 pub use history::History;
@@ -474,6 +476,8 @@ pub struct Project {
     pub session_live: Vec<SessionSlot>,
     pub automation: Vec<AutomationDef>,
     pub audio_clips: Vec<AudioClipDef>,
+    /// Loop recordings: takes and the comp that plays (see [`comp`]).
+    pub take_groups: Vec<TakeGroup>,
     /// Tempo changes after tick 0, sorted (the tempo at tick 0 is `bpm`).
     pub tempo_changes: Vec<TempoPoint>,
     /// Time signature changes, sorted (4/4 from tick 0 unless one is there).
@@ -532,6 +536,7 @@ impl Project {
             session_live: Vec::new(),
             automation: Vec::new(),
             audio_clips: Vec::new(),
+            take_groups: Vec::new(),
             tempo_changes: Vec::new(),
             signatures: Vec::new(),
             markers: Vec::new(),
@@ -567,6 +572,11 @@ impl Project {
             .sum();
         let automation: usize = self.automation.iter().map(|a| vec(&a.points)).sum();
         let audio: usize = self.audio_clips.iter().map(|c| c.path.len()).sum();
+        let takes: usize = self
+            .take_groups
+            .iter()
+            .map(|g| vec(&g.takes) + vec(&g.comp) + g.takes.iter().map(|t| t.name.len() + t.clip.path.len()).sum::<usize>())
+            .sum();
         let grid: usize = self.session_grid.iter().map(|c| vec(c)).sum();
         size_of::<Self>()
             + self.name.len()
@@ -581,6 +591,8 @@ impl Project {
             + automation
             + vec(&self.audio_clips)
             + audio
+            + vec(&self.take_groups)
+            + takes
             + vec(&self.session_grid)
             + grid
             + vec(&self.session_live)
@@ -591,7 +603,8 @@ impl Project {
     pub fn song_len(&self) -> u32 {
         let patterns = self.clips.iter().map(|c| c.start.saturating_add(c.len));
         let audio = self.audio_clips.iter().map(|c| c.start.saturating_add(c.len));
-        let end = patterns.chain(audio).max().unwrap_or(0);
+        let takes = self.take_groups.iter().map(|g| g.span().1);
+        let end = patterns.chain(audio).chain(takes).max().unwrap_or(0);
         let map = self.tempo_map();
         map.ceil_bar(end as f64).max(map.bar_start(1))
     }
@@ -710,24 +723,14 @@ impl Project {
                         map: c.warp_map(),
                         rendered: warp::WarpJob::for_clip(c, &sample, &map, sample_rate).and_then(|job| warps(&job)),
                     });
-                    Some(AudioClip {
-                        sample,
-                        fade_in_curve: c.fade_in_curve,
-                        fade_out_curve: c.fade_out_curve,
-                        reverse: c.reverse,
-                        looped: c.looped,
-                        warp,
-                        track: c.track.min(TRACKS - 1),
-                        start: c.start,
-                        len: c.len,
-                        offset: c.offset,
-                        gain: c.gain,
-                        fade_in: c.fade_in,
-                        fade_out: c.fade_out,
-                        xfade_in: 0.0,
-                        xfade_out: 0.0,
-                    })
+                    Some(comp::engine_clip(c, sample, warp))
                 })
+                // Comps: their segments, crossfaded (takes play unwarped).
+                .chain(self.take_groups.iter().filter(|g| self.frozen_track(g.track, loader).is_none()).flat_map(|g| g.pieces(&map)).filter_map(|p| {
+                    let mut clip = comp::engine_clip(&p.clip, loader(&p.clip.path)?, None);
+                    (clip.xfade_in, clip.xfade_out) = (p.xfade_in, p.xfade_out);
+                    Some(clip)
+                }))
                 .collect(),
         }
     }
@@ -1114,6 +1117,11 @@ impl Project {
             }
         }
         self.audio_clips = audio;
+        // Take groups go whole or stay whole.
+        self.take_groups.retain(|g| {
+            let (s, e) = g.span();
+            s < a || e > b
+        });
     }
 
     /// Recopie tout ce que contient la plage `[a, b)` de la playlist juste
@@ -1150,10 +1158,21 @@ impl Project {
                 Some(AudioClipDef { start: start + span, len, offset, fade_in, fade_out, ..c.clone() })
             })
             .collect();
-        let copied = clips.len() + audio.len();
+        let groups: Vec<TakeGroup> = self
+            .take_groups
+            .iter()
+            .filter(|g| g.span().0 >= a && g.span().1 <= b)
+            .map(|g| {
+                let mut g = g.clone();
+                g.shift(span as i64);
+                g
+            })
+            .collect();
+        let copied = clips.len() + audio.len() + groups.len();
         self.clear_time(b, b + span);
         self.clips.extend(clips);
         self.audio_clips.extend(audio);
+        self.take_groups.extend(groups);
 
         let end = b + span;
         for lane in self.automation.iter_mut().filter(|l| l.scope == AutoScope::Song && !l.points.is_empty()) {
@@ -1196,6 +1215,7 @@ impl Project {
             || tr.inserts.iter().any(Option::is_some)
             || self.channels.iter().any(|c| c.track == t)
             || self.audio_clips.iter().any(|c| c.track == t)
+            || self.take_groups.iter().any(|g| g.track == t)
             || self.tracks.iter().enumerate().any(|(i, x)| {
                 i != t && (x.output == t || x.vca == Some(t) || x.sends.iter().any(|s| s.0 == t && s.1 > 0.0))
             })
