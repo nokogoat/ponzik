@@ -49,7 +49,7 @@ impl Default for Delay {
             values: Values::new(&PARAMS),
             sample_rate: DEFAULT_SR,
             bpm: 120.0,
-            lines: [DelayLine::new(2), DelayLine::new(2)],
+            lines: [DelayLine::new(0), DelayLine::new(0)],
             low_cut: Default::default(),
             high_cut: Default::default(),
             time: Smoother::new(0.0),
@@ -74,7 +74,13 @@ impl Delay {
     fn update(&mut self) {
         let sr = self.sample_rate;
         let v = &self.values;
-        self.time.set_target(self.time_seconds() * sr);
+        let time = self.time_seconds() * sr;
+        self.time.set_target(time);
+        // L'anneau grandit avec le retard (sans allocation) : un écho court ne
+        // touche pas les secondes réservées.
+        for line in &mut self.lines {
+            line.reserve(time as usize + 4);
+        }
         self.feedback.set_target(v.get(P_FEEDBACK));
         self.mix.set_target(v.get(P_MIX));
         let lc = BiquadCoefs::highpass(v.get(P_LOW_CUT), 0.707, sr);
@@ -110,9 +116,12 @@ impl Effect for Delay {
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
-        self.sample_rate = sample_rate;
         let max = (MAX_TIME * sample_rate) as usize + 4;
-        self.lines = [DelayLine::new(max), DelayLine::new(max)];
+        // Même fréquence (la ligne existe déjà) : rien à réallouer.
+        if sample_rate != self.sample_rate || self.lines[0].max_delay() < 4 {
+            self.lines = [DelayLine::growable(max), DelayLine::growable(max)];
+        }
+        self.sample_rate = sample_rate;
         self.time.set_time(0.1, sample_rate);
         self.feedback.set_time(0.02, sample_rate);
         self.mix.set_time(0.02, sample_rate);
