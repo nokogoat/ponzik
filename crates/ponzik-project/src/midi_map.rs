@@ -47,12 +47,16 @@ pub enum ControlTarget {
     /// Level of a mixer send.
     Send { track: usize, slot: usize },
     Transport(TransportAction),
+    /// Launches a scene of the Session view (held: gate slots play).
+    Scene(usize),
+    /// Launches a slot of the Session view (held: a gate slot plays).
+    Slot { col: usize, row: usize },
 }
 
 impl ControlTarget {
     /// Pressed rather than turned.
     pub fn is_button(self) -> bool {
-        matches!(self, Self::Transport(_))
+        matches!(self, Self::Transport(_) | Self::Scene(_) | Self::Slot { .. })
     }
 }
 
@@ -223,9 +227,13 @@ impl MidiMapping {
             state.picked = false;
         }
         if self.target.is_button() {
-            let press = value.pressed() && !state.down;
-            state.down = value.pressed();
-            return if press { Outcome::Trigger } else { Outcome::None };
+            let (was, now) = (state.down, value.pressed());
+            state.down = now;
+            return match (was, now) {
+                (false, true) => Outcome::Trigger,
+                (true, false) => Outcome::Release,
+                _ => Outcome::None,
+            };
         }
         let span = self.max - self.min;
         let out = match (self.mode, value) {
@@ -282,6 +290,8 @@ pub enum Outcome {
     Set(f32),
     /// A button press.
     Trigger,
+    /// The button is let go.
+    Release,
     /// Pickup: the control is at this value, not yet at the parameter's.
     Waiting(f32),
 }
@@ -465,6 +475,8 @@ pub fn mapping_json(m: &MidiMapping) -> Json {
         ControlTarget::Param(t) => obj(vec![("kind", "param".into()), ("param", target_json(t))]),
         ControlTarget::Send { track, slot } => obj(vec![("kind", "send".into()), ("track", track.into()), ("slot", slot.into())]),
         ControlTarget::Transport(a) => obj(vec![("kind", "transport".into()), ("action", a.id().into())]),
+        ControlTarget::Scene(row) => obj(vec![("kind", "scene".into()), ("row", row.into())]),
+        ControlTarget::Slot { col, row } => obj(vec![("kind", "slot".into()), ("col", col.into()), ("row", row.into())]),
     };
     let mut pairs = vec![
         ("source", source),
@@ -506,6 +518,8 @@ pub fn load_mapping(v: &Json, channels: usize) -> Option<MidiMapping> {
         "param" => ControlTarget::Param(load_target(t.get("param")?, channels)?),
         "send" => ControlTarget::Send { track: index(t.get("track"), TRACKS)?, slot: index(t.get("slot"), SEND_SLOTS)? },
         "transport" => ControlTarget::Transport(TransportAction::from_id(t.get("action")?.as_str()?)?),
+        "scene" => ControlTarget::Scene(index(t.get("row"), crate::SESSION_SCENES)?),
+        "slot" => ControlTarget::Slot { col: index(t.get("col"), crate::SESSION_COLUMNS)?, row: index(t.get("row"), crate::SESSION_SCENES)? },
         _ => return None,
     };
     let mode = match v.get("mode").and_then(Json::as_str) {
@@ -648,8 +662,20 @@ mod tests {
         let mut s = CtlState::default();
         assert_eq!(play.apply(&mut s, CtlValue::Cc(127), 0.0), Outcome::Trigger);
         assert_eq!(play.apply(&mut s, CtlValue::Cc(127), 0.0), Outcome::None);
-        assert_eq!(play.apply(&mut s, CtlValue::Cc(0), 0.0), Outcome::None);
+        assert_eq!(play.apply(&mut s, CtlValue::Cc(0), 0.0), Outcome::Release);
         assert_eq!(play.apply(&mut s, CtlValue::Cc(100), 0.0), Outcome::Trigger);
+        // Session pads: press and release (gate slots).
+        let pad = MidiMapping::new(CtlSource::Note { channel: 9, key: 36 }, ControlTarget::Slot { col: 2, row: 5 }, CtlMode::Toggle);
+        let mut s = CtlState::default();
+        assert_eq!(pad.apply(&mut s, CtlValue::Note { on: true, velocity: 90 }, 0.0), Outcome::Trigger);
+        assert_eq!(pad.apply(&mut s, CtlValue::Note { on: false, velocity: 0 }, 0.0), Outcome::Release);
+        assert_eq!(pad.apply(&mut s, CtlValue::Note { on: false, velocity: 0 }, 0.0), Outcome::None);
+        for target in [ControlTarget::Scene(7), ControlTarget::Slot { col: 2, row: 5 }] {
+            let m = MidiMapping::new(CtlSource::Note { channel: 0, key: 40 }, target, CtlMode::Toggle);
+            assert_eq!(load_mapping(&mapping_json(&m), 4), Some(m));
+        }
+        let bad = mapping_json(&MidiMapping::new(CC, ControlTarget::Scene(99), CtlMode::Toggle));
+        assert_eq!(load_mapping(&bad, 4), None);
     }
 
     fn linked(e: Option<LearnEvent>) -> MidiMapping {

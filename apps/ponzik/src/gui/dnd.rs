@@ -69,6 +69,8 @@ pub enum DropTarget {
     Pad { channel: usize, pad: usize, add_layer: bool },
     /// The end of one chain of a rack.
     RackChain { track: usize, slot: usize, chain: usize },
+    /// A slot of the Session view: an audio clip.
+    SessionSlot { col: usize, row: usize },
 }
 
 pub struct Dnd {
@@ -126,7 +128,12 @@ impl App {
                 | (Payload::Effect { .. }, DropTarget::Channel(_) | DropTarget::Track(_) | DropTarget::Slot(..) | DropTarget::RackChain { .. })
                 | (
                     Payload::Sample(_) | Payload::Files(_),
-                    DropTarget::Rack | DropTarget::Channel(_) | DropTarget::Lane { .. } | DropTarget::Lab | DropTarget::Pad { .. }
+                    DropTarget::Rack
+                        | DropTarget::Channel(_)
+                        | DropTarget::Lane { .. }
+                        | DropTarget::Lab
+                        | DropTarget::Pad { .. }
+                        | DropTarget::SessionSlot { .. }
                 )
         )
     }
@@ -287,6 +294,9 @@ impl App {
             (Payload::Sample(path), DropTarget::Lane { lane, tick }) => {
                 self.add_audio_clip(&path.to_string_lossy(), Some((lane, tick)));
             }
+            (Payload::Sample(path), DropTarget::SessionSlot { col, row }) => {
+                self.add_session_audio(&path.to_string_lossy(), col, row);
+            }
             _ => {}
         }
     }
@@ -318,6 +328,8 @@ impl App {
                     self.load_pad_sample(channel, pad + if add_layer { 0 } else { i }, &p, add_layer)
                 }
                 Some(DropTarget::Lab) if i == 0 => self.open_in_lab(&p, super::samplelab::Source::Browser),
+                // Several files fill the slots below.
+                Some(DropTarget::SessionSlot { col, row }) if row + i < ponzik_project::SESSION_SCENES => self.add_session_audio(&p, col, row + i),
                 Some(DropTarget::Channel(ch)) if i == 0 => self.drop_payload(Payload::Sample(path.clone()), DropTarget::Channel(ch)),
                 Some(DropTarget::Lab | DropTarget::Channel(_) | DropTarget::Rack) => self.add_sample_channel(&p),
                 _ => match self.view {

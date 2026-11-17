@@ -304,7 +304,7 @@ impl App {
 
     /// Row of color swatches; returns the color picked (0: the default, by
     /// clicking the current one again).
-    fn swatches(
+    pub(super) fn swatches(
         &mut self,
         c: &mut Canvas,
         input: &Input,

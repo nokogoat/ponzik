@@ -122,6 +122,8 @@ impl App {
                 TransportAction::Record => tr("Record").into(),
                 TransportAction::Metronome => tr("Metronome").into(),
             },
+            ControlTarget::Scene(row) => tr_fmt!("Launch scene {}", row + 1),
+            ControlTarget::Slot { col, row } => tr_fmt!("Launch slot {} · {}", col + 1, row + 1),
         }
     }
 
@@ -134,7 +136,7 @@ impl App {
                 Some(info.to_norm(self.auto_value(p)?))
             }
             ControlTarget::Send { track, slot } => Some(self.project.tracks.get(track)?.sends[slot].1.clamp(0.0, 1.0)),
-            ControlTarget::Transport(_) => Some(0.0),
+            ControlTarget::Transport(_) | ControlTarget::Scene(_) | ControlTarget::Slot { .. } => Some(0.0),
         }
     }
 
@@ -156,7 +158,7 @@ impl App {
                     tr.sends[slot].1 = if n < 0.01 { 0.0 } else { n };
                 }
             }
-            ControlTarget::Transport(_) => {}
+            ControlTarget::Transport(_) | ControlTarget::Scene(_) | ControlTarget::Slot { .. } => {}
         }
     }
 
@@ -291,11 +293,17 @@ impl App {
                     self.ctl.waiting.retain(|(t, _)| *t != m.target);
                     moved = Some(self.ctl_name(m.target));
                 }
-                Outcome::Trigger => {
-                    if let ControlTarget::Transport(a) = m.target {
-                        self.transport_action(a);
-                    }
-                }
+                Outcome::Trigger => match m.target {
+                    ControlTarget::Transport(a) => self.transport_action(a),
+                    ControlTarget::Scene(row) => self.launch_scene(row),
+                    ControlTarget::Slot { col, row } => self.launch_clip(col, row),
+                    _ => {}
+                },
+                Outcome::Release => match m.target {
+                    ControlTarget::Scene(row) => self.release_scene(row),
+                    ControlTarget::Slot { col, row } => self.release_clip(col, row),
+                    _ => {}
+                },
                 Outcome::Waiting(_) => {
                     self.ctl.waiting.retain(|(t, _)| *t != m.target);
                     self.ctl.waiting.push((m.target, now));

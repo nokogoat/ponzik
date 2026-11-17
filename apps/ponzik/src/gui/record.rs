@@ -687,7 +687,7 @@ impl App {
     }
 
     /// Bouton bascule en pastille, avec sa LED.
-    fn chip(&mut self, c: &mut Canvas, input: &Input, id: u64, r: Rect, label: &str, on: bool, tip: &str) -> bool {
+    pub(super) fn chip(&mut self, c: &mut Canvas, input: &Input, id: u64, r: Rect, label: &str, on: bool, tip: &str) -> bool {
         let t = self.theme;
         let hov = self.hovered(input, id, r);
         let hv = self.hover_anim(id, hov);

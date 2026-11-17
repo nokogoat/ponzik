@@ -607,6 +607,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
             }
         }
     }
+    // PONZIK_SESSION=slot:c,r|scene:r|follow|audio|rec (";"-separated): launch
+    // settings, an audio slot, the inspector and the arrangement record.
+    if let Ok(spec) = std::env::var("PONZIK_SESSION") {
+        app.screenshot_session(&spec);
+    }
     if view == View::Session {
         app.launch_scene(0);
     } else {

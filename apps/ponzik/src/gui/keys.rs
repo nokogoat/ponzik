@@ -124,6 +124,10 @@ impl App {
                 continue;
             }
             i += 1;
+            // In the Session view, the number keys launch scenes.
+            if self.view == super::app::View::Session && super::session::scene_key(code).is_some() {
+                continue;
+            }
             match (code, down) {
                 (OCTAVE_DOWN, true) => {
                     self.keyboard_octave = (self.keyboard_octave - 1).max(0);

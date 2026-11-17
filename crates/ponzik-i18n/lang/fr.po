@@ -1909,8 +1909,8 @@ msgstr "Vélocité du pas"
 msgid "Velocity {:.0}%"
 msgstr "Vélocité {:.0} %"
 
-msgid "Session\nClick: launch the clip at the next bar\nEmpty slot: pick a pattern\nHold right-click: clear the swept slots"
-msgstr "Session\nClic : lancer le clip à la prochaine mesure\nCase vide : choisir un pattern\nClic droit maintenu : vider les cases balayées"
+msgid "Session\nClick: launch the clip on the next boundary\nEmpty slot: pick a pattern, or drop an audio file\nKeys 1 to 8: launch a scene\nHold right-click: clear the swept slots"
+msgstr "Session\nClic : lancer le clip au prochain temps quantifié\nCase vide : choisir un pattern, ou y déposer un fichier audio\nTouches 1 à 8 : lancer une scène\nClic droit maintenu : vider les cases balayées"
 
 msgid "Stop all"
 msgstr "Tout arrêter"
@@ -1918,14 +1918,164 @@ msgstr "Tout arrêter"
 msgid "Launch scene {}"
 msgstr "Lancer la scène {}"
 
-msgid "Pick a pattern"
-msgstr "Choisir un pattern"
+msgid "Pick a pattern\nor drop an audio file"
+msgstr "Choisir un pattern\nou déposer un fichier audio"
 
 msgid "Clear slot"
 msgstr "Vider une case"
 
 msgid "Stop column"
 msgstr "Arrêter la colonne"
+
+msgid "After {}"
+msgstr "Après {}"
+
+msgid "Any"
+msgstr "N'importe lequel"
+
+msgid "Arrangement record"
+msgstr "Enregistrement dans la playlist"
+
+msgid "Arrangement record\nWrites the clips you launch into the playlist, where they played"
+msgstr "Enregistrement dans la playlist\nÉcrit les clips que vous lancez dans la playlist, là où ils ont joué"
+
+msgid "Arrangement record: nothing was played"
+msgstr "Enregistrement dans la playlist : rien n'a joué"
+
+msgid "Arrangement record: the launched clips go into the playlist"
+msgstr "Enregistrement dans la playlist : les clips lancés y sont écrits"
+
+msgid "Chance of A, against B\nDrag along the bar"
+msgstr "Chance de A, contre B\nGlisser le long de la barre"
+
+msgid "First"
+msgstr "Premier"
+
+msgid "Follow action"
+msgstr "Action de suite"
+
+msgid "Gate: the clip plays while held (mouse, key or pad)"
+msgstr "Porte : le clip joue tant qu'on le tient (souris, touche ou pad)"
+
+msgid "Keys 1 to 8 launch the scenes."
+msgstr "Les touches 1 à 8 lancent les scènes."
+
+msgid "Last"
+msgstr "Dernier"
+
+msgid "Launch"
+msgstr "Lancement"
+
+msgid "Launch mode"
+msgstr "Mode de lancement"
+
+msgid "Launch quantization"
+msgstr "Quantification du lancement"
+
+msgid "Launch quantization: {}"
+msgstr "Quantification du lancement : {}"
+
+msgid "Launch slot {} · {}"
+msgstr "Lancer la case {} · {}"
+
+msgid "Legato: the clip takes over where the column's clip is"
+msgstr "Legato : le clip reprend là où en est celui de la colonne"
+
+msgid "Length of the loop, in beats"
+msgstr "Longueur de la boucle, en temps"
+
+msgid "Link to a MIDI pad"
+msgstr "Lier à un pad MIDI"
+
+msgid "Loop length"
+msgstr "Longueur de boucle"
+
+msgid "Next scene"
+msgstr "Scène suivante"
+
+msgid "No action"
+msgstr "Aucune action"
+
+msgid "Other"
+msgstr "Un autre"
+
+msgid "Play again"
+msgstr "Rejouer"
+
+msgid "Previous"
+msgstr "Précédent"
+
+msgid "Previous scene"
+msgstr "Scène précédente"
+
+msgid "Quantization"
+msgstr "Quantification"
+
+msgid "Repeat: while held, the clip starts over on each quantization step"
+msgstr "Répétition : tant qu'on le tient, le clip repart à chaque pas de quantification"
+
+msgid "Scene follow action"
+msgstr "Action de suite de scène"
+
+msgid "Scene {}"
+msgstr "Scène {}"
+
+msgid "Select a clip or a scene to set how it launches."
+msgstr "Choisissez un clip ou une scène pour régler son lancement."
+
+msgid "Session ({})"
+msgstr "Session ({})"
+
+msgid "Stop the arrangement record\nThe launched clips are written into the playlist"
+msgstr "Arrêter l'enregistrement dans la playlist\nLes clips lancés y sont écrits"
+
+msgid "The red dot records what you launch into the playlist."
+msgstr "Le point rouge enregistre ce que vous lancez dans la playlist."
+
+msgid "The scene's clips launch together, on the session's quantization; empty slots stop their column."
+msgstr "Les clips de la scène partent ensemble, sur la quantification de la session ; les cases vides arrêtent leur colonne."
+
+msgid "Toggle: a press starts the clip, the next one stops it"
+msgstr "Bascule : un appui lance le clip, le suivant l'arrête"
+
+msgid "Trigger"
+msgstr "Déclencheur"
+
+msgid "Trigger: a press starts the clip"
+msgstr "Déclencheur : un appui lance le clip"
+
+msgid "Warp"
+msgstr "Warp"
+
+msgid "Warp: the loop follows the tempo"
+msgstr "Warp : la boucle suit le tempo"
+
+msgid "What happens then"
+msgstr "Ce qui se passe ensuite"
+
+msgid "When the clip's follow action fires"
+msgstr "Quand l'action de suite du clip se déclenche"
+
+msgid "When the scene's follow action fires"
+msgstr "Quand l'action de suite de la scène se déclenche"
+
+msgid "Where the clip's launches land"
+msgstr "Où tombent les lancements du clip"
+
+msgid "{} bars"
+msgstr "{} mesures"
+
+msgid "{} beats"
+msgstr "{} temps"
+
+msgid "{} clips written to the playlist"
+msgstr "{} clips écrits dans la playlist"
+
+msgid "{} clips · launched with key {}"
+msgstr "{} clips · lancée avec la touche {}"
+
+msgid "{} in slot {} · {}"
+msgstr "{} dans la case {} · {}"
 
 msgid "Mode"
 msgstr "Mode"

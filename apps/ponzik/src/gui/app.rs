@@ -637,8 +637,10 @@ pub struct App {
     pub rec: super::record::RecordState,
     /// Piste en solo (non enregistrée) : les autres sont coupées dans le moteur.
     pub solo: Option<usize>,
-    /// État des colonnes de la vue Session (non enregistré).
-    pub session_cols: [super::session::ColumnState; ponzik_project::SESSION_COLUMNS],
+    /// Playing state of the Session view (not saved).
+    pub session: ponzik_project::session::Player,
+    /// Session view: selection, held buttons.
+    pub session_ui: super::session::SessionUi,
     /// Clavier d'ordinateur joué comme un piano (désactivé : les lettres sont des raccourcis).
     pub typing_keyboard: bool,
     /// Marqueur de départ de la lecture, en ticks (cliqué dans une règle).
@@ -798,7 +800,8 @@ impl App {
             counting: 0.0,
             taps: Vec::new(),
             typing_keyboard: false,
-            session_cols: Default::default(),
+            session: ponzik_project::session::Player::new(super::session::session_seed()),
+            session_ui: Default::default(),
             solo: None,
             rec: Default::default(),
             start_marker: 0.0,
@@ -1190,7 +1193,9 @@ impl App {
         for path in paths {
             self.ensure_sample(&path);
         }
-        self.session_cols = Default::default();
+        self.session.reset();
+        self.session.recorder = None;
+        self.session_ui = Default::default();
         self.project = project;
         self.project.session_live.clear();
         self.past.clear();
@@ -1452,7 +1457,9 @@ impl App {
 
     /// Arrête tous les clips de la vue Session.
     pub fn clear_session(&mut self) {
-        self.session_cols = Default::default();
+        self.finish_arrangement_record();
+        self.session.reset();
+        self.session_ui.release_all();
         if !self.project.session_live.is_empty() {
             self.project.session_live.clear();
             self.sync_engine();
@@ -1719,6 +1726,7 @@ impl App {
         self.poll_warps();
         self.record_tick(dt);
         self.position = self.engine.position();
+        self.advance_session();
         // Tant que le moteur n'a pas reçu l'ordre de lecture, le pré-compte demandé reste affiché.
         let counting = self.engine.count_in();
         if !self.playing {
@@ -1859,6 +1867,7 @@ impl App {
         }
         if self.popup.is_none() && !self.sidebar_focus {
             self.shortcuts(input);
+            self.session_keys(input);
             self.musical_keyboard(input);
         } else if self.popup.is_some() && !self.settings_open() && input.keys.iter().any(|(k, _)| *k == Key::Escape) {
             self.popup = None;
