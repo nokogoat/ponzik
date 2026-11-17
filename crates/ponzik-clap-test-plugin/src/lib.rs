@@ -8,6 +8,11 @@
 //! surveillé (`clap.posix-fd-support`) dont la lecture demande à l'hôte un
 //! redimensionnement à 420 × 260 et de relire les valeurs (`rescan`).
 //!
+//! State: the gain saves (`clap.state-context`) its value, a hidden count of
+//! processed blocks and the context it was saved for; the sine (plain
+//! `clap.state`) saves the last key it played. Neither is a parameter: only a
+//! state round trip brings them back.
+//!
 //! Construire avec `cargo build -p ponzik-clap-test-plugin` avant
 //! `cargo test -p ponzik-clap`.
 
@@ -98,6 +103,9 @@ struct Test {
     freq: f64,
     amp: f64,
     phase: f64,
+    /// Hidden state: blocks processed (gain), last key played (sine).
+    blocks: u32,
+    last_key: i16,
     host: *const ClapHost,
     gui: Gui,
 }
@@ -160,6 +168,8 @@ unsafe extern "C" fn create_plugin(
         freq: 0.0,
         amp: 0.0,
         phase: 0.0,
+        blocks: 0,
+        last_key: -1,
         host,
         gui: Gui::default(),
     });
@@ -207,6 +217,7 @@ fn handle_events(t: &mut Test, events: *const ClapInputEvents) {
             CLAP_EVENT_NOTE_ON => {
                 let e = unsafe { &*(h as *const ClapEventNote) };
                 t.key = e.key;
+                t.last_key = e.key;
                 t.freq = 440.0 * 2f64.powf((e.key as f64 - 69.0) / 12.0);
                 t.amp = e.velocity;
             }
@@ -226,6 +237,7 @@ unsafe extern "C" fn process(p: *const ClapPlugin, process: *const ClapProcess) 
     // SAFETY : structure et tampons fournis par l'hôte pour la durée de l'appel.
     let pr = unsafe { &*process };
     handle_events(t, pr.in_events);
+    t.blocks += 1;
     let n = pr.frames_count as usize;
     if let Some(v) = t.gui.edit.take() {
         t.gain = v;
@@ -272,9 +284,96 @@ unsafe extern "C" fn get_extension(p: *const ClapPlugin, id: *const c_char) -> *
         &FD as *const ClapPluginPosixFdSupport as *const c_void
     } else if id == CLAP_EXT_LATENCY && !instrument {
         &LATENCY as *const ClapPluginLatency as *const c_void
+    } else if id == CLAP_EXT_STATE {
+        &STATE as *const ClapPluginState as *const c_void
+    } else if id == CLAP_EXT_STATE_CONTEXT && !instrument {
+        &STATE_CONTEXT as *const ClapPluginStateContext as *const c_void
     } else {
         null()
     }
+}
+
+// --- State -----------------------------------------------------------------
+
+/// Gain state: `PZTG`, gain (f64), blocks (u32), context (u32), little-endian.
+pub const GAIN_STATE_MAGIC: &[u8; 4] = b"PZTG";
+/// Size of the gain state.
+pub const GAIN_STATE_LEN: usize = 4 + 8 + 4 + 4;
+
+static STATE: ClapPluginState = ClapPluginState { save: state_save, load: state_load };
+static STATE_CONTEXT: ClapPluginStateContext = ClapPluginStateContext { save: context_save, load: context_load };
+
+fn write_all(out: *const ClapOStream, mut data: &[u8]) -> bool {
+    // Small writes on purpose: the host must append, not overwrite.
+    while !data.is_empty() {
+        let n = data.len().min(5);
+        // SAFETY: stream provided by the host for the call.
+        let w = unsafe { ((*out).write)(out, data.as_ptr().cast(), n as u64) };
+        if w <= 0 {
+            return false;
+        }
+        data = &data[w as usize..];
+    }
+    true
+}
+
+fn read_all(input: *const ClapIStream) -> Option<Vec<u8>> {
+    let mut v = Vec::new();
+    let mut buf = [0u8; 3];
+    loop {
+        // SAFETY: stream provided by the host for the call.
+        let n = unsafe { ((*input).read)(input, buf.as_mut_ptr().cast(), buf.len() as u64) };
+        match n {
+            0 => return Some(v),
+            n if n < 0 => return None,
+            n => v.extend_from_slice(&buf[..n as usize]),
+        }
+    }
+}
+
+fn save_with(p: *const ClapPlugin, out: *const ClapOStream, context: u32) -> bool {
+    let t = me(p);
+    if t.instrument {
+        return write_all(out, &t.last_key.to_le_bytes());
+    }
+    let mut b = Vec::with_capacity(GAIN_STATE_LEN);
+    b.extend_from_slice(GAIN_STATE_MAGIC);
+    b.extend_from_slice(&t.gain.to_le_bytes());
+    b.extend_from_slice(&t.blocks.to_le_bytes());
+    b.extend_from_slice(&context.to_le_bytes());
+    write_all(out, &b)
+}
+
+fn load_with(p: *const ClapPlugin, input: *const ClapIStream) -> bool {
+    let t = me(p);
+    let Some(b) = read_all(input) else { return false };
+    if t.instrument {
+        let Ok(k) = <[u8; 2]>::try_from(b.as_slice()) else { return false };
+        t.last_key = i16::from_le_bytes(k);
+        return true;
+    }
+    if b.len() != GAIN_STATE_LEN || &b[..4] != GAIN_STATE_MAGIC {
+        return false;
+    }
+    t.gain = f64::from_le_bytes(b[4..12].try_into().unwrap());
+    t.blocks = u32::from_le_bytes(b[12..16].try_into().unwrap());
+    true
+}
+
+unsafe extern "C" fn state_save(p: *const ClapPlugin, out: *const ClapOStream) -> bool {
+    save_with(p, out, 0)
+}
+
+unsafe extern "C" fn state_load(p: *const ClapPlugin, input: *const ClapIStream) -> bool {
+    load_with(p, input)
+}
+
+unsafe extern "C" fn context_save(p: *const ClapPlugin, out: *const ClapOStream, context: u32) -> bool {
+    save_with(p, out, context)
+}
+
+unsafe extern "C" fn context_load(p: *const ClapPlugin, input: *const ClapIStream, _: u32) -> bool {
+    load_with(p, input)
 }
 
 /// Latence annoncée par le gain : seulement déclarée (le signal n'est pas

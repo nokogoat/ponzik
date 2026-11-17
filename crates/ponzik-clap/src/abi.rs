@@ -2,7 +2,8 @@
 //! officiels (`entry.h`, `plugin-factory.h`, `plugin.h`, `host.h`, `process.h`,
 //! `events.h`, `audio-buffer.h`, `ext/params.h`, `ext/audio-ports.h`,
 //! `ext/note-ports.h`, `ext/latency.h`, `ext/gui.h`, `ext/timer-support.h`,
-//! `ext/posix-fd-support.h`, `ext/thread-check.h`, `ext/log.h`, `ext/state.h`).
+//! `ext/posix-fd-support.h`, `ext/thread-check.h`, `ext/log.h`, `stream.h`,
+//! `ext/state.h`, `ext/state-context.h`).
 //! Les noms suivent ceux du C, en casse Rust.
 
 use std::ffi::{c_char, c_void};
@@ -419,4 +420,37 @@ pub struct ClapHostLog {
 #[repr(C)]
 pub struct ClapHostState {
     pub mark_dirty: unsafe extern "C" fn(host: *const ClapHost),
+}
+
+// --- stream.h, ext/state.h, ext/state-context.h (côté plugin) --------------
+
+pub const CLAP_EXT_STATE_CONTEXT: &[u8] = b"clap.state-context/2\0";
+pub const CLAP_STATE_CONTEXT_FOR_PRESET: u32 = 1;
+pub const CLAP_STATE_CONTEXT_FOR_DUPLICATE: u32 = 2;
+pub const CLAP_STATE_CONTEXT_FOR_PROJECT: u32 = 3;
+
+#[repr(C)]
+pub struct ClapIStream {
+    pub ctx: *mut c_void,
+    /// Octets lus, 0 en fin de flux, -1 en cas d'erreur.
+    pub read: unsafe extern "C" fn(stream: *const ClapIStream, buffer: *mut c_void, size: u64) -> i64,
+}
+
+#[repr(C)]
+pub struct ClapOStream {
+    pub ctx: *mut c_void,
+    /// Octets écrits, -1 en cas d'erreur.
+    pub write: unsafe extern "C" fn(stream: *const ClapOStream, buffer: *const c_void, size: u64) -> i64,
+}
+
+#[repr(C)]
+pub struct ClapPluginState {
+    pub save: unsafe extern "C" fn(plugin: *const ClapPlugin, stream: *const ClapOStream) -> bool,
+    pub load: unsafe extern "C" fn(plugin: *const ClapPlugin, stream: *const ClapIStream) -> bool,
+}
+
+#[repr(C)]
+pub struct ClapPluginStateContext {
+    pub save: unsafe extern "C" fn(plugin: *const ClapPlugin, stream: *const ClapOStream, context: u32) -> bool,
+    pub load: unsafe extern "C" fn(plugin: *const ClapPlugin, stream: *const ClapIStream, context: u32) -> bool,
 }

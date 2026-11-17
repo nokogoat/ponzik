@@ -14,6 +14,52 @@ fn rms(x: &[f32]) -> f32 {
     (x.iter().map(|v| v * v).sum::<f32>() / x.len() as f32).sqrt()
 }
 
+/// A parameter changed, the state saved, a new instance restored from it:
+/// the parameter comes back, before and after activation.
+#[test]
+#[ignore = "needs Surge XT installed"]
+fn surge_xt_state_round_trip() {
+    use ponzik_engine::StateContext;
+
+    let path = Path::new(SURGE);
+    if !path.exists() {
+        eprintln!("{SURGE} not installed, skipped");
+        return;
+    }
+    let synth = scan_file(path).unwrap().into_iter().find(|p| p.is_instrument).unwrap();
+    let mut inst = create_instrument(path, &synth.id).unwrap();
+    inst.set_sample_rate(48_000.0);
+    // A continuous parameter, moved well away from its default.
+    let continuous = |p: &&ponzik_engine::ParamInfo| p.max - p.min > 0.5 && p.choices.is_empty();
+    let params = inst.params();
+    let p = *params
+        .iter()
+        .filter(continuous)
+        .find(|p| p.name.contains("Cutoff"))
+        .or_else(|| params.iter().find(continuous))
+        .expect("a continuous parameter");
+    let target = if p.default - p.min > (p.max - p.min) * 0.5 { p.min + (p.max - p.min) * 0.2 } else { p.min + (p.max - p.min) * 0.8 };
+    inst.set_param(p.id, target);
+    let (mut l, mut r) = (vec![0.0; 512], vec![0.0; 512]);
+    inst.render(&mut l, &mut r);
+    let ed = inst.editor().unwrap();
+    let t0 = Instant::now();
+    let state = ed.save_state(StateContext::Project).expect("Surge XT saves its state");
+    eprintln!("param {} \"{}\" → {target}; state of {} bytes in {:?}", p.id, p.name, state.len(), t0.elapsed());
+
+    let mut copy = create_instrument(path, &synth.id).unwrap();
+    let before = copy.get_param(p.id);
+    copy.load_state(&state).expect("restored");
+    let tol = (p.max - p.min) * 1e-3;
+    assert!((copy.get_param(p.id) - target).abs() < tol, "{before} → {} (wanted {target})", copy.get_param(p.id));
+    copy.set_sample_rate(48_000.0);
+    copy.render(&mut l, &mut r);
+    let again = copy.editor().unwrap();
+    let read = again.load_state(&state, StateContext::Project).expect("live load");
+    let v = read.iter().find(|(id, _)| *id == p.id).expect("value read back").1;
+    assert!((v - target).abs() < tol, "{v} vs {target}");
+}
+
 #[test]
 #[ignore = "needs Surge XT installed"]
 fn surge_xt_plays_headless() {

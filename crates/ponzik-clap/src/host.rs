@@ -2,7 +2,7 @@
 //! extensions (`clap.gui`, `clap.timer-support`, `clap.posix-fd-support`,
 //! `clap.params`, `clap.thread-check`, `clap.log`, `clap.latency`,
 //! `clap.state`), and the plugin's editor ([`ClapEditor`]) driven from the UI
-//! thread.
+//! thread, which is also the main-thread handle on the plugin's state.
 //!
 //! `clap_host.host_data` points to the instance's [`HostShared`], which
 //! outlives the plugin. Callbacks never take the `state` lock: the plugin may
@@ -17,7 +17,7 @@ use std::thread::ThreadId;
 use std::time::Instant;
 
 use ponzik_engine::ring::{self, Consumer, Producer};
-use ponzik_engine::{EditorEvent, EditorSize, ParentWindow, PluginEditor, RunLoop};
+use ponzik_engine::{EditorEvent, EditorSize, ParentWindow, PluginEditor, RunLoop, StateContext};
 
 use crate::abi::*;
 
@@ -464,4 +464,19 @@ impl PluginEditor for ClapEditor {
     /// The plugin hears host changes through its input events: its interface
     /// follows by itself.
     fn param_changed(&self, _: u32, _: f32) {}
+
+    fn save_state(&self, context: StateContext) -> Option<Vec<u8>> {
+        let st = lock(&self.0.state);
+        // Plugin alive, main-thread call (the lock keeps it alive).
+        (!st.plugin.is_null()).then(|| crate::state::save(st.plugin, context)).flatten()
+    }
+
+    fn load_state(&self, data: &[u8], context: StateContext) -> Result<Vec<(u32, f32)>, String> {
+        let st = lock(&self.0.state);
+        if st.plugin.is_null() {
+            return Err("the plugin is no longer loaded".into());
+        }
+        crate::state::load(st.plugin, data, context)?;
+        Ok(crate::state::read_values(st.plugin, &st.ids))
+    }
 }

@@ -15,6 +15,7 @@ pub mod abi;
 mod host;
 mod library;
 mod plugin;
+mod state;
 
 use std::path::{Path, PathBuf};
 

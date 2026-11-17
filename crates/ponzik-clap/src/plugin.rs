@@ -10,7 +10,7 @@ use std::ptr::{null, null_mut};
 use std::sync::{Arc, Mutex};
 
 use ponzik_engine::ring::Producer;
-use ponzik_engine::{Editor, Effect, Instrument, ParamInfo, Params, Unit};
+use ponzik_engine::{Editor, Effect, Instrument, ParamInfo, Params, StateContext, Unit};
 
 use crate::abi::*;
 use crate::host::{ClapEditor, HostShared, OutMsg, as_audio_thread, new_host};
@@ -531,6 +531,19 @@ impl Core {
     fn editor(&self) -> Option<Editor> {
         Some(Arc::new(ClapEditor(self.shared.clone())))
     }
+
+    /// Restores a project state on the instance it owns (main thread, before
+    /// it goes to the engine), then reads every parameter value back.
+    fn load_state(&mut self, data: &[u8]) -> Result<(), String> {
+        crate::state::load(self.plugin, data, StateContext::Project)?;
+        let ids: Vec<ClapId> = self.values.iter().map(|p| p.id).collect();
+        for (id, v) in crate::state::read_values(self.plugin, &ids) {
+            if let Some(i) = self.param_index(id) {
+                self.values[i].value = v;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Instrument for ClapInstrument {
@@ -560,6 +573,10 @@ impl Instrument for ClapInstrument {
 
     fn editor(&self) -> Option<Editor> {
         self.0.editor()
+    }
+
+    fn load_state(&mut self, data: &[u8]) -> Result<(), String> {
+        self.0.load_state(data)
     }
 
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
@@ -600,6 +617,10 @@ impl Effect for ClapEffect {
 
     fn editor(&self) -> Option<Editor> {
         self.0.editor()
+    }
+
+    fn load_state(&mut self, data: &[u8]) -> Result<(), String> {
+        self.0.load_state(data)
     }
 
     fn reset(&mut self) {

@@ -7,9 +7,69 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use ponzik_clap::{create_effect, create_instrument, kind_for, scan_dir};
-use ponzik_engine::{EditorEvent, ParentWindow};
+use ponzik_engine::{EditorEvent, ParentWindow, StateContext};
 
 const SR: f32 = 48_000.0;
+
+/// Fields of the test gain's state: (gain, blocks, context).
+fn gain_state(b: &[u8]) -> (f64, u32, u32) {
+    assert_eq!((b.len(), &b[..4]), (20, &b"PZTG"[..]), "{b:?}");
+    (
+        f64::from_le_bytes(b[4..12].try_into().unwrap()),
+        u32::from_le_bytes(b[12..16].try_into().unwrap()),
+        u32::from_le_bytes(b[16..20].try_into().unwrap()),
+    )
+}
+
+#[test]
+fn state_round_trips_with_hidden_values() {
+    let Some(path) = fixture("state") else { return };
+    let mut fx = create_effect(&path, "ponzik.test.gain").unwrap();
+    fx.set_sample_rate(SR);
+    fx.set_param(7, 0.5);
+    let (mut l, mut r) = (vec![0.5; 64], vec![0.5; 64]);
+    for _ in 0..3 {
+        fx.process(&mut l, &mut r);
+    }
+    let ed = fx.editor().unwrap();
+    // `clap.state-context` is used: the context reaches the plugin (project 3, preset 1).
+    let project = ed.save_state(StateContext::Project).expect("state");
+    assert_eq!(gain_state(&project), (0.5, 3, 3));
+    assert_eq!(gain_state(&ed.save_state(StateContext::Preset).unwrap()).2, 1);
+
+    // A new instance restored before activation: the parameter is read back,
+    // the hidden counter comes back.
+    let mut copy = create_effect(&path, "ponzik.test.gain").unwrap();
+    assert_eq!(copy.get_param(7), 1.0);
+    copy.load_state(&project).unwrap();
+    assert_eq!(copy.get_param(7), 0.5);
+    copy.set_sample_rate(SR);
+    let (mut l, mut r) = (vec![0.5; 64], vec![0.5; 64]);
+    copy.process(&mut l, &mut r);
+    assert!((l[0] - 0.25).abs() < 1e-6, "restored gain applies");
+    assert_eq!(gain_state(&copy.editor().unwrap().save_state(StateContext::Project).unwrap()), (0.5, 4, 3));
+    assert!(copy.load_state(b"garbage").is_err());
+
+    // Loaded live through the editor: values come back for the host.
+    let mut other = project.clone();
+    other[4..12].copy_from_slice(&1.5f64.to_le_bytes());
+    assert_eq!(ed.load_state(&other, StateContext::Preset).unwrap(), [(7, 1.5)]);
+    drop(fx);
+    assert!(ed.save_state(StateContext::Project).is_none(), "instance gone");
+    assert!(ed.load_state(&project, StateContext::Project).is_err());
+
+    // The sine only has plain `clap.state`: its last key comes back.
+    let mut sine = create_instrument(&path, "ponzik.test.sine").unwrap();
+    sine.set_sample_rate(SR);
+    sine.note_on(64, 1.0);
+    sine.render(&mut l, &mut r);
+    let state = sine.editor().unwrap().save_state(StateContext::Project).unwrap();
+    assert_eq!(state, 64i16.to_le_bytes());
+    let mut copy = create_instrument(&path, "ponzik.test.sine").unwrap();
+    assert_eq!(copy.editor().unwrap().save_state(StateContext::Project).unwrap(), (-1i16).to_le_bytes());
+    copy.load_state(&state).unwrap();
+    assert_eq!(copy.editor().unwrap().save_state(StateContext::Project).unwrap(), state);
+}
 
 /// Fichier `test.clap` dans un dossier temporaire, supprimé en fin de test.
 struct Fixture(PathBuf);
