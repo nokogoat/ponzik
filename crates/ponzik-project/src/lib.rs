@@ -44,6 +44,7 @@ pub mod rack;
 pub mod render;
 pub mod scale;
 pub mod templates;
+pub mod transform;
 pub mod warp;
 
 pub use arrange::{MARKER_COLORS, Placement, TimeSlice};

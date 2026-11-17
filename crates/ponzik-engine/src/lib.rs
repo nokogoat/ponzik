@@ -45,6 +45,6 @@ pub use rack::{Channel, NOTE_FX_SLOTS};
 pub use sample::Sample;
 pub use sequence::{
     AudioClip, AutoPoint, AutoScope, AutoTarget, AutomationLane, Clip, ClipWarp, MAX_RATCHET, Note, NoteCond, PPQ, Pattern, PlayMode, Sequence, SessionSlot,
-    TICKS_PER_BAR, TICKS_PER_STEP, WarpMap, WarpMarker, fade_shape,
+    TICKS_PER_BAR, TICKS_PER_STEP, WarpMap, WarpMarker, fade_shape, splitmix,
 };
 pub use tempo_map::{BarBeat, TempoMap, TempoPoint, TempoView, TimeSig};
