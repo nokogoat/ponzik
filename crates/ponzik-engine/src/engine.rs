@@ -131,6 +131,8 @@ pub enum Command {
     /// Pré-écoute de l'Atelier, ajoutée à la sortie hors du mixer : remplace la
     /// voix en cours (rendue en [`Garbage::Audition`]) ; `None` l'arrête en fondu.
     Audition(Option<Box<Audition>>),
+    /// Gain of the audition voice playing (the browser's preview volume).
+    AuditionGain(f32),
     /// Calibrage de la latence : le moteur joue des clics
     /// ([`crate::input::CALIBRATION_CLICKS`]) directement sur la sortie et
     /// enregistre l'entrée brute dans `buffer`, rendu plein via
@@ -190,6 +192,7 @@ impl std::fmt::Debug for Command {
             Command::Record { .. } => "Record",
             Command::RecordChunk { .. } => "RecordChunk",
             Command::Audition(_) => "Audition",
+            Command::AuditionGain(_) => "AuditionGain",
             Command::Calibrate(_) => "Calibrate",
             Command::SetMidiOut(_) => "SetMidiOut",
             Command::SetMidiClock { .. } => "SetMidiClock",
@@ -1757,6 +1760,11 @@ impl Engine {
                     voice.stop();
                 }
             }
+            Command::AuditionGain(gain) => {
+                if let Some(voice) = self.audition.as_mut() {
+                    voice.set_gain(gain);
+                }
+            }
             Command::Calibrate(buffer) => {
                 if let Some(old) = self.calibration.take() {
                     self.trash(Garbage::Calibration(old));
@@ -2814,6 +2822,9 @@ mod tests {
         assert!(beat > 1_000, "{beat}");
         assert_eq!(long[2 * (beat - 600)], 0.0, "waits for the beat");
         assert!(long[2 * (beat + 600)] > 0.4, "then plays");
+        handle.send(Command::AuditionGain(0.5)).unwrap();
+        engine.process(&mut buf, 2);
+        assert!((buf[2 * 500] - 0.25).abs() < 1e-3, "{}", buf[2 * 500]);
     }
 
     fn limiter() -> Box<dyn Effect> {

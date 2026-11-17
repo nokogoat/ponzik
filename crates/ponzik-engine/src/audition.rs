@@ -48,6 +48,10 @@ impl Audition {
         self.on_beat
     }
 
+    pub fn set_gain(&mut self, gain: f32) {
+        self.gain = gain.max(0.0);
+    }
+
     /// Silence before the voice starts, in output frames.
     pub fn set_wait(&mut self, frames: usize) {
         self.wait = frames;
