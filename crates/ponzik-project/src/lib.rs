@@ -42,6 +42,7 @@ pub mod flp;
 pub mod generate;
 pub mod json;
 pub mod library;
+pub mod media;
 pub mod midi_file;
 pub mod midi_map;
 pub mod plugins;
