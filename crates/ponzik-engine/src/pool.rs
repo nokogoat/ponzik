@@ -18,9 +18,9 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 /// Most tasks in one job (channels of the rack, tracks of the mixer).
-pub(crate) const MAX_TASKS: usize = 128;
+pub(crate) const MAX_TASKS: usize = 1_024;
 /// Most dependencies in one graph.
-pub(crate) const MAX_EDGES: usize = 512;
+pub(crate) const MAX_EDGES: usize = 8_192;
 /// Most worker threads, whatever the machine.
 pub const MAX_WORKERS: usize = 15;
 /// Most worker threads chosen by default. The graph of a song is rarely wider

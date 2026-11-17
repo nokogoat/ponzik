@@ -38,7 +38,7 @@ pub use effect::Effect;
 pub use freeze::{FreezeClock, Frozen, Tap};
 pub use effects::fx_rack::{MacroMap, RackLayout};
 pub use modulation::{ModClock, ModKind, ModLink, ModMeters, ModParam, ModSet, Modulator};
-pub use engine::{Command, Engine, EngineHandle, Garbage, MAX_CHANNELS, MAX_RECORDINGS, render_audio_clips, silent_instrument};
+pub use engine::{Command, Engine, EngineHandle, Garbage, MAX_CHANNELS, MAX_RECORDINGS, render_audio_clips, silent_instrument, track_remap};
 pub use input::{InputConsumer, InputProducer, InputSource, InputStrip, RecordBuffer, RecordChunk, TakeSlice, input_channel};
 pub use instrument::Instrument;
 pub use midi_out::{MidiOut, MidiOutEvent};

@@ -1,5 +1,10 @@
-//! Mixer à pistes fixes, comme FL Studio : la piste 0 est le master, chaque
-//! piste a ses effets en insert, son volume, son pan, une sortie et des envois.
+//! Mixer comme celui de FL Studio : la piste 0 est le master, chaque piste a
+//! ses effets en insert, son volume, son pan, une sortie et des envois. Le
+//! nombre de pistes suit le projet ([`DEFAULT_TRACKS`] par défaut, jusqu'à
+//! [`MAX_TRACKS`]) : tout ce qui est rangé par piste est dimensionné à la
+//! création du mixer. Pour changer de nombre de pistes, l'interface prépare un
+//! nouveau mixer ([`TrackRemap`]) que le moteur échange contre l'ancien, sans
+//! allouer (voir [`crate::Command::RemapTracks`]).
 //!
 //! Compensation de latence (PDC) : au début de chaque bloc, le mixer lit la
 //! latence des inserts actifs ([`Effect::latency`]) et calcule, dans l'ordre de
@@ -21,12 +26,17 @@ use std::time::Instant;
 
 use crate::effect::Effect;
 use crate::freeze::{FreezeClock, Frozen};
+use crate::input::InputSource;
 use crate::meter::{PeakMeter, peak};
 use crate::modulation::{MOD_CHUNK, ModClock, ModInput, ModSet};
-use crate::pool::{Graph, WorkerPool};
+use crate::pool::{Graph, MAX_TASKS, WorkerPool};
 
-/// Master + 32 pistes.
-pub const TRACKS: usize = 33;
+/// Pistes d'un nouveau projet : le master + 32.
+pub const DEFAULT_TRACKS: usize = 33;
+/// Most tracks a mixer holds: the master + 999.
+pub const MAX_TRACKS: usize = 1_000;
+/// Former fixed track count, kept while the callers move to the project's count.
+pub const TRACKS: usize = DEFAULT_TRACKS;
 pub const MASTER: usize = 0;
 pub const INSERT_SLOTS: usize = 8;
 pub const SEND_SLOTS: usize = 4;
@@ -105,11 +115,16 @@ impl Track {
         active.filter_map(|(fx, _)| fx.as_ref()).map(|fx| fx.latency()).sum()
     }
 
+    /// Destination de la sortie de la piste `idx` parmi `count` pistes (le
+    /// master si elle sort dans elle-même ou hors du mixer).
+    fn output_of(&self, idx: usize, count: usize) -> usize {
+        if self.output < count && self.output != idx { self.output } else { MASTER }
+    }
+
     /// Pistes qui reçoivent le signal de `idx` : sa sortie et ses envois actifs.
-    fn destinations(&self, idx: usize) -> impl Iterator<Item = usize> + '_ {
-        let output = if self.output < TRACKS && self.output != idx { self.output } else { MASTER };
-        let sends = self.sends.iter().filter(move |&&(t, amount)| amount > 0.0 && t < TRACKS && t != idx);
-        std::iter::once(output).chain(sends.map(|&(t, _)| t))
+    fn destinations(&self, idx: usize, count: usize) -> impl Iterator<Item = usize> + '_ {
+        let sends = self.sends.iter().filter(move |&&(t, amount)| amount > 0.0 && t < count && t != idx);
+        std::iter::once(self.output_of(idx, count)).chain(sends.map(|&(t, _)| t))
     }
 }
 
@@ -212,16 +227,20 @@ struct Latency {
     /// Plus grand retard compensable, en échantillons.
     max: usize,
     /// Latence à l'entrée de chaque piste (chemin le plus lent qui y mène).
-    arrival: [usize; TRACKS],
+    arrival: Vec<usize>,
     /// Latence des inserts actifs de chaque piste.
-    own: [usize; TRACKS],
+    own: Vec<usize>,
     /// La sortie de la piste est relue en retard par au moins une liaison.
-    history: [bool; TRACKS],
+    history: Vec<bool>,
     /// Latence totale au master, inserts du master compris.
     total: usize,
 }
 
 impl Latency {
+    fn new(count: usize, max: usize) -> Self {
+        Self { max, arrival: vec![0; count], own: vec![0; count], history: vec![false; count], total: 0 }
+    }
+
     /// Retard qui manque à un signal de latence `have` pour rejoindre `want`.
     fn gap(&self, want: usize, have: usize) -> usize {
         want.saturating_sub(have).min(self.max)
@@ -236,8 +255,10 @@ impl Latency {
 /// Ce que le traitement d'une piste lit en dehors des pistes elles-mêmes.
 struct Ctx<'a> {
     n: usize,
+    /// Nombre de pistes du mixer.
+    count: usize,
     lat: &'a Latency,
-    reduced: &'a [bool; TRACKS],
+    reduced: &'a [bool],
     silence: &'a [f32],
     meters: &'a [PeakMeter],
     clock: ModClock,
@@ -255,24 +276,40 @@ unsafe impl Sync for Tracks {}
 
 /// Pas de position : la piste n'est pas dans l'ordre de routage.
 const NONE: usize = usize::MAX;
-/// Liaisons d'un bloc au plus : une sortie et des envois par piste.
-const MAX_ROUTES: usize = TRACKS * (1 + SEND_SLOTS);
 
-/// Plan du traitement parallèle, refait à chaque bloc sans allocation.
+/// Plan du traitement parallèle, refait à chaque bloc sans allocation ; ses
+/// tables sont dimensionnées pour le nombre de pistes du mixer.
 struct Plan {
     graph: Graph,
     /// Piste de chaque tâche, dans l'ordre de routage.
-    task_track: [usize; TRACKS],
-    /// Position de chaque piste dans l'ordre (`NONE` : absente, `TRACKS` : master).
-    pos: [usize; TRACKS],
+    task_track: Vec<usize>,
+    /// Position de chaque piste dans l'ordre (`NONE` : absente, le nombre de
+    /// pistes : master).
+    pos: Vec<usize>,
     /// Liaisons qui arrivent à chaque piste, dans l'ordre où le chemin de
     /// référence les additionne : `routes[start[t]..start[t + 1]]` = (source, niveau).
-    start: [usize; TRACKS + 1],
-    routes: [(usize, f32); MAX_ROUTES],
-    vca: [f32; TRACKS],
+    start: Vec<usize>,
+    routes: Vec<(usize, f32)>,
+    /// Tables de travail : liaisons dans l'ordre des sources, curseurs d'écriture.
+    raw: Vec<(usize, usize, f32)>,
+    cursor: Vec<usize>,
 }
 
 impl Plan {
+    fn new(count: usize) -> Self {
+        // Liaisons d'un bloc au plus : une sortie et des envois par piste.
+        let routes = count * (1 + SEND_SLOTS);
+        Self {
+            graph: Graph::new(),
+            task_track: vec![0; count],
+            pos: vec![NONE; count],
+            start: vec![0; count + 1],
+            routes: vec![(0, 0.0); routes],
+            raw: vec![(0, 0, 0.0); routes],
+            cursor: vec![0; count + 1],
+        }
+    }
+
     fn routes_into(&self, dst: usize) -> &[(usize, f32)] {
         &self.routes[self.start[dst]..self.start[dst + 1]]
     }
@@ -287,7 +324,13 @@ pub struct Mixer {
     lat: Latency,
     /// Écoute à faible latence : pistes dont les inserts qui anticipent sont
     /// court-circuités et dont le signal n'est pas retardé par la compensation.
-    pub(crate) reduced: [bool; TRACKS],
+    pub(crate) reduced: Vec<bool>,
+    /// Écoute de l'entrée en direct, piste par piste.
+    pub(crate) monitor: Vec<Option<InputSource>>,
+    /// Facteur de VCA de chaque piste pour le bloc en cours.
+    vca: Vec<f32>,
+    /// Pistes déjà traitées dans le bloc (table de travail).
+    ready: Vec<bool>,
     plan: Box<Plan>,
     /// Transport of the block, for the modulators.
     pub(crate) clock: ModClock,
@@ -295,9 +338,9 @@ pub struct Mixer {
     pub(crate) freeze_clock: FreezeClock,
 }
 
-/// Ordre par défaut : toutes les pistes vont directement au master.
-pub fn default_order() -> Box<[usize]> {
-    (1..TRACKS).rev().collect()
+/// Ordre par défaut de `count` pistes : toutes vont directement au master.
+pub fn default_order(count: usize) -> Box<[usize]> {
+    (1..count).rev().collect()
 }
 
 /// Tri topologique du routage : `None` si une boucle existe.
@@ -405,7 +448,7 @@ unsafe fn run_insert_range(tracks: Tracks, idx: usize, cx: &Ctx, ready: &impl Fn
     // Latence du signal de la piste à l'entrée de l'insert courant.
     let mut at = cx.lat.arrival[idx];
     for slot in 0..INSERT_SLOTS {
-        let key = sidechain[slot].filter(|&k| k < TRACKS && k != idx);
+        let key = sidechain[slot].filter(|&k| k < cx.count && k != idx);
         let delay = key.map_or(0, |k| cx.lat.gap(at, cx.lat.out(k)));
         if bypass[slot] {
             continue;
@@ -471,7 +514,9 @@ unsafe fn process_track(tracks: Tracks, idx: usize, cx: &Ctx, vca: f32, ready: i
         t.l[i] *= gl;
         t.r[i] *= gr;
     }
-    cx.meters[idx].record(peak(&t.l[..n]), peak(&t.r[..n]));
+    if let Some(m) = cx.meters.get(idx) {
+        m.record(peak(&t.l[..n]), peak(&t.r[..n]));
+    }
     if cx.lat.history[idx] {
         let Track { l, r, output_delay, .. } = t;
         output_delay.write(&l[..n], &r[..n]);
@@ -507,36 +552,122 @@ unsafe fn process_master(tracks: Tracks, cx: &Ctx, ready: impl Fn(usize) -> bool
         m.l[i] = if l.is_finite() { l.clamp(-1.0, 1.0) } else { 0.0 };
         m.r[i] = if r.is_finite() { r.clamp(-1.0, 1.0) } else { 0.0 };
     }
-    cx.meters[MASTER].record(peak(&m.l[..n]), peak(&m.r[..n]));
+    if let Some(meter) = cx.meters.get(MASTER) {
+        meter.record(peak(&m.l[..n]), peak(&m.r[..n]));
+    }
     m.cpu_ns += started.elapsed().as_nanos() as u64;
 }
 
+/// New track layout, prepared off the audio thread: an empty mixer with the
+/// new number of tracks, and where each old track goes. The engine moves the
+/// state of the kept tracks into it (effects, delay lines, freeze…), then
+/// swaps it with its mixer; the old one goes back to the interface in this
+/// same box ([`crate::Garbage::Mixer`]).
+pub struct TrackRemap {
+    pub(crate) mixer: Mixer,
+    /// Old index of each new track (`NONE`: a new, empty track).
+    pub(crate) from: Box<[usize]>,
+    /// New index of each old track (`NONE`: deleted).
+    pub(crate) to: Box<[usize]>,
+}
+
+impl TrackRemap {
+    /// `from[t]`: the old track that becomes track `t` (`None`: a new one);
+    /// the master stays first. `order`: routing order of the new mixer.
+    /// Allocates: call it off the audio thread.
+    pub fn new(from: &[Option<usize>], order: Box<[usize]>, max_block: usize, max_latency: usize) -> Self {
+        let count = from.len().clamp(1, MAX_TRACKS);
+        let from: Box<[usize]> = (0..count).map(|t| from.get(t).copied().flatten().unwrap_or(NONE)).collect();
+        let old = from.iter().filter(|&&f| f != NONE).map(|&f| f + 1).max().unwrap_or(0);
+        let mut to = vec![NONE; old];
+        for (new, &was) in from.iter().enumerate() {
+            if was != NONE {
+                to[was] = new;
+            }
+        }
+        let mut mixer = Mixer::with_tracks(count, max_block, max_latency);
+        mixer.order = order;
+        Self { mixer, from, to: to.into() }
+    }
+
+    /// Number of tracks of the new mixer, master included.
+    pub fn len(&self) -> usize {
+        self.mixer.tracks.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.mixer.tracks.is_empty()
+    }
+
+    /// New index of the old track `old` (`None`: deleted).
+    pub fn new_index(&self, old: usize) -> Option<usize> {
+        self.to.get(old).copied().filter(|&t| t < self.len())
+    }
+}
+
 impl Mixer {
-    /// `max_latency` : plus grand retard compensé, en échantillons (0 : pas de compensation).
+    /// Mixer de [`DEFAULT_TRACKS`] pistes. `max_latency` : plus grand retard
+    /// compensé, en échantillons (0 : pas de compensation).
     pub fn new(max_block: usize, max_latency: usize) -> Self {
+        Self::with_tracks(DEFAULT_TRACKS, max_block, max_latency)
+    }
+
+    /// Mixer of `count` tracks, master included (at most [`MAX_TRACKS`]).
+    pub fn with_tracks(count: usize, max_block: usize, max_latency: usize) -> Self {
+        let count = count.clamp(1, MAX_TRACKS);
         Self {
-            tracks: (0..TRACKS).map(|_| Track::new(max_block, max_latency)).collect(),
-            order: default_order(),
+            tracks: (0..count).map(|_| Track::new(max_block, max_latency)).collect(),
+            order: default_order(count),
             silence: vec![0.0; max_block],
-            lat: Latency {
-                max: max_latency,
-                arrival: [0; TRACKS],
-                own: [0; TRACKS],
-                history: [false; TRACKS],
-                total: 0,
-            },
-            reduced: [false; TRACKS],
-            plan: Box::new(Plan {
-                graph: Graph::new(),
-                task_track: [0; TRACKS],
-                pos: [NONE; TRACKS],
-                start: [0; TRACKS + 1],
-                routes: [(0, 0.0); MAX_ROUTES],
-                vca: [1.0; TRACKS],
-            }),
+            lat: Latency::new(count, max_latency),
+            reduced: vec![false; count],
+            monitor: vec![None; count],
+            vca: vec![1.0; count],
+            ready: vec![false; count],
+            plan: Box::new(Plan::new(count)),
             clock: ModClock::default(),
             freeze_clock: FreezeClock::default(),
         }
+    }
+
+    /// Number of tracks, master included.
+    pub fn len(&self) -> usize {
+        self.tracks.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.tracks.is_empty()
+    }
+
+    /// Takes over the tracks of `old` as `remap` says (audio thread, no
+    /// allocation): each kept track is swapped with the new, empty track at its
+    /// new place, and its links (output, sends, keys, VCA) follow the new
+    /// numbering; a link to a deleted track falls back to the master or goes.
+    pub(crate) fn adopt(&mut self, old: &mut Mixer, from: &[usize], to: &[usize]) {
+        let count = self.tracks.len();
+        let map = |t: usize| to.get(t).copied().filter(|&x| x < count);
+        for (new, &was) in from.iter().enumerate().take(count) {
+            if was >= old.tracks.len() {
+                continue;
+            }
+            std::mem::swap(&mut self.tracks[new], &mut old.tracks[was]);
+            self.monitor[new] = old.monitor[was];
+            let t = &mut self.tracks[new];
+            t.output = map(t.output).filter(|&o| o != new).unwrap_or(MASTER);
+            for s in &mut t.sends {
+                *s = match map(s.0) {
+                    Some(dst) if dst != new => (dst, s.1),
+                    _ => (MASTER, 0.0),
+                };
+            }
+            for k in &mut t.sidechain {
+                *k = k.and_then(map).filter(|&x| x != new);
+            }
+            t.vca = t.vca.and_then(map).filter(|&v| v != new && v != MASTER);
+        }
+        self.clock = old.clock;
+        self.freeze_clock = old.freeze_clock;
+        self.lat.total = old.lat.total;
     }
 
     /// Latency of what [`crate::Tap::Track`] captures, as of the last block:
@@ -545,7 +676,7 @@ impl Mixer {
     pub fn track_latency(&self, track: usize) -> usize {
         match track {
             MASTER => self.lat.arrival[MASTER],
-            t if t < TRACKS => self.lat.out(t),
+            t if t < self.tracks.len() => self.lat.out(t),
             _ => 0,
         }
     }
@@ -566,44 +697,45 @@ impl Mixer {
 
     /// Latences du bloc à venir, dans l'ordre de routage (sources avant destinations).
     pub(crate) fn plan_latency(&mut self) {
-        let lat = &mut self.lat;
-        lat.arrival = [0; TRACKS];
-        lat.own = [0; TRACKS];
-        lat.history = [false; TRACKS];
-        let mut seen = [false; TRACKS];
-        for k in 0..self.order.len() {
-            let idx = self.order[k];
-            if idx == MASTER || idx >= TRACKS || seen[idx] {
+        let Self { tracks, order, lat, reduced, ready: seen, silence, .. } = self;
+        let count = tracks.len();
+        lat.arrival.fill(0);
+        lat.own.fill(0);
+        lat.history.fill(false);
+        seen.fill(false);
+        for &idx in order.iter() {
+            if idx == MASTER || idx >= count || seen[idx] {
                 continue;
             }
             seen[idx] = true;
-            let t = &self.tracks[idx];
-            lat.own[idx] = t.insert_latency(self.reduced[idx]);
+            let t = &tracks[idx];
+            lat.own[idx] = t.insert_latency(reduced[idx]);
             let out = lat.out(idx);
-            for dst in t.destinations(idx) {
+            for dst in t.destinations(idx, count) {
                 // A frozen track ignores what comes in: its render is already in time.
-                if self.tracks[dst].frozen.is_none() {
+                if tracks[dst].frozen.is_none() {
                     lat.arrival[dst] = lat.arrival[dst].max(out);
                 }
             }
         }
-        lat.own[MASTER] = self.tracks[MASTER].insert_latency(self.reduced[MASTER]);
+        lat.own[MASTER] = tracks[MASTER].insert_latency(reduced[MASTER]);
         seen[MASTER] = true;
 
         // Une sortie n'est historisée que si une liaison la relit en retard.
-        for idx in (0..TRACKS).filter(|&t| seen[t]) {
-            let t = &self.tracks[idx];
+        for idx in (0..count).filter(|&t| seen[t]) {
+            let t = &tracks[idx];
             if idx != MASTER {
                 let out = lat.out(idx);
-                lat.history[idx] |= t.destinations(idx).any(|dst| lat.gap(lat.arrival[dst], out) > 0);
+                let late = t.destinations(idx, count).any(|dst| lat.gap(lat.arrival[dst], out) > 0);
+                lat.history[idx] |= late;
             }
             let mut at = lat.arrival[idx];
             for slot in 0..INSERT_SLOTS {
                 let Some(fx) = t.inserts[slot].as_ref().filter(|_| !t.bypass[slot] && t.frozen.is_none()) else { continue };
-                if self.reduced[idx] && fx.latency() > 0 {
+                if reduced[idx] && fx.latency() > 0 {
                     continue;
                 }
-                if let Some(k) = t.sidechain[slot].filter(|&k| k < TRACKS && k != idx && k != MASTER)
+                if let Some(k) = t.sidechain[slot].filter(|&k| k < count && k != idx && k != MASTER)
                     && lat.gap(at, lat.out(k)) > 0
                 {
                     lat.history[k] = true;
@@ -613,10 +745,10 @@ impl Mixer {
         }
         lat.total = lat.out(MASTER);
         // Plus long retard relu : borné par la latence la plus profonde.
-        let deepest = (0..TRACKS).map(|t| lat.out(t)).max().unwrap_or(0).min(lat.max);
+        let deepest = (0..count).map(|t| lat.out(t)).max().unwrap_or(0).min(lat.max);
         if deepest > 0 {
-            let ring = self.silence.len() + deepest;
-            for t in &mut self.tracks {
+            let ring = silence.len() + deepest;
+            for t in tracks.iter_mut() {
                 t.input_delay.reserve_ring(ring);
                 t.output_delay.reserve_ring(ring);
             }
@@ -630,16 +762,18 @@ impl Mixer {
         }
     }
 
-    /// Entrée d'une piste, pour y ajouter le signal des canaux.
+    /// Entrée d'une piste, pour y ajouter le signal des canaux ; une piste
+    /// hors du mixer est le master.
     pub(crate) fn input(&mut self, track: usize, n: usize) -> (&mut [f32], &mut [f32]) {
-        let t = &mut self.tracks[track.min(TRACKS - 1)];
+        let idx = if track < self.tracks.len() { track } else { MASTER };
+        let t = &mut self.tracks[idx];
         (&mut t.l[..n], &mut t.r[..n])
     }
 
     /// Retarde l'entrée directe de chaque piste (canaux, clips, écoute, métronome)
     /// de la latence des pistes qui y arrivent.
     fn delay_inputs(&mut self, n: usize) {
-        for idx in 0..TRACKS {
+        for idx in 0..self.tracks.len() {
             let delay = if self.reduced[idx] { 0 } else { self.lat.gap(self.lat.arrival[idx], 0) };
             let Track { l, r, input_delay, .. } = &mut self.tracks[idx];
             if delay == 0 {
@@ -654,19 +788,28 @@ impl Mixer {
         }
     }
 
+    /// VCA factors of the block.
+    fn plan_vca(&mut self) {
+        for idx in 0..self.tracks.len() {
+            let g = self.vca_gain(idx);
+            self.vca[idx] = g;
+        }
+    }
+
     /// Traite toutes les pistes, une à une dans l'ordre de routage ; le résultat
     /// est dans le master. Chemin de référence du traitement parallèle.
     pub(crate) fn process(&mut self, n: usize, meters: &[PeakMeter]) {
         self.sync_frozen();
         self.plan_latency();
         self.delay_inputs(n);
-        let vca: [f32; TRACKS] = std::array::from_fn(|idx| self.vca_gain(idx));
-        let Self { tracks, order, silence, lat, reduced, clock, .. } = self;
+        self.plan_vca();
+        let Self { tracks, order, silence, lat, reduced, clock, vca, ready, .. } = self;
+        let count = tracks.len();
         let tracks = Tracks(tracks.as_mut_ptr());
-        let cx = Ctx { n, lat, reduced, silence, meters, clock: *clock };
-        let mut ready = [false; TRACKS];
+        let cx = Ctx { n, count, lat, reduced, silence, meters, clock: *clock };
+        ready.fill(false);
         for &idx in order.iter() {
-            if idx == MASTER || idx >= TRACKS || ready[idx] {
+            if idx == MASTER || idx >= count || ready[idx] {
                 continue;
             }
             // SAFETY: un seul thread ; chaque emprunt se termine avant le suivant.
@@ -674,12 +817,12 @@ impl Mixer {
             ready[idx] = true;
             // SAFETY: idem.
             let t = unsafe { &*tracks.0.add(idx) };
-            let output = if t.output < TRACKS && t.output != idx { t.output } else { MASTER };
+            let output = t.output_of(idx, count);
             let sends = t.sends;
             // SAFETY: idem ; les liaisons vers soi-même sont écartées.
             unsafe { route(tracks, idx, output, 1.0, &cx) };
             for (target, amount) in sends {
-                if amount > 0.0 && target < TRACKS && target != idx {
+                if amount > 0.0 && target < count && target != idx {
                     // SAFETY: idem.
                     unsafe { route(tracks, idx, target, amount, &cx) };
                 }
@@ -691,34 +834,36 @@ impl Mixer {
 
     /// Plan du traitement parallèle : tâches, liaisons, dépendances. Faux si
     /// l'ordre de routage est périmé (une source traitée après une destination
-    /// qui l'a déjà été) : seul le chemin de référence reproduit alors le bloc.
+    /// qui l'a déjà été) ou si le graphe ne tient pas dans le pool : seul le
+    /// chemin de référence reproduit alors le bloc.
     fn plan_parallel(&mut self) -> bool {
-        let vca: [f32; TRACKS] = std::array::from_fn(|idx| self.vca_gain(idx));
+        self.plan_vca();
+        let count = self.tracks.len();
         let p = &mut *self.plan;
-        p.vca = vca;
-        p.pos = [NONE; TRACKS];
-        p.pos[MASTER] = TRACKS;
-        let mut count = 0;
+        p.pos.fill(NONE);
+        p.pos[MASTER] = count;
+        let mut tasks = 0;
         for &idx in self.order.iter() {
-            if idx == MASTER || idx >= TRACKS || p.pos[idx] != NONE {
+            if idx == MASTER || idx >= count || p.pos[idx] != NONE {
                 continue;
             }
-            p.pos[idx] = count;
-            p.task_track[count] = idx;
-            count += 1;
+            p.pos[idx] = tasks;
+            p.task_track[tasks] = idx;
+            tasks += 1;
         }
-        p.graph.reset(count);
+        if tasks > MAX_TASKS {
+            return false;
+        }
+        p.graph.reset(tasks);
 
         // Liaisons dans l'ordre d'addition du chemin de référence.
-        let mut raw = [(0usize, 0usize, 0f32); MAX_ROUTES];
         let mut routes = 0;
-        let mut start = [0usize; TRACKS + 1];
-        for k in 0..count {
+        p.start.fill(0);
+        for k in 0..tasks {
             let src = p.task_track[k];
             let t = &self.tracks[src];
-            let output = if t.output < TRACKS && t.output != src { t.output } else { MASTER };
-            let sends = t.sends.iter().filter(|&&(dst, amount)| amount > 0.0 && dst < TRACKS && dst != src);
-            for (dst, amount) in std::iter::once((output, 1.0)).chain(sends.copied()) {
+            let sends = t.sends.iter().filter(|&&(dst, amount)| amount > 0.0 && dst < count && dst != src);
+            for (dst, amount) in std::iter::once((t.output_of(src, count), 1.0)).chain(sends.copied()) {
                 if dst != MASTER {
                     match p.pos[dst] {
                         // Jamais traitée : personne n'entend ce qui y arrive.
@@ -731,29 +876,28 @@ impl Mixer {
                         }
                     }
                 }
-                raw[routes] = (src, dst, amount);
+                p.raw[routes] = (src, dst, amount);
                 routes += 1;
-                start[dst + 1] += 1;
+                p.start[dst + 1] += 1;
             }
         }
         // Clés d'entrée latérale déjà traitées : lues par la piste qui les écoute.
-        for k in 0..count {
+        for k in 0..tasks {
             let idx = p.task_track[k];
             for key in self.tracks[idx].sidechain.iter().flatten() {
-                if *key < TRACKS && *key != idx && p.pos[*key] < k && !p.graph.edge(p.pos[*key], k) {
+                if *key < count && *key != idx && p.pos[*key] < k && !p.graph.edge(p.pos[*key], k) {
                     return false;
                 }
             }
         }
         p.graph.finish();
-        for d in 0..TRACKS {
-            start[d + 1] += start[d];
+        for d in 0..count {
+            p.start[d + 1] += p.start[d];
         }
-        p.start = start;
-        let mut cursor = start;
-        for &(src, dst, amount) in &raw[..routes] {
-            p.routes[cursor[dst]] = (src, amount);
-            cursor[dst] += 1;
+        p.cursor.copy_from_slice(&p.start);
+        for &(src, dst, amount) in &p.raw[..routes] {
+            p.routes[p.cursor[dst]] = (src, amount);
+            p.cursor[dst] += 1;
         }
         true
     }
@@ -768,10 +912,12 @@ impl Mixer {
         self.sync_frozen();
         self.plan_latency();
         self.delay_inputs(n);
-        let Self { tracks, silence, lat, reduced, plan, clock, .. } = self;
+        let Self { tracks, silence, lat, reduced, plan, clock, vca, .. } = self;
+        let count = tracks.len();
         let tracks = Tracks(tracks.as_mut_ptr());
-        let cx = Ctx { n, lat, reduced, silence, meters, clock: *clock };
+        let cx = Ctx { n, count, lat, reduced, silence, meters, clock: *clock };
         let plan = &**plan;
+        let vca = &**vca;
         let gather = |dst: usize| {
             for &(src, amount) in plan.routes_into(dst) {
                 // SAFETY: les sources de `dst` sont terminées (graphe), `dst` est à nous.
@@ -782,11 +928,11 @@ impl Mixer {
             let idx = plan.task_track[task];
             gather(idx);
             // SAFETY: la tâche possède sa piste ; ses clés prêtes sont terminées.
-            unsafe { process_track(tracks, idx, &cx, plan.vca[idx], |k| plan.pos[k] < plan.pos[idx]) };
+            unsafe { process_track(tracks, idx, &cx, vca[idx], |k| plan.pos[k] < plan.pos[idx]) };
         });
         gather(MASTER);
         // SAFETY: toutes les tâches sont terminées.
-        unsafe { process_master(tracks, &cx, |k| plan.pos[k] < TRACKS) };
+        unsafe { process_master(tracks, &cx, |k| plan.pos[k] < count) };
     }
 
     /// Temps de calcul (ns) de chaque piste et de chacun de ses inserts depuis
@@ -801,7 +947,7 @@ impl Mixer {
 
     /// Facteur du VCA qui pilote la piste (1 sans VCA, 0 s'il est muet).
     fn vca_gain(&self, idx: usize) -> f32 {
-        match self.tracks[idx].vca.filter(|&v| v < TRACKS && v != idx && v != MASTER) {
+        match self.tracks[idx].vca.filter(|&v| v < self.tracks.len() && v != idx && v != MASTER) {
             Some(v) if self.tracks[v].muted => 0.0,
             Some(v) => self.tracks[v].gain,
             None => 1.0,
@@ -860,11 +1006,11 @@ mod tests {
     #[test]
     fn routing_sends_and_master() {
         let mut m = Mixer::new(8, 1_024);
-        let meters: Vec<PeakMeter> = (0..TRACKS).map(|_| PeakMeter::default()).collect();
+        let meters: Vec<PeakMeter> = (0..DEFAULT_TRACKS).map(|_| PeakMeter::default()).collect();
         m.tracks[1].output = 2;
         m.tracks[1].sends[0] = (3, 0.5);
         m.tracks[2].gain = 0.5;
-        let mut edges = vec![Vec::new(); TRACKS];
+        let mut edges = vec![Vec::new(); DEFAULT_TRACKS];
         edges[1] = vec![2, 3];
         for (t, e) in edges.iter_mut().enumerate().skip(2) {
             e.push(MASTER);
@@ -883,14 +1029,14 @@ mod tests {
     /// Piste 1 (signal 0,1) compressée avec la piste 2 comme clé ; renvoie la crête de la piste 1.
     fn keyed_peak(key_level: f32) -> f32 {
         let mut m = Mixer::new(256, 4_800);
-        let meters: Vec<PeakMeter> = (0..TRACKS).map(|_| PeakMeter::default()).collect();
+        let meters: Vec<PeakMeter> = (0..DEFAULT_TRACKS).map(|_| PeakMeter::default()).collect();
         let mut fx = crate::registry::create_effect("compressor").unwrap();
         fx.set_param(0, -30.0);
         fx.set_param(1, 20.0);
         fx.set_param(2, 0.0);
         m.tracks[1].inserts[0] = Some(fx);
         m.tracks[1].sidechain[0] = Some(2);
-        let mut edges = vec![Vec::new(); TRACKS];
+        let mut edges = vec![Vec::new(); DEFAULT_TRACKS];
         for (t, e) in edges.iter_mut().enumerate().skip(1) {
             e.push(MASTER);
             let _ = t;
@@ -937,7 +1083,7 @@ mod tests {
     const SR: f32 = 48_000.0;
 
     fn meters() -> Vec<PeakMeter> {
-        (0..TRACKS).map(|_| PeakMeter::default()).collect()
+        (0..DEFAULT_TRACKS).map(|_| PeakMeter::default()).collect()
     }
 
     fn limiter() -> Box<dyn Effect> {
@@ -948,9 +1094,10 @@ mod tests {
 
     /// Ordre de routage déduit des sorties, envois et clés des pistes.
     fn reorder(m: &mut Mixer) {
-        let mut edges = vec![Vec::new(); TRACKS];
+        let count = m.len();
+        let mut edges = vec![Vec::new(); count];
         for (idx, t) in m.tracks.iter().enumerate().skip(1) {
-            edges[idx].extend(t.destinations(idx));
+            edges[idx].extend(t.destinations(idx, count));
             for k in t.sidechain.iter().flatten() {
                 edges[*k].push(idx);
             }
@@ -1176,7 +1323,7 @@ mod tests {
             fx.set_sample_rate(SR);
             fx
         };
-        for t in 1..TRACKS {
+        for t in 1..DEFAULT_TRACKS {
             m.tracks[t].gain = 0.5 + t as f32 * 0.01;
             m.tracks[t].pan = (t as f32 * 0.37).sin();
         }
@@ -1203,7 +1350,7 @@ mod tests {
 
     fn feed(m: &mut Mixer, block: usize, n: usize) {
         m.clear(n);
-        for t in 1..TRACKS {
+        for t in 1..m.len() {
             let (l, r) = m.input(t, n);
             for k in 0..n {
                 let x = ((block * n + k) as f32 * 0.013 * t as f32).sin() * 0.3;
@@ -1216,7 +1363,7 @@ mod tests {
     /// Master et pistes traitées identiques au bit près. Une piste absente de
     /// l'ordre n'est jamais traitée ni entendue : son tampon ne compte pas.
     fn assert_same(a: &Mixer, b: &Mixer, n: usize) {
-        let heard = (0..TRACKS).filter(|&t| t == MASTER || a.order.contains(&t));
+        let heard = (0..a.len()).filter(|&t| t == MASTER || a.order.contains(&t));
         for (idx, (ta, tb)) in heard.map(|t| (t, (&a.tracks[t], &b.tracks[t]))) {
             let same = |x: &[f32], y: &[f32]| x[..n].iter().zip(&y[..n]).all(|(x, y)| x.to_bits() == y.to_bits());
             assert!(same(&ta.l, &tb.l) && same(&ta.r, &tb.r), "piste {idx}");
@@ -1240,6 +1387,50 @@ mod tests {
         }
         assert!(heard > 0.01, "le master reçoit du signal : {heard}");
         assert!(a.latency() > 0);
+    }
+
+    #[test]
+    fn two_hundred_tracks_mix_bit_identical_in_parallel() {
+        let build = || {
+            let mut m = Mixer::with_tracks(200, 64, 4_800);
+            for t in 1..200 {
+                m.tracks[t].gain = 0.3 + (t % 13) as f32 * 0.02;
+                m.tracks[t].pan = (t as f32 * 0.21).cos();
+            }
+            // 150 tracks into 40 buses, which go to a group bus; sends to a reverb.
+            for t in 1..150 {
+                m.tracks[t].output = 150 + t % 40;
+                m.tracks[t].sends[0] = (199, 0.2);
+            }
+            for b in 150..190 {
+                m.tracks[b].output = 190 + b % 5;
+            }
+            for t in (1..199).step_by(9) {
+                m.tracks[t].inserts[0] = Some(if t % 2 == 0 { limiter() } else { crate::registry::create_effect("saturator").unwrap() });
+            }
+            m.tracks[199].inserts[0] = Some(crate::registry::create_effect("reverb").unwrap());
+            m.tracks[170].inserts[1] = Some(crate::registry::create_effect("compressor").unwrap());
+            m.tracks[170].sidechain[1] = Some(3);
+            m.tracks[42].vca = Some(195);
+            m.tracks[195].gain = 0.5;
+            reorder(&mut m);
+            m
+        };
+        let pool = WorkerPool::new(3);
+        let (mut a, mut b) = (build(), build());
+        let meters = meters();
+        let mut heard = 0.0f32;
+        for block in 0..120 {
+            let n = [64, 31, 64][block % 3];
+            feed(&mut a, block, n);
+            feed(&mut b, block, n);
+            a.process(n, &meters);
+            b.process_parallel(n, &meters, &pool);
+            assert_same(&a, &b, n);
+            heard = heard.max(peak(a.master(n).0));
+        }
+        assert!(b.plan_parallel() && b.plan.graph.count() == 199, "the 199 tracks run as a graph");
+        assert!(heard > 0.01 && a.latency() > 0);
     }
 
     #[test]

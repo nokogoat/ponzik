@@ -12,7 +12,7 @@ use crate::instrument::Instrument;
 use crate::meter::{PeakMeter, peak};
 use crate::midi_out::{MidiClock, MidiLink, MidiOut};
 use crate::effects::fx_rack::{MacroMap, RackLayout};
-use crate::mixer::{INSERT_SLOTS, MASTER, Mixer, SEND_SLOTS, TRACKS};
+use crate::mixer::{INSERT_SLOTS, MASTER, MAX_TRACKS, Mixer, SEND_SLOTS, TrackRemap};
 use crate::modulation::{ModClock, ModInput, ModSet};
 use crate::note_fx::NoteFx;
 use crate::pool::{Parallelism, WorkerPool};
@@ -89,6 +89,11 @@ pub enum Command {
     SetTrackVca { track: usize, vca: Option<usize> },
     SetTrackSend { track: usize, slot: usize, target: usize, amount: f32 },
     SetRoutingOrder(Box<[usize]>),
+    /// New track layout (tracks added, deleted or moved): the engine moves
+    /// the state of the kept tracks into the new mixer and renumbers what
+    /// points at tracks (routing, channels, monitoring, recordings); the old
+    /// mixer comes back as [`Garbage::Mixer`]. Built by [`track_remap`].
+    RemapTracks(Box<TrackRemap>),
     SetInsert { track: usize, slot: usize, effect: Option<Box<dyn Effect>> },
     SetInsertBypass { track: usize, slot: usize, bypass: bool },
     /// Branche la piste clé d'un insert (`None` : débranche). L'interface doit
@@ -186,6 +191,7 @@ impl std::fmt::Debug for Command {
             Command::SetTrackVca { .. } => "SetTrackVca",
             Command::SetTrackSend { .. } => "SetTrackSend",
             Command::SetRoutingOrder(_) => "SetRoutingOrder",
+            Command::RemapTracks(_) => "RemapTracks",
             Command::SetInsert { .. } => "SetInsert",
             Command::SetInsertBypass { .. } => "SetInsertBypass",
             Command::SetInsertSidechain { .. } => "SetInsertSidechain",
@@ -224,6 +230,7 @@ pub enum Garbage {
     NoteFx(Box<dyn NoteFx>),
     Modulators(Box<ModSet>),
     Routing(Box<[usize]>),
+    Mixer(Box<TrackRemap>),
     Input(Box<InputConsumer>),
     /// Enregistrement terminé : gardé à part par [`EngineHandle::take_recordings`].
     Recording(Box<RecordBuffer>),
@@ -434,6 +441,12 @@ impl EngineHandle {
         }
     }
 
+    /// Next object the engine gave back, to inspect it rather than drop it
+    /// ([`EngineHandle::collect_garbage`] drops them all).
+    pub fn take_garbage(&mut self) -> Option<Garbage> {
+        self.garbage.pop()
+    }
+
     /// Calibrage terminé (ou interrompu) depuis le dernier appel.
     pub fn take_calibration(&mut self) -> Option<Box<RecordBuffer>> {
         self.collect_garbage();
@@ -504,7 +517,6 @@ pub struct Engine {
     input_r: Vec<f32>,
     strip: InputChain,
     /// Écoute de l'entrée, piste par piste.
-    monitor: [Option<InputSource>; TRACKS],
     low_latency: bool,
     /// Enregistrements armés, une piste chacun.
     recordings: [Option<Box<RecordBuffer>>; MAX_RECORDINGS],
@@ -762,15 +774,15 @@ impl Engine {
             position: AtomicU64::new(0f64.to_bits()),
             count_in: AtomicU64::new(0f64.to_bits()),
             channel_peaks: (0..MAX_CHANNELS).map(|_| PeakMeter::default()).collect(),
-            track_peaks: (0..TRACKS).map(|_| PeakMeter::default()).collect(),
+            track_peaks: (0..MAX_TRACKS).map(|_| PeakMeter::default()).collect(),
             input_peak: PeakMeter::default(),
             input_clip: AtomicBool::new(false),
             input_gate: AtomicU32::new(1f32.to_bits()),
             load: AtomicU32::new(0),
             latency: AtomicU32::new(0),
             audition: AtomicU64::new((-1f64).to_bits()),
-            track_cpu: (0..TRACKS).map(|_| AtomicU32::new(0)).collect(),
-            insert_cpu: (0..TRACKS * INSERT_SLOTS).map(|_| AtomicU32::new(0)).collect(),
+            track_cpu: (0..MAX_TRACKS).map(|_| AtomicU32::new(0)).collect(),
+            insert_cpu: (0..MAX_TRACKS * INSERT_SLOTS).map(|_| AtomicU32::new(0)).collect(),
             channel_cpu: (0..MAX_CHANNELS).map(|_| AtomicU32::new(0)).collect(),
             workers: AtomicU32::new(0),
             parallel: AtomicBool::new(false),
@@ -781,7 +793,7 @@ impl Engine {
         let engine = Engine {
             sample_rate,
             channels,
-            mixer: Mixer::new(MAX_BLOCK, (sample_rate.max(1.0) * MAX_LATENCY_SECONDS) as usize),
+            mixer: Mixer::new(MAX_BLOCK, max_latency(sample_rate)),
             sequence: Box::new(sequence),
             commands: rx,
             state: state.clone(),
@@ -811,7 +823,6 @@ impl Engine {
             input_l: vec![0.0; MAX_BLOCK],
             input_r: vec![0.0; MAX_BLOCK],
             strip: InputChain::new(sample_rate),
-            monitor: [None; TRACKS],
             low_latency: false,
             recordings: std::array::from_fn(|_| None),
             calibration: None,
@@ -939,6 +950,47 @@ impl Engine {
         &mut self.mixer
     }
 
+    /// Replaces the mixer by an empty one of `count` tracks, master included
+    /// (allocates: before the engine goes to the audio thread).
+    pub fn set_track_count(&mut self, count: usize) {
+        self.mixer = Mixer::with_tracks(count, MAX_BLOCK, max_latency(self.sample_rate));
+    }
+
+    /// The new mixer takes over the kept tracks; everything that points at a
+    /// track follows it. Without allocation.
+    fn remap_tracks(&mut self, mut remap: Box<TrackRemap>) {
+        let TrackRemap { mixer, from, to } = &mut *remap;
+        mixer.adopt(&mut self.mixer, from, to);
+        std::mem::swap(&mut self.mixer, mixer);
+        let count = self.mixer.len();
+        let map = |t: usize| to.get(t).copied().filter(|&x| x < count);
+        for ch in &mut self.channels {
+            ch.track = map(ch.track).unwrap_or(MASTER);
+        }
+        for held in &mut self.held {
+            *held = held.and_then(|target| match target {
+                AutoTarget::EffectParam { track, slot, id } => map(track).map(|track| AutoTarget::EffectParam { track, slot, id }),
+                AutoTarget::TrackGain(t) => map(t).map(AutoTarget::TrackGain),
+                AutoTarget::TrackPan(t) => map(t).map(AutoTarget::TrackPan),
+                other => Some(other),
+            });
+        }
+        // A take on a deleted track ends; the others follow their track.
+        for k in 0..MAX_RECORDINGS {
+            let Some(rec) = self.recordings[k].as_mut() else { continue };
+            match map(rec.track) {
+                Some(t) => rec.track = t,
+                None => {
+                    if let Some(rec) = self.recordings[k].take() {
+                        self.trash(Garbage::Recording(rec));
+                    }
+                }
+            }
+        }
+        self.publish_record_room();
+        self.trash(Garbage::Mixer(remap));
+    }
+
     /// Samples per tick at the current tempo (count-in, recording).
     fn spt(&self) -> f64 {
         self.sample_rate as f64 * 60.0 / (self.bpm * PPQ as f64)
@@ -1014,18 +1066,19 @@ impl Engine {
 
     /// Pistes dont la latence est réduite : celles écoutées et leur trajet jusqu'au master.
     fn plan_monitoring(&mut self) {
-        let mut reduced = [false; TRACKS];
+        let Mixer { tracks, reduced, monitor, .. } = &mut self.mixer;
+        reduced.fill(false);
         if self.low_latency {
-            for t in (0..TRACKS).filter(|&t| self.monitor[t].is_some()) {
+            let count = tracks.len();
+            for t in (0..count).filter(|&t| monitor[t].is_some()) {
                 let mut cur = t;
                 while !reduced[cur] {
                     reduced[cur] = true;
-                    let out = self.mixer.tracks[cur].output;
-                    cur = if cur == MASTER { MASTER } else if out < TRACKS && out != cur { out } else { MASTER };
+                    let out = tracks[cur].output;
+                    cur = if cur == MASTER { MASTER } else if out < count && out != cur { out } else { MASTER };
                 }
             }
         }
-        self.mixer.reduced = reduced;
     }
 
     fn run(&mut self, out: &mut [f32], channels: usize, stop_at_end: bool, input: &[f32], in_channels: usize) -> usize {
@@ -1376,8 +1429,8 @@ impl Engine {
             self.state.input_clip.store(true, Ordering::Relaxed);
         }
         self.state.input_peak.record(peak(l), peak(r));
-        for track in 0..TRACKS {
-            let Some(source) = self.monitor[track] else { continue };
+        for track in 0..self.mixer.len() {
+            let Some(source) = self.mixer.monitor[track] else { continue };
             let (sl, sr) = source.pick(&self.input_l[..n], &self.input_r[..n]);
             let (tl, tr) = self.mixer.input(track, n);
             for k in 0..n {
@@ -1726,7 +1779,7 @@ impl Engine {
             }
             Command::SetChannelTrack { channel, track } => {
                 if let Some(ch) = self.channels.get_mut(channel) {
-                    ch.track = track.min(TRACKS - 1);
+                    ch.track = if track < self.mixer.len() { track } else { MASTER };
                 }
             }
             Command::SetInstrumentParam { channel, id, value } => {
@@ -1786,26 +1839,30 @@ impl Engine {
                 }
             }
             Command::SetTrackOutput { track, output } => {
+                let count = self.mixer.len();
                 if let Some(t) = self.mixer.tracks.get_mut(track) {
-                    t.output = output.min(TRACKS - 1);
+                    t.output = if output < count { output } else { MASTER };
                 }
             }
             Command::SetTrackVca { track, vca } => {
+                let count = self.mixer.len();
                 if let Some(t) = self.mixer.tracks.get_mut(track) {
-                    t.vca = vca.filter(|&v| v < TRACKS && v != track);
+                    t.vca = vca.filter(|&v| v < count && v != track);
                 }
             }
             Command::SetTrackSend { track, slot, target, amount } => {
+                let count = self.mixer.len();
                 if let Some(t) = self.mixer.tracks.get_mut(track)
                     && slot < SEND_SLOTS
                 {
-                    t.sends[slot] = (target.min(TRACKS - 1), amount.max(0.0));
+                    t.sends[slot] = if target < count { (target, amount.max(0.0)) } else { (MASTER, 0.0) };
                 }
             }
             Command::SetRoutingOrder(order) => {
                 let old = std::mem::replace(&mut self.mixer.order, order);
                 self.trash(Garbage::Routing(old));
             }
+            Command::RemapTracks(remap) => self.remap_tracks(remap),
             Command::SetInsert { track, slot, mut effect } => {
                 if let Some(fx) = effect.as_mut() {
                     fx.set_tempo(self.bpm as f32);
@@ -1828,10 +1885,11 @@ impl Engine {
                 }
             }
             Command::SetInsertSidechain { track, slot, key } => {
+                let count = self.mixer.len();
                 if let Some(t) = self.mixer.tracks.get_mut(track)
                     && slot < INSERT_SLOTS
                 {
-                    t.sidechain[slot] = key.filter(|&k| k < TRACKS && k != track);
+                    t.sidechain[slot] = key.filter(|&k| k < count && k != track);
                 }
             }
             Command::SetEffectParam { track, slot, id, value } => {
@@ -1917,14 +1975,14 @@ impl Engine {
                 }
             }
             Command::SetMonitor { track, source } => {
-                if let Some(m) = self.monitor.get_mut(track) {
+                if let Some(m) = self.mixer.monitor.get_mut(track) {
                     *m = source;
                 }
             }
             Command::SetLowLatencyMonitoring(on) => self.low_latency = on,
             Command::SetInputStrip(strip) => self.strip.set(strip),
             Command::Record { track, armed, buffer } => {
-                let track = track.min(TRACKS - 1);
+                let track = track.min(self.mixer.len() - 1);
                 self.finish_recording(Some(track));
                 match buffer {
                     Some(mut rec) if armed => {
@@ -2007,6 +2065,19 @@ fn drain_midi(link: &mut MidiLink, instrument: &mut dyn Instrument, now: u64) {
     instrument.drain_midi(&mut |ev| link.send(ev.port, now as i64 + ev.offset as i64, ev.message));
 }
 
+/// Largest delay the mixer of an engine at `sample_rate` compensates, in samples.
+fn max_latency(sample_rate: f32) -> usize {
+    (sample_rate.max(1.0) * MAX_LATENCY_SECONDS) as usize
+}
+
+/// Prepares a [`Command::RemapTracks`] for an engine at `sample_rate`:
+/// `from[t]` is the current track that becomes track `t` (`None`: a new,
+/// empty track), `order` the routing order of the new layout. Allocates: call
+/// it off the audio thread.
+pub fn track_remap(sample_rate: f32, from: &[Option<usize>], order: Box<[usize]>) -> Command {
+    Command::RemapTracks(Box::new(TrackRemap::new(from, order, MAX_BLOCK, max_latency(sample_rate))))
+}
+
 /// A silent instrument: the placeholder of a frozen channel.
 pub fn silent_instrument() -> Box<dyn Instrument> {
     Box::new(Silence)
@@ -2045,6 +2116,7 @@ fn write_interleaved(out: &mut [f32], channels: usize, left: &[f32], right: &[f3
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mixer::DEFAULT_TRACKS as TRACKS;
     use crate::input::{CALIBRATION_SECONDS, InputProducer, input_channel, measure_round_trip, take_slices};
     use crate::sample::Sample;
     use crate::sequence::{AutoPoint, AutoScope, AutomationLane, Clip, Note, Pattern, TICKS_PER_STEP};
@@ -2267,6 +2339,61 @@ mod tests {
         handle.send(Command::SetSequence(Box::default())).unwrap();
         engine.process(&mut buf, 2);
         assert!(handle.garbage.pop().is_some(), "l'ancienne séquence revient à l'interface");
+    }
+
+    #[test]
+    fn remapping_tracks_moves_their_state_and_renumbers_links() {
+        let (mut engine, mut handle, _) = setup(&[]);
+        // Channel 0 → track 1 (½) → track 3 (½) → master; a send to track 5, a VCA on 4.
+        handle.send(Command::SetTrackGain { track: 1, gain: 0.5 }).unwrap();
+        handle.send(Command::SetTrackOutput { track: 1, output: 3 }).unwrap();
+        handle.send(Command::SetTrackGain { track: 3, gain: 0.5 }).unwrap();
+        handle.send(Command::SetTrackSend { track: 1, slot: 0, target: 5, amount: 0.5 }).unwrap();
+        handle.send(Command::SetTrackVca { track: 3, vca: Some(4) }).unwrap();
+        let mut fx = crate::registry::create_effect("utility").unwrap();
+        fx.set_sample_rate(SR);
+        handle.send(Command::SetInsert { track: 3, slot: 2, effect: Some(fx) }).unwrap();
+        handle.send(Command::SetInsertSidechain { track: 3, slot: 2, key: Some(5) }).unwrap();
+        handle.send(Command::SetMonitor { track: 4, source: Some(InputSource::Left) }).unwrap();
+        let mut edges = vec![vec![MASTER]; TRACKS];
+        edges[MASTER].clear();
+        edges[1] = vec![3, 5];
+        handle.send(Command::SetRoutingOrder(crate::mixer::routing_order(&edges).unwrap())).unwrap();
+        run(&mut engine, 512, 256);
+        handle.take_master_peak();
+        run(&mut engine, 256, 256);
+        let before = handle.take_master_peak();
+        assert!((before[0] - 0.0625 - 0.125 * 0.5).abs() < 1e-6, "{before:?}");
+
+        // A new track at 1 (the others move up by one), track 5 deleted, two appended.
+        let mut from: Vec<Option<usize>> = vec![Some(MASTER), None];
+        from.extend((1..TRACKS).filter(|&t| t != 5).map(Some));
+        from.extend([None, None]);
+        let count = from.len();
+        let mut edges = vec![vec![MASTER]; count];
+        edges[MASTER].clear();
+        edges[2] = vec![4];
+        let order = crate::mixer::routing_order(&edges).unwrap();
+        handle.send(track_remap(SR, &from, order)).unwrap();
+        run(&mut engine, 256, 256);
+        let m = &engine.mixer;
+        assert_eq!(m.len(), TRACKS + 2);
+        assert_eq!(engine.channels[0].track, 2, "the channel follows its track");
+        assert_eq!((m.tracks[2].gain, m.tracks[2].output), (0.5, 4));
+        assert_eq!(m.tracks[2].sends[0], (MASTER, 0.0), "the send to the deleted track goes");
+        assert_eq!(m.tracks[4].vca, Some(5));
+        assert_eq!(m.tracks[4].inserts[2].as_ref().map(|fx| fx.kind()), Some("utility"));
+        assert_eq!(m.tracks[4].sidechain[2], None, "the key on the deleted track goes");
+        assert_eq!(m.monitor[5], Some(InputSource::Left));
+        assert!(m.tracks[1].inserts.iter().all(Option::is_none) && m.tracks[1].gain == 1.0, "a new track is empty");
+        handle.take_master_peak();
+        run(&mut engine, 256, 256);
+        assert_eq!(handle.take_master_peak()[0], 0.0625, "same path, the send gone");
+        let old = std::iter::from_fn(|| handle.garbage.pop()).find_map(|g| match g {
+            Garbage::Mixer(old) => Some(old),
+            _ => None,
+        });
+        assert_eq!(old.expect("the old mixer comes back").len(), TRACKS);
     }
 
     #[test]
@@ -3346,7 +3473,7 @@ mod tests {
         handle.send(Command::Play).unwrap();
         for block in 0..2_000usize {
             let order: Box<[usize]> = match block % 4 {
-                0 => crate::mixer::default_order(),
+                0 => crate::mixer::default_order(TRACKS),
                 1 => (1..TRACKS).collect(),
                 2 => [3, 1, 2, 1, 40].into(),
                 _ => Box::new([]),
