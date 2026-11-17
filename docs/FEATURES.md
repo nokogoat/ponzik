@@ -20,7 +20,7 @@ Legend: **FL** = FL Studio · **AB** = Ableton Live · ✅ done in Ponzik · �
 | Arrangement view: linear timeline, tracks, recording the Session into the Arrangement | AB | 🟡 playlist |
 | Clip View / Device View (clip and effect chain details at the bottom of the screen) | AB | 🟡 resizable bottom device panel; no clip panel |
 | Performance mode: launch Playlist clips live | FL | ⬜ |
-| Browser: samples, presets, plugins, projects, favorites, tags, collections | FL · AB | 🟡 instruments, effects, CLAP and VST3 plugins, WAV files, search, drag and drop; no favorites or tags |
+| Browser: samples, presets, plugins, projects, favorites, tags, collections | FL · AB | 🟡 instruments, effects, CLAP and VST3 plugins, WAV and FLAC files, search, drag and drop; no favorites or tags |
 | Similar-sound search in the browser | AB | ⬜ |
 | Plugin picker, plugin database | FL | 🟡 CLAP and VST3 plugins listed in the browser |
 | Detachable windows, multiple monitors | FL · AB | 🟡 devices in stacked floating windows inside the main window; no multi-monitor |
@@ -72,7 +72,7 @@ Legend: **FL** = FL Studio · **AB** = Ableton Live · ✅ done in Ponzik · �
 | Pitch correction (Newtone, Pitcher) | FL | ⬜ |
 | Time correction (NewTime) | FL | ⬜ |
 | Groove pool, groove extraction and application | AB | ⬜ |
-| Freeze, flatten, consolidate, bounce to a new track, paste bounced audio, group bounce | FL · AB | ⬜ |
+| Freeze, flatten, consolidate, bounce to a new track, paste bounced audio, group bounce | FL · AB | ✅ freeze channels and mixer tracks, bounce in place or to a new track, consolidate clips, render a time selection to a new track; no flatten |
 | Resampling (record the master output) | AB | ⬜ |
 | Video in the timeline | AB | ⬜ |
 
@@ -188,7 +188,7 @@ Proprietary instruments cannot be copied, so Ponzik builds its own equivalents.
 | CLAP, LV2 hosting | – (planned in Ponzik) | 🟡 CLAP instruments and effects; no LV2 |
 | 32/64-bit bridging, plugins sandboxed in a separate process | FL · AB | ⬜ |
 | WAV export | FL · AB | ✅ 16-bit, 24-bit, 32-bit float |
-| MP3, FLAC, OGG export, dithering, normalization | FL · AB | 🟡 peak or LUFS normalization, TPDF dither at 16 bits; no MP3, FLAC or OGG |
+| MP3, FLAC, OGG export, dithering, normalization | FL · AB | 🟡 FLAC (16 or 24 bits, songs, stems, sections), peak or LUFS normalization, TPDF dither at 16 bits; no MP3 or OGG |
 | Stem export (one track per file) | FL · AB | ✅ |
 | Video export | FL · AB | ⬜ |
 | MIDI controller scripts (Python in FL, Remote Scripts in AB) | FL · AB | ⬜ |
@@ -237,4 +237,5 @@ noise and texture, autofilter, slice, pitch shifter, stereo imager, utility) and
 5 note effects (arpeggiator, chord, scale, random, repeat). CLAP and VST3 hosting.
 JSON projects with templates, autosave and crash recovery, undo with a history
 panel, MIDI file import and export, audio recording, count-in and tap tempo, WAV
-export (16/24/32-bit float) with normalization and dither, and stems.
+export (16/24/32-bit float) and FLAC export (16/24-bit) with normalization and
+dither, stems, and freeze, bounce in place and consolidate.
