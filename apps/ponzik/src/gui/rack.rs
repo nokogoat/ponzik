@@ -28,7 +28,7 @@ impl App {
     }
 
     /// Note qui commence dans le pas `step` du canal, s'il y en a une.
-    fn note_in_step(&self, ch: usize, step: usize) -> Option<ponzik_engine::Note> {
+    pub(super) fn note_in_step(&self, ch: usize, step: usize) -> Option<ponzik_engine::Note> {
         let p = &self.project.patterns[self.project.current_pattern];
         let (lo, hi) = (step as u32 * TICKS_PER_STEP, (step as u32 + 1) * TICKS_PER_STEP);
         p.notes.get(ch)?.iter().find(|n| n.start >= lo && n.start < hi).copied()
@@ -123,8 +123,10 @@ impl App {
             let key = wid("rack-head", 0, 0);
             if self.anim.get(key) != Some(h as f32) {
                 self.anim.set(key, h as f32);
+                let len = self.project.patterns[pat].len.max(1) as f64;
+                let pass = (self.position / len).floor() as i64;
                 for ch in 0..self.project.channels.len() {
-                    if !self.project.channels[ch].muted && self.note_in_step(ch, h).is_some() {
+                    if !self.project.channels[ch].muted && self.note_in_step(ch, h).is_some_and(|n| n.plays(pat, ch, pass)) {
                         self.anim.set(wid("pad-flash", ch, h), 1.0);
                     }
                 }
@@ -313,7 +315,12 @@ impl App {
         let can = self.drag.is_none() || self.is_dragging(paint_id);
         let hov = over && can;
         let note = self.note_in_step(ch, i);
-        if hov && input.pressed && self.drag.is_none() {
+        // Alt+click on a lit step: its chance, condition and repeats.
+        let edit = hov && input.pressed && input.mods.alt && note.is_some() && self.drag.is_none();
+        if edit {
+            self.focus = Focus::Channel(ch);
+            self.open_popup(Popup::StepEdit { ch, step: i }, pad);
+        } else if hov && input.pressed && self.drag.is_none() {
             let on = note.is_none();
             self.paint_step(ch, i, on);
             self.begin_drag(paint_id, input, on as u8 as f32);
@@ -345,6 +352,9 @@ impl App {
 
         if hov {
             self.set_cursor(Cursor::Hand);
+            if note.is_some() {
+                self.set_tip(tr("Step\nAlt+click: chance, condition, repeats · wheel: velocity"), "");
+            }
         }
         let hv = self.hover_anim(wid("pad", ch, i), hov);
         let headv = self.anim.to_ambient(wid("pad-head", ch, i), (head == Some(i)) as u8 as f32, T_HEAD);
@@ -372,8 +382,32 @@ impl App {
                     top = top.mix(WHITE, (1.0 - pop) * 0.45);
                 }
                 let pad = pad.inset(-(1.0 - pop) * 2.0);
-                c.fill_rrect_vgrad(pad, radius, top, bottom);
-                c.fill_rect(Rect::new(pad.x + radius, pad.y + 1.0, pad.w - 2.0 * radius, 1.0), WHITE.alpha(0.3));
+                if n.prob < 100 {
+                    // A chance: the pad fills up to it, the rest stays dim.
+                    c.fill_rrect_vgrad(pad, radius, top.alpha(0.3), bottom.alpha(0.3));
+                    let level = pad.h * f32::from(n.prob) / 100.0;
+                    let prev = c.push_clip(Rect::new(pad.x, pad.bottom() - level, pad.w, level));
+                    c.fill_rrect_vgrad(pad, radius, top, bottom);
+                    c.set_clip(Some(prev));
+                } else {
+                    c.fill_rrect_vgrad(pad, radius, top, bottom);
+                    c.fill_rect(Rect::new(pad.x + radius, pad.y + 1.0, pad.w - 2.0 * radius, 1.0), WHITE.alpha(0.3));
+                }
+                // Repeats: the pad split in as many slices.
+                if n.ratchet > 1 {
+                    for j in 1..n.ratchet {
+                        let x = (pad.x + pad.w * f32::from(j) / f32::from(n.ratchet)).round();
+                        c.fill_rect(Rect::new(x, pad.y + 3.0, 1.0, pad.h - 6.0), t.bg_deep.alpha(0.55));
+                    }
+                }
+                if n.cond != ponzik_engine::NoteCond::Always {
+                    let label = super::tools::cond_label(n.cond);
+                    if pad.w >= 26.0 {
+                        self.text(c, self.f.mono_med, 9.0, pad.x + 4.0, pad.y + 8.0, &label, t.on_accent.alpha(0.85));
+                    } else {
+                        c.fill_circle(pad.x + 4.0, pad.y + 4.0, 2.0, t.on_accent);
+                    }
+                }
                 if melodic && pad.w >= 26.0 && n.key != self.project.channels[ch].root_note {
                     let (cx, cy) = pad.center();
                     let ink = if muted { t.text2 } else { t.on_accent };

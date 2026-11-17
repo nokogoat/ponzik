@@ -41,6 +41,7 @@ mod sync;
 mod visuals;
 mod warping;
 mod theme;
+mod tools;
 mod tour;
 mod widgets;
 
@@ -694,6 +695,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // PONZIK_CLIP=audio[,markers|tones|off]|pattern: a clip and its clip panel.
     if let Ok(spec) = std::env::var("PONZIK_CLIP") {
         app.screenshot_clip(&spec);
+    }
+    // PONZIK_VARY=lane: chances, conditions and repeats on the pattern's notes,
+    // the piano roll showing lane 0 (chance), 1 (condition) or 2 (repeats).
+    if let Ok(spec) = std::env::var("PONZIK_VARY") {
+        app.screenshot_vary(&spec);
     }
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {

@@ -1746,9 +1746,6 @@ msgstr "Vélocité\nGlisser dans le couloir pour la dessiner"
 msgid "No notes to humanize"
 msgstr "Aucune note à humaniser"
 
-msgid "{} note humanized"
-msgstr "{} note humanisée"
-
 msgid "{} note copied"
 msgstr "{} note copiée"
 
@@ -2348,9 +2345,6 @@ msgstr "{} créé · {} pistes laissées de côté : boucle de routage"
 
 msgid "{} notes copied"
 msgstr "{} notes copiées"
-
-msgid "{} notes humanized"
-msgstr "{} notes humanisées"
 
 msgid "{} track"
 msgstr "{} piste"
@@ -6135,3 +6129,325 @@ msgstr "Ponzik ne sait pas utiliser ces fichiers"
 
 msgid "\"{}\" placed in the playlist"
 msgstr "« {} » posé dans la playlist"
+# --- MIDI tools, generators, chances and repeats ---
+
+msgid "!1st"
+msgstr "!1er"
+
+msgid "1st pass"
+msgstr "1er passage"
+
+msgid "Not 1st"
+msgstr "Pas le 1er"
+
+msgid "A bassline that follows the chords"
+msgstr "Une ligne de basse qui suit les accords"
+
+msgid "A drum part by style and density"
+msgstr "Une partie de batterie par style et densité"
+
+msgid "A melody on the scale"
+msgstr "Une mélodie sur la gamme"
+
+msgid "A progression in the key, by mood"
+msgstr "Une suite d'accords dans la tonalité, selon l'ambiance"
+
+msgid "A soft grace note just before each note"
+msgstr "Une petite note douce juste avant chaque note"
+
+msgid "Alt+click a step · Esc to close"
+msgstr "Alt+clic sur un pas · Échap pour fermer"
+
+msgid "Always"
+msgstr "Toujours"
+
+msgid "Another take, same settings"
+msgstr "Une autre prise, mêmes réglages"
+
+msgid "Apply"
+msgstr "Appliquer"
+
+msgid "Arch"
+msgstr "Arche"
+
+msgid "Arpeggiate"
+msgstr "Arpéger"
+
+msgid "Bassline"
+msgstr "Ligne de basse"
+
+msgid "Center"
+msgstr "Centre"
+
+msgid "Chance\nHow often each note plays · drag in the lane"
+msgstr "Chance\nÀ quelle fréquence chaque note joue · glisser dans le couloir"
+
+msgid "Chord length"
+msgstr "Durée des accords"
+
+msgid "Chord progression"
+msgstr "Suite d'accords"
+
+msgid "Chords become arpeggios"
+msgstr "Les accords deviennent des arpèges"
+
+msgid "Condition"
+msgstr "Condition"
+
+msgid "Condition\nOn which passes of the pattern a note plays: 1:2 is every other pass · drag in the lane"
+msgstr "Condition\nÀ quels passages du pattern une note joue : 1:2, un passage sur deux · glisser dans le couloir"
+
+msgid "Contour"
+msgstr "Contour"
+
+msgid "Dark"
+msgstr "Sombre"
+
+msgid "Direction"
+msgstr "Sens"
+
+msgid "Dreamy"
+msgstr "Rêveuse"
+
+msgid "Drum rhythm"
+msgstr "Rythme de batterie"
+
+msgid "Each note lasts until the next one"
+msgstr "Chaque note dure jusqu'à la suivante"
+
+msgid "Eighths"
+msgstr "Croches"
+
+msgid "Epic"
+msgstr "Épique"
+
+msgid "Euclidean rhythm"
+msgstr "Rythme euclidien"
+
+msgid "Factor"
+msgstr "Facteur"
+
+msgid "Falling"
+msgstr "Descendant"
+
+msgid "Fit to scale"
+msgstr "Ramener dans la gamme"
+
+msgid "Flam"
+msgstr "Fla"
+
+msgid "Follows"
+msgstr "Suit"
+
+msgid "Generate"
+msgstr "Générer"
+
+msgid "Generate: {}"
+msgstr "Générer : {}"
+
+msgid "Glue"
+msgstr "Coller"
+
+msgid "Grace velocity"
+msgstr "Vélocité de l'appoggiature"
+
+msgid "Grid"
+msgstr "Grille"
+
+msgid "Half bar"
+msgstr "Demi-mesure"
+
+msgid "Hats"
+msgstr "Charleston"
+
+msgid "Invert"
+msgstr "Inverser"
+
+msgid "Jazzy"
+msgstr "Jazzy"
+
+msgid "Legato"
+msgstr "Legato"
+
+msgid "MIDI tools\nArpeggiate, strum, invert… and generators"
+msgstr "Outils MIDI\nArpéger, gratter, inverser… et générateurs"
+
+msgid "MIDI tools · the whole channel"
+msgstr "Outils MIDI · tout le canal"
+
+msgid "MIDI tools · {} selected note"
+msgstr "Outils MIDI · {} note sélectionnée"
+
+msgid "MIDI tools · {} selected notes"
+msgstr "Outils MIDI · {} notes sélectionnées"
+
+msgid "Melancholic"
+msgstr "Mélancolique"
+
+msgid "Merges overlapping notes of the same pitch"
+msgstr "Fusionne les notes de même hauteur qui se chevauchent"
+
+msgid "Mirror"
+msgstr "Miroir"
+
+msgid "Mirrors the pitches: up becomes down"
+msgstr "Renverse les hauteurs : ce qui monte descend"
+
+msgid "Mood"
+msgstr "Ambiance"
+
+msgid "Mood progression"
+msgstr "Suite de l'ambiance"
+
+msgid "Moves wrong notes to the nearest note of the scale"
+msgstr "Déplace les fausses notes vers la note de la gamme la plus proche"
+
+msgid "No notes"
+msgstr "Aucune note"
+
+msgid "No notes to transform"
+msgstr "Aucune note à transformer"
+
+msgid "No settings: what you see is what you get"
+msgstr "Aucun réglage : le résultat est sous vos yeux"
+
+msgid "Note chance"
+msgstr "Chance des notes"
+
+msgid "Note condition"
+msgstr "Condition des notes"
+
+msgid "Note repeats"
+msgstr "Répétitions des notes"
+
+msgid "Passes"
+msgstr "Passages"
+
+msgid "Percussion"
+msgstr "Percussions"
+
+msgid "Pick a scale first, at the top"
+msgstr "Choisissez d'abord une gamme, en haut"
+
+msgid "Plays the notes backwards"
+msgstr "Joue les notes à l'envers"
+
+msgid "Pulls the notes to the grid, with swing"
+msgstr "Attire les notes vers la grille, avec du swing"
+
+msgid "Pulses"
+msgstr "Impulsions"
+
+msgid "Pulses spread evenly over the steps"
+msgstr "Des impulsions réparties au mieux sur les pas"
+
+msgid "Random timing and velocity"
+msgstr "Placement et vélocité au hasard"
+
+msgid "Re-roll"
+msgstr "Relancer"
+
+msgid "Repeats"
+msgstr "Répétitions"
+
+msgid "Repeats\nRatchets: the note fires several times within its length · drag in the lane"
+msgstr "Répétitions\nRatchets : la note se redéclenche plusieurs fois dans sa durée · glisser dans le couloir"
+
+msgid "Replaces {} note"
+msgstr "Remplace {} note"
+
+msgid "Replaces {} notes"
+msgstr "Remplace {} notes"
+
+msgid "Rising"
+msgstr "Montant"
+
+msgid "Root-fifth"
+msgstr "Fondamentale-quinte"
+
+msgid "Rotate"
+msgstr "Rotation"
+
+msgid "Scale steps"
+msgstr "Degrés de la gamme"
+
+msgid "Scale: {} {}"
+msgstr "Gamme : {} {}"
+
+msgid "Semitones"
+msgstr "Demi-tons"
+
+msgid "Shortens the notes"
+msgstr "Raccourcit les notes"
+
+msgid "Spread"
+msgstr "Étalement"
+
+msgid "Spreads each chord like a guitar strum"
+msgstr "Étale chaque accord comme un coup de guitare"
+
+msgid "Staccato"
+msgstr "Staccato"
+
+msgid "Step\nAlt+click: chance, condition, repeats · wheel: velocity"
+msgstr "Pas\nAlt+clic : chance, condition, répétitions · molette : vélocité"
+
+msgid "Step settings"
+msgstr "Réglages du pas"
+
+msgid "Step {}"
+msgstr "Pas {}"
+
+msgid "Strength"
+msgstr "Force"
+
+msgid "Stretch time"
+msgstr "Étirer le temps"
+
+msgid "Strum"
+msgstr "Gratter"
+
+msgid "Style"
+msgstr "Style"
+
+msgid "Sustained"
+msgstr "Tenue"
+
+msgid "Transform notes: {}"
+msgstr "Transformer les notes : {}"
+
+msgid "Trap hats"
+msgstr "Charleston trap"
+
+msgid "Twice as slow, twice as fast, or anything between"
+msgstr "Deux fois plus lent, deux fois plus vite, ou entre les deux"
+
+msgid "Up-down"
+msgstr "Montée-descente"
+
+msgid "Uplifting"
+msgstr "Lumineuse"
+
+msgid "Valley"
+msgstr "Vallée"
+
+msgid "Walking"
+msgstr "Walking bass"
+
+msgid "Write or select notes first"
+msgstr "Écrivez ou sélectionnez d'abord des notes"
+
+msgid "generate"
+msgstr "générer"
+
+msgid "{} note generated"
+msgstr "{} note générée"
+
+msgid "{} notes generated"
+msgstr "{} notes générées"
+
+msgid "{} · {}"
+msgstr "{} · {}"
+
+msgid "{} → {}"
+msgstr "{} → {}"

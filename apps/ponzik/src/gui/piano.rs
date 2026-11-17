@@ -16,6 +16,8 @@ const KEY_H: f32 = 16.0;
 const KEYBOARD: f32 = 64.0;
 const RULER: f32 = 28.0;
 const VELOCITY: f32 = 76.0;
+/// Lane of chances, conditions or repeats, under the velocities.
+const LANE: f32 = 58.0;
 const EDGE: f32 = 7.0;
 const SNAPS: [u32; 4] = [96, 48, 24, 12];
 const PIANO_HELP: &str = tr_noop("Piano roll
@@ -126,11 +128,11 @@ pub fn chord_symbol(kind: ChordKind) -> &'static str {
 }
 
 impl App {
-    fn piano_channel(&self) -> Option<usize> {
+    pub(super) fn piano_channel(&self) -> Option<usize> {
         self.selected_channel().or_else(|| (!self.project.channels.is_empty()).then_some(0))
     }
 
-    fn notes_mut(&mut self, ch: usize) -> &mut Vec<Note> {
+    pub(super) fn notes_mut(&mut self, ch: usize) -> &mut Vec<Note> {
         let n = self.project.channels.len();
         let pat = self.project.current_pattern;
         let notes = &mut self.project.patterns[pat].notes;
@@ -304,12 +306,12 @@ impl App {
         self.text_center(c, self.f.sans_med, 12.0, cx, cy, &label, ink);
     }
 
-    fn notes(&self, ch: usize) -> &[Note] {
+    pub(super) fn notes(&self, ch: usize) -> &[Note] {
         self.project.patterns[self.project.current_pattern].notes.get(ch).map_or(&[], |v| v.as_slice())
     }
 
     /// Trie les notes et retrouve la sélection après le tri.
-    fn finish_note_edit(&mut self, ch: usize, label: &str) {
+    pub(super) fn finish_note_edit(&mut self, ch: usize, label: &str) {
         let selected: Vec<Note> = self.piano.selected.iter().filter_map(|&i| self.notes(ch).get(i).copied()).collect();
         let notes = self.notes_mut(ch);
         notes.sort_by_key(|n| (n.start, n.key));
@@ -409,6 +411,12 @@ impl App {
         if self.icon_button(c, input, wid("pr-humanize", 0, 0), hum, Icon::Dice, false, (tr("Humanize\nThe selection, or else the whole channel"), "")) {
             self.open_popup(Popup::Humanize, hum);
         }
+        let tools = Rect::new(hum.right() + 4.0, header.y, 36.0, header.h);
+        let tools_open = matches!(self.popup.as_ref().map(|p| &p.kind), Some(Popup::Tools | Popup::Tool(_)));
+        let tip = (tr("MIDI tools\nArpeggiate, strum, invert… and generators"), "");
+        if self.icon_button(c, input, wid("pr-tools", 0, 0), tools, Icon::Wand, tools_open, tip) {
+            self.open_popup(Popup::Tools, tools);
+        }
 
         let snap_box = Rect::new(header.right() - 236.0, header.y, 236.0, header.h);
         let snap_sel = SNAPS.iter().position(|&s| s == self.piano.snap).unwrap_or(2);
@@ -423,11 +431,12 @@ impl App {
         c.fill_rrect(body, 16.0, t.panel);
         c.stroke_rrect(body, 16.0, 1.0, t.hairline);
         let inner = body.inset(12.0);
-        let keys = Rect::new(inner.x, inner.y + RULER, KEYBOARD, inner.h - RULER - VELOCITY - 8.0);
+        let keys = Rect::new(inner.x, inner.y + RULER, KEYBOARD, inner.h - RULER - VELOCITY - LANE - 16.0);
         let grid = Rect::new(keys.right(), keys.y, inner.w - KEYBOARD, keys.h);
         let ruler = Rect::new(grid.x, inner.y, grid.w, RULER);
         self.tour_anchor(1, grid);
         let vel_lane = Rect::new(grid.x, grid.bottom() + 8.0, grid.w, VELOCITY);
+        let note_lane = Rect::new(grid.x, vel_lane.bottom() + 8.0, grid.w, LANE);
         let pat_len = self.project.patterns[pat].len.max(TICKS_PER_BAR) as f32;
 
         // Cadrage initial sur le pattern et les notes du canal.
@@ -692,7 +701,20 @@ impl App {
             let fill = if selected { base.mix(t.accent_hot, 0.35) } else { base.mix(t.accent_hot, 0.3 * hv) };
             let fill = fill.mix(WHITE, (1.0 - pop) * 0.55);
             let body = r.inset(-(1.0 - pop) * 1.5);
-            c.fill_rrect(body, 4.0, fill);
+            let chance = f32::from(n.prob.min(100)) / 100.0;
+            c.fill_rrect(body, 4.0, fill.alpha(0.15 + 0.85 * chance));
+            if n.prob < 100 {
+                c.stroke_rrect(body, 4.0, 1.0, fill);
+            }
+            if n.ratchet > 1 && r.w > 8.0 {
+                for j in 1..n.ratchet {
+                    let x = (r.x + r.w * f32::from(j) / f32::from(n.ratchet)).round();
+                    c.fill_rect(Rect::new(x, r.y + 2.0, 1.0, r.h - 4.0), t.bg_deep.alpha(0.75));
+                }
+            }
+            if n.cond != ponzik_engine::NoteCond::Always {
+                c.fill_circle(r.right() - 3.5, r.y + 3.5, 2.5, t.select);
+            }
             if selected {
                 c.stroke_rrect(r, 4.0, 1.5, t.select);
             } else if hv > 0.01 {
@@ -871,28 +893,144 @@ impl App {
         c.set_clip(Some(prev));
         draw_icon(c, Icon::Mixer, inner.x + KEYBOARD * 0.5, vel_lane.y + vel_lane.h * 0.5, 15.0, t.muted.alpha(0.7));
         self.tip_zone(input, Rect::new(inner.x, vel_lane.y, KEYBOARD, vel_lane.h), tr("Velocity\nDrag in the lane to draw it"), "");
+        self.note_lane(c, input, ch, Rect::new(inner.x, note_lane.y, KEYBOARD - 6.0, LANE), note_lane, &x_of, &tick_at);
+    }
+
+    /// Lane of chances, conditions or repeats: three tabs on the left, then
+    /// a mark under each note, drawn by dragging (the selection, or the notes
+    /// under the pointer).
+    #[allow(clippy::too_many_arguments)]
+    fn note_lane(&mut self, c: &mut Canvas, input: &Input, ch: usize, tabs: Rect, lane: Rect, x_of: &dyn Fn(f32) -> f32, tick_at: &dyn Fn(f32) -> f32) {
+        use super::tools::{COND_LABELS, CONDS, cond_index, cond_label};
+        let t = self.theme;
+        // Tabs: chance, condition, repeats.
+        let labels = ["%", "N:M", "×"];
+        let tips = [
+            tr("Chance\nHow often each note plays · drag in the lane"),
+            tr("Condition\nOn which passes of the pattern a note plays: 1:2 is every other pass · drag in the lane"),
+            tr("Repeats\nRatchets: the note fires several times within its length · drag in the lane"),
+        ];
+        let th = tabs.h / 3.0;
+        for (i, label) in labels.iter().enumerate() {
+            let r = Rect::new(tabs.x, tabs.y + i as f32 * th, tabs.w, th - 2.0);
+            let id = wid("pr-lane-tab", i, 0);
+            let hov = self.hovered(input, id, r);
+            let hv = self.hover_anim(id, hov);
+            let on = self.anim.to(id ^ 0x6f6e, (self.piano.lane == i) as u8 as f32, T_HOVER);
+            c.fill_rrect(r, 6.0, t.raised.mix(t.raised_hi, hv).alpha(0.4 + 0.6 * hv.max(on)).mix(t.accent, on * 0.85));
+            let (cx, cy) = r.center();
+            self.text_center(c, self.f.mono_med, 11.0, cx, cy, label, t.muted.mix(t.text, hv).mix(t.on_accent, on));
+            if hov {
+                self.set_tip(tips[i], "");
+                self.set_cursor(Cursor::Hand);
+                if input.pressed {
+                    self.piano.lane = i;
+                }
+            }
+        }
+
+        c.fill_rrect(lane, 10.0, t.well);
+        let prev = c.push_clip(lane);
+        let id = wid("pr-note-lane", 0, 0);
+        let hov = self.hovered(input, id, lane);
+        if hov || self.is_dragging(id) {
+            self.set_cursor(Cursor::ResizeV);
+        }
+        if hov && input.pressed {
+            self.begin_drag(id, input, 0.0);
+        }
+        let mode = self.piano.lane.min(2);
+        let level = ((lane.bottom() - 6.0 - input.y) / (lane.h - 12.0)).clamp(0.0, 1.0);
+        if self.is_dragging(id) {
+            let tick = tick_at(input.x);
+            let zoom = self.piano.zoom;
+            let only_selected = !self.piano.selected.is_empty();
+            let sel = self.piano.selected.clone();
+            let mut changed = false;
+            for (i, n) in self.notes_mut(ch).iter_mut().enumerate() {
+                let near = (n.start as f32 - tick).abs() * zoom < 6.0;
+                if !near || (only_selected && !sel.contains(&i)) {
+                    continue;
+                }
+                let before = *n;
+                match mode {
+                    0 => n.prob = ((level * 20.0).round() * 5.0) as u8,
+                    1 => n.cond = CONDS[((level * (CONDS.len() - 1) as f32).round() as usize).min(CONDS.len() - 1)],
+                    _ => n.ratchet = (level * 7.0).round() as u8 + 1,
+                }
+                changed |= *n != before;
+            }
+            if changed {
+                let label = [tr("Note chance"), tr("Note condition"), tr("Note repeats")][mode];
+                self.commit(label);
+            }
+            // What the drag sets, next to the pointer.
+            let shown = match mode {
+                0 => format!("{}%", (level * 20.0).round() as u32 * 5),
+                1 => tr(COND_LABELS[((level * (CONDS.len() - 1) as f32).round() as usize).min(CONDS.len() - 1)]).to_string(),
+                _ => format!("×{}", (level * 7.0).round() as u32 + 1),
+            };
+            self.text(c, self.f.mono_med, 11.0, (input.x + 10.0).min(lane.right() - 48.0), lane.y + 12.0, &shown, t.text);
+        }
+        let h = lane.h - 12.0;
+        for (i, n) in self.notes(ch).to_vec().into_iter().enumerate() {
+            let x = x_of(n.start as f32).round();
+            if x < lane.x - 4.0 || x > lane.right() {
+                continue;
+            }
+            let selected = self.piano.selected.contains(&i);
+            let col = if selected { t.select } else { t.accent };
+            match mode {
+                0 => {
+                    let v = f32::from(n.prob.min(100)) / 100.0;
+                    let top = lane.bottom() - 6.0 - h * v;
+                    c.fill_rrect(Rect::new(x, top, 3.0, h * v), 1.5, col.alpha(0.35 + 0.65 * v));
+                    c.fill_circle(x + 1.5, top, 3.0, col);
+                    if n.prob < 100 {
+                        self.text(c, self.f.mono, 10.0, x + 6.0, top.max(lane.y + 10.0), &format!("{}", n.prob), t.text2);
+                    }
+                }
+                1 => {
+                    let k = cond_index(n.cond);
+                    let y = lane.bottom() - 6.0 - h * k as f32 / (CONDS.len() - 1) as f32;
+                    if n.cond == ponzik_engine::NoteCond::Always {
+                        c.fill_circle(x + 1.5, y, 2.5, col.alpha(0.45));
+                    } else {
+                        let label = cond_label(n.cond);
+                        let w = self.fonts.measure(self.f.mono_med, 10.0, &label) + 8.0;
+                        let chip = Rect::new(x - 1.0, y - 7.0, w, 14.0);
+                        c.fill_rrect(chip, 5.0, col.alpha(0.85));
+                        self.text(c, self.f.mono_med, 10.0, chip.x + 4.0, y, &label, t.on_accent);
+                    }
+                }
+                _ => {
+                    let reps = n.ratchet.clamp(1, 8);
+                    for k in 0..reps {
+                        let y = lane.bottom() - 6.0 - (f32::from(k) + 1.0) * h / 8.0;
+                        c.fill_rrect(Rect::new(x, y, 8.0, h / 8.0 - 1.5), 1.5, col.alpha(if reps > 1 { 0.95 } else { 0.4 }));
+                    }
+                    if reps > 1 {
+                        let y = lane.bottom() - 6.0 - f32::from(reps) * h / 8.0;
+                        self.text(c, self.f.mono, 10.0, x + 11.0, y.max(lane.y + 10.0), &format!("×{reps}"), t.text2);
+                    }
+                }
+            }
+        }
+        c.set_clip(Some(prev));
     }
 
     /// Décale au hasard le début (±`ticks`) et la vélocité (±`vel`, relatif) des
     /// notes sélectionnées, ou de tout le canal.
     pub(super) fn humanize(&mut self, ticks: u32, vel: f32) {
         let Some(ch) = self.piano_channel() else { return };
-        let targets: Vec<usize> = if self.piano.selected.is_empty() { (0..self.notes(ch).len()).collect() } else { self.piano.selected.clone() };
-        if targets.is_empty() {
+        if self.notes(ch).is_empty() {
             self.toast(tr("No notes to humanize"));
             return;
         }
         let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos() as u64);
-        let mut rng = Jitter(nanos | 1);
-        for &i in &targets {
-            let (dt, dv) = (rng.next() * ticks as f32, rng.next() * vel);
-            if let Some(n) = self.notes_mut(ch).get_mut(i) {
-                n.start = (n.start as f32 + dt).round().max(0.0) as u32;
-                n.vel = (n.vel * (1.0 + dv)).clamp(0.05, 1.0);
-            }
-        }
-        self.finish_note_edit(ch, tr("Humanize"));
-        self.toast(&tr_fmt_n!("{} note humanized", "{} notes humanized", targets.len(), targets.len()));
+        let tool = &mut self.piano.tool;
+        (tool.timing, tool.vel, tool.seed) = (ticks as f32 / TICKS_PER_STEP as f32, vel, nanos | 1);
+        self.apply_tool(super::tools::Tool::Humanize);
     }
 
     /// Raccourcis d'édition du piano roll, ceux de FL Studio.
@@ -988,33 +1126,5 @@ impl App {
                 _ => {}
             }
         }
-    }
-}
-
-/// Hasard sans dépendance (xorshift64*), uniforme dans [−1, 1].
-struct Jitter(u64);
-
-impl Jitter {
-    fn next(&mut self) -> f32 {
-        self.0 ^= self.0 >> 12;
-        self.0 ^= self.0 << 25;
-        self.0 ^= self.0 >> 27;
-        let x = self.0.wrapping_mul(0x2545_f491_4f6c_dd1d);
-        (x >> 40) as f32 / (1u64 << 24) as f32 * 2.0 - 1.0
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Jitter;
-
-    #[test]
-    fn jitter_stays_in_range_and_varies() {
-        let mut j = Jitter(12345);
-        let v: Vec<f32> = (0..1000).map(|_| j.next()).collect();
-        assert!(v.iter().all(|x| (-1.0..=1.0).contains(x)));
-        let mean = v.iter().sum::<f32>() / v.len() as f32;
-        assert!(mean.abs() < 0.1, "{mean}");
-        assert!(v.iter().any(|&x| x > 0.8) && v.iter().any(|&x| x < -0.8));
     }
 }

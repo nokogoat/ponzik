@@ -161,6 +161,12 @@ pub enum Popup {
     Chord,
     /// Force de l'humanisation des notes.
     Humanize,
+    /// MIDI tools of the piano roll: transformations and generators.
+    Tools,
+    /// A tool's panel, with its settings and a preview.
+    Tool(super::tools::Tool),
+    /// Chance, condition and repeats of a step of the Channel Rack.
+    StepEdit { ch: usize, step: usize },
     /// Historique des modifications.
     History,
     /// Menu principal : fichier, export, démos, thème.
@@ -302,6 +308,8 @@ pub enum Action {
     RemoveAutomation(ponzik_engine::AutoTarget),
     /// Humanise les notes du piano roll : écart de début (ticks), écart relatif de vélocité.
     Humanize(u32, f32),
+    /// Opens a MIDI tool's panel.
+    OpenTool(super::tools::Tool),
     /// Revient à l'état qui suit les n premières étapes de l'historique.
     JumpHistory(usize),
     SetParamValue(ponzik_engine::AutoTarget, f32),
@@ -484,6 +492,10 @@ pub struct PianoState {
     pub voicing: ponzik_project::Voicing,
     /// Notes effacées à l'instant (note, heure) : elles s'évanouissent.
     pub erased: Vec<(ponzik_engine::Note, f32)>,
+    /// Settings of the MIDI tools.
+    pub tool: super::tools::ToolState,
+    /// Lane under the velocities: 0 chance, 1 condition, 2 repeats.
+    pub lane: usize,
 }
 
 pub struct PlaylistState {
@@ -701,6 +713,8 @@ impl App {
                 chord_inv: 0,
                 voicing: ponzik_project::Voicing::Close,
                 erased: Vec::new(),
+                tool: Default::default(),
+                lane: 0,
             },
             playlist: PlaylistState { scroll_x: 0.0, zoom: 44.0, brush: 0, selected: None },
             sidebar_scroll: 0.0,
@@ -810,6 +824,30 @@ impl App {
                 return;
             }
             "humanize" => Popup::Humanize,
+            "tools" => Popup::Tools,
+            _ if name.starts_with("tool:") => {
+                // tool:<name>[:all|:chords] — the panel of a tool, on a selection of a few
+                // notes, all of them, or a chord progression written first.
+                let mut parts = name["tool:".len()..].split(':');
+                let Some(tool) = parts.next().and_then(super::tools::Tool::from_id) else { return };
+                let mode = parts.next();
+                if mode == Some("chords") {
+                    self.apply_tool(super::tools::Tool::Chords);
+                }
+                if let Some(ch) = self.piano_channel() {
+                    let n = self.notes(ch).len();
+                    self.piano.selected = if mode.is_some() { Vec::new() } else { (0..n.min(8)).collect() };
+                }
+                self.open_tool(tool, Rect::new(420.0, 120.0, 40.0, 30.0));
+                return;
+            }
+            _ if name.starts_with("step:") => {
+                // step:<channel>,<step> — the step editor of the Channel Rack.
+                let Some((ch, step)) = name["step:".len()..].split_once(',') else { return };
+                let (Ok(ch), Ok(step)) = (ch.trim().parse::<usize>(), step.trim().parse::<usize>()) else { return };
+                self.open_popup(Popup::StepEdit { ch, step }, Rect::new(560.0, 200.0, 40.0, 40.0));
+                return;
+            }
             "sidechain" => {
                 // Premier insert à clé de la piste en focus.
                 let track = self.focused_track();
@@ -3414,7 +3452,14 @@ impl App {
             Popup::MarkerMenu(i) => self.marker_menu(*i),
             Popup::MarkerColor(i) => self.marker_color_menu(*i),
             Popup::Signature(tick) => self.signature_menu(*tick),
-            Popup::Rename { .. } | Popup::Palette { .. } | Popup::Scale | Popup::Chord | Popup::Settings { .. } => (String::new(), Vec::new()),
+            Popup::Tools => self.tools_menu(),
+            Popup::Rename { .. }
+            | Popup::Palette { .. }
+            | Popup::Scale
+            | Popup::Chord
+            | Popup::Tool(_)
+            | Popup::StepEdit { .. }
+            | Popup::Settings { .. } => (String::new(), Vec::new()),
         }
     }
 
@@ -3691,6 +3736,7 @@ impl App {
                 self.commit(tr("Fill a slot"));
             }
             Action::Humanize(ticks, vel) => self.humanize(ticks, vel),
+            Action::OpenTool(tool) => self.open_tool(tool, anchor),
             Action::JumpHistory(n) => self.jump_history(n),
             Action::RemoveAutomation(target) => {
                 self.project.automation.retain(|a| a.target != target);
@@ -3793,6 +3839,18 @@ impl App {
             }
             if let Some(action) = run {
                 self.run_action(action, Rect::new(screen.w * 0.5 - 150.0, screen.h * 0.2, 300.0, 0.0));
+            }
+            return;
+        }
+        if let Popup::Tool(tool) = state.kind {
+            if self.tool_popup(c, input, tool, state.anchor, screen) {
+                self.popup = Some(state);
+            }
+            return;
+        }
+        if let Popup::StepEdit { ch, step } = state.kind {
+            if self.step_popup(c, input, ch, step, state.anchor, screen) {
+                self.popup = Some(state);
             }
             return;
         }

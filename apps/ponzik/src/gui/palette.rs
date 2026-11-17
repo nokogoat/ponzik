@@ -229,6 +229,12 @@ impl App {
         for (name, ticks, vel) in super::piano::HUMANIZE {
             add(tr_fmt!("Humanize notes: {}", tr(name).to_lowercase()), tr("Piano roll"), none(), Action::Humanize(ticks, vel));
         }
+        for t in super::tools::Tool::TRANSFORMS {
+            add(tr_fmt!("Transform notes: {}", tr(t.name()).to_lowercase()), tr("Piano roll"), none(), Action::OpenTool(t));
+        }
+        for t in super::tools::Tool::GENERATORS {
+            add(tr_fmt!("Generate: {}", tr(t.name()).to_lowercase()), tr("Piano roll"), none(), Action::OpenTool(t));
+        }
         add(tr("Undo").into(), tr("Edit"), k(S::Undo), Action::Undo);
         add(tr("Redo").into(), tr("Edit"), k(S::Redo), Action::Redo);
         add(tr("History").into(), tr("Edit"), k(S::History), Action::Popup(Popup::History));

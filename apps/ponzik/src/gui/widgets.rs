@@ -147,6 +147,28 @@ pub enum Icon {
     Midi,
     /// A closed loop with an arrow: a clip that starts over.
     Loop,
+    /// A wand and a spark: MIDI tools and generators.
+    Wand,
+    /// Staggered bars: a strummed chord.
+    Strum,
+    /// A small note just before a big one: a flam.
+    Flam,
+    /// Bars touching end to end: legato.
+    Legato,
+    /// Short bars with gaps: staccato.
+    Staccato,
+    /// Notes mirrored around a line: invert.
+    Invert,
+    /// Two bars merged into one: glue.
+    Glue,
+    /// A ring of steps, some lit: Euclidean rhythm.
+    Euclid,
+    /// A line through notes going up and down: a melody.
+    Melody,
+    /// A bass clef-like low note and its fifth: a bassline.
+    Bass,
+    /// A curved arrow: roll the dice again.
+    Reroll,
     /// Five-pointed star, outlined: an item to keep among the favorites.
     Star,
     /// The same star filled: a favorite.
@@ -452,6 +474,75 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
                 c.fill_circle(cx + a.cos() * 4.0 * s, cy - a.sin() * -4.0 * s, 1.15 * s, col);
             }
             c.fill_rrect(rr(-1.4, 5.0, 2.8, 2.0), 0.6 * s, col);
+        }
+        Icon::Wand => {
+            c.stroke_polyline(&[p(-7.0, 7.0), p(2.0, -2.0)], stroke * 1.3, col);
+            let mut star = Path::new();
+            star.polygon(&[p(4.5, -7.5), p(5.6, -4.6), p(8.5, -3.5), p(5.6, -2.4), p(4.5, 0.5), p(3.4, -2.4), p(0.5, -3.5), p(3.4, -4.6)]);
+            c.fill_path(&star, col);
+            c.fill_circle(cx - 3.5 * s, cy - 5.5 * s, 1.0 * s, col.alpha(0.7));
+            c.fill_circle(cx + 6.5 * s, cy + 3.5 * s, 1.0 * s, col.alpha(0.7));
+        }
+        Icon::Strum => {
+            for i in 0..4 {
+                let x = -7.0 + i as f32 * 2.2;
+                c.fill_rrect(rr(x, 4.0 - i as f32 * 3.4, 14.0 - i as f32 * 2.2 - (x + 7.0), 2.6), 1.0 * s, col.alpha(1.0 - 0.15 * i as f32));
+            }
+        }
+        Icon::Flam => {
+            c.fill_rrect(rr(-7.5, -1.0, 3.5, 6.0), 1.0 * s, col.alpha(0.5));
+            c.fill_rrect(rr(-2.5, -6.5, 9.5, 12.0), 1.6 * s, col);
+        }
+        Icon::Legato => {
+            c.fill_rrect(rr(-7.5, 1.0, 5.2, 3.2), 1.0 * s, col);
+            c.fill_rrect(rr(-2.1, -2.5, 5.2, 3.2), 1.0 * s, col);
+            c.fill_rrect(rr(3.3, -6.0, 4.2, 3.2), 1.0 * s, col);
+            c.stroke_polyline(&[p(-7.0, 6.5), p(7.0, 6.5)], stroke * 0.7, col.alpha(0.5));
+        }
+        Icon::Staccato => {
+            for (i, y) in [2.0f32, -1.5, 0.5, -4.5].into_iter().enumerate() {
+                c.fill_rrect(rr(-7.5 + i as f32 * 4.0, y, 2.4, 2.8), 1.0 * s, col);
+            }
+        }
+        Icon::Invert => {
+            c.stroke_polyline(&[p(-7.5, 0.0), p(7.5, 0.0)], stroke * 0.7, col.alpha(0.5));
+            c.fill_rrect(rr(-6.5, -6.5, 4.0, 3.0), 1.0 * s, col);
+            c.fill_rrect(rr(-6.5, 3.5, 4.0, 3.0), 1.0 * s, col.alpha(0.45));
+            c.fill_rrect(rr(2.5, -3.5, 4.0, 3.0), 1.0 * s, col);
+            c.fill_rrect(rr(2.5, 0.5, 4.0, 3.0), 1.0 * s, col.alpha(0.45));
+        }
+        Icon::Glue => {
+            c.fill_rrect(rr(-7.5, -2.0, 15.0, 4.0), 1.4 * s, col);
+            c.fill_rrect(rr(-7.5, -6.5, 6.5, 2.4), 1.0 * s, col.alpha(0.4));
+            c.fill_rrect(rr(1.0, -6.5, 6.5, 2.4), 1.0 * s, col.alpha(0.4));
+            c.stroke_polyline(&[p(0.0, 3.5), p(0.0, 7.0)], stroke * 0.7, col.alpha(0.6));
+        }
+        Icon::Euclid => {
+            c.stroke_circle(cx, cy, 6.0 * s, stroke * 0.6, col.alpha(0.45));
+            for k in 0..8 {
+                let a = std::f32::consts::TAU * k as f32 / 8.0 - 0.5 * PI;
+                let on = [0, 3, 6].contains(&k);
+                c.fill_circle(cx + a.cos() * 6.0 * s, cy + a.sin() * 6.0 * s, if on { 2.0 } else { 1.0 } * s, col);
+            }
+        }
+        Icon::Melody => {
+            let pts = [p(-7.0, 3.0), p(-3.5, -2.0), p(0.0, 1.0), p(3.5, -5.0), p(7.0, -1.0)];
+            c.stroke_polyline(&pts, stroke * 0.8, col.alpha(0.6));
+            for &(x, y) in &pts {
+                c.fill_circle(x, y, 1.7 * s, col);
+            }
+        }
+        Icon::Bass => {
+            c.fill_rrect(rr(-7.5, 3.0, 6.0, 3.2), 1.0 * s, col);
+            c.fill_rrect(rr(-0.5, -1.0, 4.0, 3.2), 1.0 * s, col.alpha(0.7));
+            c.fill_rrect(rr(4.5, 3.0, 3.0, 3.2), 1.0 * s, col);
+            c.stroke_polyline(&[p(-7.5, -5.5), p(7.5, -5.5)], stroke * 0.6, col.alpha(0.4));
+        }
+        Icon::Reroll => {
+            c.stroke_arc(cx, cy, 6.0 * s, -0.35 * PI, 1.25 * PI, stroke, col);
+            let mut head = Path::new();
+            head.polygon(&[p(2.2, -8.3), p(6.6, -5.3), p(1.6, -3.4)]);
+            c.fill_path(&head, col);
         }
         Icon::Loop => {
             c.stroke_polyline(&[p(-3.0, -4.5), p(3.0, -4.5)], stroke, col);
