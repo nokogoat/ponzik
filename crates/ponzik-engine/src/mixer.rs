@@ -108,20 +108,42 @@ impl Track {
 /// Ligne de retard stéréo de la compensation : on écrit un bloc, puis on le
 /// relit `d` échantillons dans le passé. L'historique non écrit (ligne au repos)
 /// est lu comme du silence.
+///
+/// La capacité (1 s) est réservée sans être touchée : l'anneau n'en utilise
+/// que ce que demande la latence du moment ([`Delay::reserve_ring`]) et ne
+/// remplit ses cases qu'en écrivant. Une ligne qui dort, ou qui ne retarde
+/// que de quelques millisecondes, ne coûte donc presque pas de mémoire.
 struct Delay {
+    /// Cases écrites au moins une fois (`len` ≤ `ring`) ; la capacité est réservée.
     l: Vec<f32>,
     r: Vec<f32>,
-    /// Prochaine case écrite.
+    /// Longueur de l'anneau, jamais au-delà de la capacité.
+    ring: usize,
+    /// Prochaine case écrite (≤ `l.len()`).
     pos: usize,
     /// Échantillons récents écrits sans interruption.
     filled: usize,
 }
 
+/// Pas d'agrandissement de l'anneau, en échantillons.
+const RING_STEP: usize = 4_096;
+
 impl Delay {
     fn new(max_block: usize, max_latency: usize) -> Self {
-        // `vec!` de zéros : pages réservées mais pas touchées tant que la ligne dort.
-        let len = if max_latency == 0 { 0 } else { max_block + max_latency };
-        Self { l: vec![0.0; len], r: vec![0.0; len], pos: 0, filled: 0 }
+        let cap = if max_latency == 0 { 0 } else { max_block + max_latency };
+        Self { l: Vec::with_capacity(cap), r: Vec::with_capacity(cap), ring: 0, pos: 0, filled: 0 }
+    }
+
+    /// Assure un anneau d'au moins `len` échantillons (borné par la capacité).
+    /// Il ne fait que grandir ; quand il grandit, l'historique est oublié. Sans
+    /// allocation : la capacité est réservée dès la création.
+    fn reserve_ring(&mut self, len: usize) {
+        let len = len.next_multiple_of(RING_STEP).min(self.l.capacity()).min(self.r.capacity());
+        if len > self.ring {
+            self.ring = len;
+            self.pos = 0;
+            self.filled = 0;
+        }
     }
 
     /// Ligne au repos : l'historique est oublié.
@@ -130,13 +152,20 @@ impl Delay {
     }
 
     fn write(&mut self, l: &[f32], r: &[f32]) {
-        let len = self.l.len();
+        let len = self.ring;
         if len == 0 {
             return;
         }
         for (&a, &b) in l.iter().zip(r) {
-            self.l[self.pos] = a;
-            self.r[self.pos] = b;
+            if self.pos < self.l.len() {
+                self.l[self.pos] = a;
+                self.r[self.pos] = b;
+            } else {
+                // Première écriture de cette case : dans la capacité réservée.
+                debug_assert!(self.l.len() < self.l.capacity());
+                self.l.push(a);
+                self.r.push(b);
+            }
             self.pos += 1;
             if self.pos == len {
                 self.pos = 0;
@@ -147,7 +176,11 @@ impl Delay {
 
     /// Les `n` derniers échantillons écrits, retardés de `d` (`d + n` ≤ longueur).
     fn read(&self, d: usize, n: usize, mut f: impl FnMut(usize, f32, f32)) {
-        let len = self.l.len();
+        let len = self.ring;
+        if len == 0 {
+            (0..n).for_each(|i| f(i, 0.0, 0.0));
+            return;
+        }
         debug_assert!(d + n <= len);
         let mut j = (self.pos + len - n - d) % len;
         for i in 0..n {
@@ -526,6 +559,15 @@ impl Mixer {
             }
         }
         lat.total = lat.out(MASTER);
+        // Plus long retard relu : borné par la latence la plus profonde.
+        let deepest = (0..TRACKS).map(|t| lat.out(t)).max().unwrap_or(0).min(lat.max);
+        if deepest > 0 {
+            let ring = self.silence.len() + deepest;
+            for t in &mut self.tracks {
+                t.input_delay.reserve_ring(ring);
+                t.output_delay.reserve_ring(ring);
+            }
+        }
     }
 
     pub(crate) fn clear(&mut self, n: usize) {
