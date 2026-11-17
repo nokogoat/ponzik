@@ -7167,3 +7167,17 @@ msgstr "{} fichiers reliés : plus rien ne manque"
 
 msgid "… and {} more"
 msgstr "… et {} de plus"
+
+# --- Piano roll expression, controller lanes, key and chord detection, grooves ---
+
+msgid "Controller"
+msgstr "Contrôleur"
+
+msgid "Expression"
+msgstr "Expression"
+
+msgid "Pitch bend · {}"
+msgstr "Pitch bend · {}"
+
+msgid "Sustain pedal"
+msgstr "Pédale de sustain"

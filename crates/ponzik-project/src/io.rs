@@ -275,6 +275,8 @@ pub(crate) fn target_json(t: AutoTarget) -> Json {
         AutoTarget::TrackGain(t) => kind("track_gain", vec![("track", t.into())]),
         AutoTarget::TrackPan(t) => kind("track_pan", vec![("track", t.into())]),
         AutoTarget::Tempo => kind("tempo", Vec::new()),
+        AutoTarget::PitchBend(c) => kind("pitch_bend", vec![("channel", c.into())]),
+        AutoTarget::Cc { channel, cc } => kind("cc", vec![("channel", channel.into()), ("cc", cc.into())]),
     }
 }
 
@@ -703,6 +705,8 @@ pub(crate) fn load_target(v: &Json, channels: usize) -> Option<AutoTarget> {
         "track_gain" => AutoTarget::TrackGain(track()?),
         "track_pan" => AutoTarget::TrackPan(track()?),
         "tempo" => AutoTarget::Tempo,
+        "pitch_bend" => AutoTarget::PitchBend(channel()?),
+        "cc" => AutoTarget::Cc { channel: channel()?, cc: index(v.get("cc"), 128)? as u8 },
         _ => return None,
     })
 }
@@ -1161,6 +1165,8 @@ mod tests {
         p.add_automation_point(AutoTarget::ChannelGain(1), song, 0, 0.5);
         p.add_automation_point(AutoTarget::ChannelPan(2), song, 0, -0.75);
         p.add_automation_point(AutoTarget::TrackPan(0), AutoScope::Pattern(2), 5, 0.1);
+        p.add_automation_point(AutoTarget::PitchBend(1), AutoScope::Pattern(0), 12, -0.5);
+        p.add_automation_point(AutoTarget::Cc { channel: 2, cc: 74 }, AutoScope::Pattern(1), 24, 0.75);
         p.automation[0].points[0].curve = -0.35;
         p.audio_clips.push(AudioClipDef {
             path: "voix/« refrain ».wav".into(),

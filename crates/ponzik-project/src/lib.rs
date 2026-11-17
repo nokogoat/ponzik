@@ -1103,7 +1103,9 @@ impl Project {
             let channel = match &mut a.target {
                 AutoTarget::InstrumentParam { channel, .. }
                 | AutoTarget::ChannelGain(channel)
-                | AutoTarget::ChannelPan(channel) => channel,
+                | AutoTarget::ChannelPan(channel)
+                | AutoTarget::PitchBend(channel)
+                | AutoTarget::Cc { channel, .. } => channel,
                 _ => return true,
             };
             if *channel == idx {

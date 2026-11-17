@@ -13,6 +13,20 @@ use super::widgets::wid;
 pub const AUTO_LANE_H: f32 = 56.0;
 const POINT_HIT: f32 = 8.0;
 
+/// Name of a MIDI control change: the common ones by name, else "CC n".
+pub fn cc_name(cc: u8) -> String {
+    match cc {
+        1 => tr("Mod wheel").into(),
+        2 => tr("Breath").into(),
+        7 => tr("Volume").into(),
+        10 => tr("Pan").into(),
+        11 => tr("Expression").into(),
+        64 => tr("Sustain pedal").into(),
+        74 => tr("Brightness").into(),
+        _ => format!("CC {cc}"),
+    }
+}
+
 impl App {
     /// Nom lisible et fiche de paramètre d'une cible d'automation.
     pub fn target_info(&self, target: AutoTarget) -> Option<(String, ParamInfo)> {
@@ -48,6 +62,14 @@ impl App {
                 (tr_fmt!("Pan · {}", p.tracks.get(t)?.name), ParamInfo::new(0, tr_noop("Pan"), -1.0, 1.0, 0.0, Unit::Pan))
             }
             AutoTarget::Tempo => (tr("Tempo").into(), ParamInfo::new(0, tr_noop("Tempo"), 40.0, 300.0, p.bpm, Unit::None)),
+            AutoTarget::PitchBend(c) => (
+                tr_fmt!("Pitch bend · {}", p.channels.get(c)?.name),
+                ParamInfo::new(0, tr_noop("Pitch bend"), -1.0, 1.0, 0.0, Unit::None),
+            ),
+            AutoTarget::Cc { channel, cc } => {
+                let name = p.channels.get(channel)?.name.as_str();
+                (format!("{} · {name}", cc_name(cc)), ParamInfo::new(0, tr_noop("Controller"), 0.0, 1.0, 0.0, Unit::Percent))
+            }
         })
     }
 
@@ -65,6 +87,8 @@ impl App {
             AutoTarget::TrackGain(t) => p.tracks[t].gain,
             AutoTarget::TrackPan(t) => p.tracks[t].pan,
             AutoTarget::Tempo => self.tempo_here(),
+            // Controllers have no value of their own outside their lanes.
+            AutoTarget::PitchBend(_) | AutoTarget::Cc { .. } => info.default,
         })
     }
 
@@ -87,6 +111,7 @@ impl App {
             AutoTarget::Tempo => {
                 self.set_tempo_here((v * 10.0).round() / 10.0);
             }
+            AutoTarget::PitchBend(_) | AutoTarget::Cc { .. } => {}
         }
     }
 

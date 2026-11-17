@@ -351,7 +351,11 @@ pub fn frozen_content_changed(old: &Project, new: &Project) -> Option<FreezeTarg
             .iter()
             .filter(|a| match a.target {
                 crate::AutoTarget::EffectParam { track, .. } => track == t,
-                crate::AutoTarget::ChannelGain(c) | crate::AutoTarget::ChannelPan(c) | crate::AutoTarget::InstrumentParam { channel: c, .. } => {
+                crate::AutoTarget::ChannelGain(c)
+                | crate::AutoTarget::ChannelPan(c)
+                | crate::AutoTarget::InstrumentParam { channel: c, .. }
+                | crate::AutoTarget::PitchBend(c)
+                | crate::AutoTarget::Cc { channel: c, .. } => {
                     p.channels.get(c).is_some_and(|ch| feeds(ch.track))
                 }
                 crate::AutoTarget::TrackGain(m) | crate::AutoTarget::TrackPan(m) => members.contains(&m),
