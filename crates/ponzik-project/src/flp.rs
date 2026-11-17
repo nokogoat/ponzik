@@ -1738,7 +1738,7 @@ mod tests {
         assert!(hat.starts_with("Drums/Hats/") && hat.ends_with(".wav"), "{hat}");
         assert!(crate::library::library_sample(hat).is_some());
         assert_eq!(p.channels[1].instrument.sample.as_deref(), Some("C:\\loop.mp3"));
-        assert_eq!(report.offline, ["'Loop': C:\\loop.mp3 (format not yet supported)"]);
+        assert_eq!(report.offline, ["'Loop': C:\\loop.mp3 not found on this computer"]);
         let lines = report.lines().join("\n");
         assert!(lines.contains("Approximated: 'Hat': FL Studio factory sample Hat.wav replaced by library sound"), "{lines}");
         assert!(lines.contains("Offline: 1 files missing (locate later)"), "{lines}");
@@ -1800,7 +1800,7 @@ mod tests {
         let lines = report.lines().join("\n");
         assert!(lines.contains("Offline: 2 files missing (locate later)"), "{lines}");
         assert!(lines.contains("'Take 1': G:\\sons\\Audio\\Take 1_REC.wav not found on this computer"), "{lines}");
-        assert!(lines.contains("Offline: G:\\sons\\Beat.mp3 (format not yet supported)"), "{lines}");
+        assert!(lines.contains("G:\\sons\\Beat.mp3 not found on this computer"), "{lines}");
         assert!(lines.contains("3 audio clips are offline"), "{lines}");
         assert!(!lines.contains("packed") && !lines.contains("too far"), "{lines}");
         // Offline files survive a save / load round trip.
