@@ -9,6 +9,7 @@ use ponzik_window::{Cursor, Key};
 use super::Input;
 use super::arrange::{ARRANGE_H, TEMPO_H};
 use super::app::{App, Popup, Rename, View};
+use super::clip::ClipSel;
 use super::dnd::DropTarget;
 use super::theme::*;
 use super::widgets::{Icon, draw_icon, wid};
@@ -353,14 +354,16 @@ impl App {
                     ClipDrag::AudioMove { clip: i, start: cl.start, lane: cl.lane, tick0, lane0: lane_at(input.y) }
                 });
                 self.focus = super::app::Focus::Track(cl.track);
+                let path = cl.path.clone();
+                self.select_clip(ClipSel::Audio(i));
                 if input.double {
-                    let path = cl.path.clone();
                     self.clip_drag = None;
                     self.open_in_lab(&path, super::samplelab::Source::Clip(i));
                 }
             }
             if input.right_down && self.drag.is_none() {
                 self.project.audio_clips.remove(i);
+                self.audio_clip_removed(i);
                 self.commit(tr("Delete audio clip"));
             }
         }
@@ -398,6 +401,7 @@ impl App {
             match hover_clip {
                 Some((i, edge)) => {
                     self.playlist.selected = Some(i);
+                    self.select_clip(ClipSel::Pattern(i));
                     let orig = self.project.clips[i];
                     if input.double {
                         self.select_pattern(orig.pattern);
@@ -417,6 +421,7 @@ impl App {
                     self.project.clips.push(clip);
                     let i = self.project.clips.len() - 1;
                     self.playlist.selected = Some(i);
+                    self.select_clip(ClipSel::Pattern(i));
                     self.clip_drag = Some(ClipDrag::Move { clip: i, orig: clip, tick0: tick, lane0: lane });
                     self.commit(tr("Place clip"));
                 }
@@ -433,6 +438,7 @@ impl App {
         } else if over && input.right_down && self.popup.is_none() && let Some((i, _)) = hover_clip {
             self.project.clips.remove(i);
             self.playlist.selected = None;
+            self.clip_panel = None;
             self.commit(tr("Delete clips"));
         }
         if let Some((i, _)) = hover_clip
@@ -478,10 +484,21 @@ impl App {
         if self.popup.is_none() && !self.sidebar_focus {
             for &(key, mods) in &input.keys {
                 let sel = self.playlist.selected.filter(|&i| i < self.project.clips.len());
+                let audio_sel = match self.clip_panel_shown() {
+                    Some(ClipSel::Audio(i)) => Some(i),
+                    _ => None,
+                };
                 match key {
+                    Key::Delete | Key::Backspace if audio_sel.is_some() => {
+                        let i = audio_sel.unwrap_or(0);
+                        self.project.audio_clips.remove(i);
+                        self.audio_clip_removed(i);
+                        self.commit(tr("Delete audio clip"));
+                    }
                     Key::Delete | Key::Backspace if sel.is_some() => {
                         self.project.clips.remove(sel.unwrap_or(0));
                         self.playlist.selected = None;
+                        self.clip_panel = None;
                         self.commit(tr("Delete clip"));
                     }
                     Key::Char('c') if mods.ctrl && !mods.shift => {
@@ -592,32 +609,51 @@ impl App {
             }
             let hov = hover_audio.is_some_and(|(h, _)| h == i);
             let hv = self.hover_anim(wid("pl-aclip", i, 0), hov);
+            let selected = self.clip_panel_shown() == Some(ClipSel::Audio(i));
+            let col = super::clip::audio_color(cl, &t);
             // Prise de côté (muette) : estompée, le nom barré d'un « muted ».
             let dim = if cl.muted { 0.45 } else { 1.0 };
-            c.fill_rrect(r, 8.0, t.select.mix(t.panel, 0.78 - hv * 0.08).alpha(dim));
-            c.fill_rect(Rect::new(r.x + 1.0, r.y + 1.0, r.w - 2.0, 18.0), t.select.mix(t.panel, 0.5).alpha(0.9 * dim));
+            c.fill_rrect(r, 8.0, col.mix(t.panel, 0.78 - hv * 0.08).alpha(dim));
+            c.fill_rect(Rect::new(r.x + 1.0, r.y + 1.0, r.w - 2.0, 18.0), col.mix(t.panel, 0.5).alpha(0.9 * dim));
+            if selected {
+                c.stroke_rrect(r, 8.0, 1.5, t.text.mix(col, 0.4));
+            }
             let prev_clip = c.push_clip(r);
+            // Warped: a stretch badge (pulsing while its render is under way).
+            let mut name_x = r.x + 8.0;
+            if cl.warp {
+                let pending = self.warping.is_pending(i);
+                let a = if pending { 0.45 + 0.55 * (0.5 + 0.5 * (self.time * 6.0).sin()) } else { 0.9 };
+                draw_icon(c, Icon::Stretch, r.x + 14.0, r.y + 10.0, 11.0, t.text.alpha(a * dim));
+                name_x += 14.0;
+                if hov {
+                    let tip = if pending { tr("Warped · stretching in the background") } else { tr("Warped: follows the song tempo") };
+                    self.set_tip(tip, "");
+                }
+            }
             let name = std::path::Path::new(&cl.path).file_stem().map_or(String::new(), |n| n.to_string_lossy().into_owned());
             let name = if cl.muted { tr_fmt!("{} · muted", name) } else { name };
-            self.text_fit(c, self.f.sans_med, 11.0, r.x + 8.0, r.y + 10.0, &name, r.w - 12.0, t.text.alpha(dim));
+            self.text_fit(c, self.f.sans_med, 11.0, name_x, r.y + 10.0, &name, r.right() - name_x - 4.0, t.text.alpha(dim));
             if hov && cl.take > 0 {
                 self.set_tip(tr("Alt+click: play this take"), "");
             }
-            let sr = self.samples.get(&cl.path).map_or(48_000.0, |s| s.sample_rate as f64);
+            let (sr, duration) = self.samples.get(&cl.path).map_or((48_000.0, 0.0), |s| (s.sample_rate as f64, s.duration() as f64));
             if let Some(peaks) = self.waveform(&cl.path) {
                 let mid = r.y + 22.0 + (r.h - 24.0) * 0.5;
                 let amp = (r.h - 26.0) * 0.5;
                 let x0 = r.x.max(area.x) as i32;
                 let x1 = r.right().min(area.right()) as i32;
+                let bucket = super::app::WAVE_BUCKET as f64;
                 for px in x0..x1 {
-                    let tick_a = tick_at(px as f32) as f64 - cl.start as f64;
+                    let tick_a = tick_at(px as f32) as f64;
                     let tick_b = tick_a + 1.0 / ppt as f64;
-                    // Unwarped audio plays at its own speed: seconds through the tempo map.
-                    let at = map.secs_at(cl.start as f64);
-                    let secs = |tk: f64| map.secs_at(cl.start as f64 + tk) - at + cl.offset;
-                    let (ba, bb) = ((secs(tick_a) * sr) as usize / super::app::WAVE_BUCKET, (secs(tick_b) * sr) as usize / super::app::WAVE_BUCKET);
+                    // Unwarped audio plays at its own speed, warped audio by beats.
+                    let (Some(a), Some(b)) = (self.clip_file_secs(cl, tick_a, &map, duration), self.clip_file_secs(cl, tick_b, &map, duration)) else {
+                        continue;
+                    };
+                    let (ba, bb) = ((a.min(b) * sr / bucket) as usize, (a.max(b) * sr / bucket) as usize);
                     let (mut lo, mut hi) = (0.0f32, 0.0f32);
-                    for b in ba..=bb.max(ba) {
+                    for b in ba..=bb.min(ba + 256) {
                         if let Some(&(l, h)) = peaks.get(b) {
                             lo = lo.min(l);
                             hi = hi.max(h);

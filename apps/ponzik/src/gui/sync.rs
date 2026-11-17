@@ -111,7 +111,7 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: &dyn Fn(&str
         || old.audio_clips != new.audio_clips
         || n_old != n_new
     {
-        cmds.push(Command::SetSequence(Box::new(new.sequence_with(loader))));
+        cmds.push(Command::SetSequence(Box::new(new.sequence_for(sample_rate, loader, &|job| ponzik_project::warp::cached(job.key)))));
     }
 
     // Mixer.

@@ -5943,3 +5943,137 @@ msgstr "Enregistrer l'automation : Touch, Latch, Write"
 
 msgid "Settings: MIDI controller links"
 msgstr "Réglages : liens des contrôleurs MIDI"
+msgid "Back to the devices"
+msgstr "Revenir aux appareils"
+
+msgid "Beats"
+msgstr "Beats"
+
+msgid "Beats: hits stay sharp, for drums and loops"
+msgstr "Beats : les frappes restent nettes, pour la batterie et les boucles"
+
+msgid "Tones"
+msgstr "Tonal"
+
+msgid "Tones: smooth, for chords, pads and voices"
+msgstr "Tonal : fluide, pour les accords, les nappes et les voix"
+
+msgid "Re-Pitch"
+msgstr "Vitesse"
+
+msgid "Re-Pitch: the pitch follows the tempo, like a turntable"
+msgstr "Vitesse : la hauteur suit le tempo, comme une platine"
+
+msgid "Clip color"
+msgstr "Couleur du clip"
+
+msgid "Clip fades"
+msgstr "Fondus du clip"
+
+msgid "Clip gain"
+msgstr "Gain du clip"
+
+msgid "Clip gain\nDouble-click: 0 dB"
+msgstr "Gain du clip\nDouble-clic : 0 dB"
+
+msgid "Detect"
+msgstr "Détecter"
+
+msgid "Detect tempo"
+msgstr "Détecter le tempo"
+
+msgid "Detect the original tempo"
+msgstr "Détecter le tempo d'origine"
+
+msgid "Double the original tempo"
+msgstr "Doubler le tempo d'origine"
+
+msgid "Half the original tempo"
+msgstr "Diviser le tempo d'origine par deux"
+
+msgid "Double-click: warp marker (on the nearest hit)"
+msgstr "Double-clic : marqueur de warp (sur la frappe la plus proche)"
+
+msgid "Empty pattern"
+msgstr "Pattern vide"
+
+msgid "Fade curve"
+msgstr "Courbe du fondu"
+
+msgid "Fade curve\nDrag up or down · double-click: straight"
+msgstr "Courbe du fondu\nGlisser vers le haut ou le bas · double-clic : droite"
+
+msgid "In Re-Pitch the pitch follows the tempo"
+msgstr "En mode Vitesse, la hauteur suit le tempo"
+
+msgid "Loop clip"
+msgstr "Clip en boucle"
+
+msgid "Loop: the file starts over"
+msgstr "Boucle : le fichier recommence"
+
+msgid "No clear tempo in this file"
+msgstr "Aucun tempo net dans ce fichier"
+
+msgid "Only this clip plays the pattern"
+msgstr "Seul ce clip joue ce pattern"
+
+msgid "Open in the Sample Lab"
+msgstr "Ouvrir dans l'Atelier"
+
+msgid "Original tempo"
+msgstr "Tempo d'origine"
+
+msgid "Original tempo of the file\nDrag or scroll · Shift: fine"
+msgstr "Tempo d'origine du fichier\nGlisser ou molette · Maj : précis"
+
+msgid "Remove the warp markers"
+msgstr "Retirer les marqueurs de warp"
+
+msgid "Reverse clip"
+msgstr "Clip à l'envers"
+
+msgid "Stretching in the background · playing resampled meanwhile"
+msgstr "Étirement en arrière-plan · joué rééchantillonné en attendant"
+
+msgid "Tempo found: {} BPM"
+msgstr "Tempo trouvé : {} BPM"
+
+msgid "This clip gets its own copy of the pattern"
+msgstr "Ce clip reçoit sa propre copie du pattern"
+
+msgid "Transpose clip"
+msgstr "Transposer le clip"
+
+msgid "Transposition, the tempo unchanged\nDouble-click: none"
+msgstr "Transposition, sans toucher au tempo\nDouble-clic : aucune"
+
+msgid "Turn warp on to place warp markers"
+msgstr "Activez le warp pour poser des marqueurs"
+
+msgid "Turn warp on to transpose"
+msgstr "Activez le warp pour transposer"
+
+msgid "Warp clip"
+msgstr "Warp du clip"
+
+msgid "Warp marker\nDrag: move this point of the audio to another beat · right-click: remove"
+msgstr "Marqueur de warp\nGlisser : amener ce point de l'audio sur un autre temps · clic droit : retirer"
+
+msgid "Warp markers"
+msgstr "Marqueurs de warp"
+
+msgid "Warp mode"
+msgstr "Mode de warp"
+
+msgid "Warp: follow the song tempo"
+msgstr "Warp : suivre le tempo du morceau"
+
+msgid "Warped · stretching in the background"
+msgstr "Warpé · étirement en arrière-plan"
+
+msgid "Warped: follows the song tempo"
+msgstr "Warpé : suit le tempo du morceau"
+
+msgid "{} placed in the playlist · warped from {} BPM"
+msgstr "{} posé dans la playlist · warpé depuis {} BPM"

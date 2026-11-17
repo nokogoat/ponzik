@@ -499,6 +499,15 @@ pub struct App {
     /// Tranches du mixer choisies par Ctrl+clic (à grouper dans un bus ou un VCA).
     pub mixer_sel: Vec<usize>,
     pub samples: HashMap<String, Arc<Sample>>,
+    /// Background renders of the warped audio clips.
+    pub warping: super::warping::Warping,
+    /// Transients of the files (seconds), for the warp markers.
+    pub onsets: HashMap<String, Arc<Vec<f64>>>,
+    /// Clip shown in the clip panel, and the focus it was chosen with (the
+    /// devices come back when the focus moves).
+    pub clip_panel: Option<(super::clip::ClipSel, Focus)>,
+    /// Start of a horizontal drag in the clip panel: mouse x, value.
+    pub clip_grab: (f32, f64),
     /// Crêtes (min, max) par paquets d'échantillons, pour dessiner les formes d'onde.
     pub waveforms: HashMap<String, Arc<Vec<(f32, f32)>>>,
     /// Réponses d'effets déjà calculées, par réglages.
@@ -674,6 +683,10 @@ impl App {
             mixer_scroll: 0.0,
             mixer_sel: Vec::new(),
             samples: HashMap::new(),
+            warping: Default::default(),
+            onsets: HashMap::new(),
+            clip_panel: None,
+            clip_grab: (0.0, 0.0),
             waveforms: HashMap::new(),
             responses: HashMap::new(),
             sample_files: compat::scan_samples(),
@@ -958,7 +971,11 @@ impl App {
             self.editors.capture(&cmd);
             self.send(cmd);
         }
+        let warps = self.synced.audio_clips != self.project.audio_clips || self.synced.tempo_map() != self.project.tempo_map();
         self.synced = self.project.clone();
+        if warps {
+            self.refresh_warps();
+        }
         self.channel_meters.resize(self.project.channels.len(), Meter::default());
     }
 
@@ -1162,8 +1179,12 @@ impl App {
         if !self.ensure_sample(path) {
             return;
         }
-        let secs = self.samples[path].duration() as f64;
+        let sample = self.samples[path].clone();
+        let secs = sample.duration() as f64;
         let ticks = (secs * self.project.bpm as f64 / 60.0 * ponzik_engine::PPQ as f64).round().max(24.0) as u32;
+        // Its tempo, for warping; a loop (whole bars) is warped right away.
+        let bpm = ponzik_project::warp::detect_tempo(&sample);
+        let warp = bpm.is_some_and(|b| ponzik_project::warp::is_loop(&sample, b));
         let name = std::path::Path::new(path).file_stem().map_or(tr("Audio").to_string(), |s| s.to_string_lossy().into_owned());
         let used: Vec<usize> = self.project.channels.iter().map(|c| c.track).collect();
         let track = (1..TRACKS).find(|t| !used.contains(t) && !self.track_in_use(*t)).unwrap_or(1);
@@ -1171,20 +1192,25 @@ impl App {
         let lane = self.project.clips.iter().map(|c| c.lane + 1).chain(self.project.audio_clips.iter().map(|c| c.lane + 1)).max().unwrap_or(0);
         let start = (self.start_marker.max(0.0) as u32 / 96) * 96;
         let (lane, start) = at.unwrap_or((lane, start));
-        self.project.audio_clips.push(ponzik_project::AudioClipDef {
+        let mut clip = ponzik_project::AudioClipDef {
             path: path.to_string(),
             lane,
             track,
             start,
             len: ticks,
-            offset: 0.0,
-            gain: 1.0,
-            fade_in: 0.002,
-            fade_out: 0.002,
+            bpm: bpm.unwrap_or(0.0),
+            warp,
             ..Default::default()
-        });
+        };
+        if warp {
+            clip.len = clip.natural_len(secs, &self.project.tempo_map());
+        }
+        self.project.audio_clips.push(clip);
         self.commit(tr("Place an audio clip"));
-        self.toast(&tr_fmt!("{} placed in the playlist", name));
+        match bpm.filter(|_| warp) {
+            Some(b) => self.toast(&tr_fmt!("{} placed in the playlist · warped from {} BPM", name, ponzik_i18n::num(b as f64, 1))),
+            None => self.toast(&tr_fmt!("{} placed in the playlist", name)),
+        }
     }
 
     pub fn selected_channel(&self) -> Option<usize> {
@@ -1590,6 +1616,7 @@ impl App {
 
     fn poll_engine(&mut self, dt: f32) {
         self.engine.collect_garbage();
+        self.poll_warps();
         self.record_tick(dt);
         self.position = self.engine.position();
         // Tant que le moteur n'a pas reçu l'ordre de lecture, le pré-compte demandé reste affiché.
@@ -2369,7 +2396,10 @@ impl App {
         c.fill_rect(Rect::new(r.x, r.y, r.w, 1.0), t.hairline);
         let prev = c.push_clip(r);
         let h = self.layout.panel_open.max(r.h);
-        self.device_panel(c, input, Rect::new(r.x, r.y + 1.0, r.w, h - 1.0));
+        match self.clip_panel_shown() {
+            Some(sel) => self.clip_panel(c, input, Rect::new(r.x, r.y + 1.0, r.w, h - 1.0), sel),
+            None => self.device_panel(c, input, Rect::new(r.x, r.y + 1.0, r.w, h - 1.0)),
+        }
         c.set_clip(Some(prev));
     }
 

@@ -145,6 +145,8 @@ pub enum Icon {
     PluginWindow,
     /// A five-pin DIN socket: MIDI controllers and their links.
     Midi,
+    /// A closed loop with an arrow: a clip that starts over.
+    Loop,
 }
 
 /// Dessine une icône au trait, dans un carré de `size` centré sur (`cx`, `cy`).
@@ -416,6 +418,13 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
                 c.fill_circle(cx + a.cos() * 4.0 * s, cy - a.sin() * -4.0 * s, 1.15 * s, col);
             }
             c.fill_rrect(rr(-1.4, 5.0, 2.8, 2.0), 0.6 * s, col);
+        }
+        Icon::Loop => {
+            c.stroke_polyline(&[p(-3.0, -4.5), p(3.0, -4.5)], stroke, col);
+            c.stroke_polyline(&[p(3.0, 4.5), p(-3.0, 4.5)], stroke, col);
+            c.stroke_arc(cx + 3.0 * s, cy, 4.5 * s, -0.5 * PI, 0.5 * PI, stroke, col);
+            c.stroke_arc(cx - 3.0 * s, cy, 4.5 * s, 0.5 * PI, 1.5 * PI, stroke, col);
+            c.stroke_polyline(&[p(-1.2, -7.0), p(1.3, -4.5), p(-1.2, -2.0)], stroke, col);
         }
         Icon::PluginWindow => {
             // Frame and title bar, a knob turned up, a fader.

@@ -10,6 +10,7 @@ mod assistant;
 mod automation;
 mod capture;
 mod autorec;
+mod clip;
 mod compat;
 mod devices;
 mod dnd;
@@ -37,6 +38,7 @@ mod session;
 mod settings;
 mod sync;
 mod visuals;
+mod warping;
 mod theme;
 mod tour;
 mod widgets;
@@ -230,7 +232,9 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     let output = ponzik_audio::open_default().map_err(|e| e.to_string())?;
     let config = output.config();
     let samples = compat::project_samples(&project);
-    let (mut engine, handle) = project.build_engine(config.sample_rate as f32, &|p| samples.get(p).cloned());
+    // Warped clips play resampled until their render, made in the background, is ready.
+    let (mut engine, handle) =
+        project.build_engine_with(config.sample_rate as f32, &|p| samples.get(p).cloned(), &|job| ponzik_project::warp::cached(job.key));
     engine.set_worker_threads(ponzik_engine::default_worker_threads());
     engine.set_adaptive_threads(true);
     // The plugin instances' editors, before the engine leaves for the audio thread.
@@ -254,6 +258,7 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     app.editors = editors;
     app.editors.set_owner(window.native_handle());
     app.samples = samples;
+    app.refresh_warps();
     app.set_output(stream);
     app.xrun_watch.reopened(0.0, 0);
     app.start_midi_out();
@@ -662,6 +667,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // PONZIK_CAPTURE=1: a phrase played with the transport stopped, captured.
     if std::env::var_os("PONZIK_CAPTURE").is_some() {
         app.screenshot_capture();
+    }
+    // PONZIK_CLIP=audio[,markers|tones|off]|pattern: a clip and its clip panel.
+    if let Ok(spec) = std::env::var("PONZIK_CLIP") {
+        app.screenshot_clip(&spec);
     }
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {
