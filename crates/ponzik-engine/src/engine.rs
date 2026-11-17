@@ -14,7 +14,7 @@ use crate::effects::fx_rack::{MacroMap, RackLayout};
 use crate::mixer::{INSERT_SLOTS, MASTER, Mixer, SEND_SLOTS, TRACKS};
 use crate::modulation::{ModClock, ModInput, ModSet};
 use crate::note_fx::NoteFx;
-use crate::pool::WorkerPool;
+use crate::pool::{Parallelism, WorkerPool};
 use crate::rack::{Channel, NOTE_FX_SLOTS};
 use crate::ring::{self, Consumer, Producer};
 use crate::sequence::{AutoTarget, PPQ, PlayMode, SeqEvent, Sequence};
@@ -232,6 +232,8 @@ struct SharedState {
     channel_cpu: Vec<AtomicU32>,
     /// Threads de calcul en plus du thread audio.
     workers: AtomicU32,
+    /// Les threads de calcul servent en ce moment (choix adaptatif).
+    parallel: AtomicBool,
 }
 
 /// Lit une charge publiée (bits d'un `f32`).
@@ -370,6 +372,12 @@ impl EngineHandle {
         self.state.workers.load(Ordering::Relaxed) as usize
     }
 
+    /// Vrai si les threads de calcul partagent le travail en ce moment ; faux
+    /// s'ils dorment parce que le thread audio suffit (voir [`Engine::set_adaptive_threads`]).
+    pub fn parallel_active(&self) -> bool {
+        self.state.parallel.load(Ordering::Relaxed)
+    }
+
     /// Latence totale au master, en secondes.
     pub fn latency_seconds(&self) -> f32 {
         self.latency() as f32 / self.sample_rate.max(1.0)
@@ -469,6 +477,10 @@ pub struct Engine {
     midi_clock: MidiClock,
     /// Threads de calcul (aucun : tout sur le thread audio, chemin de référence).
     pool: Option<WorkerPool>,
+    /// Choix adaptatif des threads de calcul (`None` : toujours utilisés).
+    parallelism: Option<Parallelism>,
+    /// Les threads de calcul servent aux prochains blocs.
+    parallel_on: bool,
     /// Rendu de chaque canal sur le bloc, `MAX_BLOCK` images par canal, quand
     /// les canaux sont rendus en parallèle ; additionné ensuite dans l'ordre.
     lanes_l: Vec<f32>,
@@ -515,6 +527,7 @@ impl Engine {
             insert_cpu: (0..TRACKS * INSERT_SLOTS).map(|_| AtomicU32::new(0)).collect(),
             channel_cpu: (0..MAX_CHANNELS).map(|_| AtomicU32::new(0)).collect(),
             workers: AtomicU32::new(0),
+            parallel: AtomicBool::new(false),
         });
         let mut voices = Vec::with_capacity(MAX_AUDIO_VOICES);
         voices.resize(sequence.audio_clips.len().min(MAX_AUDIO_VOICES), AudioVoice::default());
@@ -560,6 +573,8 @@ impl Engine {
             midi: MidiLink::new(sample_rate),
             midi_clock: MidiClock::default(),
             pool: None,
+            parallelism: None,
+            parallel_on: true,
             lanes_l: Vec::new(),
             lanes_r: Vec::new(),
         };
@@ -591,6 +606,32 @@ impl Engine {
         self.lanes_r = vec![0.0; lanes];
         self.state.workers.store(pool.as_ref().map_or(0, |p| p.workers() as u32), Ordering::Relaxed);
         self.pool = pool;
+        self.publish_parallel();
+    }
+
+    /// Threads de calcul adaptatifs : tant que le thread audio suffit (charge
+    /// sous ~40 % du budget), il rend seul et les threads dorment sans rien
+    /// consommer ; ils reprennent dès que la charge monte, et se rendorment
+    /// après quelques secondes calmes. Sans effet sur le son (identique au bit
+    /// près). Désactivé : les threads servent à chaque bloc (export).
+    pub fn set_adaptive_threads(&mut self, adaptive: bool) {
+        self.parallelism = adaptive.then(Parallelism::default);
+        self.parallel_on = !adaptive;
+        self.publish_parallel();
+    }
+
+    /// Impose l'usage (ou non) des threads de calcul aux prochains blocs, sans
+    /// choix adaptatif : pour vérifier que le son n'en dépend pas.
+    #[doc(hidden)]
+    pub fn force_parallel(&mut self, on: bool) {
+        self.parallelism = None;
+        self.parallel_on = on;
+        self.publish_parallel();
+    }
+
+    fn publish_parallel(&self) {
+        let active = self.pool.is_some() && self.parallel_on;
+        self.state.parallel.store(active, Ordering::Relaxed);
     }
 
     /// Threads de calcul en plus du thread audio.
@@ -754,8 +795,20 @@ impl Engine {
         self.state.input_gate.store(self.strip.gate_gain().to_bits(), Ordering::Relaxed);
         if frames > 0 {
             let budget = frames as f32 / self.sample_rate;
-            let load = started.elapsed().as_secs_f32() / budget;
+            let wall = started.elapsed();
+            let load = wall.as_secs_f32() / budget;
             self.state.load.fetch_max(load.to_bits(), Ordering::Relaxed);
+            // Charge qu'aurait eue le thread audio seul : le temps des tâches
+            // remplace celui des travaux partagés.
+            let (work, jobs) = self.pool.as_ref().map_or((0, 0), WorkerPool::take_times);
+            let serial = (wall.as_nanos() as u64 + work).saturating_sub(jobs) as f32 * 1e-9;
+            if let Some(p) = self.parallelism.as_mut() {
+                let on = p.update(serial / budget, budget);
+                if on != self.parallel_on {
+                    self.parallel_on = on;
+                    self.publish_parallel();
+                }
+            }
         }
         self.publish_cpu(done);
         done
@@ -899,8 +952,10 @@ impl Engine {
         self.modulate_channels(n);
         self.mixer.clock = self.mod_clock();
         // Threads de calcul : rendus à la fin du bloc (déplacer le pool n'alloue rien).
+        // Endormis quand le thread audio suffit (choix adaptatif).
         let pool = self.pool.take();
-        let parallel = pool.as_ref().filter(|_| self.channels.len() >= 2);
+        let active = pool.as_ref().filter(|_| self.parallel_on);
+        let parallel = active.filter(|_| self.channels.len() >= 2);
         let mut i = 0;
         let mut next_event = 0;
         while i < n {
@@ -949,7 +1004,7 @@ impl Engine {
         self.render_audio_clips(pos_start, n, t0);
         self.capture_input(input, in_channels, pos_start, n, spt);
         self.metronome_click(pos_start, n, t0, spt);
-        match pool.as_ref() {
+        match active {
             Some(pool) => self.mixer.process_parallel(n, &self.state.track_peaks, pool),
             None => self.mixer.process(n, &self.state.track_peaks),
         }

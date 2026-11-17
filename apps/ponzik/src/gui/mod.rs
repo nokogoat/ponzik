@@ -211,6 +211,7 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     let samples = compat::project_samples(&project);
     let (mut engine, handle) = project.build_engine(config.sample_rate as f32, &|p| samples.get(p).cloned());
     engine.set_worker_threads(ponzik_engine::default_worker_threads());
+    engine.set_adaptive_threads(true);
     // The plugin instances' editors, before the engine leaves for the audio thread.
     let editors = editors::PluginEditors::from_engine(&mut engine);
     let output_name = output.device_name().to_string();

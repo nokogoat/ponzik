@@ -90,6 +90,7 @@ fn play(seconds: Option<&str>) -> Result<(), String> {
     let none = |_: &str| None;
     let (mut engine, mut handle) = project.build_engine(config.sample_rate as f32, &none);
     engine.set_worker_threads(ponzik_engine::default_worker_threads());
+    engine.set_adaptive_threads(true);
     let _ = handle.send(Command::Play);
     let stream = output.start(move |out, ch| engine.process(out, ch)).map_err(|e| e.to_string())?;
     println!("Ponzik · {} · {} BPM · {} Hz · {}", project.name, project.bpm, config.sample_rate, stream.device_name());

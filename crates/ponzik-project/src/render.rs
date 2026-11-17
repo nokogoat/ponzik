@@ -786,6 +786,54 @@ mod tests {
     }
 
     #[test]
+    fn switching_the_workers_on_and_off_between_blocks_changes_nothing() {
+        for p in [demo_project(), demo_breakcore()] {
+            let single = render_blocks(&p, 0, 300);
+            let (mut engine, mut handle) = p.build_engine(48_000.0, &no_samples);
+            engine.set_worker_threads(3);
+            handle.send(Command::Play).unwrap();
+            let order = p.routing_order().unwrap();
+            let mut buf = [0.0f32; 2 * 600];
+            let mut out = Vec::new();
+            for b in 0..300 {
+                if b % 3 == 0 {
+                    let o = if b % 6 == 0 { order.iter().rev().copied().collect() } else { order.clone() };
+                    handle.send(Command::SetRoutingOrder(o)).unwrap();
+                }
+                // Comme le choix adaptatif : tantôt seul, tantôt avec les threads.
+                engine.force_parallel(b % 7 < 3);
+                assert_eq!(handle.parallel_active(), b % 7 < 3);
+                let n = [600, 64, 1, 256, 333][b % 5];
+                engine.process(&mut buf[..2 * n], 2);
+                out.extend_from_slice(&buf[..2 * n]);
+                handle.collect_garbage();
+            }
+            assert!(single == out, "{}: le son dépend des threads", p.name);
+        }
+    }
+
+    #[test]
+    fn adaptive_threads_sleep_on_a_light_project() {
+        let p = demo_project();
+        let (mut engine, mut handle) = p.build_engine(48_000.0, &no_samples);
+        engine.set_worker_threads(2);
+        engine.set_adaptive_threads(true);
+        assert!(!handle.parallel_active());
+        handle.send(Command::Play).unwrap();
+        let mut buf = [0.0f32; 2 * 4_800];
+        let started = std::time::Instant::now();
+        let mut rendered = 0.0;
+        for _ in 0..20 {
+            engine.process(&mut buf, 2);
+            rendered += 0.1;
+        }
+        // Rendu bien plus vite que le temps réel : les threads ne se réveillent pas.
+        if started.elapsed().as_secs_f64() < rendered * 0.15 {
+            assert!(!handle.parallel_active());
+        }
+    }
+
+    #[test]
     fn demos_render_bit_identical_on_one_or_several_threads() {
         for p in [demo_project(), demo_breakcore(), demo_zalgo()] {
             let single = render_blocks(&p, 0, 400);

@@ -40,7 +40,7 @@ pub use instrument::Instrument;
 pub use midi_out::{MidiOut, MidiOutEvent};
 pub use note_fx::{NoteBuffer, NoteEvent, NoteFx};
 pub use param::{ParamInfo, Params, Unit};
-pub use pool::{WorkerPool, default_worker_threads, promote_current_thread};
+pub use pool::{Parallelism, WorkerPool, default_worker_threads, promote_current_thread};
 pub use rack::{Channel, NOTE_FX_SLOTS};
 pub use sample::Sample;
 pub use sequence::{
