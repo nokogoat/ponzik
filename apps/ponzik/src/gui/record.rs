@@ -27,8 +27,16 @@ use super::compat;
 use super::theme::*;
 use super::widgets::{Icon, draw_icon, wid};
 
-/// Durée maximale d'une prise (tampon préalloué), en secondes.
+/// Durée maximale d'une prise, en secondes.
 const TAKE_SECONDS: f32 = 600.0;
+/// Tampon de départ d'une prise ; elle s'allonge ensuite par morceaux, alloués
+/// ici (hors du thread audio) quand il lui reste moins de `TAKE_LOW_SECONDS`.
+/// Une prise courte n'occupe plus 230 Mo d'avance.
+const TAKE_START_SECONDS: f32 = 15.0;
+const TAKE_CHUNK_SECONDS: f32 = 15.0;
+const TAKE_LOW_SECONDS: f32 = 8.0;
+/// Tampons gardés pour les prochaines prises, ramenés à leur taille de départ.
+const SPARE_TAKES: usize = 2;
 const PANEL_W: f32 = 372.0;
 const PANEL_H: f32 = 556.0;
 /// Graduations du VU-mètre d'entrée, en dBFS.
@@ -160,6 +168,8 @@ pub struct RecordState {
     pub armed: Vec<(usize, InputSource)>,
     /// Tampons confiés au moteur : piste et source.
     in_engine: Vec<(usize, InputSource)>,
+    /// Prises en cours allongées : piste, trames accordées, moment du dernier envoi.
+    granted: Vec<(usize, usize, f32)>,
     /// Tampons revenus, réutilisés (aucune nouvelle allocation de 100 Mo par prise).
     /// Les boîtes repartent telles quelles au moteur.
     #[allow(clippy::vec_box)]
@@ -451,12 +461,39 @@ impl App {
             let spare = self.rec.spare.iter().position(|b| b.is_mono() == source.is_mono() && b.sample_rate == sr);
             let mut buffer = match spare {
                 Some(i) => self.rec.spare.swap_remove(i),
-                None => Box::new(RecordBuffer::for_source(source, if self.rec.demo { 1.0 } else { TAKE_SECONDS }, sr)),
+                None => Box::new(RecordBuffer::for_source(source, if self.rec.demo { 1.0 } else { TAKE_START_SECONDS }, sr)),
             };
             buffer.source = source;
             buffer.len = 0;
             self.rec.in_engine.push((track, source));
+            self.rec.granted.retain(|g| g.0 != track);
+            self.rec.granted.push((track, buffer.capacity(), self.time));
             self.send(Command::Record { track, armed: true, buffer: Some(buffer) });
+        }
+        self.feed_takes();
+    }
+
+    /// Allonge les prises qui vont manquer de place : un morceau de
+    /// `TAKE_CHUNK_SECONDS`, écrit ici, part au moteur bien avant qu'il en ait besoin.
+    fn feed_takes(&mut self) {
+        if self.rec.demo {
+            return;
+        }
+        let sr = self.sample_rate as f32;
+        let (low, chunk, max) = ((TAKE_LOW_SECONDS * sr) as usize, (TAKE_CHUNK_SECONDS * sr) as usize, (TAKE_SECONDS * sr) as usize);
+        for k in 0..self.rec.in_engine.len() {
+            let (track, source) = self.rec.in_engine[k];
+            let Some(room) = self.engine.record_room(track) else { continue };
+            let Some(g) = self.rec.granted.iter().position(|g| g.0 == track) else { continue };
+            let (_, granted, sent) = self.rec.granted[g];
+            // Le morceau précédent n'est peut-être pas encore arrivé au moteur.
+            if room >= low || granted >= max || self.time - sent < 0.25 {
+                continue;
+            }
+            let frames = chunk.min(max - granted);
+            let piece = Box::new(ponzik_engine::RecordChunk::new(frames, source.is_mono()));
+            self.rec.granted[g] = (track, granted + frames, self.time);
+            self.send(Command::RecordChunk { track, chunk: piece });
         }
     }
 
@@ -466,13 +503,18 @@ impl App {
             if let Some(i) = self.rec.in_engine.iter().position(|&(t, s)| t == take.track && s == take.source) {
                 self.rec.in_engine.remove(i);
             }
+            self.rec.granted.retain(|g| g.0 != take.track);
+            let mut take = take;
+            // Les morceaux ajoutés en route sont recollés : la prise est d'un seul tenant.
+            take.flatten();
             if take.len > 0 {
-                if take.is_full() {
+                if take.is_full() && take.capacity() as f32 >= TAKE_SECONDS * take.sample_rate * 0.99 {
                     self.toast(tr("Take reached its maximum length (10 min)"));
                 }
                 self.place_take(&take);
             }
-            if self.rec.spare.len() < 4 {
+            if self.rec.spare.len() < SPARE_TAKES {
+                take.shrink_for_reuse((TAKE_START_SECONDS * take.sample_rate) as usize);
                 self.rec.spare.push(take);
             }
         }
