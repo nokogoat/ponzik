@@ -231,6 +231,7 @@ impl App {
         add(tr("History").into(), tr("Edit"), k(S::History), Action::Popup(Popup::History));
         add(tr("Demo: house groove").into(), tr("Demo"), none(), Action::LoadDemo(0));
         add(tr("Demo: Amen rave (breakcore)").into(), tr("Demo"), none(), Action::LoadDemo(1));
+        add(tr("Demo: Zalgo rave (rage × techno)").into(), tr("Demo"), none(), Action::LoadDemo(2));
         for (i, th) in THEMES.iter().enumerate() {
             add(tr_fmt!("Theme: {}", tr(th.label)), tr("Theme"), none(), Action::SetTheme(i));
         }

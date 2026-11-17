@@ -432,7 +432,7 @@ mod tests {
     use ponzik_engine::{Note, Sample, TICKS_PER_STEP};
 
     use super::*;
-    use crate::{AudioClipDef, AutoScope, AutoTarget, InstrumentDef, demo_breakcore, demo_project};
+    use crate::{AudioClipDef, AutoScope, AutoTarget, InstrumentDef, demo_breakcore, demo_project, demo_zalgo};
 
     const SR: u32 = 22_050;
 
@@ -787,7 +787,7 @@ mod tests {
 
     #[test]
     fn demos_render_bit_identical_on_one_or_several_threads() {
-        for p in [demo_project(), demo_breakcore()] {
+        for p in [demo_project(), demo_breakcore(), demo_zalgo()] {
             let single = render_blocks(&p, 0, 400);
             assert!(peak(&single) > 0.05, "{}", p.name);
             for workers in [1, 3] {

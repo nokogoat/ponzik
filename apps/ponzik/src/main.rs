@@ -20,12 +20,14 @@ Ponzik — the free DAW. No more gatekeeping.
 Usage:
   ponzik                                   opens the interface (house demo)
   ponzik breakcore                         opens the interface on the breakcore demo
+  ponzik zalgo                             opens the interface on the rage × techno demo
   ponzik play [seconds]                    plays the demo in the terminal (Enter to stop)
-  ponzik render <output.wav> [song|pattern]
-                                           exports the demo as a 24-bit WAV
+  ponzik render <output.wav> [song|pattern] [breakcore|zalgo]
+                                           exports a demo as a 24-bit WAV
   ponzik screenshot <output.png> [view] [width height]
                                            captures the interface off-screen
                                            (views: rack, piano, playlist, mixer, lab;
+                                           bc-<view>, zg-<view>: the other demos;
                                            PONZIK_SAMPLELAB=demo|<wav> opens the Sample Lab;
                                            PONZIK_SCALE_UI=2 renders at 2× for HiDPI;
                                            PONZIK_LANG=fr picks the language)
@@ -44,6 +46,7 @@ fn main() -> ExitCode {
     let result = match args.first().map(String::as_str) {
         None => gui::run(demo_project()),
         Some("breakcore") => gui::run(ponzik_project::demo_breakcore()),
+        Some("zalgo") => gui::run(ponzik_project::demo_zalgo()),
         Some("play") => play(args.get(1).map(String::as_str)),
         Some("render") => render(&args[1..]),
         Some("screenshot") => screenshot(&args[1..]),
@@ -118,15 +121,19 @@ fn play(seconds: Option<&str>) -> Result<(), String> {
 
 fn render(args: &[String]) -> Result<(), String> {
     let path = args.first().ok_or_else(|| tr_fmt!("missing output file\n\n{}", help()))?;
-    let project = if args.get(2).is_some_and(|a| a == "breakcore") { ponzik_project::demo_breakcore() } else { demo_project() };
+    let project = match args.get(2).map(String::as_str) {
+        Some("breakcore") => ponzik_project::demo_breakcore(),
+        Some("zalgo") => ponzik_project::demo_zalgo(),
+        _ => demo_project(),
+    };
     let mode = match args.get(1).map(String::as_str) {
         None | Some("song" | "morceau") => RenderMode::Song,
         Some("pattern") => RenderMode::Pattern(0, 4),
         Some(other) => return Err(tr_fmt!("unknown mode: {}", other)),
     };
     const SR: u32 = 48_000;
-    let none = |_: &str| None;
-    let audio = ponzik_project::render_song(&project, SR, &none, mode);
+    let samples = gui::project_samples(&project);
+    let audio = ponzik_project::render_song(&project, SR, &|p| samples.get(p).cloned(), mode);
     ponzik_project::write_wav(path, &audio, SR, BitDepth::Pcm24).map_err(|e| format!("{path}: {e}"))?;
     let peak = audio.iter().fold(0.0f32, |m, s| m.max(s.abs()));
     println!(

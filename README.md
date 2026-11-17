@@ -55,7 +55,9 @@ It runs on Linux and Windows.
   projects, device presets, Standard MIDI File import and export.
 - **Export**: WAV at 16-bit, 24-bit or 32-bit float, stems, peak or LUFS
   normalization, TPDF dither at 16 bits.
-- **Demos**: `ponzik` (house groove) and `ponzik breakcore` ("Amen rave", 180 BPM).
+- **Demos**: `ponzik` (house groove), `ponzik breakcore` ("Amen rave", 180 BPM) and
+  `ponzik zalgo` ("Zalgo Rave", 160 BPM: halftime rage drops, a raw techno switch
+  with an acid 303, risers and impacts from the sound library).
 
 ## Build and run
 
@@ -67,15 +69,17 @@ backends, not yet tested on real hardware.
 ```sh
 cargo run --release                                  # open the UI on the house demo
 cargo run --release -- breakcore                     # open the UI on the breakcore demo
+cargo run --release -- zalgo                         # open the UI on the rage × techno demo
 cargo run --release -- play [seconds]                # play the demo in the terminal
-cargo run --release -- render demo.wav [morceau|pattern]   # render the demo (song or first pattern) to WAV
+cargo run --release -- render demo.wav [morceau|pattern] [breakcore|zalgo]   # render a demo (song or first pattern) to WAV
 cargo run --release -- screenshot ui.png mixer       # off-screen UI capture
 cargo test
 ```
 
 Once installed, the same commands are available as `ponzik`, `ponzik breakcore`,
-`ponzik render <out.wav>` and `ponzik screenshot <out.png> [view] [width height]`
-(views: `rack`, `piano`, `playlist`, `mixer`).
+`ponzik zalgo`, `ponzik render <out.wav>` and `ponzik screenshot <out.png> [view] [width height]`
+(views: `rack`, `piano`, `playlist`, `mixer`; `bc-` and `zg-` prefixes pick the
+breakcore and Zalgo Rave demos, e.g. `zg-mixer`).
 
 Environment variables:
 

@@ -1,5 +1,6 @@
 //! Fichiers : dossiers de travail, projets, export, échantillons.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -123,8 +124,24 @@ pub fn export_regions(
     Ok((dir, taken.len()))
 }
 
+/// A WAV file; a library sound whose file is not on disk (yet) is rendered in memory.
 pub fn load_sample(path: &str) -> Result<Sample, String> {
-    ponzik_engine::wav::load_wav(path)
+    ponzik_engine::wav::load_wav(path).or_else(|e| ponzik_project::library::library_sample(path).ok_or(e))
+}
+
+/// Every sample a project uses (sampler instruments and audio clips), loaded
+/// once; those that fail to load are left out.
+pub fn project_samples(project: &Project) -> HashMap<String, Arc<Sample>> {
+    let mut samples = HashMap::new();
+    let paths = project.channels.iter().flat_map(|c| c.instrument.sample_paths()).chain(project.audio_clips.iter().map(|c| &c.path));
+    for path in paths {
+        if !samples.contains_key(path)
+            && let Ok(s) = load_sample(path)
+        {
+            samples.insert(path.clone(), Arc::new(s));
+        }
+    }
+    samples
 }
 
 /// Cherche des fichiers WAV dans les dossiers habituels. The library comes

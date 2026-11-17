@@ -47,7 +47,7 @@ use ponzik_window::{Event, Key, Modifiers, MouseButton, Window};
 
 use app::{App, View};
 pub use settings::init_language;
-pub use compat::library_dir;
+pub use compat::{library_dir, project_samples};
 
 const FRAME: Duration = Duration::from_micros(16_667);
 const DOUBLE_CLICK: f32 = 0.35;
@@ -206,8 +206,8 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     }
     let output = ponzik_audio::open_default().map_err(|e| e.to_string())?;
     let config = output.config();
-    let none = |_: &str| None;
-    let (mut engine, handle) = project.build_engine(config.sample_rate as f32, &none);
+    let samples = compat::project_samples(&project);
+    let (mut engine, handle) = project.build_engine(config.sample_rate as f32, &|p| samples.get(p).cloned());
     engine.set_worker_threads(ponzik_engine::default_worker_threads());
     // The plugin instances' editors, before the engine leaves for the audio thread.
     let editors = editors::PluginEditors::from_engine(&mut engine);
@@ -221,6 +221,7 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     let mut app = App::new(handle, project, config.sample_rate);
     app.editors = editors;
     app.editors.set_owner(window.native_handle());
+    app.samples = samples;
     app.set_output(stream);
     app.start_midi_out();
     for m in &app.midi_inputs {
@@ -349,16 +350,20 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
 /// est la taille logique ; avec `PONZIK_SCALE_UI=2`, l'image fait le double en pixels.
 pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result<(), String> {
     const SR: u32 = 48_000;
-    // « bc-playlist » : la démo breakcore dans la vue playlist.
-    let (project, view) = match view.strip_prefix("bc-") {
-        Some(v) => (ponzik_project::demo_breakcore(), v),
-        None => (demo_project(), view),
+    // « bc-playlist » : la démo breakcore dans la vue playlist ; « zg-mixer » : la démo Zalgo Rave.
+    let (project, view) = if let Some(v) = view.strip_prefix("bc-") {
+        (ponzik_project::demo_breakcore(), v)
+    } else if let Some(v) = view.strip_prefix("zg-") {
+        (ponzik_project::demo_zalgo(), v)
+    } else {
+        (demo_project(), view)
     };
-    let none = |_: &str| None;
-    let (mut engine, handle) = project.build_engine(SR as f32, &none);
+    let samples = compat::project_samples(&project);
+    let (mut engine, handle) = project.build_engine(SR as f32, &|p| samples.get(p).cloned());
     let editors = editors::PluginEditors::from_engine(&mut engine);
     let mut app = App::new(handle, project, SR);
     app.editors = editors;
+    app.samples = samples;
     // PONZIK_PRESET=n : profil d'espace de travail (0 Complet … 4 Minimal).
     if let Some(i) = std::env::var("PONZIK_PRESET").ok().and_then(|v| v.parse().ok()) {
         if let Some((_, _, ws)) = settings::presets().into_iter().nth(i) {

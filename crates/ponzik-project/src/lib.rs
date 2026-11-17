@@ -24,6 +24,7 @@ pub const SESSION_SCENES: usize = 8;
 mod arrange;
 pub mod autosave;
 mod breakcore;
+mod zalgo;
 mod demo;
 pub mod history;
 pub mod io;
@@ -40,6 +41,7 @@ pub mod templates;
 
 pub use arrange::{MARKER_COLORS, Placement, TimeSlice};
 pub use breakcore::demo_breakcore;
+pub use zalgo::demo_zalgo;
 pub use demo::demo_project;
 pub use history::History;
 pub use flp::{ImportReport, import_flp, resolve_sample};

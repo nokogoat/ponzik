@@ -2897,6 +2897,7 @@ impl App {
                         MenuItem::new(Icon::Piano, tr("Export as MIDI"), Action::ExportMidi).tip(tr("The current pattern")),
                         MenuItem::new(Icon::Play, tr("House demo"), Action::LoadDemo(0)).sep(),
                         MenuItem::new(Icon::Play, tr("Breakcore demo"), Action::LoadDemo(1)),
+                        MenuItem::new(Icon::Play, tr("Zalgo rave demo"), Action::LoadDemo(2)),
                         MenuItem::new(Icon::Theme, tr("Theme"), Action::Popup(Popup::Themes)).detail(tr(THEMES[theme].label).into()).sep(),
                         MenuItem::new(Icon::Layout, tr("Settings"), Action::Popup(Popup::Settings { tab: 0 }))
                             .detail(key(S::Settings))
@@ -3157,7 +3158,11 @@ impl App {
             Action::Undo => self.undo(),
             Action::Redo => self.redo(),
             Action::LoadDemo(i) => {
-                let p = if i == 1 { ponzik_project::demo_breakcore() } else { ponzik_project::demo_project() };
+                let p = match i {
+                    1 => ponzik_project::demo_breakcore(),
+                    2 => ponzik_project::demo_zalgo(),
+                    _ => ponzik_project::demo_project(),
+                };
                 let name = p.name.clone();
                 self.replace_project(p, None);
                 self.toast(&tr_fmt!("Demo loaded: {}", name));

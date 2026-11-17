@@ -114,6 +114,33 @@ msgstr "Respiration"
 msgid "Drill"
 msgstr "Drill"
 
+msgid "808"
+msgstr "808"
+
+msgid "808 tail"
+msgstr "Queue de 808"
+
+msgid "Lead"
+msgstr "Lead"
+
+msgid "Arp"
+msgstr "Arpège"
+
+msgid "Rage"
+msgstr "Rage"
+
+msgid "Techno"
+msgstr "Techno"
+
+msgid "Build"
+msgstr "Montée"
+
+msgid "Fill"
+msgstr "Break"
+
+msgid "FX"
+msgstr "FX"
+
 msgid "House groove in A minor"
 msgstr "Groove house en La mineur"
 
@@ -903,6 +930,9 @@ msgstr "Démo house"
 msgid "Breakcore demo"
 msgstr "Démo breakcore"
 
+msgid "Zalgo rave demo"
+msgstr "Démo Zalgo rave"
+
 msgid "Theme"
 msgstr "Thème"
 
@@ -1511,6 +1541,9 @@ msgstr "Démo"
 
 msgid "Demo: Amen rave (breakcore)"
 msgstr "Démo : Amen rave (breakcore)"
+
+msgid "Demo: Zalgo rave (rage × techno)"
+msgstr "Démo : Zalgo rave (rage × techno)"
 
 msgid "Theme: {}"
 msgstr "Thème : {}"
@@ -3955,8 +3988,8 @@ msgstr "{} dB latéral"
 
 # --- Command line help ---
 
-msgid "Ponzik — the free DAW. No more gatekeeping.\n\nUsage:\n  ponzik                                   opens the interface (house demo)\n  ponzik breakcore                         opens the interface on the breakcore demo\n  ponzik play [seconds]                    plays the demo in the terminal (Enter to stop)\n  ponzik render <output.wav> [song|pattern]\n                                           exports the demo as a 24-bit WAV\n  ponzik screenshot <output.png> [view] [width height]\n                                           captures the interface off-screen\n                                           (views: rack, piano, playlist, mixer, lab;\n                                           PONZIK_SAMPLELAB=demo|<wav> opens the Sample Lab;\n                                           PONZIK_SCALE_UI=2 renders at 2× for HiDPI;\n                                           PONZIK_LANG=fr picks the language)\n  ponzik library [dir]                     renders the bundled sound library (24-bit WAV)\n                                           into dir (default: ~/Music/Ponzik/Library)\n  ponzik help                              shows this help"
-msgstr "Ponzik — le DAW libre. No more gatekeeping.\n\nUsage :\n  ponzik                                   ouvre l'interface (démo house)\n  ponzik breakcore                         ouvre l'interface sur la démo breakcore\n  ponzik play [secondes]                   joue la démo dans le terminal (Entrée pour arrêter)\n  ponzik render <sortie.wav> [song|pattern]\n                                           exporte la démo en WAV 24 bits\n  ponzik screenshot <sortie.png> [vue] [largeur hauteur]\n                                           capture l'interface hors écran\n                                           (vues : rack, piano, playlist, mixer, lab ;\n                                           PONZIK_SAMPLELAB=demo|<wav> ouvre le Sample Lab ;\n                                           PONZIK_SCALE_UI=2 rend en 2× pour l'HiDPI ;\n                                           PONZIK_LANG=fr choisit la langue)\n  ponzik library [dossier]                 génère la banque de sons fournie (WAV 24 bits)\n                                           dans dossier (par défaut : ~/Musique/Ponzik/Library)\n  ponzik help                              affiche cette aide"
+msgid "Ponzik — the free DAW. No more gatekeeping.\n\nUsage:\n  ponzik                                   opens the interface (house demo)\n  ponzik breakcore                         opens the interface on the breakcore demo\n  ponzik zalgo                             opens the interface on the rage × techno demo\n  ponzik play [seconds]                    plays the demo in the terminal (Enter to stop)\n  ponzik render <output.wav> [song|pattern] [breakcore|zalgo]\n                                           exports a demo as a 24-bit WAV\n  ponzik screenshot <output.png> [view] [width height]\n                                           captures the interface off-screen\n                                           (views: rack, piano, playlist, mixer, lab;\n                                           bc-<view>, zg-<view>: the other demos;\n                                           PONZIK_SAMPLELAB=demo|<wav> opens the Sample Lab;\n                                           PONZIK_SCALE_UI=2 renders at 2× for HiDPI;\n                                           PONZIK_LANG=fr picks the language)\n  ponzik library [dir]                     renders the bundled sound library (24-bit WAV)\n                                           into dir (default: ~/Music/Ponzik/Library)\n  ponzik help                              shows this help"
+msgstr "Ponzik — le DAW libre. No more gatekeeping.\n\nUsage :\n  ponzik                                   ouvre l'interface (démo house)\n  ponzik breakcore                         ouvre l'interface sur la démo breakcore\n  ponzik zalgo                             ouvre l'interface sur la démo rage × techno\n  ponzik play [secondes]                   joue la démo dans le terminal (Entrée pour arrêter)\n  ponzik render <sortie.wav> [song|pattern] [breakcore|zalgo]\n                                           exporte une démo en WAV 24 bits\n  ponzik screenshot <sortie.png> [vue] [largeur hauteur]\n                                           capture l'interface hors écran\n                                           (vues : rack, piano, playlist, mixer, lab ;\n                                           bc-<vue>, zg-<vue> : les autres démos ;\n                                           PONZIK_SAMPLELAB=demo|<wav> ouvre le Sample Lab ;\n                                           PONZIK_SCALE_UI=2 rend en 2× pour l'HiDPI ;\n                                           PONZIK_LANG=fr choisit la langue)\n  ponzik library [dossier]                 génère la banque de sons fournie (WAV 24 bits)\n                                           dans dossier (par défaut : ~/Musique/Ponzik/Library)\n  ponzik help                              affiche cette aide"
 
 # --- Interface size, MIDI clock, takes ---
 
