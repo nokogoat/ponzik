@@ -1577,6 +1577,7 @@ impl App {
     pub fn needs_redraw(&self) -> bool {
         self.playing
             || self.anim.is_moving()
+            || self.anim.is_ambient()
             || self.drag.is_some()
             || !self.toasts.is_empty()
             || self.tips.waiting
@@ -1585,6 +1586,12 @@ impl App {
             || self.track_meters.iter().any(Meter::active)
             || self.channel_meters.iter().any(Meter::active)
             || self.rec.needs_redraw()
+    }
+
+    /// Vrai si l'image doit suivre à 60 images/s : animation, glisser, défilement.
+    /// La lecture seule (tête, VU-mètres) se contente de 30.
+    pub fn wants_smooth_frames(&self) -> bool {
+        self.anim.is_moving() || self.drag.is_some() || self.dnd.is_some() || self.pan.is_some()
     }
 
     /// Raccourcis globaux, ceux de la table des touches (FL Studio par défaut).
@@ -2143,7 +2150,7 @@ impl App {
         let gap = if leds <= 4 { 11.0 } else { 44.0 / leds as f32 * 0.98 + 1.0 };
         for b in 0..leds {
             let lit = self.playing && b == at.beat as usize;
-            let v = self.anim.to(wid("beat-led", b, 0), lit as u8 as f32, T_HEAD);
+            let v = self.anim.to_ambient(wid("beat-led", b, 0), lit as u8 as f32, T_HEAD);
             let rad = if leds <= 4 { 3.0 } else { 2.3 };
             c.fill_circle(r.x + 14.0 + b as f32 * gap, cy, rad, t.raised_hi.mix(lit_col, v));
         }

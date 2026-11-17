@@ -103,7 +103,7 @@ impl App {
             let (x, w) = geom(i);
             let cx = x + w * 0.5;
             let here = head == Some(i);
-            let led = self.anim.to(wid("step-led", i, 0), here as u8 as f32, T_HEAD);
+            let led = self.anim.to_ambient(wid("step-led", i, 0), here as u8 as f32, T_HEAD);
             if led > 0.01 {
                 c.fill_circle(cx, inner.y + 4.0, 3.0, t.accent.alpha(led));
             }
@@ -343,8 +343,8 @@ impl App {
             self.set_cursor(Cursor::Hand);
         }
         let hv = self.hover_anim(wid("pad", ch, i), hov);
-        let headv = self.anim.to(wid("pad-head", ch, i), (head == Some(i)) as u8 as f32, T_HEAD);
-        let flash = self.anim.to(wid("pad-flash", ch, i), 0.0, T_FLASH);
+        let headv = self.anim.to_ambient(wid("pad-head", ch, i), (head == Some(i)) as u8 as f32, T_HEAD);
+        let flash = self.anim.to_ambient(wid("pad-flash", ch, i), 0.0, T_FLASH);
         // Pas qui vient d'être posé ou effacé : petit rebond, ou empreinte qui s'éteint.
         let pid = wid("pad-pop", ch, i);
         let pop = if self.anim.get(pid).is_some() { self.anim.to(pid, 1.0, 0.08) } else { 1.0 };

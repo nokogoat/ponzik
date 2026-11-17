@@ -50,6 +50,8 @@ pub use settings::init_language;
 pub use compat::{library_dir, project_samples};
 
 const FRAME: Duration = Duration::from_micros(16_667);
+/// Cadence quand seules la tête de lecture et les VU-mètres bougent.
+const SLOW_FRAME: Duration = Duration::from_micros(33_333);
 const DOUBLE_CLICK: f32 = 0.35;
 
 /// État souris/clavier d'une image.
@@ -235,6 +237,10 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     let (play, find) = (app.key_label(keymap::Shortcut::PlayStop), app.key_label(keymap::Shortcut::Palette));
     app.toast(&tr_fmt!("{} to play · {} to find anything", play, find));
     eprintln!("Ponzik · {} · {} Hz · {}", window.backend_name(), config.sample_rate, output_name);
+    // PONZIK_AUTOPLAY=1 : lecture lancée dès l'ouverture (mesures de charge).
+    if std::env::var_os("PONZIK_AUTOPLAY").is_some() {
+        app.toggle_play();
+    }
     let result = event_loop(&mut window, &mut app);
     // Plugin interfaces go before their windows, and both before the instances.
     app.editors.close_all();
@@ -322,9 +328,13 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
         // Au repos, on dort jusqu'au prochain événement ; sinon on vise 60 images/s
         // en continuant d'écouter la souris jusqu'à l'échéance.
         if dirty || app.needs_redraw() {
-            let deadline = last_frame + FRAME;
+            // Seuls la lecture et les VU-mètres bougent : 30 images/s suffisent.
+            // Une souris qui bouge ou une animation repassent à 60.
+            let smooth = dirty || app.wants_smooth_frames();
             let slice = if app.midi_inputs.is_empty() { FRAME } else { Duration::from_millis(4) };
-            while let Some(left) = deadline.checked_duration_since(Instant::now()) {
+            loop {
+                let interval = if smooth || dirty || !events.is_empty() { FRAME } else { SLOW_FRAME };
+                let Some(left) = (last_frame + interval).checked_duration_since(Instant::now()) else { break };
                 window.wait_events(left.min(slice), &mut events);
                 dirty |= app.poll_midi();
                 // Un clic ou une touche n'attend pas la prochaine image : la note
