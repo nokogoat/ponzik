@@ -256,12 +256,32 @@ impl App {
         let track = self.project.channels[ch].track;
         let name_col = if muted { t.text2 } else { t.text.mix(WHITE, nh * 0.3) };
         let lock = self.channel_lock(ch);
-        let badge_w = if lock.is_some() { 24.0 } else { 0.0 };
+        let missing = self.channel_missing_sample(ch);
+        let badge_w = lock.map_or(0.0, |_| 24.0) + missing.as_ref().map_or(0.0, |_| 24.0);
         self.text_fit(c, self.f.sans_med, 15.0, name_r.x, cy, &name, name_r.w - badge_w, name_col);
+        let mut badge_x = name_r.x + self.fonts.measure(self.f.sans_med, 15.0, &name).min(name_r.w - badge_w) + 14.0;
+        if let Some(path) = missing {
+            // Offline sample: a warning badge; a click opens the locate dialog.
+            let r = Rect::new(badge_x - 11.0, cy - 11.0, 22.0, 22.0);
+            let id = wid("ch-missing", ch, 0);
+            let hov = self.hovered(input, id, r);
+            let hv = self.hover_anim(id, hov);
+            c.fill_rrect(r, 6.0, t.negative.alpha(0.12 + 0.18 * hv));
+            draw_icon(c, Icon::Missing, badge_x, cy, 13.0, t.negative);
+            if hov {
+                let file = ponzik_project::flp::file_name_of(&path);
+                self.set_tip(&tr_fmt!("Missing sample: {}\nClick: locate the missing files", file), "");
+                self.set_cursor(Cursor::Hand);
+                if input.pressed {
+                    let dir = self.locate_start_dir();
+                    self.open_popup(Popup::LocateMissing(dir), super::offline::REPORT_ANCHOR);
+                }
+            }
+            badge_x += 24.0;
+        }
         if let Some(target) = lock {
             // Frozen (by itself or with its track): a frost badge right after the name.
-            let x = name_r.x + self.fonts.measure(self.f.sans_med, 15.0, &name).min(name_r.w - badge_w) + 14.0;
-            self.frost_badge(c, input, x, cy, 13.0, target, ch);
+            self.frost_badge(c, input, badge_x, cy, 13.0, target, ch);
         }
         if nhov {
             self.set_tip(&tr_fmt!("{} · track {}\nDouble-click: rename · right-click: menu", kind, track), "");

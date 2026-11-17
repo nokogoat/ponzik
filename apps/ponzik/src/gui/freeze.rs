@@ -333,6 +333,15 @@ impl App {
     pub(super) fn audio_clip_menu(&self, i: usize) -> (String, Vec<MenuItem>) {
         let Some(c) = self.project.audio_clips.get(i) else { return (String::new(), Vec::new()) };
         let name = std::path::Path::new(&c.path).file_stem().map_or_else(|| c.path.clone(), |s| s.to_string_lossy().into_owned());
+        if self.is_offline(&c.path) {
+            // Nothing to bounce in a silent clip: find its file first.
+            let locate = Action::Popup(Popup::LocateMissing(self.locate_start_dir()));
+            let v = vec![
+                MenuItem::new(Icon::Search, tr("Locate missing files…"), locate).tip(&c.path),
+                MenuItem::new(Icon::Trash, tr("Delete the clip"), Action::DeleteAudioClip(i)).sep(),
+            ];
+            return (ponzik_project::flp::file_name_of(&c.path).to_string(), v);
+        }
         let mut v = self.clip_bounce_items(ClipSel::Audio(i));
         v.push(MenuItem::new(Icon::Trash, tr("Delete the clip"), Action::DeleteAudioClip(i)).tip(tr("Hold right-click: sweep to erase")).sep());
         (name, v)

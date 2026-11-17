@@ -10,14 +10,14 @@ use ponzik_project::{BitDepth, ExportOptions, FileFormat, Project, RenderMode};
 
 const SAMPLE_SCAN_LIMIT: usize = 400;
 
-fn home() -> PathBuf {
+pub(super) fn home() -> PathBuf {
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map_or_else(|| PathBuf::from("."), PathBuf::from)
 }
 
 /// Dossier musique de l'utilisateur (« Musique » en français, sinon « Music »).
-fn music_dir() -> PathBuf {
+pub(super) fn music_dir() -> PathBuf {
     let h = home();
     ["Musique", "Music"].iter().map(|d| h.join(d)).find(|p| p.is_dir()).unwrap_or(h)
 }

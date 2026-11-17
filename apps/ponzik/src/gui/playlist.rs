@@ -12,7 +12,7 @@ use super::app::{App, Popup, Rename, View};
 use super::clip::ClipSel;
 use super::dnd::DropTarget;
 use super::theme::*;
-use super::widgets::{Icon, draw_icon, wid};
+use super::widgets::{Icon, draw_icon, hatch, wid};
 
 const PALETTE_W: f32 = 196.0;
 const RULER: f32 = 30.0;
@@ -650,15 +650,38 @@ impl App {
             let hov = hover_audio.is_some_and(|(h, _)| h == i);
             let hv = self.hover_anim(wid("pl-aclip", i, 0), hov);
             let selected = self.clip_panel_shown() == Some(ClipSel::Audio(i));
-            let col = super::clip::audio_color(cl, &t);
+            // Offline (file missing or not readable yet): red and hatched, silent.
+            let offline = self.is_offline(&cl.path);
+            let col = if offline { t.negative } else { super::clip::audio_color(cl, &t) };
             // Prise de côté (muette) : estompée, le nom barré d'un « muted ».
             let dim = if cl.muted { 0.45 } else { 1.0 };
             c.fill_rrect(r, 8.0, col.mix(t.panel, 0.78 - hv * 0.08).alpha(dim));
             c.fill_rect(Rect::new(r.x + 1.0, r.y + 1.0, r.w - 2.0, 18.0), col.mix(t.panel, 0.5).alpha(0.9 * dim));
+            if offline {
+                hatch(c, Rect::new(r.x + 1.0, r.y + 19.0, r.w - 2.0, r.h - 20.0), 9.0, col.alpha(0.22 * dim));
+                c.stroke_rrect(r, 8.0, 1.0, col.alpha(0.55 + 0.3 * hv));
+            }
             if selected {
                 c.stroke_rrect(r, 8.0, 1.5, t.text.mix(col, 0.4));
             }
             let prev_clip = c.push_clip(r);
+            if offline {
+                draw_icon(c, Icon::Missing, r.x + 14.0, r.y + 10.0, 12.0, col.mix(t.text, 0.35).alpha(dim));
+                let file = ponzik_project::flp::file_name_of(&cl.path);
+                self.text_fit(c, self.f.sans_med, 11.0, r.x + 26.0, r.y + 10.0, file, r.right() - r.x - 30.0, t.text.alpha(dim));
+                let why = if ponzik_engine::wav::is_audio_file(std::path::Path::new(file)) {
+                    tr("Missing")
+                } else {
+                    tr("Format not yet supported")
+                };
+                let body_y = r.y + 19.0 + (r.h - 19.0) * 0.5;
+                self.text_fit(c, self.f.sans_med, 10.5, r.x + 8.0, body_y, why, r.w - 12.0, col.mix(t.text, 0.5).alpha(dim));
+                if hov {
+                    self.set_tip(&tr_fmt!("Offline, plays silence: {}\nRight-click its title: locate the missing files", cl.path), "");
+                }
+                c.set_clip(Some(prev_clip));
+                continue;
+            }
             // Warped: a stretch badge (pulsing while its render is under way).
             let mut name_x = r.x + 8.0;
             if cl.warp {

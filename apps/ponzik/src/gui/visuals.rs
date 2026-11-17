@@ -500,6 +500,23 @@ impl App {
             self.empty_state(c, r, super::widgets::Icon::Sample, tr("Drop a WAV here"));
             return;
         };
+        if self.is_offline(&path) {
+            // Offline: the file's name, why it is silent, and a way to find it.
+            let col = t.negative;
+            super::widgets::hatch(c, r.inset(2.0), 10.0, col.alpha(0.12));
+            c.stroke_rrect(r, 10.0, 1.0, col.alpha(0.5));
+            let cy = r.y + r.h * 0.5;
+            super::widgets::draw_icon(c, super::widgets::Icon::Missing, r.x + 22.0, cy - 8.0, 16.0, col);
+            self.text(c, self.f.sans_med, 13.0, r.x + 38.0, cy - 8.0, tr("Missing sample"), col.mix(t.text, 0.4));
+            let file = ponzik_project::flp::file_name_of(&path);
+            self.text_fit(c, self.f.sans, 11.0, r.x + 38.0, cy + 10.0, file, r.w - 84.0, t.text2);
+            let find = Rect::new(r.right() - 34.0, r.bottom() - 32.0, 26.0, 26.0);
+            if self.icon_button(c, input, wid("smp-locate", device_key(device), 0), find, super::widgets::Icon::Search, false, (tr("Locate missing files…"), "")) {
+                let dir = self.locate_start_dir();
+                self.open_popup(super::app::Popup::LocateMissing(dir), super::offline::REPORT_ANCHOR);
+            }
+            return;
+        }
         let g = r.inset_xy(8.0, 10.0);
         let mid = g.y + g.h * 0.5;
         if let Some(peaks) = self.waveform(&path) {

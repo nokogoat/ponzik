@@ -271,6 +271,12 @@ impl App {
         add(tr("Import a MIDI file").into(), tr("File"), none(), Action::ImportMidiMenu);
         add(tr("Import an FL Studio project (.flp)").into(), tr("File"), none(), Action::ImportFlpMenu);
         add(tr("Show the FL Studio import report").into(), tr("File"), none(), Action::Popup(Popup::ImportReport));
+        add(
+            tr("Locate missing files (relink offline samples and audio)").into(),
+            tr("File"),
+            none(),
+            Action::Popup(Popup::LocateMissing(self.locate_start_dir())),
+        );
         add(tr("Export the pattern to MIDI").into(), tr("File"), none(), Action::ExportMidi);
         add(tr("Save as").into(), tr("File"), k(S::SaveAs), Action::SaveAs);
         add(

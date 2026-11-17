@@ -7083,3 +7083,75 @@ msgstr "{} (format pas encore pris en charge)"
 
 msgid "{} not found on this computer"
 msgstr "{} introuvable sur cet ordinateur"
+
+msgid "Another folder…"
+msgstr "Un autre dossier…"
+
+msgid "Format not yet supported"
+msgstr "Format pas encore pris en charge"
+
+msgid "Hide"
+msgstr "Masquer"
+
+msgid "Locate missing files"
+msgstr "Retrouver les fichiers manquants"
+
+msgid "Locate missing files (relink offline samples and audio)"
+msgstr "Retrouver les fichiers manquants (relier les échantillons et l'audio hors ligne)"
+
+msgid "Locate missing files…"
+msgstr "Retrouver les fichiers manquants…"
+
+msgid "Locate…"
+msgstr "Retrouver…"
+
+msgid "Missing"
+msgstr "Manquant"
+
+msgid "Missing sample"
+msgstr "Échantillon manquant"
+
+msgid "Missing sample: {}\nClick: locate the missing files"
+msgstr "Échantillon manquant : {}\nClic : retrouver les fichiers manquants"
+
+msgid "No offline files: every file is found"
+msgstr "Aucun fichier hors ligne : tous les fichiers sont trouvés"
+
+msgid "None of the {} missing files is in {}"
+msgstr "Aucun des {} fichiers manquants n'est dans {}"
+
+msgid "Offline, plays silence: {}\nRight-click its title: locate the missing files"
+msgstr "Hors ligne, joue du silence : {}\nClic droit sur son titre : retrouver les fichiers manquants"
+
+msgid "Parent folder"
+msgstr "Dossier parent"
+
+msgid "Place"
+msgstr "Raccourci"
+
+msgid "Search a folder for them by name, relink and save"
+msgstr "Les chercher par nom dans un dossier, les relier et enregistrer"
+
+msgid "Search in {}"
+msgstr "Chercher dans {}"
+
+msgid "Show"
+msgstr "Afficher"
+
+msgid "{} and its sub-folders, by file name: every file found is relinked, then the project is saved"
+msgstr "{} et ses sous-dossiers, par nom de fichier : chaque fichier trouvé est relié, puis le projet est enregistré"
+
+msgid "{} files are offline: they play silence"
+msgstr "{} fichiers sont hors ligne : ils jouent du silence"
+
+msgid "{} files missing"
+msgstr "{} fichiers manquants"
+
+msgid "{} files relinked, {} still missing"
+msgstr "{} fichiers reliés, {} encore manquants"
+
+msgid "{} files relinked: nothing is missing any more"
+msgstr "{} fichiers reliés : plus rien ne manque"
+
+msgid "… and {} more"
+msgstr "… et {} de plus"

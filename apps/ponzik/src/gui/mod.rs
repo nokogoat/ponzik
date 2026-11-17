@@ -28,6 +28,7 @@ mod midiout;
 mod mixer;
 mod modulators;
 mod notefx;
+mod offline;
 mod pads;
 mod palette;
 mod plugins;

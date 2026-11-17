@@ -17,6 +17,7 @@ use ponzik_window::Key;
 
 use super::Input;
 use super::compat;
+use super::offline::REPORT_ANCHOR;
 use super::browser::{BrowserUi, Filter, Tag, TagSet, item_key};
 use super::dnd::Payload;
 
@@ -143,6 +144,9 @@ pub enum Popup {
     ImportFlp(Vec<PathBuf>),
     /// Report of the last FL Studio import.
     ImportReport,
+    /// "Locate missing files": the offline files, and a folder to search
+    /// (browsed from its sub-folders).
+    LocateMissing(PathBuf),
     /// Presets d'un appareil : enregistrer, ou charger un preset existant.
     Presets { device: super::devices::Device, kind: String },
     /// Choix du pattern d'une case vide de la vue Session.
@@ -324,6 +328,10 @@ pub enum Action {
     ImportMidi(PathBuf),
     ImportFlpMenu,
     ImportFlp(PathBuf),
+    /// Folds or unfolds a category of the import report.
+    ToggleReportGroup(ponzik_project::ReportKind),
+    /// Searches a folder for the offline files, relinks those found and saves.
+    LocateIn(PathBuf),
     ExportMidi,
     AssignSession(usize, usize, usize),
     RemoveAutomation(ponzik_engine::AutoTarget),
@@ -392,12 +400,14 @@ pub struct MenuItem {
     pub on: bool,
     /// Ligne en retrait (étape annulée de l'historique, par exemple).
     pub dim: bool,
+    /// Height of the row: 38 px, less for lines of text (report entries).
+    pub height: f32,
     pub action: Action,
 }
 
 impl MenuItem {
     pub(super) fn plain(name: &str, action: Action) -> Self {
-        Self { icon: None, color: None, name: name.into(), detail: String::new(), tip: String::new(), sep: false, on: false, dim: false, action }
+        Self { icon: None, color: None, name: name.into(), detail: String::new(), tip: String::new(), sep: false, on: false, dim: false, height: 38.0, action }
     }
 
     pub(super) fn new(icon: Icon, name: &str, action: Action) -> Self {
@@ -424,9 +434,14 @@ impl MenuItem {
         self
     }
 
-    fn dim(mut self, dim: bool) -> Self {
+    pub(super) fn dim(mut self, dim: bool) -> Self {
         self.dim = dim;
         self
+    }
+
+    /// A line of text: a shorter row, with no hover and no action.
+    pub(super) fn line(name: &str, height: f32) -> Self {
+        Self { height, ..Self::plain(name, Action::None) }
     }
 }
 
@@ -542,8 +557,11 @@ pub struct App {
     last_edit: Option<(String, f32)>,
     pub modified: bool,
     pub project_path: Option<PathBuf>,
-    /// Rows of the last FL Studio import report (text, continuation of the previous row).
-    pub import_report: Vec<(String, bool)>,
+    /// The last FL Studio import: its report, the categories unfolded in the
+    /// report popup, and the folder of the imported file.
+    pub import_report: Option<ponzik_project::ImportReport>,
+    pub report_open: Vec<ponzik_project::ReportKind>,
+    pub import_dir: Option<PathBuf>,
 
     pub view: View,
     pub focus: Focus,
@@ -736,7 +754,9 @@ impl App {
             last_edit: None,
             modified: false,
             project_path: None,
-            import_report: Vec::new(),
+            import_report: None,
+            report_open: Vec::new(),
+            import_dir: None,
             view: View::Rack,
             focus: Focus::Channel(0),
             sidebar: true,
@@ -982,6 +1002,26 @@ impl App {
                 self.open_popup(kind, Rect::new(1600.0 - 44.0, 8.0, 32.0, 32.0));
                 return;
             }
+            // report[:offline,skipped]: the import report, those categories unfolded too.
+            _ if name.starts_with("report") => {
+                for part in name.trim_start_matches("report").trim_start_matches(':').split(',') {
+                    let kind = match part {
+                        "mapped" => ponzik_project::ReportKind::Mapped,
+                        "offline" => ponzik_project::ReportKind::Offline,
+                        "skipped" => ponzik_project::ReportKind::Skipped,
+                        _ => continue,
+                    };
+                    self.report_open.push(kind);
+                }
+                self.open_popup(Popup::ImportReport, REPORT_ANCHOR);
+                return;
+            }
+            // locate[:folder]: the locate dialog, on a folder.
+            _ if name.starts_with("locate") => {
+                let dir = name.strip_prefix("locate:").map_or_else(|| self.locate_start_dir(), PathBuf::from);
+                self.open_popup(Popup::LocateMissing(dir), REPORT_ANCHOR);
+                return;
+            }
             _ => return,
         };
         self.open_popup(kind, Rect::new(60.0, 8.0, 0.0, TOP_BAR - 12.0));
@@ -1218,16 +1258,8 @@ impl App {
 
     /// Remplace tout le projet (ouverture, nouveau) : le moteur est resynchronisé.
     pub fn replace_project(&mut self, project: Project, path: Option<PathBuf>) {
-        let paths: Vec<String> = project
-            .channels
-            .iter()
-            .flat_map(|c| c.instrument.sample_paths().cloned())
-            .chain(project.audio_clips.iter().map(|c| c.path.clone()))
-            .chain(project.take_groups.iter().flat_map(|g| g.takes.iter().map(|t| t.clip.path.clone())))
-            .collect();
-        for path in paths {
-            self.ensure_sample(&path);
-        }
+        // Files that do not load stay in the project, offline: one toast for all of them.
+        let offline = project.media_paths().into_iter().filter(|p| !self.try_load_sample(p)).count();
         self.session.reset();
         self.session.recorder = None;
         self.session_ui = Default::default();
@@ -1246,6 +1278,10 @@ impl App {
         self.playing = false;
         self.sync_engine();
         self.mark_saved();
+        if offline > 0 {
+            let locate = Action::Popup(Popup::LocateMissing(self.locate_start_dir()));
+            self.toast_action(&tr_fmt!("{} files are offline: they play silence", offline), tr("Locate…"), locate);
+        }
     }
 
     pub fn toast(&mut self, text: &str) {
@@ -1253,6 +1289,16 @@ impl App {
         if self.toasts.len() > 3 {
             self.toasts.remove(0);
         }
+    }
+
+    /// Loads a file if it is not loaded yet, quietly: false if it stays offline.
+    pub fn try_load_sample(&mut self, path: &str) -> bool {
+        if self.samples.contains_key(path) {
+            return true;
+        }
+        let Ok(s) = compat::load_sample(path) else { return false };
+        self.samples.insert(path.to_string(), Arc::new(s));
+        true
     }
 
     pub fn ensure_sample(&mut self, path: &str) -> bool {
@@ -1728,11 +1774,13 @@ impl App {
     pub fn import_flp(&mut self, path: &std::path::Path) {
         match compat::import_flp(path) {
             Ok((p, report)) => {
+                self.import_dir = path.parent().map(std::path::Path::to_path_buf);
                 self.replace_project(p, None);
-                self.import_report = report.rows(46);
                 self.toast(&report.summary());
-                let anchor = Rect::new(12.0, TOP_BAR, 0.0, 0.0);
-                self.open_popup(Popup::ImportReport, anchor);
+                // Long lists (offline files, things left out) stay folded under their count.
+                self.report_open = vec![ponzik_project::ReportKind::Approximated];
+                self.import_report = Some(report);
+                self.open_popup(Popup::ImportReport, REPORT_ANCHOR);
             }
             Err(e) => self.toast(&e),
         }
@@ -3383,19 +3431,8 @@ impl App {
                 };
                 (tr("Import an FL Studio project").into(), items)
             }
-            Popup::ImportReport => {
-                let items = if self.import_report.is_empty() {
-                    vec![MenuItem::plain(tr("No FL Studio import yet"), Action::None)]
-                } else {
-                    let rows = self.import_report.iter().enumerate();
-                    rows.map(|(i, (text, more))| {
-                        let row = MenuItem::plain(text, Action::None).dim(*more);
-                        if !more && i > 0 { row.sep() } else { row }
-                    })
-                    .collect()
-                };
-                (tr("FL Studio import report").into(), items)
-            }
+            Popup::ImportReport => (tr("FL Studio import report").into(), self.report_items()),
+            Popup::LocateMissing(dir) => (tr("Locate missing files").into(), self.locate_items(dir)),
             Popup::Presets { device, kind } => {
                 let save = Popup::Rename { target: Rename::Preset(*device), text: String::new() };
                 let mut v = vec![MenuItem::new(Icon::Save, tr("Save…"), Action::Popup(save)).tip(tr("The current settings, under a name"))];
@@ -3670,6 +3707,8 @@ impl App {
             }
             Action::DeletePattern => self.delete_pattern(self.project.current_pattern),
             Action::Open(path) => self.open_file(path),
+            // The report and the locate dialog stay in place from one folder to the next.
+            Action::Popup(kind @ (Popup::ImportReport | Popup::LocateMissing(_))) => self.open_popup(kind, REPORT_ANCHOR),
             Action::Popup(kind) => self.open_popup(kind, anchor),
             Action::DuplicateChannel(ch) => {
                 let src = self.project.channels[ch].clone();
@@ -3823,6 +3862,15 @@ impl App {
             Action::ImportMidiMenu => self.open_popup(Popup::ImportMidi(compat::scan_midi()), anchor),
             Action::ImportFlpMenu => self.open_popup(Popup::ImportFlp(compat::scan_flp()), anchor),
             Action::ImportFlp(path) => self.import_flp(&path),
+            Action::ToggleReportGroup(kind) => {
+                if let Some(i) = self.report_open.iter().position(|&k| k == kind) {
+                    self.report_open.remove(i);
+                } else {
+                    self.report_open.push(kind);
+                }
+                self.open_popup(Popup::ImportReport, REPORT_ANCHOR);
+            }
+            Action::LocateIn(dir) => self.locate_in(&dir),
             Action::ImportMidi(path) => match compat::import_midi(&mut self.project, &path) {
                 Ok(p) => {
                     self.select_pattern(p);
@@ -4074,9 +4122,9 @@ impl App {
             .map(|it| self.fonts.measure(self.f.sans_med, 13.0, &it.name) + self.fonts.measure(self.f.mono, 11.0, &it.detail))
             .fold(0.0f32, f32::max);
         let w = (widest + 84.0).clamp(260.0, 360.0);
-        let row_h = 38.0;
         let seps = items.iter().filter(|i| i.sep).count() as f32 * 9.0;
-        let h = (44.0 + items.len() as f32 * row_h + seps + 6.0).min(screen.h - 80.0);
+        let rows_h: f32 = items.iter().map(|i| i.height).sum();
+        let h = (44.0 + rows_h + seps + 6.0).min(screen.h - 80.0);
         let mut x = state.anchor.x;
         let mut y = state.anchor.bottom() + 8.0;
         if x + w > screen.right() - 12.0 {
@@ -4093,7 +4141,7 @@ impl App {
 
         // Défilement si le menu est plus long que l'écran.
         let list_h = r.h - 40.0;
-        let content = items.len() as f32 * row_h + seps;
+        let content = rows_h + seps;
         let key = wid("popup-scroll", 0, 0);
         let mut scroll = self.anim.get(key).unwrap_or(0.0);
         if input.inside && r.contains(input.x, input.y) && input.wheel != 0.0 {
@@ -4113,10 +4161,13 @@ impl App {
                 c.fill_rect(Rect::new(r.x + 12.0, ry + 4.0, r.w - 24.0, 1.0), t.hairline);
                 ry += 9.0;
             }
-            let row = Rect::new(r.x + 6.0, ry, r.w - 12.0, row_h - 4.0);
-            ry += row_h;
+            let row = Rect::new(r.x + 6.0, ry, r.w - 12.0, it.height - 4.0);
+            ry += it.height;
             let id = wid("popup-row", i, 0);
-            let hov = input.inside && row.contains(input.x, input.y) && list.contains(input.x, input.y);
+            // Lines of text (no action) are not buttons.
+            let line = it.height < 38.0 && matches!(it.action, Action::None);
+            let over = input.inside && row.contains(input.x, input.y) && list.contains(input.x, input.y);
+            let hov = over && !line;
             let hv = self.hover_anim(id, hov);
             let current = it.on;
             if hv > 0.01 || current {
@@ -4150,7 +4201,7 @@ impl App {
                 right = self.text_right(c, self.f.mono, 11.0, right, cy, &it.detail, t.muted) - 10.0;
             }
             self.text_fit(c, self.f.sans_med, 13.0, tx, cy, &it.name, right - tx, ink);
-            if hov && !it.tip.is_empty() {
+            if over && !it.tip.is_empty() {
                 hover_tip = Some(it.tip.clone());
             }
             if hov {

@@ -177,6 +177,19 @@ pub enum Icon {
     Speaker,
     /// Six arms with their branches: frozen.
     Snowflake,
+    /// Triangle with an exclamation mark: a file is missing (offline).
+    Missing,
+}
+
+/// Diagonal stripes over `r` (clipped to it): offline clips and samples.
+pub fn hatch(c: &mut Canvas, r: Rect, gap: f32, col: Color) {
+    let prev = c.push_clip(r);
+    let mut x = r.x - r.h;
+    while x < r.right() {
+        c.stroke_polyline(&[(x, r.bottom()), (x + r.h, r.y)], 1.5, col);
+        x += gap;
+    }
+    c.set_clip(Some(prev));
 }
 
 /// Points of a five-pointed star of outer radius 7.5 (icon units), from the top.
@@ -434,6 +447,12 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
                     }
                 }
             }
+        }
+        Icon::Missing => {
+            let tri = [p(0.0, -7.0), p(7.4, 6.2), p(-7.4, 6.2), p(0.0, -7.0)];
+            c.stroke_polyline(&tri, stroke, col);
+            c.stroke_polyline(&[p(0.0, -2.6), p(0.0, 1.8)], stroke * 1.1, col);
+            c.fill_circle(cx, cy + 4.0 * s, 1.1 * s.max(0.9), col);
         }
         Icon::Vca => {
             for x in [-4.0, 4.0] {
