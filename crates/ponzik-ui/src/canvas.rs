@@ -41,6 +41,13 @@ impl Path {
         self.cur = p;
     }
 
+    /// Vide le chemin en gardant sa mémoire.
+    pub fn clear(&mut self) {
+        self.segs.clear();
+        self.start = (0.0, 0.0);
+        self.cur = (0.0, 0.0);
+    }
+
     pub fn close(&mut self) {
         if self.cur != self.start {
             self.segs.push(Seg::Line(self.cur, self.start));
@@ -196,6 +203,9 @@ struct Damage {
     valid: bool,
     /// Zones redessinées par la dernière image, en pixels physiques.
     dirty: Vec<PxBox>,
+    /// Bandes ouvertes pendant le regroupement des tuiles (gardées d'une image à l'autre).
+    open: Vec<(usize, usize, usize)>,
+    next: Vec<(usize, usize, usize)>,
 }
 
 impl Damage {
@@ -231,8 +241,8 @@ impl Damage {
         self.dirty.clear();
         let full = !self.valid;
         // Rectangles ouverts : (colonne début, colonne fin, index dans `dirty`).
-        let mut open: Vec<(usize, usize, usize)> = Vec::new();
-        let mut next: Vec<(usize, usize, usize)> = Vec::new();
+        let (mut open, mut next) = (std::mem::take(&mut self.open), std::mem::take(&mut self.next));
+        open.clear();
         for ty in 0..self.rows {
             next.clear();
             let mut tx = 0;
@@ -257,6 +267,7 @@ impl Damage {
             }
             std::mem::swap(&mut open, &mut next);
         }
+        (self.open, self.next) = (open, next);
     }
 }
 
@@ -319,6 +330,10 @@ pub struct Canvas {
     /// Image en cours d'enregistrement (entre `begin_frame` et `end_frame`).
     recording: bool,
     damage: Damage,
+    /// Chemin et points de travail des traits et des arcs, gardés d'un appel
+    /// à l'autre : dessiner un potard n'alloue rien.
+    scratch_path: Path,
+    scratch_pts: Vec<Pt>,
 }
 
 impl Canvas {
@@ -333,6 +348,8 @@ impl Canvas {
             raster: Rasterizer::new(),
             recording: false,
             damage: Damage::default(),
+            scratch_path: Path::new(),
+            scratch_pts: Vec::new(),
         };
         c.resize(width, height);
         c
@@ -585,7 +602,8 @@ impl Canvas {
 
     /// Ligne brisée d'épaisseur `width`, jointures arrondies.
     pub fn stroke_polyline(&mut self, pts: &[Pt], width: f32, c: Color) {
-        let mut path = Path::new();
+        let mut path = std::mem::take(&mut self.scratch_path);
+        path.clear();
         let hw = width * 0.5;
         for w in pts.windows(2) {
             let (a, b) = (w[0], w[1]);
@@ -599,10 +617,11 @@ impl Canvas {
         }
         if width > 1.5 {
             for &p in pts.iter().skip(1).take(pts.len().saturating_sub(2)) {
-                path.polygon(&disc(p, hw, 10));
+                path.polygon(&disc::<10>(p, hw));
             }
         }
         self.fill_path(&path, c);
+        self.scratch_path = path;
     }
 
     /// Arc de cercle épais, angles en radians (0 = droite, sens horaire à l'écran), bouts arrondis.
@@ -614,7 +633,8 @@ impl Canvas {
         }
         let n = ((sweep * radius * self.scale / 2.0).ceil() as usize).clamp(4, 256);
         let (ro, ri) = (radius + width * 0.5, radius - width * 0.5);
-        let mut pts = Vec::with_capacity(2 * n + 2);
+        let mut pts = std::mem::take(&mut self.scratch_pts);
+        pts.clear();
         for i in 0..=n {
             let a = a0 + sweep * i as f32 / n as f32;
             pts.push((cx + a.cos() * ro, cy + a.sin() * ro));
@@ -623,12 +643,14 @@ impl Canvas {
             let a = a0 + sweep * i as f32 / n as f32;
             pts.push((cx + a.cos() * ri, cy + a.sin() * ri));
         }
-        let mut path = Path::new();
+        let mut path = std::mem::take(&mut self.scratch_path);
+        path.clear();
         path.polygon(&pts);
         for a in [a0, a1] {
-            path.polygon(&disc((cx + a.cos() * radius, cy + a.sin() * radius), width * 0.5, 12));
+            path.polygon(&disc::<12>((cx + a.cos() * radius, cy + a.sin() * radius), width * 0.5));
         }
         self.fill_path(&path, c);
+        (self.scratch_path, self.scratch_pts) = (path, pts);
     }
 
     /// Masque d'opacité 8 bits (glyphes), coin haut-gauche en (`x`, `y`), en
@@ -771,12 +793,11 @@ fn fill_span(span: &mut [u32], c: Color, coverage: f32) {
     }
 }
 
-fn disc(center: Pt, r: f32, n: usize) -> Vec<Pt> {
-    (0..n).map(|i| {
-        let a = TAU * i as f32 / n as f32;
+fn disc<const N: usize>(center: Pt, r: f32) -> [Pt; N] {
+    std::array::from_fn(|i| {
+        let a = TAU * i as f32 / N as f32;
         (center.0 + a.cos() * r, center.1 + a.sin() * r)
     })
-    .collect()
 }
 
 #[cfg(test)]
