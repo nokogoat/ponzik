@@ -817,19 +817,24 @@ mod tests {
         let p = demo_project();
         let (mut engine, mut handle) = p.build_engine(48_000.0, &no_samples);
         engine.set_worker_threads(2);
-        engine.set_adaptive_threads(true);
-        assert!(!handle.parallel_active());
         handle.send(Command::Play).unwrap();
         let mut buf = [0.0f32; 2 * 4_800];
-        let started = std::time::Instant::now();
-        let mut rendered = 0.0;
-        for _ in 0..20 {
+        // Warm-up (first notes, first pages touched), then the adaptive choice starts afresh.
+        for _ in 0..5 {
             engine.process(&mut buf, 2);
-            rendered += 0.1;
         }
-        // Rendu bien plus vite que le temps réel : les threads ne se réveillent pas.
-        if started.elapsed().as_secs_f64() < rendered * 0.15 {
-            assert!(!handle.parallel_active());
+        engine.set_adaptive_threads(true);
+        assert!(!handle.parallel_active());
+        let mut slowest = 0.0f64;
+        for _ in 0..20 {
+            let started = std::time::Instant::now();
+            engine.process(&mut buf, 2);
+            slowest = slowest.max(started.elapsed().as_secs_f64());
+        }
+        // Chaque bloc de 0,1 s rendu en bien moins de temps (machine pas
+        // surchargée) : les threads ne se réveillent pas.
+        if slowest < 0.1 * 0.3 {
+            assert!(!handle.parallel_active(), "slowest block {slowest} s");
         }
     }
 
