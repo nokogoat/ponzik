@@ -524,6 +524,8 @@ pub struct PianoState {
 
 pub struct PlaylistState {
     pub scroll_x: f32,
+    /// Lanes scrolled up, in pixels (Shift + wheel).
+    pub scroll_y: f32,
     /// Pixels par mesure.
     pub zoom: f32,
     pub brush: usize,
@@ -758,7 +760,7 @@ impl App {
                 tool: Default::default(),
                 lane: 0,
             },
-            playlist: PlaylistState { scroll_x: 0.0, zoom: 44.0, brush: 0, selected: None },
+            playlist: PlaylistState { scroll_x: 0.0, scroll_y: 0.0, zoom: 44.0, brush: 0, selected: None },
             sidebar_scroll: 0.0,
             sidebar_query: String::new(),
             sidebar_focus: false,

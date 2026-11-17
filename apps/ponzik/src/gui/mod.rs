@@ -565,6 +565,25 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
         let items = app.browser_tab_payloads();
         app.screenshot_browser(&spec, &items);
     }
+    // PONZIK_FLP=<file.flp>: an FL Studio project imported (its report closed).
+    if let Ok(path) = std::env::var("PONZIK_FLP") {
+        app.import_flp(std::path::Path::new(&path));
+        app.popup = None;
+    }
+    // PONZIK_PL_SCROLL=lane,px: the first clip moved down to that lane, the lanes scrolled by px.
+    if let Some((lane, px)) = std::env::var("PONZIK_PL_SCROLL").ok().and_then(|v| {
+        let (l, p) = v.split_once(',')?;
+        Some((l.trim().parse::<usize>().ok()?, p.trim().parse::<f32>().ok()?))
+    }) {
+        if let Some(cl) = app.project.audio_clips.first_mut() {
+            cl.lane = lane;
+        } else if let Some(cl) = app.project.clips.first_mut() {
+            cl.lane = lane;
+        }
+        app.commit("Capture");
+        app.playlist.scroll_y = px;
+        app.anim.set(widgets::wid("pl-sy", 0, 0), px);
+    }
     let view = view_named(view).unwrap_or(View::Rack);
     if app.view_shown(view) {
         app.set_view(view);

@@ -223,7 +223,7 @@ impl App {
             .unwrap_or(0);
         let autos = self.song_lane_targets().len();
         let fit = ((lanes_r.h - autos as f32 * super::automation::AUTO_LANE_H) / LANE_H).floor().max(1.0) as usize;
-        let lanes = (lanes_used + 1).max(fit).min(64);
+        let lanes = (lanes_used + 1).max(fit).min(ponzik_project::PLAYLIST_LANES);
 
         // Bouton du milieu : faire glisser le temps.
         let pan_id = wid("pl-pan", 0, 0);
@@ -235,7 +235,9 @@ impl App {
             self.anim.set(wid("pl-sx", 0, 0), self.playlist.scroll_x);
         }
         if input.inside && area.contains(input.x, input.y) && input.wheel != 0.0 {
-            if input.mods.ctrl {
+            if input.mods.shift && !input.mods.ctrl {
+                self.playlist.scroll_y -= input.wheel * LANE_H;
+            } else if input.mods.ctrl {
                 let at = self.playlist.scroll_x + (input.x - area.x) / self.playlist.zoom * TICKS_PER_BAR as f32;
                 self.playlist.zoom = (self.playlist.zoom * 1.15f32.powf(input.wheel)).clamp(8.0, 400.0);
                 self.playlist.scroll_x = (at - (input.x - area.x) / self.playlist.zoom * TICKS_PER_BAR as f32).max(0.0);
@@ -248,12 +250,26 @@ impl App {
         let x_of = |tick: f32| area.x + (tick - sx) * ppt;
         let tick_at = |x: f32| sx + (x - area.x) / ppt;
         // Lanes: unfolded take groups add their take lanes under theirs.
-        let layout = self.lane_layout(lanes_r.y, lanes);
+        // Taller than the view (many lanes, automation): Shift + wheel scrolls them.
+        let content_h = self.lane_layout(0.0, lanes).bottom() + autos as f32 * super::automation::AUTO_LANE_H + 8.0;
+        let max_sy = (content_h - lanes_r.h).max(0.0);
+        self.playlist.scroll_y = self.playlist.scroll_y.clamp(0.0, max_sy);
+        let sy = self.anim.to(wid("pl-sy", 0, 0), self.playlist.scroll_y, T_LAYOUT);
+        let layout = self.lane_layout(lanes_r.y - sy, lanes);
+        // Lanes scrolled under the ruler take no clicks.
+        let masked;
+        let lane_input = if sy > 0.0 && input.y < lanes_r.y {
+            masked = Input { pressed: false, right_pressed: false, double: false, wheel: 0.0, ..input.clone() };
+            &masked
+        } else {
+            input
+        };
         let lane_at = |y: f32| layout.lane_at(y);
         let lane_y = |l: usize| layout.y(l);
 
         let prev = c.push_clip(area);
         // Fond des pistes et grille.
+        let stripes = c.push_clip(lanes_r);
         for l in 0..lanes {
             let ly = lane_y(l);
             if l % 2 == 1 {
@@ -264,6 +280,7 @@ impl App {
                 c.fill_rect(Rect::new(area.x, ly + LANE_H, area.w, takes), t.bg_deep.alpha(0.35));
             }
         }
+        c.set_clip(Some(stripes));
         // Bars and beats of the time signature map.
         let song_end = self.project.song_len() as f32;
         let (view_a, view_b) = (sx.max(0.0) as f64, (sx + area.w / ppt) as f64);
@@ -316,9 +333,10 @@ impl App {
 
         // Clips.
         let grid_id = wid("pl-grid", 0, 0);
-        let clip_zone = Rect::new(lanes_r.x, lanes_r.y, lanes_r.w, layout.bottom() - lanes_r.y);
+        let clip_zone = Rect::new(lanes_r.x, lanes_r.y, lanes_r.w, (layout.bottom() - lanes_r.y).clamp(0.0, lanes_r.h));
+        let lanes_clip = c.push_clip(lanes_r);
         // Take groups first: their lanes keep the pointer from the clips.
-        let comp_hot = self.comp_input(input, &layout, area, &x_of, &tick_at, &snap_round);
+        let comp_hot = self.comp_input(lane_input, &layout, area, &x_of, &tick_at, &snap_round);
         let over = !comp_hot && input.inside && clip_zone.contains(input.x, input.y) && (self.drag.is_none() || self.is_dragging(grid_id));
         let hit = |app: &App, x: f32, y: f32| -> Option<(usize, bool)> {
             let lane = lane_at(y) as usize;
@@ -374,7 +392,7 @@ impl App {
             }
             // Right-click on the title: its menu; elsewhere (or sweeping): erase.
             let cl = &self.project.audio_clips[i];
-            let title_y = lanes_r.y + cl.lane as f32 * LANE_H + 3.0;
+            let title_y = lane_y(cl.lane) + 3.0;
             if input.right_pressed && self.drag.is_none() && input.y - title_y < CLIP_TITLE {
                 self.select_clip(ClipSel::Audio(i));
                 self.open_popup(Popup::AudioClipMenu(i), Rect::new(input.x, title_y, 0.0, CLIP_TITLE));
@@ -389,7 +407,7 @@ impl App {
                 Some(ClipDrag::AudioMove { clip, start, lane, tick0, lane0 }) if clip < self.project.audio_clips.len() => {
                     let new_start = snap_round(start as f32 + tick_at(input.x) - tick0) as u32;
                     let cl = &mut self.project.audio_clips[clip];
-                    let new_lane = (lane as f32 + lane_at(input.y) - lane0).clamp(0.0, 63.0) as usize;
+                    let new_lane = (lane as f32 + lane_at(input.y) - lane0).clamp(0.0, (ponzik_project::PLAYLIST_LANES - 1) as f32) as usize;
                     if (cl.start, cl.lane) != (new_start, new_lane) {
                         cl.start = new_start;
                         cl.lane = new_lane;
@@ -469,7 +487,7 @@ impl App {
             match self.clip_drag {
                 Some(ClipDrag::Move { clip, orig, tick0, lane0 }) if clip < self.project.clips.len() => {
                     let start = snap_round(orig.start as f32 + tick_at(input.x) - tick0) as u32;
-                    let lane = (orig.lane as f32 + lane_at(input.y) - lane0).clamp(0.0, 63.0) as usize;
+                    let lane = (orig.lane as f32 + lane_at(input.y) - lane0).clamp(0.0, (ponzik_project::PLAYLIST_LANES - 1) as f32) as usize;
                     let cl = &mut self.project.clips[clip];
                     if (cl.start, cl.lane) != (start, lane) {
                         cl.start = start;
@@ -693,13 +711,20 @@ impl App {
         }
 
         // Take groups: comp lanes, take lanes.
-        self.draw_comps(c, input, &layout, area, &x_of, &tick_at);
+        self.draw_comps(c, lane_input, &layout, area, &x_of, &tick_at);
 
         // Couloirs d'automation, sous les clips.
         let auto_y = layout.bottom() + 4.0;
         if autos > 0 {
             c.fill_rect(Rect::new(area.x, auto_y - 3.0, area.w, 1.0), t.hairline.alpha(2.0));
-            self.automation_lanes(c, input, area, auto_y, &x_of, &tick_at, 96.0);
+            self.automation_lanes(c, lane_input, area, auto_y, &x_of, &tick_at, 96.0);
+        }
+        c.set_clip(Some(lanes_clip));
+        // Scroll bar of the lanes, when they do not fit.
+        if max_sy > 0.0 {
+            let h = (lanes_r.h * lanes_r.h / content_h).max(24.0);
+            let y = lanes_r.y + (lanes_r.h - h) * sy / max_sy;
+            c.fill_rrect(Rect::new(area.right() - 6.0, y, 4.0, h), 2.0, t.text2.alpha(0.35));
         }
 
         // Tête de lecture.

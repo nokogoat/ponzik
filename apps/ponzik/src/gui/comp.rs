@@ -354,7 +354,7 @@ impl App {
             Some(CompDrag::Move { group, start, lane, tick0, lane0 }) => {
                 self.set_cursor(Cursor::Grab);
                 let new_start = snap(start as f32 + tick_at(input.x) - tick0).max(0.0) as u32;
-                let new_lane = (lane as f32 + lay.lane_at(input.y) - lane0).clamp(0.0, 63.0) as usize;
+                let new_lane = (lane as f32 + lay.lane_at(input.y) - lane0).clamp(0.0, (ponzik_project::PLAYLIST_LANES - 1) as f32) as usize;
                 if let Some(g) = self.project.take_groups.get_mut(group) {
                     let delta = new_start as i64 - g.span().0 as i64;
                     if delta != 0 || g.lane != new_lane {
