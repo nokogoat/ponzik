@@ -557,22 +557,38 @@ impl App {
     }
 
     pub(super) fn fit(&self, f: FontId, size: f32, s: &str, max_w: f32) -> String {
+        self.fit_cow(f, size, s, max_w).into_owned()
+    }
+
+    /// `s` s'il tient dans `max_w`, sinon son début suivi de « … ». Sans
+    /// allocation quand le texte tient ; sinon la coupe est cherchée par
+    /// dichotomie (quelques mesures, plus une par caractère retiré).
+    pub(super) fn fit_cow<'a>(&self, f: FontId, size: f32, s: &'a str, max_w: f32) -> std::borrow::Cow<'a, str> {
+        use std::borrow::Cow;
         if self.fonts.measure(f, size, s) <= max_w {
-            return s.to_string();
+            return Cow::Borrowed(s);
         }
-        let mut out: String = s.to_string();
-        while !out.is_empty() {
-            out.pop();
-            let candidate = format!("{}…", out.trim_end());
-            if self.fonts.measure(f, size, &candidate) <= max_w {
-                return candidate;
+        let ellipsis = self.fonts.measure(f, size, "…");
+        let prefix = |k: usize| s[..s.char_indices().nth(k).map_or(s.len(), |(i, _)| i)].trim_end();
+        let fits = |k: usize| self.fonts.measure(f, size, prefix(k)) + ellipsis <= max_w;
+        // Plus long début qui tient (la largeur croît avec le nombre de caractères).
+        let (mut lo, mut hi) = (0, s.chars().count());
+        while lo < hi {
+            let mid = (lo + hi).div_ceil(2);
+            if fits(mid) {
+                lo = mid;
+            } else {
+                hi = mid - 1;
             }
         }
-        "…".into()
+        if lo == 0 {
+            return Cow::Borrowed("…");
+        }
+        Cow::Owned(format!("{}…", prefix(lo)))
     }
 
     pub(super) fn text_fit(&mut self, c: &mut Canvas, f: FontId, size: f32, x: f32, cy: f32, s: &str, max_w: f32, col: Color) {
-        let s = self.fit(f, size, s, max_w);
+        let s = self.fit_cow(f, size, s, max_w);
         self.text(c, f, size, x, cy, &s, col);
     }
 

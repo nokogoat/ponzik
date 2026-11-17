@@ -52,18 +52,20 @@ impl Combo {
 
     /// Libellé affiché : « Ctrl Maj S », « Alt F8 », « Espace ».
     pub fn label(self) -> String {
-        let mut parts: Vec<String> = Vec::new();
+        // Une seule chaîne, écrite d'un trait : ce libellé sert à chaque image.
+        let mut s = String::with_capacity(24);
         if self.ctrl {
-            parts.push("Ctrl".into());
+            s.push_str("Ctrl ");
         }
         if self.alt {
-            parts.push("Alt".into());
+            s.push_str("Alt ");
         }
         if self.shift {
-            parts.push(tr("Shift").into());
+            s.push_str(tr("Shift"));
+            s.push(' ');
         }
-        parts.push(key_label(self.key));
-        parts.join(" ")
+        push_key_label(&mut s, self.key);
+        s
     }
 
     /// Texte du fichier de réglages : « ctrl+shift+s », « alt+f8 », « plus ».
@@ -99,26 +101,34 @@ impl Combo {
     }
 }
 
-fn key_label(key: Key) -> String {
-    match key {
-        Key::Space => tr("Space").into(),
-        Key::Enter => tr("Enter").into(),
-        Key::Escape => tr("Esc").into(),
-        Key::Backspace => tr("Backspace").into(),
-        Key::Tab => "Tab".into(),
-        Key::Delete => tr("Del").into(),
-        Key::Left => "←".into(),
-        Key::Right => "→".into(),
-        Key::Up => "↑".into(),
-        Key::Down => "↓".into(),
-        Key::F(n) => format!("F{n}"),
-        Key::PageUp => tr("Pg ↑").into(),
-        Key::PageDown => tr("Pg ↓").into(),
-        Key::Home => tr("Home").into(),
-        Key::End => tr("End").into(),
-        Key::Char('-') => "−".into(),
-        Key::Char(c) => c.to_uppercase().collect(),
-    }
+fn push_key_label(s: &mut String, key: Key) {
+    let text = match key {
+        Key::Space => tr("Space"),
+        Key::Enter => tr("Enter"),
+        Key::Escape => tr("Esc"),
+        Key::Backspace => tr("Backspace"),
+        Key::Tab => "Tab",
+        Key::Delete => tr("Del"),
+        Key::Left => "←",
+        Key::Right => "→",
+        Key::Up => "↑",
+        Key::Down => "↓",
+        Key::F(n) => {
+            use std::fmt::Write;
+            let _ = write!(s, "F{n}");
+            return;
+        }
+        Key::PageUp => tr("Pg ↑"),
+        Key::PageDown => tr("Pg ↓"),
+        Key::Home => tr("Home"),
+        Key::End => tr("End"),
+        Key::Char('-') => "−",
+        Key::Char(c) => {
+            s.extend(c.to_uppercase());
+            return;
+        }
+    };
+    s.push_str(text);
 }
 
 fn key_text(key: Key) -> String {
