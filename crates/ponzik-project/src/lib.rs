@@ -584,6 +584,7 @@ impl Project {
                         gain: c.gain,
                         fade_in: c.fade_in,
                         fade_out: c.fade_out,
+                        ..Default::default()
                     })
                 })
                 .collect(),

@@ -44,7 +44,7 @@ pub use pool::{Parallelism, WorkerPool, default_worker_threads, promote_current_
 pub use rack::{Channel, NOTE_FX_SLOTS};
 pub use sample::Sample;
 pub use sequence::{
-    AudioClip, AutoPoint, AutoScope, AutoTarget, AutomationLane, Clip, Note, PPQ, Pattern, PlayMode, Sequence, SessionSlot,
-    TICKS_PER_BAR, TICKS_PER_STEP,
+    AudioClip, AutoPoint, AutoScope, AutoTarget, AutomationLane, Clip, ClipWarp, Note, PPQ, Pattern, PlayMode, Sequence, SessionSlot,
+    TICKS_PER_BAR, TICKS_PER_STEP, WarpMap, WarpMarker, fade_shape,
 };
 pub use tempo_map::{BarBeat, TempoMap, TempoPoint, TempoView, TimeSig};

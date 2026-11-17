@@ -17,7 +17,7 @@ use crate::note_fx::NoteFx;
 use crate::pool::{Parallelism, WorkerPool};
 use crate::rack::{Channel, NOTE_FX_SLOTS};
 use crate::ring::{self, Consumer, Producer};
-use crate::sequence::{AutoTarget, PPQ, PlayMode, SeqEvent, Sequence};
+use crate::sequence::{AutoTarget, PPQ, PlayMode, SeqEvent, Sequence, fade_shape};
 
 /// Taille max d'un bloc de traitement (l'automation est évaluée à chaque bloc).
 const MAX_BLOCK: usize = 256;
@@ -1060,10 +1060,12 @@ impl Engine {
         }
     }
 
-    /// Clips audio (mode morceau) : lecture à la fréquence de l'échantillon,
-    /// interpolation linéaire, début à l'échantillon près, fondus aux bords.
-    /// Clips keep their place in ticks and play at their own speed: they don't
-    /// follow tempo changes (no warping).
+    /// Clips audio (mode morceau), début à l'échantillon près, fondus aux bords.
+    /// Unwarped clips keep their place in ticks and play at their own speed
+    /// (linear interpolation): they don't follow tempo changes. Warped clips
+    /// play their rendered stretch, or until it is ready their file resampled
+    /// along the tempo map; both are computed from the time of each sample, so
+    /// a clip is always in time, whatever the block size.
     fn render_audio_clips(&mut self, pos_start: f64, n: usize, t0: f64) {
         let song = self.playing && self.sequence.mode == PlayMode::Song;
         // Bloc dans la continuité du précédent : les clips reprennent où ils étaient
@@ -1084,40 +1086,86 @@ impl Engine {
                 let src_rate = sample.sample_rate.max(1.0) as f64;
                 let ratio = src_rate / sr;
                 let resume = prev.active && contiguous && k0 == 0;
+                // Output samples from the clip start to the block start (k = 0).
+                let start_at = (view.secs_at(start) - t0) * sr;
+                let end_at = (view.secs_at(end) - t0) * sr;
                 let (mut p, mut run) = if resume {
                     (prev.src, prev.run)
                 } else {
-                    let secs = clip.offset.max(0.0) + (t0 + k0 as f64 / sr - view.secs_at(start)).max(0.0);
+                    let secs = clip.offset.max(0.0) + (k0 as f64 - start_at).max(0.0) / sr;
                     // Après un saut, petit fondu d'entrée ; sinon (nouvelle séquence,
                     // début du clip) seul le fondu du clip compte.
                     (secs * src_rate, if contiguous { f64::MAX / 2.0 } else { 0.0 })
                 };
-                let origin = clip.offset.max(0.0) * src_rate;
                 let fade_in = clip.fade_in.max(MIN_FADE) as f64 * sr;
                 let fade_out = clip.fade_out.max(MIN_FADE) as f64 * sr;
-                let end_at = (view.secs_at(end) - t0) * sr;
                 let right = if sample.right.len() == len { &sample.right } else { &sample.left };
+                let last = len - 1;
+                let at = |ch: &[f32], i: usize| if clip.reverse { ch[last - i] } else { ch[i] };
+                let rendered = clip.warp.as_ref().and_then(|w| w.rendered.as_deref()).filter(|r| r.sample_rate as f64 == sr && !r.is_empty());
+                let warp_origin = clip.warp.as_ref().map_or(0.0, |w| w.map.beat_at(clip.offset.max(0.0)));
                 let (tl, tr) = self.mixer.input(clip.track, n);
+                let mut ended = false;
                 for k in k0..k1 {
-                    if p >= len as f64 {
-                        break;
-                    }
-                    let i = p as usize;
-                    let j = (i + 1).min(len - 1);
-                    let frac = (p - i as f64) as f32;
-                    let l = sample.left[i] + (sample.left[j] - sample.left[i]) * frac;
-                    let r = right[i] + (right[j] - right[i]) * frac;
+                    let since = k as f64 - start_at;
+                    let (l, r, until_src) = match (&clip.warp, rendered) {
+                        (Some(_), Some(buf)) => {
+                            let i = since.round().max(0.0) as usize;
+                            if i >= buf.len() {
+                                ended = true;
+                                break;
+                            }
+                            let rr = if buf.right.len() == buf.len() { &buf.right } else { &buf.left };
+                            (buf.left[i], rr[i], f64::MAX)
+                        }
+                        (Some(w), None) => {
+                            // Resampled along the tempo map until the stretch is ready.
+                            let tick = view.tick_at_secs(t0 + k as f64 / sr);
+                            let beat = warp_origin + (tick - start) / PPQ as f64;
+                            let mut pos = w.map.secs_at(beat) * src_rate;
+                            if clip.looped {
+                                pos = pos.rem_euclid(len as f64);
+                            }
+                            if pos < 0.0 || pos >= len as f64 {
+                                (0.0, 0.0, f64::MAX)
+                            } else {
+                                let i = pos as usize;
+                                let j = (i + 1).min(last);
+                                let frac = (pos - i as f64) as f32;
+                                let l = at(&sample.left, i) + (at(&sample.left, j) - at(&sample.left, i)) * frac;
+                                let r = at(right, i) + (at(right, j) - at(right, i)) * frac;
+                                (l, r, f64::MAX)
+                            }
+                        }
+                        (None, _) => {
+                            if p >= len as f64 {
+                                if !clip.looped {
+                                    ended = true;
+                                    break;
+                                }
+                                p -= len as f64;
+                            }
+                            let i = (p as usize).min(last);
+                            let j = if clip.looped && i == last { 0 } else { (i + 1).min(last) };
+                            let frac = (p - i as f64) as f32;
+                            let l = at(&sample.left, i) + (at(&sample.left, j) - at(&sample.left, i)) * frac;
+                            let r = at(right, i) + (at(right, j) - at(right, i)) * frac;
+                            let until = if clip.looped { f64::MAX } else { (len as f64 - p) / ratio };
+                            p += ratio;
+                            (l, r, until)
+                        }
+                    };
                     // En échantillons de sortie ; +1 : le premier échantillon n'est pas nul.
-                    let since_start = (p - origin) / ratio + 1.0;
-                    let until_end = (end_at - k as f64).min((len as f64 - p) / ratio);
-                    let fade = (since_start.min(run + 1.0) / fade_in).min(1.0) * (until_end / fade_out).min(1.0);
-                    let g = clip.gain * fade.max(0.0) as f32;
+                    let since_start = since + 1.0;
+                    let until_end = (end_at - k as f64).min(until_src);
+                    let fin = fade_shape(since_start.min(run + 1.0) / fade_in, clip.fade_in_curve);
+                    let fout = fade_shape(until_end / fade_out, clip.fade_out_curve);
+                    let g = clip.gain * (fin * fout).max(0.0) as f32;
                     tl[k] += l * g;
                     tr[k] += r * g;
-                    p += ratio;
                     run += 1.0;
                 }
-                voice = AudioVoice { active: k1 == n && p < len as f64, src: p, run };
+                voice = AudioVoice { active: k1 == n && !ended, src: p, run };
             }
             if let Some(v) = self.voices.get_mut(idx) {
                 *v = voice;
@@ -2395,7 +2443,7 @@ mod tests {
     }
 
     fn audio_clip(sample: Sample, start: u32, offset: f64, gain: f32) -> AudioClip {
-        AudioClip { sample: Arc::new(sample), track: 2, start, len: 384 * 4, offset, gain, fade_in: 0.0, fade_out: 0.0 }
+        AudioClip { sample: Arc::new(sample), track: 2, start, len: 384 * 4, offset, gain, ..Default::default() }
     }
 
     /// Moteur en mode morceau avec ces clips audio, canal sonde coupé ; rend `frames` (gauche seulement).
@@ -2476,6 +2524,88 @@ mod tests {
         handle.send(Command::SetSequence(Box::new(silent))).unwrap();
         engine.process(&mut buf[..2 * 512], 2);
         assert!(buf[..2 * 512].iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn warped_clip_follows_the_tempo_map() {
+        use crate::sequence::{ClipWarp, WarpMap};
+        // A ramp at 120 BPM in the file: the value says which beat is playing.
+        let n = 48_000;
+        let left: Vec<f32> = (0..n).map(|i| i as f32 / n as f32).collect();
+        let sample = Sample { name: "rampe".into(), sample_rate: SR, right: left.clone(), left, markers: Vec::new() };
+        let mut clip = audio_clip(sample, 0, 0.0, 1.0);
+        // The project runs at 120 BPM by default: a 60 BPM file plays twice as fast.
+        clip.warp = Some(ClipWarp { map: WarpMap::new(60.0, Vec::new()), rendered: None });
+        for block in [64, 500] {
+            let out = render_audio(vec![clip.clone()], 30_000, block);
+            for k in [1_000usize, 10_000, 20_000] {
+                let want = (2 * k) as f32 / n as f32;
+                assert!((out[k] - want).abs() < 1e-4, "block {block}, {k}: {} ≠ {want}", out[k]);
+            }
+            // The file ends at half its duration.
+            assert!(out[24_100..].iter().all(|&s| s == 0.0), "block {block}");
+        }
+    }
+
+    #[test]
+    fn warped_clip_plays_its_rendered_stretch() {
+        use crate::sequence::{ClipWarp, WarpMap};
+        let src = Sample { name: "dc".into(), sample_rate: SR, left: vec![0.25; 9_600], right: vec![0.25; 9_600], markers: Vec::new() };
+        let stretched: Vec<f32> = (0..20_000).map(|i| i as f32 / 20_000.0).collect();
+        let rendered = Sample { name: String::new(), sample_rate: SR, right: stretched.clone(), left: stretched, markers: Vec::new() };
+        let mut clip = audio_clip(src, 96, 0.0, 1.0);
+        clip.warp = Some(ClipWarp { map: WarpMap::new(120.0, Vec::new()), rendered: Some(Arc::new(rendered)) });
+        let out = render_audio(vec![clip], 50_000, 256);
+        assert!(out[..24_000].iter().all(|&s| s == 0.0));
+        for k in [500, 5_000, 19_000] {
+            assert!((out[24_000 + k] - k as f32 / 20_000.0).abs() < 1e-5, "{k}");
+        }
+        assert!(out[44_000..].iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn audio_clip_loops_and_reverses() {
+        let left: Vec<f32> = (0..1_000).map(|i| (i + 1) as f32 / 1_000.0).collect();
+        let sample = Sample { name: "rampe".into(), sample_rate: SR, right: left.clone(), left, markers: Vec::new() };
+        let mut clip = audio_clip(sample, 0, 0.0, 1.0);
+        clip.looped = true;
+        let out = render_audio(vec![clip.clone()], 5_000, 128);
+        assert!((out[2_500] - 0.501).abs() < 1e-5, "{}", out[2_500]);
+        clip.looped = false;
+        clip.reverse = true;
+        let out = render_audio(vec![clip], 5_000, 128);
+        assert!((out[500] - 0.5).abs() < 1e-5, "{}", out[500]);
+        assert!(out[1_000..].iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn fade_curves_bend_the_fades() {
+        let sample = Sample { name: "dc".into(), sample_rate: SR, left: vec![1.0; 48_000], right: vec![1.0; 48_000], markers: Vec::new() };
+        let mut clip = audio_clip(sample, 0, 0.0, 1.0);
+        clip.fade_in = 0.1;
+        let linear = render_audio(vec![clip.clone()], 10_000, 256)[2_400];
+        clip.fade_in_curve = 1.0;
+        let slow = render_audio(vec![clip.clone()], 10_000, 256)[2_400];
+        clip.fade_in_curve = -1.0;
+        let fast = render_audio(vec![clip], 10_000, 256)[2_400];
+        assert!((linear - 0.5).abs() < 0.01 && slow < 0.1 && fast > 0.8, "{linear} {slow} {fast}");
+    }
+
+    #[test]
+    fn warp_map_markers_bend_the_beats() {
+        use crate::sequence::{WarpMap, WarpMarker};
+        let plain = WarpMap::new(120.0, Vec::new());
+        assert_eq!(plain.secs_at(4.0), 2.0);
+        // Beat 4 pinned to 3 s instead of 2 s.
+        let m = WarpMap::new(120.0, vec![WarpMarker { secs: 0.0, beat: 0.0 }, WarpMarker { secs: 3.0, beat: 4.0 }]);
+        assert!((m.secs_at(2.0) - 1.5).abs() < 1e-9);
+        assert!((m.secs_at(6.0) - 4.0).abs() < 1e-9);
+        for b in [-1.0, 0.5, 3.0, 7.0] {
+            assert!((m.beat_at(m.secs_at(b)) - b).abs() < 1e-9);
+        }
+        // A marker running backwards is dropped.
+        let bad = WarpMap::new(120.0, vec![WarpMarker { secs: 1.0, beat: 2.0 }, WarpMarker { secs: 2.0, beat: 1.0 }]);
+        assert_eq!(bad.markers().len(), 1);
     }
 
     #[test]

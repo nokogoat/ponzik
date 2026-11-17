@@ -152,8 +152,9 @@ pub fn automation_value(points: &[AutoPoint], tick: f64) -> Option<f32> {
     Some((a.value as f64 + (b.value as f64 - a.value as f64) * t) as f32)
 }
 
-/// Échantillon posé dans la playlist, joué à sa vitesse d'origine.
-#[derive(Clone, Debug, PartialEq)]
+/// Audio file placed in the playlist. Unwarped, it plays at its own speed;
+/// warped, its beats follow the song's tempo map.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct AudioClip {
     pub sample: Arc<Sample>,
     /// Piste de mixer de destination.
@@ -168,6 +169,105 @@ pub struct AudioClip {
     /// Fondus en secondes (au moins 2 ms, contre les clics).
     pub fade_in: f32,
     pub fade_out: f32,
+    /// Fade shapes in [−1, 1]: 0 is linear, positive starts slowly, negative quickly.
+    pub fade_in_curve: f32,
+    pub fade_out_curve: f32,
+    /// The file is played backwards (offset and warp markers count in the reversed file).
+    pub reverse: bool,
+    /// Past its end, the file starts over.
+    pub looped: bool,
+    pub warp: Option<ClipWarp>,
+}
+
+/// Warping of a clip: its beat map, and the stretched audio once rendered
+/// off the audio thread. Until then the clip plays resampled (its pitch
+/// follows the tempo), always in time.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ClipWarp {
+    pub map: WarpMap,
+    /// Clip audio at the engine rate from the clip start, for the song's tempo map.
+    pub rendered: Option<Arc<Sample>>,
+}
+
+/// A warp marker: a point of the file (seconds) pinned to a beat.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct WarpMarker {
+    pub secs: f64,
+    pub beat: f64,
+}
+
+/// Beats of a file: its original tempo, bent by warp markers. Beat 0 is the
+/// start of the file; outside the markers, beats go by at `bpm`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WarpMap {
+    pub bpm: f64,
+    /// Increasing in both seconds and beats.
+    markers: Vec<WarpMarker>,
+}
+
+impl Default for WarpMap {
+    fn default() -> Self {
+        Self::new(120.0, Vec::new())
+    }
+}
+
+impl WarpMap {
+    /// Markers are sorted; those that would run backwards are dropped.
+    pub fn new(bpm: f64, mut markers: Vec<WarpMarker>) -> Self {
+        let bpm = if bpm.is_finite() && bpm > 0.0 { bpm.clamp(10.0, 999.0) } else { 120.0 };
+        markers.retain(|m| m.secs.is_finite() && m.beat.is_finite());
+        markers.sort_by(|a, b| a.secs.total_cmp(&b.secs));
+        let mut kept: Vec<WarpMarker> = Vec::with_capacity(markers.len());
+        for m in markers {
+            if kept.last().is_none_or(|l| m.secs > l.secs + 1e-6 && m.beat > l.beat + 1e-6) {
+                kept.push(m);
+            }
+        }
+        Self { bpm, markers: kept }
+    }
+
+    pub fn markers(&self) -> &[WarpMarker] {
+        &self.markers
+    }
+
+    /// Beat of a point of the file.
+    pub fn beat_at(&self, secs: f64) -> f64 {
+        let k = self.bpm / 60.0;
+        let m = &self.markers;
+        let (Some(first), Some(last)) = (m.first(), m.last()) else { return secs * k };
+        if secs <= first.secs {
+            return first.beat + (secs - first.secs) * k;
+        }
+        if secs >= last.secs {
+            return last.beat + (secs - last.secs) * k;
+        }
+        let i = m.partition_point(|p| p.secs <= secs);
+        let (a, b) = (m[i - 1], m[i]);
+        a.beat + (secs - a.secs) * (b.beat - a.beat) / (b.secs - a.secs)
+    }
+
+    /// Point of the file at a beat (inverse of [`WarpMap::beat_at`]).
+    pub fn secs_at(&self, beat: f64) -> f64 {
+        let k = 60.0 / self.bpm;
+        let m = &self.markers;
+        let (Some(first), Some(last)) = (m.first(), m.last()) else { return beat * k };
+        if beat <= first.beat {
+            return first.secs + (beat - first.beat) * k;
+        }
+        if beat >= last.beat {
+            return last.secs + (beat - last.beat) * k;
+        }
+        let i = m.partition_point(|p| p.beat <= beat);
+        let (a, b) = (m[i - 1], m[i]);
+        a.secs + (beat - a.beat) * (b.secs - a.secs) / (b.beat - a.beat)
+    }
+}
+
+/// Fade gain for a position `x` in [0, 1] of the fade, bent by `curve`.
+#[inline]
+pub fn fade_shape(x: f64, curve: f32) -> f64 {
+    let x = x.clamp(0.0, 1.0);
+    if curve.abs() < 1e-3 { x } else { x.powf((2.0 * curve as f64).exp2()) }
 }
 
 #[derive(Clone, Debug, PartialEq)]
