@@ -675,11 +675,11 @@ msgstr "TAP"
 msgid "Tap tempo\nTap the beat: average of the last 4 taps"
 msgstr "Tap tempo\nTape le temps : moyenne des 4 derniers appuis"
 
-msgid "Record notes and audio\nOne-bar count-in · right-click: turn off"
-msgstr "Enregistrer les notes et l'audio\nPré-compte d'une mesure · clic droit : couper"
+msgid "Record notes and audio\nOne-bar count-in · right-click: count-in, controller"
+msgstr "Enregistrer les notes et l'audio\nPré-compte d'une mesure · clic droit : pré-compte, contrôleur"
 
-msgid "Record notes and audio\nNo count-in · right-click: turn on"
-msgstr "Enregistrer les notes et l'audio\nSans pré-compte · clic droit : l'activer"
+msgid "Record notes and audio\nNo count-in · right-click: count-in, controller"
+msgstr "Enregistrer les notes et l'audio\nSans pré-compte · clic droit : pré-compte, contrôleur"
 
 msgid "Recording armed"
 msgstr "Enregistrement armé"
@@ -3596,8 +3596,8 @@ msgstr "Type"
 msgid "{:.1} BPM"
 msgstr "{:.1} BPM"
 
-msgid "{}\nDouble-click: default · right-click: automate"
-msgstr "{}\nDouble-clic : défaut · clic droit : automatiser"
+msgid "{}\nDouble-click: default · right-click: automate, link to a controller"
+msgstr "{}\nDouble-clic : défaut · clic droit : automatiser, lier à un contrôleur"
 
 # --- Recording panel ---
 
@@ -5751,3 +5751,120 @@ msgstr "{} threads de calcul se partagent le travail"
 
 msgid "Worker threads asleep: one core is enough"
 msgstr "Threads de calcul endormis : un cœur suffit"
+
+msgid "Absolute"
+msgstr "Absolu"
+
+msgid "Absolute: knobs and faders · Relative: endless encoders · Toggle: buttons. Click to change"
+msgstr "Absolu : potards et faders · Relatif : encodeurs sans fin · Bascule : boutons. Clic pour changer"
+
+msgid "Button"
+msgstr "Bouton"
+
+msgid "Control"
+msgstr "Commande"
+
+msgid "Controller links: list, modes, ranges"
+msgstr "Liens des contrôleurs : liste, modes, plages"
+
+msgid "Controller: {}"
+msgstr "Contrôleur : {}"
+
+msgid "Edit a controller link"
+msgstr "Modifier un lien de contrôleur"
+
+msgid "Global links follow the controller in every project; project links are saved with the song"
+msgstr "Les liens globaux suivent le contrôleur dans tous les projets ; ceux du projet sont enregistrés avec le morceau"
+
+msgid "Global: part of the controller layout, in every project · Project: saved with this song"
+msgstr "Global : fait partie de la disposition du contrôleur, dans tous les projets · Projet : enregistré avec ce morceau"
+
+msgid "Link to another control"
+msgstr "Lier à une autre commande"
+
+msgid "Link to controller"
+msgstr "Lier à un contrôleur"
+
+msgid "Linked to"
+msgstr "Lié à"
+
+msgid "Linked: {} → {} ({})"
+msgstr "Lié : {} → {} ({})"
+
+msgid "Listening…"
+msgstr "Écoute…"
+
+msgid "MIDI"
+msgstr "MIDI"
+
+msgid "Missing parameter"
+msgstr "Paramètre absent"
+
+msgid "Move a control on your MIDI controller"
+msgstr "Bougez une commande de votre contrôleur MIDI"
+
+msgid "No MIDI controller found"
+msgstr "Aucun contrôleur MIDI trouvé"
+
+msgid "No MIDI controller found: connect one and restart Ponzik"
+msgstr "Aucun contrôleur MIDI trouvé : branchez-en un et relancez Ponzik"
+
+msgid "No control moved: link cancelled"
+msgstr "Aucune commande bougée : lien annulé"
+
+msgid "No controller links yet"
+msgstr "Aucun lien de contrôleur pour l'instant"
+
+msgid "One-bar count-in"
+msgstr "Pré-compte d'une mesure"
+
+msgid "Pickup"
+msgstr "Reprise"
+
+msgid "Pickup: the control acts only once it reaches the current value, no jumps"
+msgstr "Reprise : la commande n'agit qu'une fois la valeur actuelle atteinte, sans saut"
+
+msgid "Play / pause"
+msgstr "Lecture / pause"
+
+msgid "Project"
+msgstr "Projet"
+
+msgid "Range of the parameter the control covers: drag or scroll · Min above Max inverts"
+msgstr "Plage du paramètre couverte par la commande : glisser ou molette · Min au-dessus de Max inverse"
+
+msgid "Record"
+msgstr "Enregistrer"
+
+msgid "Relative (auto)"
+msgstr "Relatif (auto)"
+
+msgid "Relative 64"
+msgstr "Relatif 64"
+
+msgid "Relative sign"
+msgstr "Relatif signe"
+
+msgid "Relative ±"
+msgstr "Relatif ±"
+
+msgid "Remove the link"
+msgstr "Retirer le lien"
+
+msgid "Right-click a knob, fader or transport button → Link to controller, then move a control"
+msgstr "Clic droit sur un potard, un fader ou un bouton de transport → Lier à un contrôleur, puis bougez une commande"
+
+msgid "Send {} → {} · {}"
+msgstr "Envoi {} → {} · {}"
+
+msgid "Toggle"
+msgstr "Bascule"
+
+msgid "Unlink a controller"
+msgstr "Délier un contrôleur"
+
+msgid "Unlink the controller"
+msgstr "Délier le contrôleur"
+
+msgid "Unlinked: {}"
+msgstr "Délié : {}"

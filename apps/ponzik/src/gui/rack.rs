@@ -282,6 +282,8 @@ impl App {
             self.project.channels[ch].gain = v * 1.25;
             self.commit(tr("Channel volume"));
         }
+        self.knob_menu(input, vol_c, 14.0, ponzik_engine::AutoTarget::ChannelGain(ch));
+        self.ctl_mark(c, vol_c, 11.0, ponzik_project::midi_map::ControlTarget::Param(ponzik_engine::AutoTarget::ChannelGain(ch)));
         let vol_tip = tr_fmt!("Volume {}", super::mixer::fmt_db(self.project.channels[ch].gain));
         self.tip_zone(input, Rect::new(vol_c.0 - 14.0, vol_c.1 - 14.0, 28.0, 28.0), &vol_tip, "");
         let pan = self.project.channels[ch].pan;
@@ -289,6 +291,8 @@ impl App {
             self.project.channels[ch].pan = ((v * 2.0 - 1.0) * 100.0).round() / 100.0;
             self.commit(tr("Channel pan"));
         }
+        self.knob_menu(input, pan_c, 14.0, ponzik_engine::AutoTarget::ChannelPan(ch));
+        self.ctl_mark(c, pan_c, 11.0, ponzik_project::midi_map::ControlTarget::Param(ponzik_engine::AutoTarget::ChannelPan(ch)));
         let pan_tip = tr_fmt!("Pan {}", super::mixer::fmt_pan(self.project.channels[ch].pan));
         self.tip_zone(input, Rect::new(pan_c.0 - 14.0, pan_c.1 - 14.0, 28.0, 28.0), &pan_tip, "");
 

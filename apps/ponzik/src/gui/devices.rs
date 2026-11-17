@@ -517,6 +517,7 @@ impl App {
                     let popup = Popup::Param { target, value, default: p.default };
                     self.open_popup(popup, Rect::new(input.x, input.y, 0.0, 0.0));
                 }
+                self.param_mark(c, cell, target);
                 if self.is_automated(target) {
                     c.fill_circle(cell.right() - 10.0, cell.y + 6.0, 3.0, t.select);
                 }

@@ -124,6 +124,8 @@ pub enum Popup {
     SessionAssign { col: usize, row: usize },
     /// Menu d'un paramètre (clic droit sur un potard).
     Param { target: ponzik_engine::AutoTarget, value: f32, default: f32 },
+    /// Right-click on a control that is not a parameter (sends, transport).
+    Control(ponzik_project::midi_map::ControlTarget),
     /// Nouveau projet : choix d'un modèle.
     Templates,
     /// Tonalité et gamme du projet.
@@ -309,6 +311,9 @@ pub enum Action {
     RescanPlugins,
     /// Opens or closes a plugin device's own window.
     ToggleEditor(super::devices::Device),
+    /// Waits for a MIDI control to move, then links it.
+    Learn(ponzik_project::midi_map::ControlTarget),
+    Unlink(ponzik_project::midi_map::ControlTarget),
 }
 
 /// Ligne de menu : une icône (ou la couleur d'un pattern), un nom court, une
@@ -602,6 +607,8 @@ pub struct App {
     pub rack_chip: Option<super::rackfx::ChipDrag>,
     /// Modulator cards: handle drag, depth mode, live traces.
     pub mod_ui: super::modulators::ModUi,
+    /// MIDI learn and the controller links.
+    pub ctl: super::learn::CtlUi,
 }
 
 impl App {
@@ -723,6 +730,7 @@ impl App {
             rack_sel: HashMap::new(),
             rack_chip: None,
             mod_ui: Default::default(),
+            ctl: Default::default(),
         };
         // What the cache knows; the background scan brings the rest.
         app.set_plugins(super::plugins::cached());
@@ -1466,22 +1474,12 @@ impl App {
     /// Notes des contrôleurs MIDI : même chemin que le clavier d'ordinateur.
     /// Appelé à chaque tour de boucle, hors rendu ; renvoie vrai s'il s'est passé quelque chose.
     pub fn poll_midi(&mut self) -> bool {
-        use ponzik_midi::MidiEvent;
         let mut events = std::mem::take(&mut self.midi_events);
         for input in &self.midi_inputs {
             input.poll(&mut events);
         }
         let any = !events.is_empty();
-        for ev in events.drain(..) {
-            // Codes réservés aux notes MIDI, hors de l'espace des touches physiques.
-            match ev {
-                MidiEvent::NoteOn { channel, key, velocity } => {
-                    self.live_note_on(0x1000 + channel as u16 * 128 + key as u16, key, velocity as f32 / 127.0);
-                }
-                MidiEvent::NoteOff { channel, key, .. } => self.live_note_off(0x1000 + channel as u16 * 128 + key as u16),
-                _ => {}
-            }
-        }
+        self.handle_midi(&mut events);
         self.midi_events = events;
         any
     }
@@ -1687,6 +1685,10 @@ impl App {
         self.time += dt;
         self.cursor = ponzik_window::Cursor::Arrow;
         self.poll_engine(dt);
+        self.learn_tick();
+        if self.ctl.learn.is_active() && input.keys.iter().any(|(k, _)| *k == Key::Escape) {
+            self.ctl.learn.cancel();
+        }
         if self.popup.is_none() && !self.sidebar_focus {
             self.shortcuts(input);
             self.musical_keyboard(input);
@@ -1704,7 +1706,9 @@ impl App {
 
         // Un menu ouvert capte la souris : le reste de l'écran ne réagit plus.
         let masked;
-        let over_card = self.recovery_rect(w).is_some_and(|r| r.contains(input.x, input.y)) || (self.popup.is_none() && self.over_tour(input));
+        let over_card = self.recovery_rect(w).is_some_and(|r| r.contains(input.x, input.y))
+            || self.learn_rect(w).is_some_and(|r| r.contains(input.x, input.y))
+            || (self.popup.is_none() && self.over_tour(input));
         let ui = if self.popup.is_some() || over_card {
             masked = Input {
                 inside: false,
@@ -1743,6 +1747,7 @@ impl App {
         self.record_panel(c, ui, Rect::new(0.0, 0.0, w, h));
         if self.popup.is_none() {
             self.recovery_prompt(c, input, w);
+            self.learn_banner(c, input, w);
         }
         self.popup_layer(c, input, Rect::new(0.0, 0.0, w, h));
         if self.popup.is_none() {
@@ -1812,10 +1817,14 @@ impl App {
         c.fill_rect(Rect::new(play.x + 8.0, play.y + 1.0, play.w - 16.0, 1.0), WHITE.alpha(0.3));
         let (px, py) = play.center();
         draw_icon(c, if self.playing { Icon::Pause } else { Icon::Play }, px, py, 16.0, t.bg_deep.mix(t.on_accent, on));
+        use ponzik_project::midi_map::TransportAction as TA;
+        self.transport_menu(c, input, play, TA::Play);
         x += 46.0;
-        if self.icon_button(c, input, wid("tb-stop", 0, 0), Rect::new(x, cy - 18.0, 40.0, 36.0), Icon::Stop, false, (tr("Stop"), "")) {
+        let stop = Rect::new(x, cy - 18.0, 40.0, 36.0);
+        if self.icon_button(c, input, wid("tb-stop", 0, 0), stop, Icon::Stop, false, (tr("Stop"), "")) {
             self.stop();
         }
+        self.transport_menu(c, input, stop, TA::Stop);
         x += 54.0;
 
         // Mode de lecture : l'icône de la vue où l'on construit ce qui joue.
@@ -1876,11 +1885,13 @@ impl App {
             x += 134.0;
         }
         if self.bar_shown(Bar::Metronome) {
-            if self.icon_button(c, input, wid("tb-metro", 0, 0), Rect::new(x, cy - 18.0, 36.0, 36.0), Icon::Metronome, self.metronome, (tr("Metronome"), &k_metro)) {
+            let metro = Rect::new(x, cy - 18.0, 36.0, 36.0);
+            if self.icon_button(c, input, wid("tb-metro", 0, 0), metro, Icon::Metronome, self.metronome, (tr("Metronome"), &k_metro)) {
                 self.metronome = !self.metronome;
                 let m = self.metronome;
                 self.send(Command::SetMetronome(m));
             }
+            self.transport_menu(c, input, metro, TA::Metronome);
             x += 40.0;
         }
         if self.bar_shown(Bar::Record) {
@@ -2247,9 +2258,9 @@ impl App {
         }
         if rhov {
             let tip = if self.count_in {
-                tr("Record notes and audio\nOne-bar count-in · right-click: turn off")
+                tr("Record notes and audio\nOne-bar count-in · right-click: count-in, controller")
             } else {
-                tr("Record notes and audio\nNo count-in · right-click: turn on")
+                tr("Record notes and audio\nNo count-in · right-click: count-in, controller")
             };
             self.set_tip(tip, key);
         }
@@ -2257,9 +2268,7 @@ impl App {
             self.record = !self.record;
             self.toast(if self.record { tr("Recording armed") } else { tr("Recording disarmed") });
         }
-        if rhov && input.right_pressed {
-            self.toggle_count_in();
-        }
+        self.transport_menu(c, input, rec, ponzik_project::midi_map::TransportAction::Record);
     }
 
     // --- Zone principale ---
@@ -2803,9 +2812,18 @@ impl App {
                     v.push(MenuItem::new(Icon::Trash, tr("Delete the automation"), Action::RemoveAutomation(*target)));
                 }
                 v.push(MenuItem::new(Icon::Reset, tr("Default value"), Action::SetParamValue(*target, *default)));
+                v.extend(self.ctl_menu_items(ponzik_project::midi_map::ControlTarget::Param(*target)));
                 v.extend(self.macro_menu_items(*target));
                 v.extend(self.mod_menu_items(*target));
                 (label, v)
+            }
+            Popup::Control(target) => {
+                let mut v = Vec::new();
+                if *target == ponzik_project::midi_map::ControlTarget::Transport(ponzik_project::midi_map::TransportAction::Record) {
+                    v.push(MenuItem::new(Icon::Metronome, tr("One-bar count-in"), Action::ToggleCountIn).on(self.count_in));
+                }
+                v.extend(self.ctl_menu_items(*target));
+                (self.ctl_name(*target), v)
             }
             Popup::ImportMidi(files) => {
                 let items = if files.is_empty() {
@@ -3225,6 +3243,8 @@ impl App {
             Action::RescanPlugins => self.start_plugin_scan(true),
             Action::ToggleEditor(device) => self.toggle_editor(device),
             Action::Automate(target, value) => self.create_automation(target, value),
+            Action::Learn(target) => self.start_learn(target),
+            Action::Unlink(target) => self.unlink(target),
             Action::SaveAs => {
                 let text = self.project.name.clone();
                 self.open_popup(Popup::Rename { target: Rename::SaveAs, text }, anchor);
@@ -3306,7 +3326,7 @@ impl App {
                             e.set(id, v);
                         }
                     }
-                    _ => {}
+                    t => self.set_auto_value(t, v),
                 }
                 self.commit(tr("Default value"));
             }

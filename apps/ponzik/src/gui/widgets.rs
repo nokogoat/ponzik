@@ -143,6 +143,8 @@ pub enum Icon {
     Globe,
     /// Window with a knob and a fader: a plugin's own interface.
     PluginWindow,
+    /// A five-pin DIN socket: MIDI controllers and their links.
+    Midi,
 }
 
 /// Dessine une icône au trait, dans un carré de `size` centré sur (`cx`, `cy`).
@@ -406,6 +408,14 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
             c.stroke_polyline(&[p(-7.0, 0.0), p(7.0, 0.0)], stroke * 0.8, col);
             c.stroke_polyline(&[p(-5.6, -3.6), p(5.6, -3.6)], stroke * 0.6, col.alpha(0.6));
             c.stroke_polyline(&[p(-5.6, 3.6), p(5.6, 3.6)], stroke * 0.6, col.alpha(0.6));
+        }
+        Icon::Midi => {
+            c.stroke_circle(cx, cy, 7.2 * s, stroke, col);
+            for k in 0..5 {
+                let a = std::f32::consts::PI * (1.0 + k as f32 / 4.0);
+                c.fill_circle(cx + a.cos() * 4.0 * s, cy - a.sin() * -4.0 * s, 1.15 * s, col);
+            }
+            c.fill_rrect(rr(-1.4, 5.0, 2.8, 2.0), 0.6 * s, col);
         }
         Icon::PluginWindow => {
             // Frame and title bar, a knob turned up, a fader.
@@ -850,7 +860,7 @@ impl App {
         let name = self.short_label(self.f.sans, 12.0, ponzik_i18n::tr(info.name), cell.w - 4.0);
         self.text_center(c, self.f.sans, 12.0, cx, cell.y + 6.0, &name, t.text2.mix(t.text, hv));
         if hov {
-            self.set_tip(&ponzik_i18n::tr_fmt!("{}\nDouble-click: default · right-click: automate", ponzik_i18n::tr(info.name)), "");
+            self.set_tip(&ponzik_i18n::tr_fmt!("{}\nDouble-click: default · right-click: automate, link to a controller", ponzik_i18n::tr(info.name)), "");
         }
 
         let (a0, sweep) = (0.75 * PI, 1.5 * PI);

@@ -16,6 +16,7 @@ mod dropouts;
 mod float;
 mod keymap;
 mod keys;
+mod learn;
 mod library;
 mod midiout;
 mod mixer;
@@ -258,6 +259,7 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
         eprintln!("MIDI: {}", m.name());
     }
     app.load_settings();
+    app.ctl.persist = true;
     app.start_tour_if_new();
     app.start_autosave();
     app.start_library();
@@ -646,6 +648,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // PONZIK_ARRANGE=1|menu|sig: sections, a tempo ramp and a 3/4 section.
     if let Ok(spec) = std::env::var("PONZIK_ARRANGE") {
         app.screenshot_arrange(&spec);
+    }
+    // PONZIK_LEARN=pending|linked|settings: MIDI learn, controller links.
+    if let Ok(spec) = std::env::var("PONZIK_LEARN") {
+        app.screenshot_learn(&spec);
     }
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {

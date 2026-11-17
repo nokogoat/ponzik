@@ -642,7 +642,13 @@ impl App {
             let row = Rect::new(inner.x, y, inner.w, 24.0);
             let label = format!("→ {}", self.project.tracks[target].name);
             self.text_fit(c, self.f.sans, 11.0, row.x + 2.0, row.y + 12.0, &label, row.w - 30.0, t.text2);
-            if let Some(v) = self.mini_knob(c, input, wid("mx-send", tr, slot), (row.right() - 11.0, row.y + 12.0), amount, false) {
+            let knob_c = (row.right() - 11.0, row.y + 12.0);
+            let send = ponzik_project::midi_map::ControlTarget::Send { track: tr, slot };
+            if input.right_pressed && self.hovered(input, wid("mx-send", tr, slot), Rect::new(knob_c.0 - 14.0, knob_c.1 - 14.0, 28.0, 28.0)) {
+                self.open_popup(Popup::Control(send), Rect::new(input.x, input.y, 0.0, 0.0));
+            }
+            self.ctl_mark(c, knob_c, 11.0, send);
+            if let Some(v) = self.mini_knob(c, input, wid("mx-send", tr, slot), knob_c, amount, false) {
                 // Un envoi ramené à zéro se libère.
                 self.project.tracks[tr].sends[slot].1 = if v < 0.01 { 0.0 } else { v };
                 self.commit(ponzik_i18n::tr("Send level"));
@@ -661,6 +667,8 @@ impl App {
             self.project.tracks[tr].pan = ((v * 2.0 - 1.0) * 100.0).round() / 100.0;
             self.commit(ponzik_i18n::tr("Track pan"));
         }
+        self.knob_menu(input, (inner.x + 18.0, pan_y), 14.0, ponzik_engine::AutoTarget::TrackPan(tr));
+        self.ctl_mark(c, (inner.x + 18.0, pan_y), 11.0, ponzik_project::midi_map::ControlTarget::Param(ponzik_engine::AutoTarget::TrackPan(tr)));
         let pan_text = fmt_pan(pan);
         self.text_right(c, self.f.mono, 11.0, inner.right(), pan_y, &pan_text, t.text2);
         self.tip_zone(input, Rect::new(inner.x, pan_y - 14.0, inner.w, 28.0), ponzik_i18n::tr("Pan"), "");
@@ -924,6 +932,11 @@ impl App {
             self.project.tracks[tr].gain = pos_to_gain((pos + input.wheel * 0.02).clamp(0.0, 1.0));
             self.commit(ponzik_i18n::tr("Track volume"));
         }
+        let target = ponzik_engine::AutoTarget::TrackGain(tr);
+        if hov && input.right_pressed {
+            let popup = Popup::Param { target, value: gain, default: 1.0 };
+            self.open_popup(popup, Rect::new(input.x, input.y, 0.0, 0.0));
+        }
 
         for d in DB_TICKS {
             let y = y_of(gain_to_pos(10f32.powf(d / 20.0)));
@@ -969,6 +982,7 @@ impl App {
         let hv = self.hover_anim(id, (hov && cap.contains(input.x, input.y)) || self.is_dragging(id));
         c.fill_rrect_vgrad(cap, 6.0, t.text.mix(WHITE, hv * 0.5), t.text.mix(t.raised_hi, 0.25).mix(WHITE, hv * 0.3));
         c.fill_rect(Rect::new(cap.x + 6.0, cap.y + CAP_H * 0.5 - 1.0, CAP_W - 12.0, 2.0), t.bg_deep.alpha(0.55));
+        self.ctl_mark(c, (cap.right() - 3.0, cap.y + 3.0), 4.0, ponzik_project::midi_map::ControlTarget::Param(target));
     }
 }
 

@@ -415,6 +415,7 @@ impl App {
         self.prefs.ui_scale = UiScale::from_json(&j);
         self.prefs.tour_done = j.get("tour_done").and_then(Json::as_bool).unwrap_or(false);
         (self.prefs.buffer_ms, self.prefs.buffer_manual) = buffer_from_json(&j);
+        self.ctl.global = ponzik_project::midi_map::load_mappings(j.get("midi_map"), usize::MAX);
         self.apply_workspace(ws, false);
     }
 
@@ -424,6 +425,9 @@ impl App {
         if let Json::Obj(fields) = &mut j {
             fields.push(("ui_scale".into(), (self.prefs.ui_scale.percent() as f64 / 100.0).into()));
             fields.push(("tour_done".into(), self.prefs.tour_done.into()));
+            if !self.ctl.global.is_empty() {
+                fields.push(("midi_map".into(), ponzik_project::midi_map::mappings_json(&self.ctl.global)));
+            }
             if self.prefs.buffer_ms > 0 {
                 fields.push(("audio_buffer_ms".into(), (self.prefs.buffer_ms as f64).into()));
                 fields.push(("audio_buffer_manual".into(), self.prefs.buffer_manual.into()));
@@ -628,7 +632,7 @@ impl App {
     pub(super) fn settings_sheet(&mut self, c: &mut Canvas, input: &Input, screen: Rect, tab: usize) -> Option<usize> {
         let t = self.theme;
         let open = self.anim.to(wid("popup", 0, 0), 1.0, T_HOVER);
-        let mut tab = tab.min(1);
+        let mut tab = tab.min(2);
         let mut close = false;
 
         // Clavier : saisie d'une touche, conflit en attente, ou navigation.
@@ -652,7 +656,7 @@ impl App {
             } else {
                 match key {
                     Key::Escape => close = true,
-                    Key::Tab => tab = 1 - tab,
+                    Key::Tab => tab = (tab + 1) % 3,
                     _ => {}
                 }
             }
@@ -671,14 +675,18 @@ impl App {
         c.stroke_rrect(r, 18.0, 1.0, t.hairline.alpha(1.8));
 
         // En-tête : deux onglets, et la croix.
-        let tabs = Rect::new(r.x + 16.0, r.y + 14.0, 272.0, 38.0);
+        let tabs = Rect::new(r.x + 16.0, r.y + 14.0, 408.0, 38.0);
         c.fill_rrect(tabs, 11.0, t.bg_deep);
         c.stroke_rrect(tabs, 11.0, 1.0, t.hairline);
         let pos = self.anim.to(wid("set-tabs", 0, 0), tab as f32, T_LAYOUT);
-        let seg_w = (tabs.w - 6.0) * 0.5;
+        let seg_w = (tabs.w - 6.0) / 3.0;
         let knob = Rect::new(tabs.x + 3.0 + pos * seg_w, tabs.y + 3.0, seg_w, tabs.h - 6.0);
         c.fill_rrect(knob, 8.0, t.raised_hi);
-        let names = [(Icon::Layout, tr("Workspace"), tr("Views, panels and top bar")), (Icon::Keyboard, tr("Shortcuts"), tr("Change the keys"))];
+        let names = [
+            (Icon::Layout, tr("Workspace"), tr("Views, panels and top bar")),
+            (Icon::Keyboard, tr("Shortcuts"), tr("Change the keys")),
+            (Icon::Midi, tr("MIDI"), tr("Controller links: list, modes, ranges")),
+        ];
         let mut hint: Option<String> = None;
         for (i, (icon, name, tip)) in names.into_iter().enumerate() {
             let seg = Rect::new(tabs.x + 3.0 + i as f32 * seg_w, tabs.y, seg_w, tabs.h);
@@ -720,10 +728,10 @@ impl App {
         let body = Rect::new(r.x + 20.0, r.y + 68.0 + ((1.0 - enter) * 8.0).round(), r.w - 40.0, r.h - 68.0 - 52.0);
         let foot = Rect::new(r.x + 20.0, r.bottom() - 46.0, r.w - 40.0, 34.0);
         c.fill_rect(Rect::new(r.x + 1.0, foot.y - 8.0, r.w - 2.0, 1.0), t.hairline);
-        if tab == 0 {
-            self.workspace_tab(c, input, body, &mut hint);
-        } else {
-            self.keys_tab(c, input, body, foot, &mut hint);
+        match tab {
+            0 => self.workspace_tab(c, input, body, &mut hint),
+            1 => self.keys_tab(c, input, body, foot, &mut hint),
+            _ => self.midi_tab(c, input, body, &mut hint),
         }
         if enter < 0.999 {
             c.fill_rect(Rect::new(r.x + 1.0, r.y + 60.0, r.w - 2.0, body.h + 8.0), t.panel.alpha(1.0 - enter));
@@ -732,7 +740,11 @@ impl App {
         let showing_banner = tab == 1 && self.prefs.conflict.is_some();
         if !showing_banner {
             let line = hint.unwrap_or_else(|| {
-                if tab == 0 { tr("Click a tile to show or hide it").into() } else { tr("Click a key, then the new combination · Esc cancels").into() }
+                match tab {
+                    0 => tr("Click a tile to show or hide it").into(),
+                    1 => tr("Click a key, then the new combination · Esc cancels").into(),
+                    _ => tr("Global links follow the controller in every project; project links are saved with the song").into(),
+                }
             });
             let right = if tab == 1 { foot.x + 190.0 } else { foot.x };
             self.text_fit(c, self.f.sans, 12.0, right, foot.y + foot.h * 0.5, &line, foot.right() - right, t.text2);

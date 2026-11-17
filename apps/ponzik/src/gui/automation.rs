@@ -51,6 +51,45 @@ impl App {
         })
     }
 
+    /// Current value of a parameter, in its own units.
+    pub fn auto_value(&self, target: AutoTarget) -> Option<f32> {
+        let (_, info) = self.target_info(target)?;
+        let p = &self.project;
+        Some(match target {
+            AutoTarget::InstrumentParam { channel, id } => p.channels[channel].instrument.get(id).unwrap_or(info.default),
+            AutoTarget::EffectParam { track, slot, id } => {
+                p.tracks[track].inserts[slot].as_ref().and_then(|e| e.get(id)).unwrap_or(info.default)
+            }
+            AutoTarget::ChannelGain(c) => p.channels[c].gain,
+            AutoTarget::ChannelPan(c) => p.channels[c].pan,
+            AutoTarget::TrackGain(t) => p.tracks[t].gain,
+            AutoTarget::TrackPan(t) => p.tracks[t].pan,
+            AutoTarget::Tempo => self.tempo_here(),
+        })
+    }
+
+    /// Sets a parameter (clamped to its range); the caller commits.
+    pub fn set_auto_value(&mut self, target: AutoTarget, value: f32) {
+        let Some((_, info)) = self.target_info(target) else { return };
+        let v = info.clamp(value);
+        let p = &mut self.project;
+        match target {
+            AutoTarget::InstrumentParam { channel, id } => p.channels[channel].instrument.set(id, v),
+            AutoTarget::EffectParam { track, slot, id } => {
+                if let Some(e) = p.tracks[track].inserts[slot].as_mut() {
+                    e.set(id, v);
+                }
+            }
+            AutoTarget::ChannelGain(c) => p.channels[c].gain = v,
+            AutoTarget::ChannelPan(c) => p.channels[c].pan = v,
+            AutoTarget::TrackGain(t) => p.tracks[t].gain = v,
+            AutoTarget::TrackPan(t) => p.tracks[t].pan = v,
+            AutoTarget::Tempo => {
+                self.set_tempo_here((v * 10.0).round() / 10.0);
+            }
+        }
+    }
+
     /// Crée un couloir d'automation du morceau pour `target`, à la valeur actuelle.
     pub fn create_automation(&mut self, target: AutoTarget, value: f32) {
         if self.project.automation_lane(target, AutoScope::Song).is_some() {
