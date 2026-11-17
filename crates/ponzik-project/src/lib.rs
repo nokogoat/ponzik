@@ -25,6 +25,7 @@ mod arrange;
 pub mod base64;
 pub mod auto_rec;
 pub mod autosave;
+pub mod capture;
 mod breakcore;
 mod zalgo;
 mod demo;
