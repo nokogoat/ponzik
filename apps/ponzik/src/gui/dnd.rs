@@ -333,7 +333,7 @@ impl App {
                     let name = self.project.patterns[p].name.clone();
                     if let Some(DropTarget::Lane { lane, tick }) = target {
                         let len = self.project.patterns[p].len;
-                        self.project.clips.push(ponzik_project::ClipDef { pattern: p, lane: lane + audio.len() + i, start: tick, len, offset: 0 });
+                        self.project.clips.push(ponzik_project::ClipDef { pattern: p, lane: lane + audio.len() + i, start: tick, len, offset: 0, muted: false });
                         self.commit(tr("Import a MIDI file"));
                         self.toast(&tr_fmt!("\"{}\" placed in the playlist", name.as_str()));
                     } else {
