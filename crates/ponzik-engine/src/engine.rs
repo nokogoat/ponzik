@@ -41,6 +41,8 @@ const MAX_LATENCY_SECONDS: f32 = 1.0;
 const CPU_SMOOTHING_SECONDS: f32 = 0.3;
 /// Sous-bloc le plus court dont les canaux sont répartis entre les threads.
 const MIN_PARALLEL_FRAMES: usize = 32;
+/// Automation lanes that can be held at once (see [`Command::HoldAutomation`]).
+pub const MAX_HELD: usize = 32;
 
 /// Ordres de l'interface au moteur. Les objets lourds (instruments, effets,
 /// séquences) sont préparés par l'interface ; ceux qu'ils remplacent repartent
@@ -102,6 +104,9 @@ pub enum Command {
     /// Modulators of a channel (targets: its instrument).
     SetChannelModulators { channel: usize, mods: Option<Box<ModSet>> },
     SetMetronome(bool),
+    /// While a lane is being recorded live, its playback stops overriding the
+    /// parameter (the hand wins); `hold: false` gives it back to the lane.
+    HoldAutomation { target: AutoTarget, hold: bool },
     /// Branche (ou débranche) l'entrée audio ; l'ancienne repart en [`Garbage::Input`].
     SetInput(Option<Box<InputConsumer>>),
     /// Écoute de l'entrée en direct sur une piste (`None` : coupée), ajoutée à
@@ -177,6 +182,7 @@ impl std::fmt::Debug for Command {
             Command::SetTrackModulators { .. } => "SetTrackModulators",
             Command::SetChannelModulators { .. } => "SetChannelModulators",
             Command::SetMetronome(_) => "SetMetronome",
+            Command::HoldAutomation { .. } => "HoldAutomation",
             Command::SetInput(_) => "SetInput",
             Command::SetMonitor { .. } => "SetMonitor",
             Command::SetLowLatencyMonitoring(_) => "SetLowLatencyMonitoring",
@@ -455,6 +461,8 @@ pub struct Engine {
     anchor_secs: f64,
     anchor_clock: u64,
     metronome: bool,
+    /// Automation lanes not played back (recorded live), at most [`MAX_HELD`].
+    held: [Option<AutoTarget>; MAX_HELD],
     /// Pré-compte : ticks restants et durée totale ; la lecture démarre à 0.
     count_in: f64,
     count_len: f64,
@@ -567,6 +575,7 @@ impl Engine {
             anchor_secs: 0.0,
             anchor_clock: 0,
             metronome: false,
+            held: [None; MAX_HELD],
             count_in: 0.0,
             count_len: 0.0,
             click_phase: 0.0,
@@ -866,6 +875,9 @@ impl Engine {
     fn apply_automation(&mut self) {
         let pos = self.pos;
         for lane in &self.sequence.automation {
+            if self.held.contains(&Some(lane.target)) {
+                continue;
+            }
             let Some(v) = self.sequence.automation_tick(lane.scope, pos).and_then(|t| lane.value_at(t)) else {
                 continue;
             };
@@ -1627,6 +1639,16 @@ impl Engine {
                 }
             }
             Command::SetMetronome(on) => self.metronome = on,
+            Command::HoldAutomation { target, hold } => {
+                for h in &mut self.held {
+                    if *h == Some(target) {
+                        *h = None;
+                    }
+                }
+                if hold && let Some(free) = self.held.iter_mut().find(|h| h.is_none()) {
+                    *free = Some(target);
+                }
+            }
             Command::SetInput(input) => {
                 if let Some(old) = std::mem::replace(&mut self.input, input) {
                     self.trash(Garbage::Input(old));
@@ -2202,6 +2224,25 @@ mod tests {
         handle.take_track_peak(1);
         run(&mut engine, 256, 256);
         assert!((handle.take_track_peak(1)[0] - 0.05).abs() < 1e-6);
+    }
+
+    #[test]
+    fn held_lanes_leave_the_parameter_alone() {
+        let (mut engine, mut handle, _) = setup(&[]);
+        let seq = Sequence {
+            mode: PlayMode::Song,
+            song_len: 4 * 384,
+            automation: vec![lane(AutoTarget::TrackGain(1), AutoScope::Song, &[(0, 0.2)])],
+            ..Default::default()
+        };
+        handle.send(Command::SetSequence(Box::new(seq))).unwrap();
+        handle.send(Command::HoldAutomation { target: AutoTarget::TrackGain(1), hold: true }).unwrap();
+        handle.send(Command::SetTrackGain { track: 1, gain: 1.0 }).unwrap();
+        handle.send(Command::Play).unwrap();
+        let mut done = 0;
+        assert!((track_peak_at(&mut engine, &handle, &mut done, 2_000, 1) - 0.25).abs() < 1e-6);
+        handle.send(Command::HoldAutomation { target: AutoTarget::TrackGain(1), hold: false }).unwrap();
+        assert!((track_peak_at(&mut engine, &handle, &mut done, 6_000, 1) - 0.05).abs() < 1e-6);
     }
 
     #[test]
