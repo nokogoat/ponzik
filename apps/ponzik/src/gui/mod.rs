@@ -18,6 +18,7 @@ mod dnd;
 mod editors;
 mod dropouts;
 mod float;
+mod freeze;
 mod keymap;
 mod keys;
 mod learn;
@@ -700,6 +701,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // the piano roll showing lane 0 (chance), 1 (condition) or 2 (repeats).
     if let Ok(spec) = std::env::var("PONZIK_VARY") {
         app.screenshot_vary(&spec);
+    }
+    // PONZIK_FREEZE=channel:4,track:3,prompt,bounce:1,consolidate:2,selection,menu:4:
+    // freezes, bounces and their menus.
+    if let Ok(spec) = std::env::var("PONZIK_FREEZE") {
+        app.screenshot_freeze(&spec);
     }
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {

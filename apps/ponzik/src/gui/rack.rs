@@ -255,7 +255,14 @@ impl App {
         };
         let track = self.project.channels[ch].track;
         let name_col = if muted { t.text2 } else { t.text.mix(WHITE, nh * 0.3) };
-        self.text_fit(c, self.f.sans_med, 15.0, name_r.x, cy, &name, name_r.w, name_col);
+        let lock = self.channel_lock(ch);
+        let badge_w = if lock.is_some() { 24.0 } else { 0.0 };
+        self.text_fit(c, self.f.sans_med, 15.0, name_r.x, cy, &name, name_r.w - badge_w, name_col);
+        if let Some(target) = lock {
+            // Frozen (by itself or with its track): a frost badge right after the name.
+            let x = name_r.x + self.fonts.measure(self.f.sans_med, 15.0, &name).min(name_r.w - badge_w) + 14.0;
+            self.frost_badge(c, input, x, cy, 13.0, target, ch);
+        }
         if nhov {
             self.set_tip(&tr_fmt!("{} · track {}\nDouble-click: rename · right-click: menu", kind, track), "");
             self.set_cursor(Cursor::Hand);

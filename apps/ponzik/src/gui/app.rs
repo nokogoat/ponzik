@@ -175,6 +175,10 @@ pub enum Popup {
     Themes,
     /// Clic droit sur un clip de pattern de la playlist.
     ClipMenu(usize),
+    /// Right-click on the title of an audio clip.
+    AudioClipMenu(usize),
+    /// An edit of frozen content was held back: unfreeze, or keep it frozen.
+    FrozenEdit(ponzik_project::FreezeTarget),
     /// Clic droit sur un pattern de la liste de la playlist.
     PatternMenu(usize),
     /// Couleur d'un pattern.
@@ -353,6 +357,9 @@ pub enum Action {
     /// Waits for a MIDI control to move, then links it.
     Learn(ponzik_project::midi_map::ControlTarget),
     Unlink(ponzik_project::midi_map::ControlTarget),
+    /// Freeze, bounce, consolidate, render selection.
+    Freeze(super::freeze::FreezeOp),
+    DeleteAudioClip(usize),
 }
 
 /// Ligne de menu : une icône (ou la couleur d'un pattern), un nom court, une
@@ -630,6 +637,12 @@ pub struct App {
     pub clipboard_clip: Option<ponzik_project::ClipDef>,
     /// Sélection de temps tirée dans une règle : vue, début, fin (ticks).
     pub time_selection: Option<(View, u32, u32)>,
+    /// An edit of frozen content, held back until the user unfreezes.
+    pub frozen_edit: Option<(ponzik_project::FreezeTarget, Project)>,
+    /// Pointer position at the last frame (anchor of prompts opened by edits).
+    pub pointer: (f32, f32),
+    /// Renders (freeze, bounce) go to a temporary folder: screenshots.
+    pub demo_audio: bool,
     pub midi_inputs: Vec<ponzik_midi::MidiInput>,
     midi_events: Vec<ponzik_midi::MidiEvent>,
     pub midi_out: super::midiout::MidiOutState,
@@ -780,6 +793,9 @@ impl App {
             clipboard_notes: Vec::new(),
             clipboard_clip: None,
             time_selection: None,
+            frozen_edit: None,
+            pointer: (0.0, 0.0),
+            demo_audio: false,
             midi_inputs: ponzik_midi::open_all_inputs(),
             midi_events: Vec::new(),
             midi_out: Default::default(),
@@ -1023,7 +1039,7 @@ impl App {
         }
     }
 
-    fn sample_loader(&self) -> impl Fn(&str) -> Option<Arc<Sample>> + '_ {
+    pub(super) fn sample_loader(&self) -> impl Fn(&str) -> Option<Arc<Sample>> + '_ {
         |path: &str| self.samples.get(path).cloned()
     }
 
@@ -1052,6 +1068,10 @@ impl App {
         // Modulations of a removed or replaced device go with it.
         self.project.prune_modulators();
         if self.project == self.synced {
+            return;
+        }
+        // Frozen content: the edit waits for the user to unfreeze.
+        if self.hold_frozen_edit() {
             return;
         }
         // Moves recorded as automation: one undo step for the whole pass.
@@ -1815,6 +1835,7 @@ impl App {
     pub fn frame(&mut self, c: &mut Canvas, input: &Input, dt: f32) {
         self.anim.begin_frame(dt);
         self.time += dt;
+        self.pointer = (input.x, input.y);
         self.cursor = ponzik_window::Cursor::Arrow;
         self.poll_engine(dt);
         self.learn_tick();
@@ -3075,16 +3096,15 @@ impl App {
                 let ch = *ch;
                 let c = &p.channels[ch];
                 let rename = Popup::Rename { target: Rename::Channel(ch), text: c.name.clone() };
-                (
-                    c.name.clone(),
-                    vec![
-                        MenuItem::new(Icon::Piano, tr("Piano roll"), Action::ChannelPianoRoll(ch)),
-                        MenuItem::new(Icon::Pencil, tr("Rename"), Action::Popup(rename)),
-                        MenuItem::new(Icon::Swap, tr("Replace"), Action::Popup(Popup::AddInstrument { replace: Some(ch) })),
-                        MenuItem::new(Icon::Duplicate, tr("Duplicate"), Action::DuplicateChannel(ch)).tip(tr("Same settings, without the notes")),
-                        MenuItem::new(Icon::Trash, tr("Delete"), Action::DeleteChannel(ch)).tip(tr("Also removes its notes")),
-                    ],
-                )
+                let mut v = vec![
+                    MenuItem::new(Icon::Piano, tr("Piano roll"), Action::ChannelPianoRoll(ch)),
+                    MenuItem::new(Icon::Pencil, tr("Rename"), Action::Popup(rename)),
+                    MenuItem::new(Icon::Swap, tr("Replace"), Action::Popup(Popup::AddInstrument { replace: Some(ch) })),
+                    MenuItem::new(Icon::Duplicate, tr("Duplicate"), Action::DuplicateChannel(ch)).tip(tr("Same settings, without the notes")),
+                ];
+                v.extend(self.channel_freeze_items(ch));
+                v.push(MenuItem::new(Icon::Trash, tr("Delete"), Action::DeleteChannel(ch)).tip(tr("Also removes its notes")).sep());
+                (c.name.clone(), v)
             }
             Popup::TrackMenu(t) => {
                 let t = *t;
@@ -3133,6 +3153,9 @@ impl App {
                         v.push(MenuItem::new(Icon::Close, tr("Delete the VCA"), Action::Dissolve(t)).tip(tr("Its tracks keep their own volume")).sep());
                     }
                     TrackKind::Normal => {}
+                }
+                if let Some(item) = self.track_freeze_item(t) {
+                    v.push(item.sep());
                 }
                 v.push(MenuItem::new(Icon::Reset, tr("Reset"), Action::ResetTrack(t)).tip(tr("Volume 0 dB, pan centered")));
                 (trk.name.clone(), v)
@@ -3411,16 +3434,15 @@ impl App {
                 };
                 let mut color = MenuItem::plain(tr("Color"), Action::Popup(Popup::PatternColor(pat)));
                 color.color = Some(self.pattern_tint(pat));
-                (
-                    p.patterns[pat].name.clone(),
-                    vec![
-                        unique,
-                        MenuItem::new(Icon::Pencil, tr("Rename"), Action::Popup(rename)).tip(tr("Renames the pattern and all its clips")),
-                        color,
-                        MenuItem::new(Icon::Rack, tr("Edit"), Action::EditPattern(pat)).detail(tr("double-click").into()),
-                        MenuItem::new(Icon::Trash, tr("Delete the clip"), Action::DeleteClip(*i)).tip(tr("Hold right-click: sweep to erase")),
-                    ],
-                )
+                let mut v = vec![
+                    unique,
+                    MenuItem::new(Icon::Pencil, tr("Rename"), Action::Popup(rename)).tip(tr("Renames the pattern and all its clips")),
+                    color,
+                    MenuItem::new(Icon::Rack, tr("Edit"), Action::EditPattern(pat)).detail(tr("double-click").into()),
+                ];
+                v.extend(self.clip_bounce_items(super::clip::ClipSel::Pattern(*i)));
+                v.push(MenuItem::new(Icon::Trash, tr("Delete the clip"), Action::DeleteClip(*i)).tip(tr("Hold right-click: sweep to erase")).sep());
+                (p.patterns[pat].name.clone(), v)
             }
             Popup::PatternMenu(pat) => {
                 let pat = *pat;
@@ -3452,6 +3474,8 @@ impl App {
                 (tr_fmt!("Color · {}", p.patterns[pat].name.as_str()), v)
             }
             Popup::PadMenu { channel, pad } => self.pad_menu(*channel, *pad),
+            Popup::AudioClipMenu(i) => self.audio_clip_menu(*i),
+            Popup::FrozenEdit(target) => self.frozen_edit_menu(*target),
             Popup::MarkerMenu(i) => self.marker_menu(*i),
             Popup::MarkerColor(i) => self.marker_color_menu(*i),
             Popup::Signature(tick) => self.signature_menu(*tick),
@@ -3532,6 +3556,14 @@ impl App {
                     self.commit(tr("Erase a clip"));
                 }
             }
+            Action::DeleteAudioClip(clip) => {
+                if clip < self.project.audio_clips.len() {
+                    self.project.audio_clips.remove(clip);
+                    self.audio_clip_removed(clip);
+                    self.commit(tr("Delete audio clip"));
+                }
+            }
+            Action::Freeze(op) => self.run_freeze_op(op),
             Action::DuplicateTime => self.duplicate_time(),
             Action::NewBus(members) => self.new_bus(&members),
             Action::NewReturn(kind, from) => self.new_return(kind, from),

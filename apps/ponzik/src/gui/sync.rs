@@ -7,8 +7,23 @@
 use std::sync::Arc;
 
 use ponzik_engine::mixer::{INSERT_SLOTS, SEND_SLOTS, TRACKS};
-use ponzik_engine::{Command, NOTE_FX_SLOTS, Sample, registry};
+use ponzik_engine::{Command, Frozen, NOTE_FX_SLOTS, Sample, registry};
 use ponzik_project::{InstrumentDef, Project};
+
+type Loader<'a> = &'a dyn Fn(&str) -> Option<Arc<Sample>>;
+
+/// What the engine plays for a channel: its devices (`None`), or the freeze
+/// files that replace them (its own, its track's).
+fn channel_freeze(p: &Project, i: usize, loader: Loader) -> Option<(Option<String>, Option<String>)> {
+    let c = &p.channels[i];
+    let track = p.tracks.get(c.track).and_then(|t| t.frozen.clone());
+    (!p.channel_live(i, loader)).then(|| (c.frozen.clone(), track))
+}
+
+/// The freeze file a track plays, when it loads.
+fn track_freeze(p: &Project, t: usize, loader: Loader) -> Option<String> {
+    p.frozen_track(t, loader).and(p.tracks[t].frozen.clone())
+}
 
 fn default_param(kind: &str, id: u32) -> f32 {
     registry::create_instrument(kind)
@@ -44,7 +59,7 @@ fn same_instrument(a: &InstrumentDef, b: &InstrumentDef) -> bool {
     a.kind == b.kind && a.sample == b.sample && a.pads == b.pads
 }
 
-pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: &dyn Fn(&str) -> Option<Arc<Sample>>) -> Vec<Command> {
+pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: Loader) -> Vec<Command> {
     let mut cmds = Vec::new();
 
     // Canaux : par position ; un retrait au milieu remplace les suivants.
@@ -54,6 +69,25 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: &dyn Fn(&str
     }
     for i in 0..n_new.min(n_old) {
         let (a, b) = (&old.channels[i], &new.channels[i]);
+        let frozen = channel_freeze(new, i, loader);
+        if channel_freeze(old, i, loader) != frozen {
+            // Frozen or thawed: the whole channel changes (devices unloaded or back).
+            cmds.push(Command::ReplaceChannel { channel: i, ch: Box::new(new.make_channel(i, sample_rate, loader)) });
+            continue;
+        }
+        if frozen.is_some() {
+            // Its devices are not in the engine: only what stays live.
+            if a.gain != b.gain {
+                cmds.push(Command::SetChannelGain { channel: i, gain: b.gain });
+            }
+            if a.pan != b.pan {
+                cmds.push(Command::SetChannelPan { channel: i, pan: b.pan });
+            }
+            if a.muted != b.muted {
+                cmds.push(Command::SetChannelMute { channel: i, muted: b.muted });
+            }
+            continue;
+        }
         if !same_instrument(&a.instrument, &b.instrument) {
             cmds.push(Command::ReplaceInstrument {
                 channel: i,
@@ -110,14 +144,37 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: &dyn Fn(&str
         || old.automation != new.automation
         || old.audio_clips != new.audio_clips
         || n_old != n_new
+        || (0..TRACKS.min(old.tracks.len()).min(new.tracks.len()))
+            .any(|t| track_freeze(old, t, loader).is_some() != track_freeze(new, t, loader).is_some())
     {
         cmds.push(Command::SetSequence(Box::new(new.sequence_for(sample_rate, loader, &|job| ponzik_project::warp::cached(job.key)))));
     }
 
     // Mixer.
     let mut routing = false;
+    // Tracks frozen or thawed: their inserts and modulators are unloaded or come back.
+    let mut refrozen = Vec::new();
+    for t in 0..TRACKS.min(old.tracks.len()).min(new.tracks.len()) {
+        let frozen = track_freeze(new, t, loader);
+        if track_freeze(old, t, loader) != frozen {
+            refrozen.push(t);
+            routing = true;
+            let def = &new.tracks[t];
+            for slot in 0..INSERT_SLOTS {
+                let fx = def.inserts[slot].as_ref().filter(|_| frozen.is_none());
+                cmds.push(Command::SetInsert { track: t, slot, effect: fx.and_then(|d| Project::make_effect(d, sample_rate, new.bpm)) });
+                cmds.push(Command::SetInsertBypass { track: t, slot, bypass: fx.is_some_and(|d| d.bypass) });
+                cmds.push(Command::SetInsertSidechain { track: t, slot, key: fx.and_then(|d| d.sidechain) });
+            }
+            let mods = if frozen.is_some() { None } else { new.make_track_mods(t) };
+            cmds.push(Command::SetTrackModulators { track: t, mods });
+            let player = new.frozen_track(t, loader).map(|s| Box::new(Frozen::new(s)));
+            cmds.push(Command::SetTrackFrozen { track: t, frozen: player });
+        }
+    }
     for t in 0..TRACKS.min(old.tracks.len()).min(new.tracks.len()) {
         let (a, b) = (&old.tracks[t], &new.tracks[t]);
+        let unloaded = refrozen.contains(&t) || track_freeze(new, t, loader).is_some();
         if a.gain != b.gain {
             cmds.push(Command::SetTrackGain { track: t, gain: b.gain });
         }
@@ -141,7 +198,7 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: &dyn Fn(&str
                 routing = true;
             }
         }
-        for slot in 0..INSERT_SLOTS {
+        for slot in (0..INSERT_SLOTS).filter(|_| !unloaded) {
             match (&a.inserts[slot], &b.inserts[slot]) {
                 (Some(x), Some(y)) if x.kind == y.kind => {
                     if y.kind == ponzik_project::rack::RACK {
@@ -177,6 +234,9 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: &dyn Fn(&str
     }
     // Modulators after the inserts they drive; a replaced insert takes them again.
     for t in 0..TRACKS.min(old.tracks.len()).min(new.tracks.len()) {
+        if refrozen.contains(&t) || track_freeze(new, t, loader).is_some() {
+            continue;
+        }
         let (a, b) = (&old.tracks[t], &new.tracks[t]);
         let replaced = (0..INSERT_SLOTS).any(|s| a.inserts[s].as_ref().map(|f| &f.kind) != b.inserts[s].as_ref().map(|f| &f.kind));
         if a.modulators != b.modulators || (replaced && !b.modulators.is_empty()) {
@@ -320,5 +380,48 @@ mod tests {
         let mut d = c.clone();
         d.channels[1].note_fx[1] = None;
         assert!(matches!(diff(&c, &d, 48_000.0, &none)[..], [Command::SetNoteFx { channel: 1, slot: 1, fx: None }]));
+    }
+
+    #[test]
+    fn freezing_unloads_and_thawing_reloads() {
+        use ponzik_project::FreezeTarget;
+        let file = Arc::new(Sample { sample_rate: 48_000.0, left: vec![0.1; 64], right: vec![0.1; 64], ..Default::default() });
+        let loader = |p: &str| (p == "f.wav").then(|| file.clone());
+        let mut a = demo_project();
+        a.tracks[3].inserts[0] = Some(ponzik_project::EffectDef::new("compressor"));
+        let mut b = a.clone();
+        b.set_frozen(FreezeTarget::Channel(1), Some("f.wav".into()));
+        let cmds = diff(&a, &b, 48_000.0, &loader);
+        assert!(matches!(&cmds[..], [Command::ReplaceChannel { channel: 1, ch }] if ch.frozen.is_some() && ch.instrument.kind() == "silence"));
+        // Frozen: its device edits do not reach the engine, its fader does.
+        let mut c = b.clone();
+        c.channels[1].instrument.set(2, 0.5);
+        c.channels[1].gain = 0.1;
+        assert_eq!(names(&diff(&b, &c, 48_000.0, &loader)), ["SetChannelGain"]);
+        // Thawed: the devices come back.
+        let cmds = diff(&c, &a, 48_000.0, &loader);
+        assert!(matches!(&cmds[..], [Command::ReplaceChannel { channel: 1, ch }] if ch.frozen.is_none() && ch.instrument.kind() != "silence"));
+        // A missing file changes nothing: the live devices play.
+        let mut lost = a.clone();
+        lost.set_frozen(FreezeTarget::Channel(1), Some("gone.wav".into()));
+        assert!(diff(&a, &lost, 48_000.0, &loader).is_empty());
+
+        // A track: its inserts unloaded, its channels too, the sequence resent.
+        let mut d = a.clone();
+        d.set_frozen(FreezeTarget::Track(3), Some("f.wav".into()));
+        let cmds = diff(&a, &d, 48_000.0, &loader);
+        let n = names(&cmds);
+        assert!(n.contains(&"SetTrackFrozen".to_string()) && n.contains(&"SetSequence".to_string()));
+        assert!(cmds.iter().any(|c| matches!(c, Command::SetInsert { track: 3, slot: 0, effect: None })));
+        let on_track: Vec<usize> = (0..a.channels.len()).filter(|&i| a.channels[i].track == 3).collect();
+        for i in &on_track {
+            assert!(cmds.iter().any(|c| matches!(c, Command::ReplaceChannel { channel, .. } if channel == i)));
+        }
+        let mut e = d.clone();
+        e.tracks[3].inserts[0].as_mut().unwrap().set(0, -30.0);
+        assert!(diff(&d, &e, 48_000.0, &loader).is_empty(), "a frozen insert is not in the engine");
+        let cmds = diff(&e, &a, 48_000.0, &loader);
+        assert!(cmds.iter().any(|c| matches!(c, Command::SetInsert { track: 3, slot: 0, effect: Some(_) })));
+        assert!(cmds.iter().any(|c| matches!(c, Command::SetTrackFrozen { track: 3, frozen: None })));
     }
 }

@@ -535,6 +535,12 @@ impl App {
         }
         let num = if tr == MASTER { tr_ctx("master track", "M").to_string() } else { tr.to_string() };
         let (cx, ny) = (inner.x + inner.w * 0.5, inner.y + 25.0);
+        // Frozen: a frost band under the name and a badge by the number.
+        if self.project.tracks[tr].frozen.is_some() && tr != MASTER {
+            let frost = ponzik_ui::Color::hex(super::freeze::FROST);
+            c.fill_rrect(Rect::new(inner.x, inner.y - 2.0, inner.w, 34.0), 8.0, frost.alpha(0.08));
+            self.frost_badge(c, input, inner.right() - 9.0, ny, 11.0, ponzik_project::FreezeTarget::Track(tr), tr);
+        }
         // Bus et VCA : leur pictogramme avant le numéro.
         let kind_icon = match kind {
             TrackKind::Bus => Some((Icon::Bus, ponzik_i18n::tr("Bus: other tracks output into it, its effects process their sum"))),

@@ -44,7 +44,7 @@ pub fn config_dir() -> PathBuf {
     var("XDG_CONFIG_HOME").unwrap_or_else(|| home().join(".config")).join("ponzik")
 }
 
-fn file_name(name: &str) -> String {
+pub(super) fn file_name(name: &str) -> String {
     let clean: String = name.chars().map(|c| if c.is_alphanumeric() || " -_".contains(c) { c } else { '_' }).collect();
     let clean = clean.trim();
     if clean.is_empty() { tr("Untitled").into() } else { clean.to_string() }
@@ -134,7 +134,12 @@ pub fn load_sample(path: &str) -> Result<Sample, String> {
 /// once; those that fail to load are left out.
 pub fn project_samples(project: &Project) -> HashMap<String, Arc<Sample>> {
     let mut samples = HashMap::new();
-    let paths = project.channels.iter().flat_map(|c| c.instrument.sample_paths()).chain(project.audio_clips.iter().map(|c| &c.path));
+    let paths = project
+        .channels
+        .iter()
+        .flat_map(|c| c.instrument.sample_paths())
+        .chain(project.audio_clips.iter().map(|c| &c.path))
+        .chain(project.freeze_paths());
     for path in paths {
         if !samples.contains_key(path)
             && let Ok(s) = load_sample(path)

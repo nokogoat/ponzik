@@ -175,6 +175,8 @@ pub enum Icon {
     StarFilled,
     /// A speaker with sound waves: preview volume.
     Speaker,
+    /// Six arms with their branches: frozen.
+    Snowflake,
 }
 
 /// Points of a five-pointed star of outer radius 7.5 (icon units), from the top.
@@ -416,6 +418,22 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
             }
             c.stroke_polyline(&[p(0.5, 0.0), p(7.0, 0.0)], stroke, col);
             c.fill_circle(cx + 0.5 * s, cy, 2.1 * s, col);
+        }
+        Icon::Snowflake => {
+            for k in 0..3 {
+                let a = std::f32::consts::FRAC_PI_3 * k as f32 + std::f32::consts::FRAC_PI_2;
+                let (dx, dy) = (a.cos(), a.sin());
+                c.stroke_polyline(&[p(-7.0 * dx, -7.0 * dy), p(7.0 * dx, 7.0 * dy)], stroke * 0.85, col);
+                // Two small branches near each end of the arm.
+                for end in [-1.0f32, 1.0] {
+                    let (bx, by) = (4.2 * dx * end, 4.2 * dy * end);
+                    for side in [-1.0f32, 1.0] {
+                        let b = a + side * 0.75;
+                        let (ex, ey) = (b.cos() * 2.6 * end, b.sin() * 2.6 * end);
+                        c.stroke_polyline(&[p(bx, by), p(bx + ex, by + ey)], stroke * 0.7, col);
+                    }
+                }
+            }
         }
         Icon::Vca => {
             for x in [-4.0, 4.0] {

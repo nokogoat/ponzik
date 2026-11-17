@@ -6493,3 +6493,174 @@ msgstr "Sélection"
 
 msgid "{} (bounce)"
 msgstr "{} (rendu)"
+
+msgid "An audio clip of the whole song on its mixer track; the channel is muted"
+msgstr "Un clip audio de tout le morceau sur sa piste de mixer ; le canal est coupé"
+
+msgid "Bounce in place"
+msgstr "Rendu sur place"
+
+msgid "Bounce the selected clip to audio"
+msgstr "Rendre le clip choisi en audio"
+
+msgid "Bounce to audio"
+msgstr "Rendre en audio"
+
+msgid "Bounce with effects"
+msgstr "Rendu avec les effets"
+
+msgid "Bounce {} in place"
+msgstr "Rendre {} sur place"
+
+msgid "Bounce {} with its effects to a new track"
+msgstr "Rendre {} avec ses effets sur une nouvelle piste"
+
+msgid "Consolidate"
+msgstr "Consolider"
+
+msgid "Consolidate the selected clip"
+msgstr "Consolider le clip choisi"
+
+msgid "Every clip of this lane in the time selection becomes one audio clip"
+msgstr "Tous les clips de cette ligne dans la sélection de temps deviennent un seul clip audio"
+
+msgid "Freeze the track"
+msgstr "Geler la piste"
+
+msgid "Freeze the track {}"
+msgstr "Geler la piste {}"
+
+msgid "Freeze {}"
+msgstr "Geler {}"
+
+msgid "Frozen with its mixer track"
+msgstr "Gelé avec sa piste de mixer"
+
+msgid "Frozen: it plays its render · edits ask to unfreeze it"
+msgstr "Gelé : il joue son rendu · une modification propose de le dégeler"
+
+msgid "Frozen: plays its render, its effects are unloaded · right-click: unfreeze"
+msgstr "Gelée : elle joue son rendu, ses effets sont déchargés · clic droit : dégeler"
+
+msgid "Frozen: plays its render, its instrument is unloaded · right-click: unfreeze"
+msgstr "Gelé : il joue son rendu, son instrument est déchargé · clic droit : dégeler"
+
+msgid "Its devices are loaded again and play live"
+msgstr "Ses appareils sont rechargés et jouent en direct"
+
+msgid "Keep it frozen"
+msgstr "Le garder gelé"
+
+msgid "Loads its devices again; they play live"
+msgstr "Recharge ses appareils ; ils jouent en direct"
+
+msgid "Loads its effects and channels again"
+msgstr "Recharge ses effets et ses canaux"
+
+msgid "Loads its instrument and note effects again"
+msgstr "Recharge son instrument et ses effets de notes"
+
+msgid "Mute a clip"
+msgstr "Couper un clip"
+
+msgid "Mute the clip"
+msgstr "Couper le clip"
+
+msgid "No free mixer track for the bounce"
+msgstr "Aucune piste de mixer libre pour le rendu"
+
+msgid "Nothing to consolidate on this lane"
+msgstr "Rien à consolider sur cette ligne"
+
+msgid "Render the selection"
+msgstr "Rendre la sélection"
+
+msgid "Render the time selection to a new audio track"
+msgstr "Rendre la sélection de temps sur une nouvelle piste audio"
+
+msgid "Renders everything that reaches it through its effects, then unloads them to save CPU"
+msgstr "Rend tout ce qui lui arrive à travers ses effets, puis les décharge pour économiser le processeur"
+
+msgid "Renders it to audio and unloads its instrument and note effects to save CPU"
+msgstr "Le rend en audio et décharge son instrument et ses effets de notes pour économiser le processeur"
+
+msgid "Renders the clip with its effects to a new lane; the clip is muted"
+msgstr "Rend le clip avec ses effets sur une nouvelle ligne ; le clip est coupé"
+
+msgid "Select a time range in the playlist ruler first"
+msgstr "Choisissez d'abord une plage de temps dans la règle de la playlist"
+
+msgid "Selection rendered to a new audio track · what played there is muted"
+msgstr "Sélection rendue sur une nouvelle piste audio · ce qui y jouait est coupé"
+
+msgid "The clip becomes an audio clip · with a time selection, every clip of its lane in it"
+msgstr "Le clip devient un clip audio · avec une sélection de temps, tous les clips de sa ligne qui s'y trouvent"
+
+msgid "The edit is dropped"
+msgstr "La modification est abandonnée"
+
+msgid "The master and VCAs cannot be frozen"
+msgstr "Le master et les VCA ne se gèlent pas"
+
+msgid "The time selection, as heard, to a new audio track; what played there is muted"
+msgstr "La sélection de temps, telle qu'on l'entend, sur une nouvelle piste audio ; ce qui y jouait est coupé"
+
+msgid "Through the mixer, to a new audio track; the channel is muted"
+msgstr "À travers le mixer, sur une nouvelle piste audio ; le canal est coupé"
+
+msgid "Unfreeze"
+msgstr "Dégeler"
+
+msgid "Unfreeze and apply the edit"
+msgstr "Dégeler et appliquer la modification"
+
+msgid "Unfreeze its track"
+msgstr "Dégeler sa piste"
+
+msgid "Unfreeze the track"
+msgstr "Dégeler la piste"
+
+msgid "Unfreeze the track {}"
+msgstr "Dégeler la piste {}"
+
+msgid "Unfreeze {}"
+msgstr "Dégeler {}"
+
+msgid "Unmute the clip"
+msgstr "Rétablir le clip"
+
+msgid "on its track"
+msgstr "sur sa piste"
+
+msgid "selection"
+msgstr "sélection"
+
+msgid "with its effects, on a new track"
+msgstr "avec ses effets, sur une nouvelle piste"
+
+msgid "{} bounce"
+msgstr "{} rendu"
+
+msgid "{} bounced to audio {} · the source is muted"
+msgstr "{} rendu en audio {} · la source est coupée"
+
+msgid "{} clip consolidated into one audio clip"
+msgstr "{} clip consolidé en un seul clip audio"
+
+msgid "{} clips consolidated into one audio clip"
+msgstr "{} clips consolidés en un seul clip audio"
+
+msgid "{} consolidated"
+msgstr "{} consolidé"
+
+msgid "{} freeze"
+msgstr "{} gelé"
+
+msgid "{} frozen ({:.1} s): its devices are unloaded"
+msgstr "{} gelé ({:.1} s) : ses appareils sont déchargés"
+
+msgid "{} is frozen"
+msgstr "{} est gelé"
+
+msgid "{} unfrozen: its devices play again"
+msgstr "{} dégelé : ses appareils jouent de nouveau"

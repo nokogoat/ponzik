@@ -266,16 +266,39 @@ impl App {
 
         self.drop_zone(input, chain, DropTarget::Track(track));
         let prev = c.push_clip(chain);
+        // Frozen devices are read-only: drawn without the pointer, under frost.
+        let dead = Input { x: -1.0e6, y: -1.0e6, ..Input::default() };
+        let channel_lock = match self.focus {
+            Focus::Channel(ch) => self.channel_lock(ch),
+            _ => None,
+        };
+        let track_lock = self.project.is_frozen(ponzik_project::FreezeTarget::Track(track)).then_some(ponzik_project::FreezeTarget::Track(track));
         // Effets de notes du canal, avant l'instrument.
-        let mut x = self.note_fx_card(c, input, chain.x - sx, chain);
+        let fx_x = chain.x - sx;
+        let mut x = self.note_fx_card(c, if channel_lock.is_some() { &dead } else { input }, fx_x, chain);
+        if let Some(target) = channel_lock
+            && x - CARD_GAP > fx_x + 1.0
+        {
+            self.frost_card(c, input, Rect::new(fx_x, chain.y, x - CARD_GAP - fx_x, chain.h), target, false);
+        }
+        let mut button = true;
         for (d, w) in devices.iter().zip(widths) {
             let card = Rect::new(x, chain.y, w, chain.h);
+            let lock = self.device_lock(*d);
             if card.right() > chain.x && card.x < chain.right() {
                 if self.layout.floating(*d) {
                     self.float_placeholder(c, input, card, *d);
+                } else if let Some(target) = lock {
+                    self.device_card(c, &dead, card, *d, false);
+                    // One Unfreeze button per freeze, on its first card.
+                    self.frost_card(c, input, card, target, button);
+                    button = false;
                 } else {
                     self.device_card(c, input, card, *d, false);
                 }
+            }
+            if lock.is_none() {
+                button = true;
             }
             x += w + CARD_GAP;
         }
@@ -294,8 +317,9 @@ impl App {
         if hov && input.pressed {
             self.open_popup(Popup::AddEffect { track }, add);
         }
-        // Modulators of the instrument and the track.
-        self.modulator_cards(c, input, add.right() + CARD_GAP * 2.0, chain);
+        // Modulators of the instrument and the track (read-only when frozen).
+        let locked = channel_lock.is_some() || track_lock.is_some();
+        self.modulator_cards(c, if locked { &dead } else { input }, add.right() + CARD_GAP * 2.0, chain);
         c.set_clip(Some(prev));
         self.mod_drag_layer(c, input);
     }

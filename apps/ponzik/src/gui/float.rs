@@ -458,7 +458,14 @@ impl App {
             }
 
             let prev = c.push_clip(r.inset(-1.0));
-            self.device_card(c, &inp, r, device, true);
+            match self.device_lock(device) {
+                // Frozen: read-only under frost, with its Unfreeze button.
+                Some(target) => {
+                    self.device_card(c, &masked(&inp), r, device, true);
+                    self.frost_card(c, &inp, r, target, true);
+                }
+                None => self.device_card(c, &inp, r, device, true),
+            }
             let front = top == Some(id);
             let flash = self.anim.to(wid("float-flash", id, 0), 0.0, 0.2);
             c.stroke_rrect(r, 14.0, 1.0, t.hairline.alpha(if front { 2.6 } else { 1.2 }));

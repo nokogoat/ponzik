@@ -361,7 +361,13 @@ impl App {
                     self.open_in_lab(&path, super::samplelab::Source::Clip(i));
                 }
             }
-            if input.right_down && self.drag.is_none() {
+            // Right-click on the title: its menu; elsewhere (or sweeping): erase.
+            let cl = &self.project.audio_clips[i];
+            let title_y = lanes_r.y + cl.lane as f32 * LANE_H + 3.0;
+            if input.right_pressed && self.drag.is_none() && input.y - title_y < CLIP_TITLE {
+                self.select_clip(ClipSel::Audio(i));
+                self.open_popup(Popup::AudioClipMenu(i), Rect::new(input.x, title_y, 0.0, CLIP_TITLE));
+            } else if input.right_down && self.drag.is_none() && self.popup.is_none() {
                 self.project.audio_clips.remove(i);
                 self.audio_clip_removed(i);
                 self.commit(tr("Delete audio clip"));
@@ -551,14 +557,17 @@ impl App {
             let selected = self.playlist.selected == Some(i);
             let hov = hover_clip.is_some_and(|(h, _)| h == i);
             let hv = self.hover_anim(wid("pl-clip", i, 0), hov);
-            c.fill_rrect(r, 8.0, col.mix(t.panel, 0.72 - hv * 0.08));
-            c.fill_rect(Rect::new(r.x + 1.0, r.y + 1.0, r.w - 2.0, 18.0), col.mix(t.panel, 0.45).alpha(0.9));
+            // Muted (a bounced source, for instance): faded, its name marked.
+            let dim = if cl.muted { 0.4 } else { 1.0 };
+            c.fill_rrect(r, 8.0, col.mix(t.panel, 0.72 - hv * 0.08).alpha(dim));
+            c.fill_rect(Rect::new(r.x + 1.0, r.y + 1.0, r.w - 2.0, 18.0), col.mix(t.panel, 0.45).alpha(0.9 * dim));
             if selected {
                 c.stroke_rrect(r, 8.0, 1.5, t.select);
             }
             let prev_clip = c.push_clip(r);
             let name = self.project.patterns.get(cl.pattern).map_or(String::new(), |p| p.name.clone());
-            self.text_fit(c, self.f.sans_med, 11.0, r.x + 8.0, r.y + 10.0, &name, r.w - 12.0, t.text);
+            let name = if cl.muted { tr_fmt!("{} · muted", name) } else { name };
+            self.text_fit(c, self.f.sans_med, 11.0, r.x + 8.0, r.y + 10.0, &name, r.w - 12.0, t.text.alpha(dim));
             // Aperçu des notes, répété sur la longueur du clip.
             if let Some(p) = self.project.patterns.get(cl.pattern) {
                 let all: Vec<_> = p.notes.iter().flatten().collect();
@@ -577,7 +586,7 @@ impl App {
                             }
                             let x = r.x + (start - cl.offset) as f32 * ppt;
                             let y = area_y + area_h - ((n.key - lo) as f32 / span) * area_h;
-                            c.fill_rect(Rect::new(x, y - 1.0, (n.len as f32 * ppt).max(1.5), 2.0), t.text.alpha(0.55));
+                            c.fill_rect(Rect::new(x, y - 1.0, (n.len as f32 * ppt).max(1.5), 2.0), t.text.alpha(0.55 * dim));
                         }
                         rep += 1;
                     }

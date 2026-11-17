@@ -127,6 +127,46 @@ impl App {
         if let Some(clip) = self.playlist.selected.filter(|&i| i < self.project.clips.len()) {
             add(tr("Make the selected clip unique").into(), tr("Playlist"), none(), Action::MakeUnique(clip));
         }
+        // Freeze, bounce, consolidate, render selection.
+        {
+            use super::clip::ClipSel;
+            use super::freeze::FreezeOp;
+            use ponzik_project::{BounceSource, FreezeTarget};
+            if let Some(ch) = self.selected_channel().filter(|&c| c < self.project.channels.len()) {
+                let name = self.project.channels[ch].name.clone();
+                let target = FreezeTarget::Channel(ch);
+                if self.project.is_frozen(target) {
+                    add(tr_fmt!("Unfreeze {}", name.as_str()), tr("Freeze"), none(), Action::Freeze(FreezeOp::Unfreeze(target)));
+                } else if !self.project.channel_locked(ch) {
+                    add(tr_fmt!("Freeze {}", name.as_str()), tr("Freeze"), none(), Action::Freeze(FreezeOp::Freeze(target)));
+                }
+                let bounce = |fx| Action::Freeze(FreezeOp::Bounce { source: BounceSource::Channel(ch), fx });
+                add(tr_fmt!("Bounce {} in place", name.as_str()), tr("Freeze"), none(), bounce(false));
+                add(tr_fmt!("Bounce {} with its effects to a new track", name.as_str()), tr("Freeze"), none(), bounce(true));
+            }
+            let track = self.focused_track();
+            if self.project.can_freeze_track(track) {
+                let name = self.project.tracks[track].name.clone();
+                let target = FreezeTarget::Track(track);
+                if self.project.is_frozen(target) {
+                    add(tr_fmt!("Unfreeze the track {}", name.as_str()), tr("Freeze"), none(), Action::Freeze(FreezeOp::Unfreeze(target)));
+                } else {
+                    add(tr_fmt!("Freeze the track {}", name.as_str()), tr("Freeze"), none(), Action::Freeze(FreezeOp::Freeze(target)));
+                }
+            }
+            let clip = match self.clip_panel_shown() {
+                Some(sel) => Some(sel),
+                None => self.playlist.selected.filter(|&i| i < self.project.clips.len()).map(ClipSel::Pattern),
+            };
+            if let Some(sel) = clip {
+                add(tr("Consolidate the selected clip").into(), tr("Freeze"), none(), Action::Freeze(FreezeOp::Consolidate(sel)));
+                if let ClipSel::Pattern(i) = sel {
+                    let source = BounceSource::Clips { patterns: vec![i], audio: Vec::new() };
+                    add(tr("Bounce the selected clip to audio").into(), tr("Freeze"), none(), Action::Freeze(FreezeOp::Bounce { source, fx: true }));
+                }
+            }
+            add(tr("Render the time selection to a new audio track").into(), tr("Freeze"), none(), Action::Freeze(FreezeOp::RenderSelection));
+        }
         add(tr("Pattern color").into(), tr("Pattern"), none(), Action::Popup(Popup::PatternColor(cur)));
         for (i, p) in self.project.patterns.iter().enumerate() {
             add(tr_fmt!("Pattern: {}", p.name.as_str()), tr("Pattern"), none(), Action::SelectPattern(i));
