@@ -163,6 +163,12 @@ pub enum Popup {
     Scale,
     /// Type d'accord posé par le tampon du piano roll.
     Chord,
+    /// Lane under the piano roll's velocities.
+    PianoLanes,
+    /// Keys detected, best first, to apply to the project.
+    KeyDetect { source: super::groove::KeySource, guesses: Vec<ponzik_project::harmony::KeyGuess> },
+    /// Groove pool of the current pattern.
+    Groove,
     /// Force de l'humanisation des notes.
     Humanize,
     /// MIDI tools of the piano roll: transformations and generators.
@@ -384,6 +390,14 @@ pub enum Action {
     /// Freeze, bounce, consolidate, render selection.
     Freeze(super::freeze::FreezeOp),
     DeleteAudioClip(usize),
+    /// The lane under the piano roll's velocities.
+    PianoLane(super::lanes::PianoLane),
+    /// Key and scale of the project.
+    SetKey(u8, ponzik_project::ScaleKind),
+    /// Detects the key and offers it.
+    DetectKey(super::groove::KeySource),
+    /// Saves the groove of an audio clip's attacks in the pool.
+    ExtractAudioGroove(usize),
 }
 
 /// Ligne de menu : une icône (ou la couleur d'un pattern), un nom court, une
@@ -533,8 +547,14 @@ pub struct PianoState {
     pub erased: Vec<(ponzik_engine::Note, f32)>,
     /// Settings of the MIDI tools.
     pub tool: super::tools::ToolState,
-    /// Lane under the velocities: 0 chance, 1 condition, 2 repeats.
-    pub lane: usize,
+    /// Lane under the velocities: a note setting or a controller.
+    pub lane: super::lanes::PianoLane,
+    /// New notes are slide notes.
+    pub slide_mode: bool,
+    /// Controller lanes draw straight lines instead of freehand.
+    pub line_tool: bool,
+    /// Where the drawing of a controller lane started or last went: (tick, value).
+    pub lane_anchor: Option<(u32, f32)>,
 }
 
 pub struct PlaylistState {
@@ -778,7 +798,10 @@ impl App {
                 voicing: ponzik_project::Voicing::Close,
                 erased: Vec::new(),
                 tool: Default::default(),
-                lane: 0,
+                lane: Default::default(),
+                slide_mode: false,
+                line_tool: false,
+                lane_anchor: None,
             },
             playlist: PlaylistState { scroll_x: 0.0, scroll_y: 0.0, zoom: 44.0, brush: 0, selected: None },
             sidebar_scroll: 0.0,
@@ -897,6 +920,13 @@ impl App {
                 return;
             }
             "humanize" => Popup::Humanize,
+            "lanes" => Popup::PianoLanes,
+            "groove" => Popup::Groove,
+            "key" | "key-project" => {
+                let source = if name == "key" { super::groove::KeySource::Pattern } else { super::groove::KeySource::Project };
+                self.detect_key(source, Rect::new(900.0, 200.0, 36.0, 36.0));
+                return;
+            }
             "tools" => Popup::Tools,
             _ if name.starts_with("tool:") => {
                 // tool:<name>[:all|:chords] — the panel of a tool, on a selection of a few
@@ -3489,6 +3519,8 @@ impl App {
                 v.push(mark(MenuItem::plain(tr("Start"), Action::JumpHistory(0)).on(past == 0).dim(past > 0), self.theme.muted).sep());
                 (tr("History").into(), v)
             }
+            Popup::PianoLanes => self.lane_menu(),
+            Popup::KeyDetect { source, guesses } => self.key_menu(*source, guesses),
             Popup::Humanize => (
                 tr("Humanize").into(),
                 super::piano::HUMANIZE
@@ -3608,6 +3640,7 @@ impl App {
             | Popup::Palette { .. }
             | Popup::Scale
             | Popup::Chord
+            | Popup::Groove
             | Popup::Tool(_)
             | Popup::StepEdit { .. }
             | Popup::Settings { .. } => (String::new(), Vec::new()),
@@ -3907,6 +3940,15 @@ impl App {
                 self.commit(tr("Fill a slot"));
             }
             Action::Humanize(ticks, vel) => self.humanize(ticks, vel),
+            Action::PianoLane(lane) => self.piano.lane = lane,
+            Action::SetKey(key, scale) => {
+                self.project.key = key % 12;
+                self.project.scale = scale;
+                self.commit(tr("Scale"));
+                self.toast(&tr_fmt!("Project key: {}", super::groove::key_label(key, scale)));
+            }
+            Action::DetectKey(source) => self.detect_key(source, anchor),
+            Action::ExtractAudioGroove(i) => self.extract_audio_groove(i),
             Action::OpenTool(tool) => self.open_tool(tool, anchor),
             Action::JumpHistory(n) => self.jump_history(n),
             Action::RemoveAutomation(target) => {
@@ -4034,6 +4076,12 @@ impl App {
         }
         if matches!(state.kind, Popup::Chord) {
             if self.chord_popup(c, input, state.anchor, screen) {
+                self.popup = Some(state);
+            }
+            return;
+        }
+        if matches!(state.kind, Popup::Groove) {
+            if self.groove_popup(c, input, state.anchor, screen) {
                 self.popup = Some(state);
             }
             return;

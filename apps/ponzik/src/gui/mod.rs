@@ -20,8 +20,10 @@ mod editors;
 mod dropouts;
 mod float;
 mod freeze;
+mod groove;
 mod keymap;
 mod keys;
+mod lanes;
 mod learn;
 mod library;
 mod midiout;
@@ -747,6 +749,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // freezes, bounces and their menus.
     if let Ok(spec) = std::env::var("PONZIK_FREEZE") {
         app.screenshot_freeze(&spec);
+    }
+    // PONZIK_EXPRESS=slides,pan|fine|bend|cc,groove: slides, note expressions,
+    // a controller lane and a groove in the piano roll.
+    if let Ok(spec) = std::env::var("PONZIK_EXPRESS") {
+        app.screenshot_express(&spec);
     }
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {

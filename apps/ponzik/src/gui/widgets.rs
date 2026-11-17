@@ -179,6 +179,16 @@ pub enum Icon {
     Snowflake,
     /// Triangle with an exclamation mark: a file is missing (offline).
     Missing,
+    /// A note and a line rising from its end to an arrow: slide notes.
+    Slide,
+    /// Two notes joined by a curve: portamento.
+    Glide,
+    /// A straight line between two dots: the line tool.
+    Line,
+    /// Bars nudged off the grid: a groove.
+    Groove,
+    /// A magnifying glass over a note: detect the key.
+    Detect,
 }
 
 /// Diagonal stripes over `r` (clipped to it): offline clips and samples.
@@ -431,6 +441,40 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
             }
             c.stroke_polyline(&[p(0.5, 0.0), p(7.0, 0.0)], stroke, col);
             c.fill_circle(cx + 0.5 * s, cy, 2.1 * s, col);
+        }
+        Icon::Slide => {
+            c.fill_rrect(rr(-7.5, 3.0, 6.5, 3.2), 1.0 * s, col);
+            c.stroke_polyline(&[p(-1.5, 4.6), p(2.0, 4.0), p(4.5, -1.0), p(5.5, -5.5)], stroke, col);
+            c.stroke_polyline(&[p(3.0, -4.0), p(5.6, -6.8), p(7.5, -3.5)], stroke, col);
+        }
+        Icon::Glide => {
+            c.fill_rrect(rr(-7.5, 3.0, 5.0, 3.2), 1.0 * s, col);
+            c.fill_rrect(rr(2.5, -6.2, 5.0, 3.2), 1.0 * s, col);
+            let mut pts = Vec::with_capacity(9);
+            for i in 0..=8 {
+                let t = i as f32 / 8.0;
+                let e = t * t * (3.0 - 2.0 * t);
+                pts.push(p(-2.5 + 5.0 * t, 4.6 - 9.2 * e));
+            }
+            c.stroke_polyline(&pts, stroke * 0.85, col.alpha(0.8));
+        }
+        Icon::Line => {
+            c.stroke_polyline(&[p(-5.5, 5.0), p(5.5, -5.0)], stroke, col);
+            c.fill_circle(cx - 5.5 * s, cy + 5.0 * s, 2.2 * s, col);
+            c.fill_circle(cx + 5.5 * s, cy - 5.0 * s, 2.2 * s, col);
+        }
+        Icon::Groove => {
+            c.stroke_polyline(&[p(-7.5, 7.0), p(7.5, 7.0)], stroke * 0.7, col.alpha(0.5));
+            for (i, (dx, h)) in [(0.0f32, 11.0f32), (1.6, 6.0), (0.0, 9.0), (1.6, 5.0)].into_iter().enumerate() {
+                let x = -7.0 + i as f32 * 4.0 + dx;
+                c.fill_rrect(rr(x, 5.5 - h, 2.2, h), 1.0 * s, col.alpha(if dx > 0.0 { 0.65 } else { 1.0 }));
+            }
+        }
+        Icon::Detect => {
+            c.stroke_circle(cx - 1.5 * s, cy - 1.5 * s, 5.2 * s, stroke, col);
+            c.stroke_polyline(&[p(2.3, 2.3), p(7.0, 7.0)], stroke * 1.2, col);
+            c.fill_circle(cx - 2.6 * s, cy + 0.2 * s, 1.5 * s, col);
+            c.stroke_polyline(&[p(-1.2, 0.2), p(-1.2, -4.3), p(0.9, -3.4)], stroke * 0.75, col);
         }
         Icon::Snowflake => {
             for k in 0..3 {

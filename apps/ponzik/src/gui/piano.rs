@@ -1,6 +1,6 @@
 //! Piano roll : notes du canal sélectionné dans le pattern courant.
 
-use ponzik_engine::{Note, PlayMode, TICKS_PER_BAR, TICKS_PER_STEP};
+use ponzik_engine::{MAX_FINE, Note, PlayMode, TICKS_PER_BAR, TICKS_PER_STEP};
 use ponzik_i18n::{tr, tr_fmt, tr_fmt_n, tr_noop};
 use ponzik_project::{ChordKind, ScaleKind, Voicing, revoice};
 use ponzik_ui::{Canvas, Color, Rect};
@@ -17,7 +17,9 @@ const KEYBOARD: f32 = 64.0;
 const RULER: f32 = 28.0;
 const VELOCITY: f32 = 76.0;
 /// Lane of chances, conditions or repeats, under the velocities.
-const LANE: f32 = 58.0;
+const LANE: f32 = 64.0;
+/// Chord names, between the ruler and the notes.
+const CHORDS: f32 = 20.0;
 const EDGE: f32 = 7.0;
 const SNAPS: [u32; 4] = [96, 48, 24, 12];
 const PIANO_HELP: &str = tr_noop("Piano roll
@@ -295,7 +297,7 @@ impl App {
     }
 
     /// Case de choix d'un popup : surlignée au survol, pleine d'accent si choisie.
-    fn choice_cell(&mut self, c: &mut Canvas, cell: Rect, id: u64, hov: bool, cur: bool, label: &str) {
+    pub(super) fn choice_cell(&mut self, c: &mut Canvas, cell: Rect, id: u64, hov: bool, cur: bool, label: &str) {
         let t = self.theme;
         let hv = self.hover_anim(id, hov);
         let on = self.anim.to(id ^ 0x6f6e, cur as u8 as f32, T_HOVER);
@@ -337,7 +339,7 @@ impl App {
         let pat = self.project.current_pattern;
 
         // En-tête : canal édité et grille.
-        let chan_box = Rect::new(header.x, header.y, 220.0, header.h);
+        let chan_box = Rect::new(header.x, header.y, if header.w < 1_200.0 { 180.0 } else { 220.0 }, header.h);
         c.fill_rrect(chan_box, 10.0, t.raised);
         c.stroke_rrect(chan_box, 10.0, 1.0, t.hairline);
         let n = self.project.channels.len();
@@ -417,6 +419,7 @@ impl App {
         if self.icon_button(c, input, wid("pr-tools", 0, 0), tools, Icon::Wand, tools_open, tip) {
             self.open_popup(Popup::Tools, tools);
         }
+        self.piano_expression_header(c, input, ch, Rect::new(tools.right() + 10.0, header.y, 0.0, header.h));
 
         let snap_box = Rect::new(header.right() - 236.0, header.y, 236.0, header.h);
         let snap_sel = SNAPS.iter().position(|&s| s == self.piano.snap).unwrap_or(2);
@@ -431,9 +434,10 @@ impl App {
         c.fill_rrect(body, 16.0, t.panel);
         c.stroke_rrect(body, 16.0, 1.0, t.hairline);
         let inner = body.inset(12.0);
-        let keys = Rect::new(inner.x, inner.y + RULER, KEYBOARD, inner.h - RULER - VELOCITY - LANE - 16.0);
+        let keys = Rect::new(inner.x, inner.y + RULER + CHORDS, KEYBOARD, inner.h - RULER - CHORDS - VELOCITY - LANE - 16.0);
         let grid = Rect::new(keys.right(), keys.y, inner.w - KEYBOARD, keys.h);
         let ruler = Rect::new(grid.x, inner.y, grid.w, RULER);
+        let chords = Rect::new(grid.x, inner.y + RULER, grid.w, CHORDS);
         self.tour_anchor(1, grid);
         let vel_lane = Rect::new(grid.x, grid.bottom() + 8.0, grid.w, VELOCITY);
         let note_lane = Rect::new(grid.x, vel_lane.bottom() + 8.0, grid.w, LANE);
@@ -584,9 +588,10 @@ impl App {
                     let start = ((tick / snap).floor() * snap).max(0.0) as u32;
                     let len = self.piano.last_len.max(1);
                     let keys = self.stamp_keys(key as u8);
+                    let slide = self.piano.slide_mode;
                     let notes = self.notes_mut(ch);
                     let base = notes.len();
-                    notes.extend(keys.iter().map(|&k| Note { start, len, key: k, vel: 0.8, ..Note::DEFAULT }));
+                    notes.extend(keys.iter().map(|&k| Note { start, len, key: k, vel: 0.8, slide, ..Note::DEFAULT }));
                     let orig: Vec<(usize, Note)> = (base..notes.len()).map(|i| (i, notes[i])).collect();
                     for &k in &keys {
                         self.anim.set(pop_id(k, start), 0.0);
@@ -679,6 +684,11 @@ impl App {
 
         // Notes du canal.
         let melodic_labels = KEY_H >= 14.0;
+        let grooved: Vec<u32> = if self.project.patterns[pat].groove.is_some() {
+            self.project.played_notes(pat, ch).iter().map(|n| n.start).collect()
+        } else {
+            Vec::new()
+        };
         for (i, n) in self.notes(ch).to_vec().into_iter().enumerate() {
             let r = Rect::new(x_of(n.start as f32), y_of(n.key as f32) + 1.0, (n.len as f32 * zoom).max(4.0), KEY_H - 2.0);
             if r.right() < grid.x || r.x > grid.right() || r.bottom() < grid.y || r.y > grid.bottom() {
@@ -702,9 +712,25 @@ impl App {
             let fill = fill.mix(WHITE, (1.0 - pop) * 0.55);
             let body = r.inset(-(1.0 - pop) * 1.5);
             let chance = f32::from(n.prob.min(100)) / 100.0;
-            c.fill_rrect(body, 4.0, fill.alpha(0.15 + 0.85 * chance));
-            if n.prob < 100 {
-                c.stroke_rrect(body, 4.0, 1.0, fill);
+            if n.slide {
+                // Slide notes: hollow, an arrow rising from their start.
+                c.fill_rrect(body, 4.0, fill.alpha(0.22));
+                c.stroke_rrect(body, 4.0, 1.4, fill);
+                if r.w > 12.0 {
+                    draw_icon(c, Icon::Slide, r.x + 8.0, r.y + r.h * 0.5, 11.0, t.text.alpha(0.85));
+                }
+            } else {
+                c.fill_rrect(body, 4.0, fill.alpha(0.15 + 0.85 * chance));
+                if n.prob < 100 {
+                    c.stroke_rrect(body, 4.0, 1.0, fill);
+                }
+            }
+            if let Some(&g) = grooved.get(i)
+                && g != n.start
+            {
+                // Where the pattern's groove plays the note.
+                let gx = x_of(g as f32).round();
+                c.fill_rect(Rect::new(gx, r.y - 1.0, 2.0, r.h + 2.0), t.accent_hot.alpha(0.9));
             }
             if n.ratchet > 1 && r.w > 8.0 {
                 for j in 1..n.ratchet {
@@ -729,7 +755,7 @@ impl App {
                 arrows.polygon(&[(ax + 9.0, ay), (ax + 5.0, ay - 3.5), (ax + 5.0, ay + 3.5)]);
                 c.fill_path(&arrows, t.text.alpha(0.8));
             }
-            if melodic_labels && r.w > 30.0 {
+            if melodic_labels && r.w > 30.0 && !n.slide {
                 self.text(c, self.f.mono_med, 10.0, r.x + 5.0, r.y + r.h * 0.5, &note_name(n.key), t.on_accent);
             }
         }
@@ -850,6 +876,8 @@ impl App {
                 .collect();
         }
         c.set_clip(Some(prev));
+        self.chord_strip(c, input, ch, chords, &x_of);
+        self.text(c, self.f.sans_med, 10.0, inner.x + 4.0, chords.y + CHORDS * 0.5, tr("Chords"), t.muted.alpha(0.8));
 
         // Vélocités : glisser dans le couloir pour les dessiner.
         c.fill_rrect(vel_lane, 10.0, t.well);
@@ -896,39 +924,18 @@ impl App {
         self.note_lane(c, input, ch, Rect::new(inner.x, note_lane.y, KEYBOARD - 6.0, LANE), note_lane, &x_of, &tick_at);
     }
 
-    /// Lane of chances, conditions or repeats: three tabs on the left, then
-    /// a mark under each note, drawn by dragging (the selection, or the notes
-    /// under the pointer).
+    /// Lane of chances, conditions, repeats, pans or fine pitches: a mark
+    /// under each note, drawn by dragging (the selection, or the notes under
+    /// the pointer); or a controller lane of the pattern.
     #[allow(clippy::too_many_arguments)]
     fn note_lane(&mut self, c: &mut Canvas, input: &Input, ch: usize, tabs: Rect, lane: Rect, x_of: &dyn Fn(f32) -> f32, tick_at: &dyn Fn(f32) -> f32) {
         use super::tools::{COND_LABELS, CONDS, cond_index, cond_label};
         let t = self.theme;
-        // Tabs: chance, condition, repeats.
-        let labels = ["%", "N:M", "×"];
-        let tips = [
-            tr("Chance\nHow often each note plays · drag in the lane"),
-            tr("Condition\nOn which passes of the pattern a note plays: 1:2 is every other pass · drag in the lane"),
-            tr("Repeats\nRatchets: the note fires several times within its length · drag in the lane"),
-        ];
-        let th = tabs.h / 3.0;
-        for (i, label) in labels.iter().enumerate() {
-            let r = Rect::new(tabs.x, tabs.y + i as f32 * th, tabs.w, th - 2.0);
-            let id = wid("pr-lane-tab", i, 0);
-            let hov = self.hovered(input, id, r);
-            let hv = self.hover_anim(id, hov);
-            let on = self.anim.to(id ^ 0x6f6e, (self.piano.lane == i) as u8 as f32, T_HOVER);
-            c.fill_rrect(r, 6.0, t.raised.mix(t.raised_hi, hv).alpha(0.4 + 0.6 * hv.max(on)).mix(t.accent, on * 0.85));
-            let (cx, cy) = r.center();
-            self.text_center(c, self.f.mono_med, 11.0, cx, cy, label, t.muted.mix(t.text, hv).mix(t.on_accent, on));
-            if hov {
-                self.set_tip(tips[i], "");
-                self.set_cursor(Cursor::Hand);
-                if input.pressed {
-                    self.piano.lane = i;
-                }
-            }
+        self.lane_selector(c, input, ch, tabs);
+        if let Some(target) = self.piano.lane.target(ch) {
+            self.event_lane(c, input, target, lane, x_of, tick_at);
+            return;
         }
-
         c.fill_rrect(lane, 10.0, t.well);
         let prev = c.push_clip(lane);
         let id = wid("pr-note-lane", 0, 0);
@@ -939,7 +946,8 @@ impl App {
         if hov && input.pressed {
             self.begin_drag(id, input, 0.0);
         }
-        let mode = self.piano.lane.min(2);
+        let mode = self.piano.lane.note_index().unwrap_or(0);
+        let bipolar = |level: f32| ((level * 2.0 - 1.0) * 20.0).round() / 20.0;
         let level = ((lane.bottom() - 6.0 - input.y) / (lane.h - 12.0)).clamp(0.0, 1.0);
         if self.is_dragging(id) {
             let tick = tick_at(input.x);
@@ -956,19 +964,23 @@ impl App {
                 match mode {
                     0 => n.prob = ((level * 20.0).round() * 5.0) as u8,
                     1 => n.cond = CONDS[((level * (CONDS.len() - 1) as f32).round() as usize).min(CONDS.len() - 1)],
-                    _ => n.ratchet = (level * 7.0).round() as u8 + 1,
+                    2 => n.ratchet = (level * 7.0).round() as u8 + 1,
+                    3 => n.pan = bipolar(level),
+                    _ => n.fine = (bipolar(level) * MAX_FINE).round(),
                 }
                 changed |= *n != before;
             }
             if changed {
-                let label = [tr("Note chance"), tr("Note condition"), tr("Note repeats")][mode];
+                let label = [tr("Note chance"), tr("Note condition"), tr("Note repeats"), tr("Note pan"), tr("Note fine pitch")][mode];
                 self.commit(label);
             }
             // What the drag sets, next to the pointer.
             let shown = match mode {
                 0 => format!("{}%", (level * 20.0).round() as u32 * 5),
                 1 => tr(COND_LABELS[((level * (CONDS.len() - 1) as f32).round() as usize).min(CONDS.len() - 1)]).to_string(),
-                _ => format!("×{}", (level * 7.0).round() as u32 + 1),
+                2 => format!("×{}", (level * 7.0).round() as u32 + 1),
+                3 => super::lanes::pan_label(bipolar(level)),
+                _ => format!("{:+.0} ct", bipolar(level) * MAX_FINE),
             };
             self.text(c, self.f.mono_med, 11.0, (input.x + 10.0).min(lane.right() - 48.0), lane.y + 12.0, &shown, t.text);
         }
@@ -1003,6 +1015,19 @@ impl App {
                         self.text(c, self.f.mono_med, 10.0, chip.x + 4.0, y, &label, t.on_accent);
                     }
                 }
+                3 | 4 => {
+                    // From the middle line: left/down, right/up.
+                    let v = if mode == 3 { n.pan } else { n.fine / MAX_FINE };
+                    let mid = lane.bottom() - 6.0 - h * 0.5;
+                    let y = mid - h * 0.5 * v;
+                    c.fill_rect(Rect::new(x - 2.0, mid.round(), 7.0, 1.0), t.hairline.alpha(3.0));
+                    c.fill_rrect(Rect::new(x, y.min(mid), 3.0, (y - mid).abs().max(1.0)), 1.5, col.alpha(0.4 + 0.6 * v.abs()));
+                    c.fill_circle(x + 1.5, y, 3.0, col);
+                    if v != 0.0 {
+                        let label = if mode == 3 { super::lanes::pan_label(n.pan) } else { format!("{:+.0}", n.fine) };
+                        self.text(c, self.f.mono, 10.0, x + 6.0, y.clamp(lane.y + 8.0, lane.bottom() - 8.0), &label, t.text2);
+                    }
+                }
                 _ => {
                     let reps = n.ratchet.clamp(1, 8);
                     for k in 0..reps {
@@ -1017,6 +1042,80 @@ impl App {
             }
         }
         c.set_clip(Some(prev));
+    }
+
+    /// Slide notes, portamento, key detection and groove, in the header from `at.x`.
+    fn piano_expression_header(&mut self, c: &mut Canvas, input: &Input, ch: usize, at: Rect) {
+        let t = self.theme;
+        let mut x = at.x;
+        let sel = self.piano.selected.clone();
+        let tip = if sel.is_empty() {
+            tr("Slide notes\nNew notes glide the held note to their pitch over their length")
+        } else {
+            tr("Slide notes\nThe selected notes become slides (or notes again)")
+        };
+        if self.icon_button(c, input, wid("pr-slide", 0, 0), Rect::new(x, at.y, 36.0, at.h), Icon::Slide, self.piano.slide_mode, (tip, "")) {
+            if sel.is_empty() {
+                self.piano.slide_mode = !self.piano.slide_mode;
+            } else {
+                let all = sel.iter().all(|&i| self.notes(ch).get(i).is_some_and(|n| n.slide));
+                for i in sel {
+                    if let Some(n) = self.notes_mut(ch).get_mut(i) {
+                        n.slide = !all;
+                    }
+                }
+                self.commit(tr("Slide notes"));
+            }
+        }
+        x += 38.0;
+        // Portamento of the channel: drag up and down, wheel, double-click: off.
+        let r = Rect::new(x, at.y + 4.0, 80.0, at.h - 8.0);
+        let id = wid("pr-porta", 0, 0);
+        let hov = self.hovered(input, id, r);
+        let porta = self.project.channels[ch].porta;
+        let mut set = None;
+        if hov && input.pressed {
+            if input.double {
+                set = Some(0.0);
+            } else {
+                self.begin_drag(id, input, porta);
+            }
+        }
+        if let Some(d) = self.drag.as_ref().filter(|d| d.id == id) {
+            set = Some(d.v0 + (d.y0 - input.y) * if d.fine { 0.0002 } else { 0.002 });
+        }
+        if hov && input.wheel != 0.0 {
+            set = Some(porta + input.wheel * 0.01);
+        }
+        if let Some(v) = set {
+            let v = (v.clamp(0.0, ponzik_project::MAX_PORTA) * 1000.0).round() / 1000.0;
+            if v != porta {
+                self.project.channels[ch].porta = v;
+                self.commit(tr("Portamento"));
+            }
+        }
+        let hv = self.hover_anim(id, hov || self.is_dragging(id));
+        let on = porta > 0.0;
+        c.fill_rrect(r, 8.0, t.raised.mix(t.raised_hi, hv).alpha(0.5 + 0.5 * hv.max(on as u8 as f32)));
+        draw_icon(c, Icon::Glide, r.x + 13.0, r.y + r.h * 0.5, 14.0, if on { t.accent } else { t.muted });
+        let label = if on { format!("{:.0} ms", porta * 1000.0) } else { tr("Off").to_string() };
+        self.text(c, self.f.mono_med, 11.0, r.x + 26.0, r.y + r.h * 0.5, &label, if on { t.text } else { t.muted });
+        if hov || self.is_dragging(id) {
+            self.set_cursor(Cursor::ResizeV);
+            self.set_tip(tr("Portamento\nEach note glides from the previous one · drag or wheel · double-click: off"), "");
+        }
+        x += r.w + 4.0;
+        let key = Rect::new(x, at.y, 36.0, at.h);
+        let key_open = matches!(self.popup.as_ref().map(|p| &p.kind), Some(Popup::KeyDetect { .. }));
+        if self.icon_button(c, input, wid("pr-key", 0, 0), key, Icon::Detect, key_open, (tr("Detect the key\nFrom this pattern's notes, then apply it to the project"), "")) {
+            self.detect_key(super::groove::KeySource::Pattern, key);
+        }
+        x += 38.0;
+        let groove = Rect::new(x, at.y, 36.0, at.h);
+        let grooved = self.project.patterns[self.project.current_pattern].groove.is_some();
+        if self.icon_button(c, input, wid("pr-groove", 0, 0), groove, Icon::Groove, grooved, (tr("Groove\nSwing and feel from the pool, extract, commit"), "")) {
+            self.open_popup(Popup::Groove, groove);
+        }
     }
 
     /// Décale au hasard le début (±`ticks`) et la vélocité (±`vel`, relatif) des

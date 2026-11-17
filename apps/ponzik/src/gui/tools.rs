@@ -1008,7 +1008,7 @@ impl App {
             }
         }
         self.commit(tr("Note chance"));
-        self.piano.lane = spec.trim().parse::<usize>().unwrap_or(0).min(2);
+        self.piano.lane = super::lanes::PianoLane::note(spec.trim().parse::<usize>().unwrap_or(0).min(2));
     }
 }
 

@@ -846,6 +846,20 @@ impl Project {
         Some(removed)
     }
 
+    /// Removes the points of a lane from `from` to `to` (ticks, both
+    /// included); an emptied lane disappears. True if any was removed.
+    pub fn erase_automation(&mut self, target: AutoTarget, scope: AutoScope, from: u32, to: u32) -> bool {
+        let Some(i) = self.automation.iter().position(|a| a.target == target && a.scope == scope) else { return false };
+        let points = &mut self.automation[i].points;
+        let before = points.len();
+        points.retain(|p| p.tick < from || p.tick > to);
+        let removed = points.len() != before;
+        if points.is_empty() {
+            self.automation.remove(i);
+        }
+        removed
+    }
+
     /// Ordre de traitement du mixer, ou `None` si le routage boucle.
     pub fn routing_order(&self) -> Option<Box<[usize]>> {
         let edges: Vec<Vec<usize>> = self

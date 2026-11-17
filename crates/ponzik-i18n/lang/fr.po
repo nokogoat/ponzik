@@ -6359,8 +6359,6 @@ msgstr "Ligne de basse"
 msgid "Center"
 msgstr "Centre"
 
-msgid "Chance\nHow often each note plays · drag in the lane"
-msgstr "Chance\nÀ quelle fréquence chaque note joue · glisser dans le couloir"
 
 msgid "Chord length"
 msgstr "Durée accord"
@@ -6374,8 +6372,6 @@ msgstr "Les accords deviennent des arpèges"
 msgid "Condition"
 msgstr "Condition"
 
-msgid "Condition\nOn which passes of the pattern a note plays: 1:2 is every other pass · drag in the lane"
-msgstr "Condition\nÀ quels passages du pattern une note joue : 1:2, un passage sur deux · glisser dans le couloir"
 
 msgid "Contour"
 msgstr "Contour"
@@ -6530,8 +6526,6 @@ msgstr "Relancer"
 msgid "Repeats"
 msgstr "Répétitions"
 
-msgid "Repeats\nRatchets: the note fires several times within its length · drag in the lane"
-msgstr "Répétitions\nRatchets : la note se redéclenche plusieurs fois dans sa durée · glisser dans le couloir"
 
 msgid "Replaces {} note"
 msgstr "Remplace {} note"
@@ -7184,3 +7178,171 @@ msgstr "Pédale de sustain"
 
 msgid "Swing {}%"
 msgstr "Swing {} %"
+
+msgid "A parameter of the instrument, drawn in the pattern"
+msgstr "Un paramètre de l'instrument, dessiné dans le pattern"
+
+msgid "Apply {}"
+msgstr "Appliquer {}"
+
+msgid "Bend"
+msgstr "Bend"
+
+msgid "Chords\nNamed beat by beat from the melodic channels · select notes to name only them"
+msgstr "Accords\nNommés temps par temps depuis les canaux mélodiques · sélectionnez des notes pour ne nommer qu'elles"
+
+msgid "Commit"
+msgstr "Figer"
+
+msgid "Commit the groove"
+msgstr "Figer le groove"
+
+msgid "Control change {} · wheel on the lane name: another number"
+msgstr "Contrôleur {} · molette sur le nom du couloir : un autre numéro"
+
+msgid "Detect in the whole project"
+msgstr "Détecter dans tout le projet"
+
+msgid "Detect in this pattern"
+msgstr "Détecter dans ce pattern"
+
+msgid "Detect the key"
+msgstr "Détecter la tonalité"
+
+msgid "Detect the key\nFrom this pattern's notes, then apply it to the project"
+msgstr "Détecter la tonalité\nD'après les notes de ce pattern, puis l'appliquer au projet"
+
+msgid "Detected: {}"
+msgstr "Détecté : {}"
+
+msgid "Detected: {} · {}"
+msgstr "Détecté : {} · {}"
+
+msgid "Draw a controller"
+msgstr "Dessiner un contrôleur"
+
+msgid "Draw here · Shift: a line · right-click: erase"
+msgstr "Dessinez ici · Maj : une ligne · clic droit : effacer"
+
+msgid "Erase a controller"
+msgstr "Effacer un contrôleur"
+
+msgid "Extract"
+msgstr "Extraire"
+
+msgid "Extract a groove"
+msgstr "Extraire un groove"
+
+msgid "Fine pitch"
+msgstr "Accord fin"
+
+msgid "Fine pitch of each note, in cents"
+msgstr "Accord fin de chaque note, en cents"
+
+msgid "From the clip's pitches (chromagram), then apply it to the project"
+msgstr "D'après les hauteurs du clip (chromagramme), puis l'appliquer au projet"
+
+msgid "Groove\nSwing and feel from the pool, extract, commit"
+msgstr "Groove\nSwing et feeling de la bibliothèque, extraire, figer"
+
+msgid "Groove \"{}\" saved in the pool"
+msgstr "Groove « {} » enregistré dans la bibliothèque"
+
+msgid "Groove amount"
+msgstr "Dosage du groove"
+
+msgid "Groove saved in the pool"
+msgstr "Groove enregistré dans la bibliothèque"
+
+msgid "Groove · {}"
+msgstr "Groove · {}"
+
+msgid "How often each note plays"
+msgstr "À quelle fréquence chaque note joue"
+
+msgid "Lane"
+msgstr "Couloir"
+
+msgid "Lane\nClick: chance, condition, repeats, pan, fine pitch, pitch bend, CCs, parameters · wheel: next"
+msgstr "Couloir\nClic : chance, condition, répétitions, pan, accord fin, pitch bend, CC, paramètres · molette : suivant"
+
+msgid "Line\nDrag a straight line"
+msgstr "Ligne\nTracez une ligne droite"
+
+msgid "Mod"
+msgstr "Mod"
+
+msgid "Moves the notes where the groove plays them"
+msgstr "Déplace les notes là où le groove les joue"
+
+msgid "No attacks found in the clip"
+msgstr "Aucune attaque trouvée dans le clip"
+
+msgid "No melodic notes to detect a key from"
+msgstr "Aucune note mélodique pour détecter une tonalité"
+
+msgid "No notes to take a groove from"
+msgstr "Aucune note dont tirer un groove"
+
+msgid "No pitched sound to detect a key from"
+msgstr "Aucun son à hauteur définie pour détecter une tonalité"
+
+msgid "Note fine pitch"
+msgstr "Accord fin des notes"
+
+msgid "Note pan"
+msgstr "Pan des notes"
+
+msgid "On which passes of the pattern a note plays"
+msgstr "À quels passages du pattern une note joue"
+
+msgid "Pan of each note"
+msgstr "Pan de chaque note"
+
+msgid "Pencil\nDraw the curve freehand · Shift: a line"
+msgstr "Crayon\nDessinez la courbe à main levée · Maj : une ligne"
+
+msgid "Pick a groove first"
+msgstr "Choisissez d'abord un groove"
+
+msgid "Pitch bend of the channel, drawn in the pattern"
+msgstr "Pitch bend du canal, dessiné dans le pattern"
+
+msgid "Portamento\nEach note glides from the previous one · drag or wheel · double-click: off"
+msgstr "Portamento\nChaque note glisse depuis la précédente · glisser ou molette · double-clic : coupé"
+
+msgid "Project key: {}"
+msgstr "Tonalité du projet : {}"
+
+msgid "Ratchets: the note fires several times within its length"
+msgstr "Ratchets : la note se déclenche plusieurs fois sur sa durée"
+
+msgid "Saves this pattern's groove in the pool"
+msgstr "Enregistre le groove de ce pattern dans la bibliothèque"
+
+msgid "Sets the project's key and scale: the piano roll shows it, snaps and chords follow it"
+msgstr "Règle la tonalité et la gamme du projet : le piano roll l'affiche, l'aimant et les accords la suivent"
+
+msgid "Slide notes"
+msgstr "Notes glissées"
+
+msgid "Slide notes\nNew notes glide the held note to their pitch over their length"
+msgstr "Notes glissées\nLes nouvelles notes font glisser la note tenue jusqu'à leur hauteur, sur leur durée"
+
+msgid "Slide notes\nThe selected notes become slides (or notes again)"
+msgstr "Notes glissées\nLes notes sélectionnées deviennent des glissés (ou redeviennent des notes)"
+
+msgid "The clip's file is not loaded"
+msgstr "Le fichier du clip n'est pas chargé"
+
+msgid "The pattern plays the groove; its notes stay where they are until you commit."
+msgstr "Le pattern joue le groove ; ses notes restent en place jusqu'à ce que vous le figiez."
+
+msgid "Timing and accents of the clip's attacks, saved in the groove pool"
+msgstr "Placement et accents des attaques du clip, enregistrés dans la bibliothèque de grooves"
+
+msgid "drawn"
+msgstr "dessiné"
+
+msgid "{}\nUp to {:.0} ticks late · applied without moving the notes"
+msgstr "{}\nJusqu'à {:.0} ticks de retard · appliqué sans déplacer les notes"
