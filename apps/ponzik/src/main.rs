@@ -1,3 +1,4 @@
+mod alloc_count;
 mod gui;
 #[cfg(test)]
 mod i18n_coverage;
@@ -12,6 +13,9 @@ use std::time::{Duration, Instant};
 use ponzik_engine::{Command, PlayMode};
 use ponzik_i18n::{tr, tr_fmt};
 use ponzik_project::{BitDepth, RenderMode, demo_project};
+
+#[global_allocator]
+static ALLOCATOR: alloc_count::Counting = alloc_count::Counting;
 
 fn help() -> &'static str {
     tr("\

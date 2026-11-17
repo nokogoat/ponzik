@@ -299,6 +299,7 @@ struct Profile {
     worst: Duration,
     dirty: f64,
     ops: usize,
+    allocs: u64,
 }
 
 impl Profile {
@@ -312,11 +313,13 @@ impl Profile {
             worst: Duration::ZERO,
             dirty: 0.0,
             ops: 0,
+            allocs: 0,
         }
     }
 
-    fn frame(&mut self, start: Instant, ui: Instant, raster: Instant, end: Instant, dirty: f64, ops: usize, size: (u32, u32)) {
+    fn frame(&mut self, start: Instant, ui: Instant, raster: Instant, end: Instant, dirty: f64, ops: usize, size: (u32, u32), allocs: u64) {
         self.frames += 1;
+        self.allocs += allocs;
         self.ui += ui - start;
         self.raster += raster - ui;
         self.present += end - raster;
@@ -329,7 +332,7 @@ impl Profile {
             let ms = |d: Duration| d.as_secs_f64() * 1000.0 / n;
             let busy = (self.ui + self.raster + self.present).as_secs_f64() / span.as_secs_f64();
             eprintln!(
-                "profile: {}×{} · {:.1} fps · ui {:.2} ms · raster {:.2} ms · present {:.2} ms · worst {:.2} ms · dirty {:.1} % · {} ops · thread {:.1} %",
+                "profile: {}×{} · {:.1} fps · ui {:.2} ms · raster {:.2} ms · present {:.2} ms · worst {:.2} ms · dirty {:.1} % · {} ops · {} allocs/frame · thread {:.1} %",
                 size.0,
                 size.1,
                 n / span.as_secs_f64(),
@@ -339,6 +342,7 @@ impl Profile {
                 self.worst.as_secs_f64() * 1000.0,
                 self.dirty * 100.0 / n,
                 self.ops / self.frames.max(1) as usize,
+                self.allocs / self.frames.max(1) as u64,
                 busy * 100.0,
             );
             *self = Self::new();
@@ -445,6 +449,7 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
             let dt = now.duration_since(last_frame).as_secs_f32();
             last_frame = now;
             let before = (app.popup.is_some(), app.rec.panel);
+            let allocs = crate::alloc_count::allocations();
             // Image suivie : l'interface est enregistrée, puis seules les zones
             // qui ont changé sont rastérisées et envoyées à l'écran.
             canvas.begin_frame();
@@ -465,7 +470,8 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
             }
             if let Some(p) = profile.as_mut() {
                 let area: usize = canvas.dirty_rects().iter().map(|d| (d.2 - d.0) * (d.3 - d.1)).sum();
-                p.frame(now, t_frame, t_raster, Instant::now(), area as f64 / (w as f64 * h as f64), canvas.recorded_ops(), (w, h));
+                let allocs = crate::alloc_count::allocations() - allocs;
+                p.frame(now, t_frame, t_raster, Instant::now(), area as f64 / (w as f64 * h as f64), canvas.recorded_ops(), (w, h), allocs);
             }
             // Taille de l'interface changée pendant l'image : la suivante suit tout de suite.
             dirty = system_scale(Some(window)) * app.ui_scale() != scale;
@@ -675,9 +681,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // zones modifiées sont rastérisées, comme dans la fenêtre).
     let bench = std::env::var_os("PONZIK_BENCH").is_some();
     let (mut drawing, mut ui, mut raster, mut dirty) = (Duration::ZERO, Duration::ZERO, Duration::ZERO, 0.0);
+    let mut allocs = 0;
     for i in 0..96 {
         engine.process(&mut audio, 2);
         app.editors_tick();
+        let a0 = crate::alloc_count::allocations();
         let t0 = Instant::now();
         if bench && i >= 48 {
             canvas.begin_frame();
@@ -689,6 +697,7 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
             }
             ui += t1 - t0;
             raster += t1.elapsed();
+            allocs += crate::alloc_count::allocations() - a0;
             dirty += canvas.dirty_rects().iter().map(|d| (d.2 - d.0) * (d.3 - d.1)).sum::<usize>() as f64 / (pw * ph) as f64;
         } else {
             app.frame(&mut canvas, &input, 1.0 / 60.0);
@@ -699,12 +708,13 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     if bench {
         let ms = |d: Duration, n: f64| d.as_secs_f64() * 1000.0 / n;
         eprintln!(
-            "{view:?} · {pw}×{ph} (×{scale}) · full {:.2} ms/image · tracked ui {:.2} + raster {:.2} ms · dirty {:.1} % · {} ops",
+            "{view:?} · {pw}×{ph} (×{scale}) · full {:.2} ms/image · tracked ui {:.2} + raster {:.2} ms · dirty {:.1} % · {} ops · {} allocs/image",
             ms(drawing, 48.0),
             ms(ui, 47.0),
             ms(raster, 47.0),
             dirty * 100.0 / 47.0,
-            canvas.recorded_ops()
+            canvas.recorded_ops(),
+            allocs / 47
         );
     }
     let png = encode_png(canvas.pixels(), pw, ph);
