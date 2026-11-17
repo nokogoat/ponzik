@@ -1765,7 +1765,7 @@ msgid "Notes quantized"
 msgstr "Notes quantifiées"
 
 msgid "Transpose"
-msgstr "Transposition"
+msgstr "Transpo."
 
 msgid "Nudge notes"
 msgstr "Décaler des notes"
@@ -3014,7 +3014,7 @@ msgid "Stages"
 msgstr "Étages"
 
 msgid "Fine"
-msgstr "Fin"
+msgstr "Précis"
 
 msgid "Window"
 msgstr "Fenêtre"
