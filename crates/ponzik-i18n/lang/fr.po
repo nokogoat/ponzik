@@ -6183,7 +6183,7 @@ msgid "Chance\nHow often each note plays · drag in the lane"
 msgstr "Chance\nÀ quelle fréquence chaque note joue · glisser dans le couloir"
 
 msgid "Chord length"
-msgstr "Durée des accords"
+msgstr "Durée accord"
 
 msgid "Chord progression"
 msgstr "Suite d'accords"
