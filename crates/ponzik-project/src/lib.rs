@@ -23,6 +23,7 @@ pub const SESSION_SCENES: usize = 8;
 
 mod arrange;
 pub mod base64;
+pub mod auto_rec;
 pub mod autosave;
 mod breakcore;
 mod zalgo;
