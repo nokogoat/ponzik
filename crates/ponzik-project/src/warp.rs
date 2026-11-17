@@ -342,13 +342,15 @@ mod tests {
     #[test]
     fn render_length_follows_the_tempo_ratio() {
         let s = tone(440.0, 4.0);
-        // 8 beats of a 120 BPM file in a 150 BPM song: 3.2 s instead of 4.
-        let c = clip(120.0, 8 * PPQ);
-        let job = WarpJob::for_clip(&c, &s, &TempoMap::constant(150.0), SR).expect("job");
-        let out = job.render();
-        assert_eq!(out.len(), (3.2 * SR) as usize);
-        let hz = pitch_of(&out.left);
-        assert!((hz / 440.0 - 1.0).abs() < 0.01, "{hz}");
+        // 8 beats of a 120 BPM file in a 150 BPM song: 3.2 s instead of 4, same pitch.
+        for mode in [WarpAlgo::Tones, WarpAlgo::Beats] {
+            let c = AudioClipDef { warp_mode: mode, ..clip(120.0, 8 * PPQ) };
+            let job = WarpJob::for_clip(&c, &s, &TempoMap::constant(150.0), SR).expect("job");
+            let out = job.render();
+            assert_eq!(out.len(), (3.2 * SR) as usize);
+            let hz = pitch_of(&out.left);
+            assert!((hz / 440.0 - 1.0).abs() < 0.01, "{mode:?}: {hz}");
+        }
     }
 
     #[test]
@@ -365,6 +367,25 @@ mod tests {
         let want = 440.0 * 2f32.powf(6.9 / 12.0);
         let hz = pitch_of(&out.left);
         assert!((hz / want - 1.0).abs() < 0.01, "{hz} instead of {want}");
+    }
+
+    #[test]
+    fn repitch_plays_faster_and_higher() {
+        use crate::{Project, RenderMode, render_song};
+        // A 100 BPM file in a 125 BPM song: 1.25 times faster, a major third up.
+        let mut p = Project::empty();
+        p.bpm = 125.0;
+        p.mode = ponzik_engine::PlayMode::Song;
+        let s = tone(440.0, 4.0);
+        p.audio_clips.push(AudioClipDef { warp_mode: WarpAlgo::RePitch, track: 2, ..clip(100.0, 4 * PPQ) });
+        let loader = |_: &str| Some(s.clone());
+        let out = render_song(&p, SR as u32, &loader, RenderMode::Song);
+        let left: Vec<f32> = out.iter().step_by(2).copied().collect();
+        // 4 beats at 125 BPM: 1.92 s.
+        let heard = left.iter().rposition(|v| v.abs() > 1e-3).unwrap_or(0);
+        assert!((heard as f32 / SR - 1.92).abs() < 0.01, "{}", heard as f32 / SR);
+        let hz = pitch_of(&left[..heard]);
+        assert!((hz / 550.0 - 1.0).abs() < 0.01, "{hz}");
     }
 
     #[test]
