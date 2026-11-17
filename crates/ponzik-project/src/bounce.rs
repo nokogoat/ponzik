@@ -302,6 +302,80 @@ impl Project {
     }
 }
 
+/// The first freeze whose content an edit from `old` to `new` changes (what
+/// its render would sound like): a frozen channel's devices, notes, clips and
+/// automation; a frozen track's inserts and everything that reaches it; the
+/// tempo for both. Volume, pan and mute after the freeze stay live and do
+/// not count. Thawing (or freezing) is not an edit of frozen content.
+pub fn frozen_content_changed(old: &Project, new: &Project) -> Option<FreezeTarget> {
+    let same_channels = old.channels.len() == new.channels.len();
+    let tempo = |p: &Project| {
+        (p.bpm, p.swing, p.tempo_changes.clone(), p.signatures.clone(), p.automation_lane(crate::AutoTarget::Tempo, crate::AutoScope::Song).cloned())
+    };
+    let tempo_changed = tempo(old) != tempo(new);
+    // What a channel plays, before its fader.
+    let channel = |p: &Project, c: usize| {
+        let ch = &p.channels[c];
+        let i = &ch.instrument;
+        let notes: Vec<(u32, Option<Vec<ponzik_engine::Note>>)> = p.patterns.iter().map(|pat| (pat.len, pat.notes.get(c).cloned())).collect();
+        let playing = |pat: usize| p.patterns.get(pat).and_then(|x| x.notes.get(c)).is_some_and(|n| !n.is_empty());
+        let clips: Vec<ClipDef> = p.clips.iter().filter(|cl| playing(cl.pattern)).map(|cl| ClipDef { lane: 0, ..*cl }).collect();
+        let lanes: Vec<crate::AutomationDef> = p
+            .automation
+            .iter()
+            .filter(|a| matches!(a.target, crate::AutoTarget::InstrumentParam { channel, .. } if channel == c))
+            .cloned()
+            .collect();
+        (i.kind.clone(), i.params.clone(), i.sample.clone(), i.pads.clone(), ch.note_fx.clone(), ch.modulators.clone(), notes, clips, lanes)
+    };
+    // What reaches a track, through its inserts.
+    let track = |p: &Project, t: usize| {
+        let def = &p.tracks[t];
+        let members: Vec<usize> = (0..p.tracks.len()).filter(|&m| m != t && p.tracks[m].output == t).collect();
+        let feeds = |x: usize| x == t || members.contains(&x);
+        let channels: Vec<_> = (0..p.channels.len())
+            .filter(|&c| feeds(p.channels[c].track))
+            .map(|c| {
+                let ch = &p.channels[c];
+                (channel(p, c), ch.gain, ch.pan, ch.muted, ch.track)
+            })
+            .collect();
+        let clips: Vec<AudioClipDef> =
+            p.audio_clips.iter().filter(|a| feeds(a.track)).map(|a| AudioClipDef { lane: 0, color: 0, ..a.clone() }).collect();
+        let lanes: Vec<crate::AutomationDef> = p
+            .automation
+            .iter()
+            .filter(|a| match a.target {
+                crate::AutoTarget::EffectParam { track, .. } => track == t,
+                crate::AutoTarget::ChannelGain(c) | crate::AutoTarget::ChannelPan(c) | crate::AutoTarget::InstrumentParam { channel: c, .. } => {
+                    p.channels.get(c).is_some_and(|ch| feeds(ch.track))
+                }
+                crate::AutoTarget::TrackGain(m) | crate::AutoTarget::TrackPan(m) => members.contains(&m),
+                crate::AutoTarget::Tempo => false,
+            })
+            .cloned()
+            .collect();
+        let inserts: Vec<_> = def
+            .inserts
+            .iter()
+            .map(|fx| fx.as_ref().map(|f| (f.kind.clone(), f.params.clone(), f.bypass, f.sidechain, f.rack.clone())))
+            .collect();
+        let member_mix: Vec<_> = members.iter().map(|&m| (m, p.tracks[m].gain, p.tracks[m].pan, p.tracks[m].muted, p.tracks[m].inserts.clone())).collect();
+        (inserts, def.modulators.clone(), channels, clips, lanes, member_mix)
+    };
+    for c in (0..old.channels.len()).filter(|&c| same_channels && old.channels[c].frozen.is_some()) {
+        if new.channels[c].frozen == old.channels[c].frozen && (tempo_changed || channel(old, c) != channel(new, c)) {
+            return Some(FreezeTarget::Channel(c));
+        }
+    }
+    for t in (1..old.tracks.len().min(new.tracks.len())).filter(|&t| old.tracks[t].frozen.is_some()) {
+        if new.tracks[t].frozen == old.tracks[t].frozen && (tempo_changed || track(old, t) != track(new, t)) {
+            return Some(FreezeTarget::Track(t));
+        }
+    }
+    None
+}
+
 /// Offline render of what a freeze replaces, from the start of the song,
 /// tail included: the channel's instrument after its note effects (before
 /// its volume and pan), or everything that reaches the track through its
@@ -573,6 +647,50 @@ mod tests {
         assert!(peak(&hot) > 1.0);
         let again: Vec<f32> = back.left.iter().zip(&back.right).flat_map(|(&l, &r)| [l, r]).collect();
         assert!(again == hot);
+    }
+
+    #[test]
+    fn edits_of_frozen_content_are_caught() {
+        let mut p = project();
+        let track = p.channels[0].track;
+        p.set_frozen(FreezeTarget::Channel(0), Some("lead.wav".into()));
+        let changed = |edit: &dyn Fn(&mut Project)| {
+            let mut q = p.clone();
+            edit(&mut q);
+            frozen_content_changed(&p, &q)
+        };
+        let lead = Some(FreezeTarget::Channel(0));
+        assert_eq!(changed(&|q| q.channels[0].instrument.set(2, 0.5)), lead);
+        assert_eq!(changed(&|q| q.channels[0].note_fx.clear()), lead);
+        assert_eq!(changed(&|q| q.add_note(0, 0, Note { start: 96, len: 24, key: 72, vel: 1.0 })), lead);
+        assert_eq!(changed(&|q| q.clips[1].start += TICKS_PER_BAR), lead);
+        assert_eq!(changed(&|q| q.bpm = 90.0), lead);
+        let param = crate::AutoTarget::InstrumentParam { channel: 0, id: 1 };
+        assert_eq!(changed(&|q| { q.add_automation_point(param, crate::AutoScope::Song, 0, 0.5); }), lead);
+        // Live after the freeze: fader, pan, mute, its track; and other channels' notes.
+        assert_eq!(changed(&|q| q.channels[0].gain = 0.1), None);
+        assert_eq!(changed(&|q| q.channels[0].muted = true), None);
+        assert_eq!(changed(&|q| q.tracks[track].inserts[0] = None), None);
+        assert_eq!(changed(&|q| q.add_note(0, 1, Note { start: 96, len: 24, key: 40, vel: 1.0 })), None);
+        assert_eq!(changed(&|q| q.clips[1].lane = 5), None, "a clip moved to another lane plays the same");
+        // Thawing is not an edit.
+        assert_eq!(changed(&|q| q.channels[0].frozen = None), None);
+
+        // A frozen track: its inserts and everything that reaches it.
+        let mut p = project();
+        p.set_frozen(FreezeTarget::Track(track), Some("t.wav".into()));
+        let changed = |edit: &dyn Fn(&mut Project)| {
+            let mut q = p.clone();
+            edit(&mut q);
+            frozen_content_changed(&p, &q)
+        };
+        let frozen = Some(FreezeTarget::Track(track));
+        assert_eq!(changed(&|q| q.tracks[track].inserts[0] = None), frozen);
+        assert_eq!(changed(&|q| q.channels[0].gain = 0.1), frozen, "the channel's fader is before the track's freeze");
+        assert_eq!(changed(&|q| q.channels[0].instrument.set(2, 0.5)), frozen);
+        assert_eq!(changed(&|q| q.audio_clips.push(AudioClipDef { track, ..Default::default() })), frozen);
+        assert_eq!(changed(&|q| q.tracks[track].gain = 0.2), None, "the track's own fader stays live");
+        assert_eq!(changed(&|q| q.channels[1].gain = 0.1), None);
     }
 
     #[test]

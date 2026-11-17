@@ -50,7 +50,7 @@ pub mod transform;
 pub mod warp;
 
 pub use arrange::{MARKER_COLORS, Placement, TimeSlice};
-pub use bounce::{BounceSource, FreezeTarget, SourceAction};
+pub use bounce::{BounceSource, FreezeTarget, SourceAction, frozen_content_changed};
 pub use breakcore::demo_breakcore;
 pub use zalgo::demo_zalgo;
 pub use demo::demo_project;
