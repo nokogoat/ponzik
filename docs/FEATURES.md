@@ -43,11 +43,11 @@ Legend: **FL** = FL Studio · **AB** = Ableton Live · ✅ done in Ponzik · �
 | Ghost notes from other patterns or channels | FL | ✅ |
 | Scale highlighting and snapping, key detection | FL · AB | 🟡 project key and scale, out-of-scale rows dimmed, snap to scale; no key detection |
 | One-click chords (chord stamps), expressive chords | FL · AB | ✅ chord stamps that follow the scale, chord grid with shapes, inversions, voicings and keyboard preview |
-| Tools: arpeggiate, strum, flam, flip, chop, glue, articulate, humanize, quantize | FL | 🟡 humanize, quantize |
-| MIDI Transformations: Arpeggiate, Connect, Ornament, Quantize, Recombine, Span, Strum, Time Warp, Velocity Shaper | AB | ⬜ |
-| MIDI Generators: Rhythm, Seed, Shape, Stacks, Euclidean | AB | ⬜ |
+| Tools: arpeggiate, strum, flam, flip, chop, glue, articulate, humanize, quantize | FL | ✅ arpeggiate, strum, flam, legato, staccato, reverse, invert, stretch, glue, quantize (strength, swing), humanize, fit to scale; no chop |
+| MIDI Transformations: Arpeggiate, Connect, Ornament, Quantize, Recombine, Span, Strum, Time Warp, Velocity Shaper | AB | 🟡 arpeggiate, connect (legato), ornament (flam), quantize, strum, time stretch, with a live preview |
+| MIDI Generators: Rhythm, Seed, Shape, Stacks, Euclidean | AB | ✅ Euclidean, rhythm by style, melody by contour (shape), chord progressions (stacks), bassline following the chords; seeded with re-roll |
 | Riff Machine and piano roll Python scripts | FL | ⬜ |
-| Note probability and random velocity range | AB | ⬜ |
+| Note probability and random velocity range | AB | 🟡 chance, pass conditions and ratchets per note and per step; no velocity range |
 | MPE editing (per-note pressure, glide, slide) | AB | ⬜ |
 | Editing several clips at once | AB | ⬜ |
 | MIDI Capture (recover what you played without recording) | AB | ✅ last 5 minutes kept, Ctrl+Shift+C: tempo detected, never quantized |

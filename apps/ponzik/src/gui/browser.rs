@@ -518,7 +518,7 @@ pub fn render_instrument(kind: &str, melodic: bool) -> Option<Sample> {
     let beat = ponzik_engine::PPQ;
     let keys: &[u8] = if melodic { &[60, 64, 67] } else { &[60] };
     let notes: Vec<ponzik_engine::Note> =
-        keys.iter().map(|&key| ponzik_engine::Note { start: 0, len: beat * 3 / 2, key, vel: 0.8 }).collect();
+        keys.iter().map(|&key| ponzik_engine::Note { start: 0, len: beat * 3 / 2, key, vel: 0.8, ..ponzik_engine::Note::DEFAULT }).collect();
     let pattern = &mut project.patterns[0];
     pattern.len = beat * 2;
     pattern.notes.resize(ch + 1, Vec::new());
