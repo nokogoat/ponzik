@@ -9,6 +9,7 @@ use ponzik_engine::effects::fx_rack::{split_param, unit_param};
 use ponzik_engine::mixer::{INSERT_SLOTS, MASTER};
 use ponzik_engine::{ParamInfo, Unit, registry};
 use ponzik_i18n::{tr, tr_fmt};
+use ponzik_project::ab::AbDevice;
 use ponzik_ui::{Canvas, Rect};
 
 use super::Input;
@@ -25,6 +26,8 @@ const GROUP_GAP: f32 = 18.0;
 const CARD_GAP: f32 = 10.0;
 const TRANSFER: f32 = 168.0;
 const EQ_W: f32 = 640.0;
+/// A and B letters and the copy button, in a device's header.
+const AB_W: f32 = 66.0;
 
 /// Ce que montre une carte d'appareil.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -143,7 +146,7 @@ pub(super) fn card_width(kind: &str, params: &'static [ParamInfo]) -> f32 {
     }
     let g = groups(params);
     if g.is_empty() {
-        return 220.0;
+        return 280.0;
     }
     let body: f32 = g.iter().map(|g| g.width).sum::<f32>() + (g.len() - 1) as f32 * GROUP_GAP;
     let extra = if transfer_kind(kind) {
@@ -155,7 +158,7 @@ pub(super) fn card_width(kind: &str, params: &'static [ParamInfo]) -> f32 {
     } else {
         0.0
     };
-    (body + extra + 28.0).max(200.0)
+    (body + extra + 28.0).max(280.0)
 }
 
 /// Cible d'automation d'un paramètre d'appareil.
@@ -390,6 +393,8 @@ impl App {
         let cpu = (cpu >= 0.0005).then(|| ponzik_i18n::tr_fmt!("{:.1}%", cpu * 100.0));
         let title_w = if matches!(device, Device::Effect { .. }) { head.w - 158.0 } else { head.w - 98.0 };
         let title_w = title_w - if cpu.is_some() { 36.0 } else { 0.0 };
+        let has_ab = !matches!(device, Device::RackUnit { .. });
+        let title_w = title_w - if has_ab { AB_W + 4.0 } else { 0.0 };
         // CLAP or VST 3 plugin: a button right after its name (visible even on
         // a very wide card) opens its own interface in a window.
         let plugin = super::app::plugin_badge(&kind).is_some() && self.editors.editor(device).is_some_and(|e| e.has_gui());
@@ -413,8 +418,13 @@ impl App {
         }
         // Fenêtre : détacher ou réancrer ; l'en-tête se tire comme une barre de titre.
         let float = Rect::new(preset.x - 28.0, preset.y, 26.0, 26.0);
+        let ab = Rect::new(float.x - AB_W - 4.0, head.y + 7.0, AB_W, 22.0);
+        if has_ab {
+            self.ab_buttons(c, input, ab, device);
+        }
+        let grip_end = if has_ab { ab.x } else { float.x };
         if let Some(cpu) = cpu {
-            self.text_right(c, self.f.mono, 9.0, float.x - 4.0, head.y + 18.0, &cpu, t.muted);
+            self.text_right(c, self.f.mono, 9.0, grip_end - 4.0, head.y + 18.0, &cpu, t.muted);
         }
         let (icon, tip) = if floating { (Icon::Dock, tr("Dock")) } else { (Icon::Detach, tr("Detach into a window")) };
         if self.icon_button(c, input, wid("fx-float", device_key(device), 0), float, icon, false, (tip, "")) {
@@ -423,7 +433,7 @@ impl App {
         // The header drags like a title bar, around the plugin button; a
         // double-click on a plugin's name opens its window (elsewhere, it
         // detaches the card as for any device).
-        let grip = Rect::new(head.x, head.y, float.x - head.x - 2.0, head.h);
+        let grip = Rect::new(head.x, head.y, grip_end - head.x - 2.0, head.h);
         let on_name = plugin && input.inside && Rect::new(head.x, head.y, editor.x - head.x, head.h).contains(input.x, input.y);
         if on_name && input.pressed && input.double {
             self.layout.cancel_gesture();
@@ -431,7 +441,7 @@ impl App {
             self.toggle_editor(device);
         } else if plugin {
             self.float_grip(input, Rect::new(head.x, head.y, editor.x - head.x - 2.0, head.h), card, device, floating);
-            let rest = Rect::new(editor.right() + 2.0, head.y, (float.x - editor.right() - 4.0).max(0.0), head.h);
+            let rest = Rect::new(editor.right() + 2.0, head.y, (grip_end - editor.right() - 4.0).max(0.0), head.h);
             self.float_grip(input, rest, card, device, floating);
             if on_name && self.drag.is_none() {
                 self.set_tip(tr("Double-click: open the plugin window\nDrag upward: detach"), "");
@@ -672,5 +682,111 @@ impl App {
             }
         }
         self.commit(&tr_fmt!("Setting: {}", tr(p.name)));
+    }
+
+    /// The A/B of a device in the project (not for devices inside a rack).
+    fn ab_device(&mut self, device: Device) -> Option<&mut dyn AbDevice> {
+        match device {
+            Device::Instrument(ch) => Some(&mut self.project.channels.get_mut(ch)?.instrument),
+            Device::Effect { track, slot } => Some(self.project.tracks.get_mut(track)?.inserts.get_mut(slot)?.as_mut()?),
+            Device::RackUnit { .. } => None,
+        }
+    }
+
+    /// Letter in use and whether both letters are the same.
+    fn ab_of(&self, device: Device) -> Option<(u8, bool)> {
+        let d: &dyn AbDevice = match device {
+            Device::Instrument(ch) => &self.project.channels.get(ch)?.instrument,
+            Device::Effect { track, slot } => self.project.tracks.get(track)?.inserts.get(slot)?.as_ref()?,
+            Device::RackUnit { .. } => return None,
+        };
+        Some((d.ab_active(), d.ab_same()))
+    }
+
+    /// A live plugin's state goes into the device first: it belongs to the letter left.
+    fn capture_for_ab(&mut self, device: Device) {
+        let state = self.editors.editor(device).filter(|e| e.is_alive()).and_then(|e| e.save_state(ponzik_engine::StateContext::Project));
+        if let Some(state) = state {
+            self.store_plugin_state(device, state);
+        }
+    }
+
+    /// Switches a device to its other state (one undo step).
+    pub fn ab_switch(&mut self, device: Device) {
+        self.capture_for_ab(device);
+        let Some(d) = self.ab_device(device) else { return };
+        d.ab_switch();
+        let letter = if d.ab_active() == 0 { "A" } else { "B" };
+        self.project.prune_modulators();
+        self.commit(&tr_fmt!("Compare: {}", letter));
+    }
+
+    /// Copies the state in use onto the other letter.
+    pub fn ab_copy(&mut self, device: Device) {
+        self.capture_for_ab(device);
+        let Some(d) = self.ab_device(device) else { return };
+        d.ab_copy();
+        let msg = if d.ab_active() == 0 { tr("A copied to B") } else { tr("B copied to A") };
+        self.commit(msg);
+        self.toast(msg);
+    }
+
+    /// A and B letters (the one in use lit) and the copy button.
+    fn ab_buttons(&mut self, c: &mut Canvas, input: &Input, r: Rect, device: Device) {
+        let t = self.theme;
+        let Some((active, same)) = self.ab_of(device) else { return };
+        let key = device_key(device);
+        c.fill_rrect(Rect::new(r.x, r.y, 44.0, r.h), 7.0, t.bg_deep);
+        for (i, letter) in ["A", "B"].into_iter().enumerate() {
+            let b = Rect::new(r.x + 2.0 + i as f32 * 20.0, r.y + 2.0, 20.0, r.h - 4.0);
+            let id = wid("fx-ab", key, i);
+            let hov = self.hovered(input, id, b);
+            let hv = self.hover_anim(id, hov);
+            let lit = active as usize == i;
+            let on = self.anim.to(id ^ 0x4f4e, lit as u8 as f32, T_HOVER);
+            if on > 0.01 {
+                c.fill_rrect(b, 5.0, t.accent.alpha(on));
+            }
+            let col = t.muted.mix(t.text, hv).mix(t.on_accent, on);
+            self.text_center(c, self.f.mono_med, 11.0, b.x + b.w * 0.5, b.y + b.h * 0.5, letter, col);
+            if hov {
+                let tip = if lit {
+                    tr("A/B: the state in use")
+                } else if i == 1 {
+                    tr("A/B: switch to B\nThe first time, B starts as a copy of A")
+                } else {
+                    tr("A/B: switch back to A")
+                };
+                self.set_tip(tip, "");
+                if input.pressed && !lit {
+                    self.ab_switch(device);
+                }
+            }
+        }
+        let copy = Rect::new(r.x + 46.0, r.y, 20.0, r.h);
+        let tip = if active == 0 { tr("Copy A to B") } else { tr("Copy B to A") };
+        let id = wid("fx-ab-copy", key, 0);
+        let hov = self.hovered(input, id, copy);
+        let hv = self.hover_anim(id, hov);
+        let alpha = if same { 0.5 } else { 1.0 };
+        draw_icon(c, Icon::Duplicate, copy.x + copy.w * 0.5, copy.y + copy.h * 0.5, 13.0, t.muted.mix(t.text, hv).alpha(alpha));
+        if hov {
+            self.set_tip(tip, "");
+            if input.pressed {
+                self.ab_copy(device);
+            }
+        }
+    }
+
+    /// Screenshot setup (`PONZIK_AB=1`): the panel's first device compared,
+    /// on B with a knob moved.
+    pub fn screenshot_ab(&mut self) {
+        let Some(&device) = self.panel_devices().first() else { return };
+        self.ab_switch(device);
+        let (kind, inst) = self.device_kind(device);
+        if let Some(p) = params_of(&kind, inst).first() {
+            let v = self.param_value(device, p);
+            self.set_param_value(device, p, v + (p.max - p.min) * 0.3);
+        }
     }
 }

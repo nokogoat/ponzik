@@ -1069,6 +1069,8 @@ impl App {
             self.editors.capture(&cmd);
             self.send(cmd);
         }
+        let states = super::editors::changed_plugin_states(&self.synced, &self.project);
+        self.load_plugin_states(states);
         let warps = self.synced.audio_clips != self.project.audio_clips
             || self.synced.session_slots != self.project.session_slots
             || self.synced.tempo_map() != self.project.tempo_map();

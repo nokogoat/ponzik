@@ -607,6 +607,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
             }
         }
     }
+    // PONZIK_AB=1: the first device of the panel on B, a knob moved.
+    if std::env::var_os("PONZIK_AB").is_some() {
+        app.screenshot_ab();
+    }
     // PONZIK_SESSION=slot:c,r|scene:r|follow|audio|rec (";"-separated): launch
     // settings, an audio slot, the inspector and the arrangement record.
     if let Ok(spec) = std::env::var("PONZIK_SESSION") {

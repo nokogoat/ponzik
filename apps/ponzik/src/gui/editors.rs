@@ -286,6 +286,31 @@ impl PluginEditors {
 }
 
 /// Where a device's plugin state lives in a project.
+/// Plugin states that changed from `old` to `new` on devices of the same kind.
+pub(super) fn changed_plugin_states(old: &ponzik_project::Project, new: &ponzik_project::Project) -> Vec<(Device, ponzik_project::PluginState)> {
+    let mut changed = Vec::new();
+    for (i, (a, b)) in old.channels.iter().zip(&new.channels).enumerate() {
+        if a.instrument.kind == b.instrument.kind
+            && a.instrument.state != b.instrument.state
+            && let Some(state) = &b.instrument.state
+        {
+            changed.push((Device::Instrument(i), state.clone()));
+        }
+    }
+    for (t, (a, b)) in old.tracks.iter().zip(&new.tracks).enumerate() {
+        for (slot, (x, y)) in a.inserts.iter().zip(&b.inserts).enumerate() {
+            if let (Some(x), Some(y)) = (x, y)
+                && x.kind == y.kind
+                && x.state != y.state
+                && let Some(state) = &y.state
+            {
+                changed.push((Device::Effect { track: t, slot }, state.clone()));
+            }
+        }
+    }
+    changed
+}
+
 pub(super) fn state_slot(p: &mut ponzik_project::Project, device: Device) -> Option<&mut Option<ponzik_project::PluginState>> {
     match device {
         Device::Instrument(c) => Some(&mut p.channels.get_mut(c)?.instrument.state),
@@ -398,6 +423,17 @@ impl App {
             *synced = Some(state);
         }
         true
+    }
+
+    /// Puts states into the live plugins (A/B, undo, redo).
+    pub(super) fn load_plugin_states(&mut self, changed: Vec<(Device, ponzik_project::PluginState)>) {
+        for (device, state) in changed {
+            if let Some(e) = self.editors.editor(device).filter(|e| e.is_alive())
+                && let Err(e) = e.load_state(&state, StateContext::Project)
+            {
+                self.toast(&tr_fmt!("The plugin refused its state: {}", e));
+            }
+        }
     }
 
     /// The plugin parameter last moved in a plugin window, for the palette.
@@ -556,5 +592,36 @@ mod tests {
         assert_eq!(inst.state.lock().unwrap().as_deref(), Some(&[7u8, 7][..]));
         assert_eq!(app.project.channels[0].instrument.state, Some(preset));
         assert!(app.modified);
+    }
+    #[test]
+    fn ab_switches_plugin_states_and_undo_follows() {
+        let project = ponzik_project::demo_project();
+        let (_engine, handle) = project.build_engine(48_000.0, &|_| None);
+        let mut app = App::new(handle, project, 48_000);
+        let inst = Arc::new(Fake::default());
+        *inst.state.lock().unwrap() = Some(vec![1]);
+        app.editors.capture(&Command::ReplaceInstrument { channel: 0, instrument: Box::new(Plug(inst.clone())) });
+        let dev = Device::Instrument(0);
+        let a_params = app.project.channels[0].instrument.params.clone();
+        // B starts as A, then the plugin and a knob move.
+        app.ab_switch(dev);
+        assert_eq!(app.project.channels[0].instrument.state.as_deref(), Some(&[1u8][..]));
+        *inst.state.lock().unwrap() = Some(vec![2]);
+        app.project.channels[0].instrument.set(77, 0.25);
+        app.commit("tweak");
+        // Back to A: B's state was taken from the plugin, A's goes back into it.
+        app.ab_switch(dev);
+        assert_eq!(app.project.channels[0].instrument.params, a_params);
+        assert_eq!(inst.state.lock().unwrap().as_deref(), Some(&[1u8][..]));
+        let ab = app.project.channels[0].instrument.ab.as_deref().unwrap();
+        assert_eq!((ab.active, ab.other.state.as_deref()), (0, Some(&[2u8][..])));
+        assert_eq!(ab.other.params.iter().find(|p| p.0 == 77), Some(&(77, 0.25)));
+        // Undo: B again, in the project and in the plugin.
+        app.undo();
+        assert_eq!(app.project.channels[0].instrument.get(77), Some(0.25));
+        assert_eq!(inst.state.lock().unwrap().as_deref(), Some(&[2u8][..]));
+        // Copy B onto A.
+        app.ab_copy(dev);
+        assert!(ponzik_project::ab::AbDevice::ab_same(&app.project.channels[0].instrument));
     }
 }

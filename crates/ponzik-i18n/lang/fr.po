@@ -885,6 +885,33 @@ msgstr "Les réglages actuels, sous un nom"
 msgid "Presets"
 msgstr "Presets"
 
+msgid "A copied to B"
+msgstr "A copié dans B"
+
+msgid "A/B: switch back to A"
+msgstr "A/B : revenir à A"
+
+msgid "A/B: switch to B\nThe first time, B starts as a copy of A"
+msgstr "A/B : passer à B\nLa première fois, B part d'une copie de A"
+
+msgid "A/B: the state in use"
+msgstr "A/B : l'état en cours"
+
+msgid "B copied to A"
+msgstr "B copié dans A"
+
+msgid "Compare: {}"
+msgstr "Comparer : {}"
+
+msgid "Copy A to B"
+msgstr "Copier A dans B"
+
+msgid "Copy B to A"
+msgstr "Copier B dans A"
+
+msgid "The plugin refused its state: {}"
+msgstr "Le plugin a refusé son état : {}"
+
 msgid "Track {} · scene {}"
 msgstr "Piste {} · scène {}"
 
