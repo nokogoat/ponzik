@@ -3366,6 +3366,15 @@ msgstr "Hors gamme"
 msgid "Not a WAV file"
 msgstr "ce n'est pas un fichier WAV"
 
+msgid "Not a FLAC file"
+msgstr "ce n'est pas un fichier FLAC"
+
+msgid "Corrupt FLAC file"
+msgstr "fichier FLAC abîmé"
+
+msgid "Unsupported FLAC file"
+msgstr "fichier FLAC non pris en charge"
+
 msgid "Missing \"fmt\" chunk"
 msgstr "bloc « fmt » manquant"
 
