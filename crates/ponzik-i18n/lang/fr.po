@@ -5704,3 +5704,47 @@ msgstr "aucun système de fenêtres"
 
 msgid "this plugin has no interface of its own"
 msgstr "ce plugin n'a pas d'interface à lui"
+msgid "Audio buffer"
+msgstr "Tampon audio"
+
+msgid "Audio buffer: {} ms"
+msgstr "Tampon audio : {} ms"
+
+msgid "Audio buffer: {} ms (automatic)"
+msgstr "Tampon audio : {} ms (automatique)"
+
+msgid "Auto · {} ms"
+msgstr "Auto · {} ms"
+
+msgid "{} ms"
+msgstr "{} ms"
+
+msgid "Starts at 10 ms and goes up a step when the sound crackles"
+msgstr "Commence à 10 ms et monte d'un cran quand le son craque"
+
+msgid "{} ms: a larger buffer crackles less but answers later"
+msgstr "{} ms : un tampon plus grand craque moins mais répond plus tard"
+
+msgid "Audio dropouts: a larger buffer in Settings should stop the crackles"
+msgstr "Décrochages audio : un tampon plus grand dans les Réglages devrait faire cesser les craquements"
+
+msgid "Audio dropouts: buffer raised to {} ms"
+msgstr "Décrochages audio : tampon relevé à {} ms"
+
+msgid "Could not reopen the audio output: {}"
+msgstr "Impossible de rouvrir la sortie audio : {}"
+
+msgid "No dropouts"
+msgstr "Aucun décrochage"
+
+msgid "Dropouts: {}"
+msgstr "Décrochages : {}"
+
+msgid "Single-threaded engine"
+msgstr "Moteur sur un seul cœur"
+
+msgid "{} worker threads sharing the work"
+msgstr "{} threads de calcul se partagent le travail"
+
+msgid "Worker threads asleep: one core is enough"
+msgstr "Threads de calcul endormis : un cœur suffit"

@@ -12,6 +12,7 @@ mod compat;
 mod devices;
 mod dnd;
 mod editors;
+mod dropouts;
 mod float;
 mod keymap;
 mod keys;
@@ -48,6 +49,23 @@ use ponzik_window::{Event, Key, Modifiers, MouseButton, Window};
 use app::{App, View};
 pub use settings::init_language;
 pub use compat::{library_dir, project_samples};
+
+/// PIPEWIRE_LATENCY vient de nous (l'utilisateur ne l'a pas fixée).
+static PIPEWIRE_LATENCY_OURS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Latence demandée au graphe PipeWire par le greffon ALSA, quand c'est nous
+/// qui la fixons : relue à chaque ouverture de la sortie.
+pub(crate) fn set_pipewire_latency(ms: u32) {
+    if !cfg!(target_os = "linux") || !PIPEWIRE_LATENCY_OURS.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let frames = ms * 48;
+    // SAFETY: appelé au démarrage, ou quand le thread audio et la capture sont
+    // arrêtés pour rouvrir la sortie ; le reste de l'application lit
+    // l'environnement par `std::env`, qui sérialise ces accès.
+    unsafe { std::env::set_var("PIPEWIRE_LATENCY", format!("{frames}/48000")) };
+}
+
 
 const FRAME: Duration = Duration::from_micros(16_667);
 /// Cadence quand seules la tête de lecture et les VU-mètres bougent.
@@ -198,13 +216,13 @@ impl ClickTracker {
 }
 
 pub fn run(project: ponzik_project::Project) -> Result<(), String> {
+    // Tampon audio choisi (ou relevé après des craquements) aux sessions précédentes.
+    settings::init_audio_buffer();
     // Sous PipeWire, l'appareil ALSA « default » ajoute son propre tampon
     // (souvent 1024 trames) : on lui demande la même latence que la nôtre.
-    #[cfg(target_os = "linux")]
     if std::env::var_os("PIPEWIRE_LATENCY").is_none() {
-        let frames = ponzik_audio::target_latency_ms() * 48;
-        // SAFETY: appelé au démarrage, avant le lancement des threads audio et MIDI.
-        unsafe { std::env::set_var("PIPEWIRE_LATENCY", format!("{frames}/48000")) };
+        PIPEWIRE_LATENCY_OURS.store(true, std::sync::atomic::Ordering::Relaxed);
+        set_pipewire_latency(ponzik_audio::target_latency_ms());
     }
     let output = ponzik_audio::open_default().map_err(|e| e.to_string())?;
     let config = output.config();
@@ -234,6 +252,7 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     app.editors.set_owner(window.native_handle());
     app.samples = samples;
     app.set_output(stream);
+    app.xrun_watch.reopened(0.0, 0);
     app.start_midi_out();
     for m in &app.midi_inputs {
         eprintln!("MIDI: {}", m.name());
@@ -410,6 +429,7 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
         dirty |= app.library_tick();
         dirty |= app.plugin_scan_tick();
         dirty |= app.editors_tick();
+        dirty |= app.xrun_tick(started.elapsed().as_secs_f32());
         if app.rec.output.as_ref().is_some_and(|s| !s.is_running()) {
             return Err(tr("the audio driver stopped").into());
         }

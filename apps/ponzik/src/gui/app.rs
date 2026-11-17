@@ -496,6 +496,8 @@ pub struct App {
     pub library_build: Option<std::sync::mpsc::Receiver<Result<usize, String>>>,
     /// CLAP plugins found by the scan, by name.
     pub plugins: Vec<ponzik_clap::PluginInfo>,
+    /// Dropouts of the audio output (see `dropouts.rs`).
+    pub xrun_watch: super::dropouts::XrunWatch,
     /// VST 3 plugins found by the scan, by name.
     pub vst3_plugins: Vec<ponzik_vst3::PluginInfo>,
     /// Plugin files the scan could not load, shown in the browser.
@@ -662,6 +664,7 @@ impl App {
             plugin_scan: None,
             editors: Default::default(),
             last_plugin_param: None,
+            xrun_watch: Default::default(),
             browser_cache: (None, Vec::new()),
             playing: false,
             metronome: false,
@@ -1945,7 +1948,7 @@ impl App {
                 let col = if load > 0.85 { t.negative } else { t.muted.mix(t.text2, load) };
                 c.fill_rrect(Rect::new(gauge.x, gauge.y, (gauge.w * load).max(6.0), gauge.h), 3.0, col);
             }
-            let tip = tr_fmt!("DSP load: {:.0}%", self.load * 100.0);
+            let tip = format!("{}\n{}", tr_fmt!("DSP load: {:.0}%", self.load * 100.0), self.audio_status());
             self.tip_zone(input, gauge.inset(-8.0), &tip, "");
         }
 

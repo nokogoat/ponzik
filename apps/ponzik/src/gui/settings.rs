@@ -290,6 +290,26 @@ pub struct Prefs {
     pub lang: Option<Lang>,
     /// The first-run tour was finished or skipped.
     pub tour_done: bool,
+    /// Tampon audio en millisecondes (0 : celui par défaut, 10 ms).
+    pub buffer_ms: u32,
+    /// Tampon choisi à la main : jamais relevé automatiquement.
+    pub buffer_manual: bool,
+}
+
+/// Tampon audio enregistré : (millisecondes, choisi à la main).
+pub fn buffer_from_json(j: &Json) -> (u32, bool) {
+    let ms = j.get("audio_buffer_ms").and_then(Json::as_f64).map_or(0, |v| if v.is_finite() { v.clamp(0.0, 100.0) as u32 } else { 0 });
+    (ms, j.get("audio_buffer_manual").and_then(Json::as_bool).unwrap_or(false))
+}
+
+/// Tampon audio des sessions précédentes, appliqué avant d'ouvrir la sortie.
+pub fn init_audio_buffer() {
+    let saved = std::fs::read_to_string(settings_path()).ok().and_then(|t| json::parse(&t).ok());
+    if let Some((ms, _)) = saved.as_ref().map(buffer_from_json)
+        && ms > 0
+    {
+        ponzik_audio::set_target_latency_ms(ms);
+    }
 }
 
 /// Texte JSON des réglages.
@@ -394,6 +414,7 @@ impl App {
         self.prefs.keymap = keymap;
         self.prefs.ui_scale = UiScale::from_json(&j);
         self.prefs.tour_done = j.get("tour_done").and_then(Json::as_bool).unwrap_or(false);
+        (self.prefs.buffer_ms, self.prefs.buffer_manual) = buffer_from_json(&j);
         self.apply_workspace(ws, false);
     }
 
@@ -403,6 +424,10 @@ impl App {
         if let Json::Obj(fields) = &mut j {
             fields.push(("ui_scale".into(), (self.prefs.ui_scale.percent() as f64 / 100.0).into()));
             fields.push(("tour_done".into(), self.prefs.tour_done.into()));
+            if self.prefs.buffer_ms > 0 {
+                fields.push(("audio_buffer_ms".into(), (self.prefs.buffer_ms as f64).into()));
+                fields.push(("audio_buffer_manual".into(), self.prefs.buffer_manual.into()));
+            }
         }
         let text = j.pretty();
         let path = settings_path();
@@ -875,8 +900,11 @@ impl App {
         }
         let rows = cells.len().div_ceil(cols);
         y += rows as f32 * (64.0 + gap) - gap + 18.0;
+        // Taille de l'interface et tampon audio côte à côte.
+        let size_w = (left.w * 0.38).floor();
         self.section(c, left.x, y, tr("Interface size"));
-        self.ui_scale_slider(c, input, Rect::new(left.x, y + 20.0, left.w, 34.0), hint);
+        self.ui_scale_slider(c, input, Rect::new(left.x, y + 20.0, size_w, 34.0), hint);
+        self.audio_buffer_choice(c, input, left.x + size_w + 24.0, y, left.w - size_w - 24.0, hint);
 
         if let Some(k) = toggled {
             let mut ws = current.clone();
@@ -944,6 +972,47 @@ impl App {
                 });
             }
             x += w + 8.0;
+        }
+    }
+
+    /// Tampon audio : automatique (10 ms, relevé après des craquements) ou fixé.
+    fn audio_buffer_choice(&mut self, c: &mut Canvas, input: &Input, x: f32, y: f32, w: f32, hint: &mut Option<String>) {
+        self.section(c, x, y, tr("Audio buffer"));
+        let current = ponzik_audio::target_latency_ms();
+        let auto = !self.prefs.buffer_manual;
+        let choices = std::iter::once(None).chain(super::dropouts::BUFFER_STEPS.iter().map(|&ms| Some(ms)));
+        let (mut cx, mut cy) = (x, y + 20.0);
+        let mut picked = None;
+        for (k, choice) in choices.enumerate() {
+            let label = match choice {
+                None => tr_fmt!("Auto · {} ms", current),
+                Some(ms) => tr_fmt!("{} ms", ms),
+            };
+            let bw = self.fonts.measure(self.f.sans_med, 12.0, &label) + 40.0;
+            if cx + bw > x + w && cx > x {
+                cx = x;
+                cy += 36.0;
+            }
+            let r = Rect::new(cx, cy, bw, 30.0);
+            let id = wid("set-buffer", k, 0);
+            let active = match choice {
+                None => auto,
+                Some(ms) => !auto && ms == current,
+            };
+            let icon = if active { Icon::Check } else { Icon::History };
+            if self.pill_button(c, input, id, r, icon, &label, active) && !active {
+                picked = Some(choice);
+            }
+            if self.hovered(input, id, r) {
+                *hint = Some(match choice {
+                    None => tr("Starts at 10 ms and goes up a step when the sound crackles").to_string(),
+                    Some(ms) => tr_fmt!("{} ms: a larger buffer crackles less but answers later", ms),
+                });
+            }
+            cx += bw + 6.0;
+        }
+        if let Some(choice) = picked {
+            self.set_audio_buffer(choice, self.time);
         }
     }
 
