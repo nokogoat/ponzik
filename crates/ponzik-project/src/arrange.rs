@@ -209,7 +209,7 @@ impl Project {
                 let (s, len, skip) = cut(c.start, c.len)?;
                 let fade_in = if skip == 0 { c.fade_in } else { 0.0 };
                 let fade_out = if s + len == c.start + c.len { c.fade_out } else { 0.0 };
-                let offset = c.offset + map.secs_at(s as f64) - map.secs_at(c.start as f64);
+                let offset = c.offset_at(s as f64, &map);
                 Some(AudioClipDef { start: s - a, len, offset, fade_in, fade_out, ..c.clone() })
             })
             .collect();
@@ -338,7 +338,7 @@ impl Project {
         for c in &self.audio_clips {
             if c.start < at && c.start + c.len > at {
                 let left = at - c.start;
-                let offset = c.offset + map.secs_at(at as f64) - map.secs_at(c.start as f64);
+                let offset = c.offset_at(at as f64, &map);
                 audio.push(AudioClipDef { len: left, fade_out: 0.0, ..c.clone() });
                 audio.push(AudioClipDef { start: at, len: c.len - left, offset, fade_in: 0.0, ..c.clone() });
             } else {

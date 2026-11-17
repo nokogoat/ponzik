@@ -18,7 +18,7 @@ use ponzik_engine::{MacroMap, ModKind};
 use crate::json::{self, Json};
 use crate::rack::{ModTarget, ModulatorDef, RackDef, RackDevice, rack_accepts};
 use crate::{
-    AudioClipDef, AutoPoint, AutoScope, AutoTarget, AutomationDef, ChannelDef, ClipDef, EffectDef, InstrumentDef,
+    AudioClipDef, WarpAlgo, WarpMap, WarpMarker, AutoPoint, AutoScope, AutoTarget, AutomationDef, ChannelDef, ClipDef, EffectDef, InstrumentDef,
     NoteFxDef, PatternDef, PluginState, Project, TrackDef, TrackKind,
 };
 
@@ -266,6 +266,17 @@ fn audio_clip_json(c: &AudioClipDef) -> Json {
         ("fade_out", c.fade_out.into()),
         ("take", c.take.into()),
         ("muted", c.muted.into()),
+        ("fade_in_curve", c.fade_in_curve.into()),
+        ("fade_out_curve", c.fade_out_curve.into()),
+        ("reverse", c.reverse.into()),
+        ("looped", c.looped.into()),
+        ("color", c.color.into()),
+        ("warp", c.warp.into()),
+        ("bpm", c.bpm.into()),
+        ("warp_mode", c.warp_mode.id().into()),
+        ("transpose", c.transpose.into()),
+        ("fine", c.fine.into()),
+        ("warp_markers", Json::Arr(c.warp_markers.iter().map(|m| Json::Arr(vec![m.secs.into(), m.beat.into()])).collect())),
     ])
 }
 
@@ -660,8 +671,15 @@ fn load_automation(v: &Json, channels: usize, patterns: usize) -> Option<Automat
 
 fn load_audio_clip(v: &Json) -> Option<AudioClipDef> {
     let path = v.get("path")?.as_str().filter(|p| !p.is_empty())?.to_string();
+    let flag = |k: &str| v.get(k).and_then(Json::as_bool).unwrap_or(false);
+    let markers = arr(v.get("warp_markers"))
+        .iter()
+        .filter_map(|m| {
+            let m = arr(Some(m));
+            Some(WarpMarker { secs: num(m.first())?, beat: num(m.get(1))? })
+        })
+        .collect();
     Some(AudioClipDef {
-        path,
         lane: usize_or(v.get("lane"), 0),
         track: usize_or(v.get("track"), 1).min(TRACKS - 1),
         start: u32_or(v.get("start"), 0),
@@ -671,7 +689,20 @@ fn load_audio_clip(v: &Json) -> Option<AudioClipDef> {
         fade_in: f32_or(v.get("fade_in"), 0.0).max(0.0),
         fade_out: f32_or(v.get("fade_out"), 0.0).max(0.0),
         take: u32_or(v.get("take"), 0),
-        muted: v.get("muted").and_then(Json::as_bool).unwrap_or(false),
+        muted: flag("muted"),
+        fade_in_curve: f32_or(v.get("fade_in_curve"), 0.0).clamp(-1.0, 1.0),
+        fade_out_curve: f32_or(v.get("fade_out_curve"), 0.0).clamp(-1.0, 1.0),
+        reverse: flag("reverse"),
+        looped: flag("looped"),
+        color: u32_or(v.get("color"), 0) & 0xff_ffff,
+        warp: flag("warp"),
+        bpm: f32_or(v.get("bpm"), 0.0).clamp(0.0, 999.0),
+        warp_mode: v.get("warp_mode").and_then(Json::as_str).and_then(WarpAlgo::from_id).unwrap_or_default(),
+        transpose: f32_or(v.get("transpose"), 0.0).clamp(-48.0, 48.0).round(),
+        fine: f32_or(v.get("fine"), 0.0).clamp(-50.0, 50.0),
+        // Kept only if they run forward (see `WarpMap::new`).
+        warp_markers: WarpMap::new(120.0, markers).markers().to_vec(),
+        path,
     })
 }
 
@@ -993,6 +1024,17 @@ mod tests {
             fade_out: 0.25,
             take: 3,
             muted: true,
+            fade_in_curve: 0.5,
+            fade_out_curve: -0.25,
+            reverse: true,
+            looped: true,
+            color: 0xf0b44a,
+            warp: true,
+            bpm: 93.5,
+            warp_mode: WarpAlgo::Tones,
+            transpose: -5.0,
+            fine: 12.5,
+            warp_markers: vec![WarpMarker { secs: 0.25, beat: 0.5 }, WarpMarker { secs: 1.75, beat: 3.0 }],
         });
         let text = save(&p);
         let back = load(&text).unwrap();
@@ -1022,7 +1064,9 @@ mod tests {
           ],
           "audio_clips": [
             {"path": "a.wav", "track": 50, "len": 0, "offset": -2, "gain": 99, "fade_in": -1},
-            {"path": ""}, {"track": 2}
+            {"path": ""}, {"track": 2},
+            {"path": "b.wav", "warp": true, "warp_mode": "granular", "bpm": -5, "transpose": 99, "fine": "x",
+             "fade_in_curve": 7, "warp_markers": [[1, 2], [0.5, 3], "x", [2]], "color": "red", "reverse": 1}
           ]
         }"#;
         let p = load(text).unwrap();
@@ -1034,9 +1078,15 @@ mod tests {
             [AutoPoint { tick: 0, value: 0.25, curve: -0.5 }, AutoPoint { tick: 384, value: 1.0, curve: 0.0 }]
         );
         assert_eq!((p.automation[1].target, p.automation[1].scope), (AutoTarget::Tempo, AutoScope::Pattern(0)));
-        assert_eq!(p.audio_clips.len(), 1);
+        assert_eq!(p.audio_clips.len(), 2);
         let c = &p.audio_clips[0];
         assert_eq!((c.track, c.len, c.offset, c.gain, c.fade_in), (TRACKS - 1, 1, 0.0, 16.0, 0.0));
+        assert!(!c.warp && c.warp_markers.is_empty() && c.bpm == 0.0);
+        let w = &p.audio_clips[1];
+        assert!(w.warp && !w.reverse);
+        assert_eq!((w.warp_mode, w.bpm, w.transpose, w.fine, w.fade_in_curve, w.color), (WarpAlgo::Beats, 0.0, 48.0, 0.0, 1.0, 0));
+        // The marker that runs backwards is dropped.
+        assert_eq!(w.warp_markers, [WarpMarker { secs: 0.5, beat: 3.0 }]);
         assert_eq!(load(&save(&p)).unwrap(), p);
     }
 

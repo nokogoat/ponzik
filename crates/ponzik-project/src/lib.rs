@@ -11,9 +11,11 @@ use ponzik_i18n::{tr, tr_fmt, tr_noop};
 use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, SEND_SLOTS, TRACKS, routing_order};
 use ponzik_engine::registry;
 use ponzik_engine::{
-    AudioClip, AutomationLane, Channel, Clip, Effect, Engine, EngineHandle, Instrument, NOTE_FX_SLOTS, Note,
-    NoteFx, Pattern, PlayMode, Sample, Sequence, TICKS_PER_BAR, TICKS_PER_STEP,
+    AudioClip, AutomationLane, Channel, Clip, ClipWarp, Effect, Engine, EngineHandle, Instrument, NOTE_FX_SLOTS, Note,
+    NoteFx, PPQ, Pattern, PlayMode, Sample, Sequence, TICKS_PER_BAR, TICKS_PER_STEP,
 };
+pub use ponzik_dsp::warp::WarpAlgo;
+pub use ponzik_engine::{WarpMap, WarpMarker};
 pub use ponzik_engine::{TempoMap, TempoPoint, TimeSig};
 pub use ponzik_engine::{AutoPoint, AutoScope, AutoTarget, SessionSlot};
 
@@ -42,6 +44,7 @@ pub mod rack;
 pub mod render;
 pub mod scale;
 pub mod templates;
+pub mod warp;
 
 pub use arrange::{MARKER_COLORS, Placement, TimeSlice};
 pub use breakcore::demo_breakcore;
@@ -250,11 +253,99 @@ pub struct AudioClipDef {
     /// Fondus en secondes.
     pub fade_in: f32,
     pub fade_out: f32,
+    /// Fade shapes in [−1, 1] (0: linear).
+    pub fade_in_curve: f32,
+    pub fade_out_curve: f32,
     /// Groupe de prises (0 : aucun) : les passages d'un même enregistrement en
     /// boucle le partagent, pour choisir la bonne (et compiler plus tard).
     pub take: u32,
     /// Clip muet : gardé dans la playlist (prise de côté), pas joué.
     pub muted: bool,
+    /// Played backwards (offset and warp markers count in the reversed file).
+    pub reverse: bool,
+    /// The file starts over past its end.
+    pub looped: bool,
+    /// 0: the default audio clip color.
+    pub color: u32,
+    /// Warped: the beats of the file follow the song tempo.
+    pub warp: bool,
+    /// Original tempo of the file (0: unknown, 120 is used).
+    pub bpm: f32,
+    pub warp_mode: WarpAlgo,
+    /// Transposition in semitones and cents (Beats and Tones; Re-Pitch follows the tempo).
+    pub transpose: f32,
+    pub fine: f32,
+    /// Points of the file pinned to beats (beat 0: the file start).
+    pub warp_markers: Vec<WarpMarker>,
+}
+
+impl Default for AudioClipDef {
+    fn default() -> Self {
+        Self {
+            path: String::new(),
+            lane: 0,
+            track: 1,
+            start: 0,
+            len: TICKS_PER_BAR,
+            offset: 0.0,
+            gain: 1.0,
+            fade_in: 0.002,
+            fade_out: 0.002,
+            fade_in_curve: 0.0,
+            fade_out_curve: 0.0,
+            take: 0,
+            muted: false,
+            reverse: false,
+            looped: false,
+            color: 0,
+            warp: false,
+            bpm: 0.0,
+            warp_mode: WarpAlgo::Beats,
+            transpose: 0.0,
+            fine: 0.0,
+            warp_markers: Vec::new(),
+        }
+    }
+}
+
+impl AudioClipDef {
+    /// Original tempo used for warping.
+    pub fn warp_bpm(&self) -> f64 {
+        if self.bpm > 0.0 && self.bpm.is_finite() { self.bpm as f64 } else { 120.0 }
+    }
+
+    pub fn warp_map(&self) -> WarpMap {
+        WarpMap::new(self.warp_bpm(), self.warp_markers.clone())
+    }
+
+    /// Frequency ratio of the transposition.
+    pub fn pitch_ratio(&self) -> f64 {
+        ((self.transpose as f64 + self.fine as f64 / 100.0) / 12.0).exp2()
+    }
+
+    /// Point of the file (seconds) heard at `tick` (absolute), ignoring loops.
+    pub fn offset_at(&self, tick: f64, map: &TempoMap) -> f64 {
+        let from = self.start as f64;
+        if self.warp {
+            let w = self.warp_map();
+            w.secs_at(w.beat_at(self.offset) + (tick - from) / PPQ as f64)
+        } else {
+            self.offset + map.secs_at(tick) - map.secs_at(from)
+        }
+    }
+
+    /// Length in ticks that plays the file from the offset to its end
+    /// (`duration` in seconds), at least a sixteenth.
+    pub fn natural_len(&self, duration: f64, map: &TempoMap) -> u32 {
+        let ticks = if self.warp {
+            let w = self.warp_map();
+            (w.beat_at(duration) - w.beat_at(self.offset)) * PPQ as f64
+        } else {
+            let from = map.secs_at(self.start as f64);
+            map.tick_at_secs(from + (duration - self.offset).max(0.0)) - self.start as f64
+        };
+        ticks.round().max(TICKS_PER_STEP as f64) as u32
+    }
 }
 
 /// Rôle d'une piste de mixer.
@@ -393,6 +484,14 @@ pub struct Marker {
 
 /// Fonction de chargement de fichiers audio (fournie par l'application).
 pub type SampleLoader<'a> = &'a dyn Fn(&str) -> Option<Arc<Sample>>;
+
+/// Render of a warped clip, if available.
+pub type WarpLookup<'a> = &'a dyn Fn(&warp::WarpJob) -> Option<Arc<Sample>>;
+
+/// Renders warped clips now (through the shared cache): exports and offline renders.
+pub fn render_warps(job: &warp::WarpJob) -> Option<Arc<Sample>> {
+    Some(warp::render_cached(job))
+}
 
 impl Default for Project {
     fn default() -> Self {
@@ -537,8 +636,26 @@ impl Project {
     }
 
     /// Instantané de séquence complet : les clips audio dont le fichier ne se
-    /// charge pas sont ignorés.
+    /// charge pas sont ignorés. Warped clips get no render: they play
+    /// resampled (see [`Project::sequence_for`]).
     pub fn sequence_with(&self, loader: SampleLoader) -> Sequence {
+        self.sequence_for(0.0, loader, &|_| None)
+    }
+
+    /// Renders needed by the warped clips at this engine rate.
+    pub fn warp_jobs(&self, sample_rate: f32, loader: SampleLoader) -> Vec<warp::WarpJob> {
+        let map = self.tempo_map();
+        self.audio_clips
+            .iter()
+            .filter(|c| !c.muted)
+            .filter_map(|c| warp::WarpJob::for_clip(c, &loader(&c.path)?, &map, sample_rate))
+            .collect()
+    }
+
+    /// Full sequence for an engine at `sample_rate`: `warps` gives the render
+    /// of each warped clip (`None`: not ready, the clip plays resampled).
+    pub fn sequence_for(&self, sample_rate: f32, loader: SampleLoader, warps: WarpLookup) -> Sequence {
+        let map = self.tempo_map();
         let n = self.channels.len();
         let patterns = self
             .patterns
@@ -552,7 +669,7 @@ impl Project {
             })
             .collect();
         Sequence {
-            tempo: self.tempo_map(),
+            tempo: map.clone(),
             patterns,
             clips: self
                 .clips
@@ -575,8 +692,18 @@ impl Project {
                 .iter()
                 .filter(|c| !c.muted)
                 .filter_map(|c| {
+                    let sample = loader(&c.path)?;
+                    let warp = c.warp.then(|| ClipWarp {
+                        map: c.warp_map(),
+                        rendered: warp::WarpJob::for_clip(c, &sample, &map, sample_rate).and_then(|job| warps(&job)),
+                    });
                     Some(AudioClip {
-                        sample: loader(&c.path)?,
+                        sample,
+                        fade_in_curve: c.fade_in_curve,
+                        fade_out_curve: c.fade_out_curve,
+                        reverse: c.reverse,
+                        looped: c.looped,
+                        warp,
                         track: c.track.min(TRACKS - 1),
                         start: c.start,
                         len: c.len,
@@ -584,7 +711,6 @@ impl Project {
                         gain: c.gain,
                         fade_in: c.fade_in,
                         fade_out: c.fade_out,
-                        ..Default::default()
                     })
                 })
                 .collect(),
@@ -747,10 +873,15 @@ impl Project {
         ch
     }
 
-    /// Moteur complet dans l'état du projet.
+    /// Moteur complet dans l'état du projet, warped clips rendered now.
     pub fn build_engine(&self, sample_rate: f32, loader: SampleLoader) -> (Engine, EngineHandle) {
+        self.build_engine_with(sample_rate, loader, &render_warps)
+    }
+
+    /// Moteur complet ; `warps` gives the renders of the warped clips.
+    pub fn build_engine_with(&self, sample_rate: f32, loader: SampleLoader, warps: WarpLookup) -> (Engine, EngineHandle) {
         let channels = (0..self.channels.len()).map(|i| self.make_channel(i, sample_rate, loader)).collect();
-        let (mut engine, handle) = Engine::new(sample_rate, channels, self.sequence_with(loader));
+        let (mut engine, handle) = Engine::new(sample_rate, channels, self.sequence_for(sample_rate, loader, warps));
         let mixer = engine.mixer_mut();
         for (i, def) in self.tracks.iter().enumerate().take(TRACKS) {
             let t = &mut mixer.tracks[i];
@@ -944,7 +1075,7 @@ impl Project {
                 audio.push(AudioClipDef { len: a - c.start, fade_out: 0.0, ..c.clone() });
             }
             if end > b {
-                let offset = c.offset + map.secs_at(b as f64) - map.secs_at(c.start as f64);
+                let offset = c.offset_at(b as f64, &map);
                 audio.push(AudioClipDef { start: b, len: end - b, offset, fade_in: 0.0, ..c.clone() });
             }
         }
@@ -981,7 +1112,7 @@ impl Project {
                 // Une coupe à l'intérieur du clip n'a pas de fondu d'entrée ou de sortie.
                 let fade_in = if skip == 0 { c.fade_in } else { 0.0 };
                 let fade_out = if start + len == c.start + c.len { c.fade_out } else { 0.0 };
-                let offset = c.offset + map.secs_at((c.start + skip) as f64) - map.secs_at(c.start as f64);
+                let offset = c.offset_at((c.start + skip) as f64, &map);
                 Some(AudioClipDef { start: start + span, len, offset, fade_in, fade_out, ..c.clone() })
             })
             .collect();
@@ -1193,6 +1324,25 @@ mod tests {
     }
 
     #[test]
+    fn warped_clips_count_the_file_in_beats() {
+        let map = TempoMap::constant(120.0);
+        let plain = AudioClipDef { start: 96, offset: 0.5, ..Default::default() };
+        let warped = AudioClipDef { warp: true, bpm: 60.0, ..plain.clone() };
+        // One beat later: half a second of the file unwarped, a whole one at 60 BPM.
+        assert!((plain.offset_at(192.0, &map) - 1.0).abs() < 1e-9);
+        assert!((warped.offset_at(192.0, &map) - 1.5).abs() < 1e-9);
+        // A 4.5 s file from 0.5 s: 8 beats at 120 BPM, 4 at 60.
+        assert_eq!(plain.natural_len(4.5, &map), 8 * PPQ);
+        assert_eq!(warped.natural_len(4.5, &map), 4 * PPQ);
+        // Cutting a warped clip keeps the right part on the same audio.
+        let mut p = Project::empty();
+        p.audio_clips.push(AudioClipDef { len: 4 * PPQ, ..warped });
+        p.insert_gap(96 + 2 * PPQ, PPQ);
+        let right = p.audio_clips.iter().find(|c| c.start == 96 + 3 * PPQ).expect("right part");
+        assert!((right.offset - 2.5).abs() < 1e-9, "{}", right.offset);
+    }
+
+    #[test]
     fn drum_pads_get_their_pad_samples() {
         let tone: Vec<f32> = (0..4_800).map(|i| (i as f32 * 0.05).sin() * 0.5).collect();
         let sample = Arc::new(Sample { name: "t".into(), sample_rate: 48_000.0, left: tone.clone(), right: tone, markers: Vec::new() });
@@ -1308,6 +1458,7 @@ mod tests {
             fade_out: 0.01,
             take: 0,
             muted: false,
+            ..Default::default()
         });
         let gain = AutoTarget::TrackGain(1);
         p.add_automation_point(gain, AutoScope::Song, 0, 0.0);
@@ -1359,6 +1510,7 @@ mod tests {
             fade_out: 0.02,
             take: 0,
             muted: false,
+            ..Default::default()
         };
         p.audio_clips.push(clip);
         p.clear_time(bar, 2 * bar);
@@ -1436,6 +1588,7 @@ mod tests {
             fade_out: 0.0,
             take: 0,
             muted: false,
+            ..Default::default()
         }
     }
 

@@ -1048,8 +1048,7 @@ pub fn import_flp(
                     gain: 1.0,
                     fade_in: 0.0,
                     fade_out: 0.0,
-                    take: 0,
-                    muted: false,
+                    ..Default::default()
                 });
             } else if fl.channels.iter().any(|c| c.iid == it.index && c.kind == TYPE_AUTOMATION) {
                 automation_items += 1;

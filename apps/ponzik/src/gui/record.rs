@@ -591,6 +591,7 @@ impl App {
                 fade_out: 0.003,
                 take: group,
                 muted: k != active,
+                ..Default::default()
             });
         }
         self.commit(tr("Record audio"));

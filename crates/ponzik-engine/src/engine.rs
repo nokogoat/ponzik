@@ -1095,7 +1095,8 @@ impl Engine {
                     let secs = clip.offset.max(0.0) + (k0 as f64 - start_at).max(0.0) / sr;
                     // Après un saut, petit fondu d'entrée ; sinon (nouvelle séquence,
                     // début du clip) seul le fondu du clip compte.
-                    (secs * src_rate, if contiguous { f64::MAX / 2.0 } else { 0.0 })
+                    let p = secs * src_rate;
+                    (if clip.looped { p.rem_euclid(len as f64) } else { p }, if contiguous { f64::MAX / 2.0 } else { 0.0 })
                 };
                 let fade_in = clip.fade_in.max(MIN_FADE) as f64 * sr;
                 let fade_out = clip.fade_out.max(MIN_FADE) as f64 * sr;

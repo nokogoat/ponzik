@@ -1181,8 +1181,7 @@ impl App {
             gain: 1.0,
             fade_in: 0.002,
             fade_out: 0.002,
-            take: 0,
-            muted: false,
+            ..Default::default()
         });
         self.commit(tr("Place an audio clip"));
         self.toast(&tr_fmt!("{} placed in the playlist", name));

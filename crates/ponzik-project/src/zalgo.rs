@@ -538,8 +538,7 @@ pub fn demo_zalgo() -> Project {
         gain,
         fade_in: 0.0,
         fade_out: 0.02,
-        take: 0,
-        muted: false,
+        ..Default::default()
     };
     let eight = secs(8.0);
     p.audio_clips = vec![

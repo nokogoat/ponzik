@@ -565,6 +565,7 @@ mod tests {
             fade_out: 0.0,
             take: 0,
             muted: false,
+            ..Default::default()
         });
         p.add_automation_point(AutoTarget::TrackGain(2), AutoScope::Song, 0, 1.0);
         p.add_automation_point(AutoTarget::TrackGain(2), AutoScope::Song, TICKS_PER_BAR * 2, 1.0);
@@ -585,6 +586,65 @@ mod tests {
         assert!((out[2 * (2 * bar + SR as usize / 2)] - 0.25).abs() < 1e-5);
         // Sans chargeur, le clip est ignoré.
         assert_eq!(peak(&render_song(&p, SR, &no_samples, RenderMode::Song)), 0.0);
+    }
+
+    #[test]
+    fn warped_render_equals_playback() {
+        use crate::{WarpAlgo, warp};
+        let mut p = Project::empty();
+        p.bpm = 120.0;
+        p.mode = PlayMode::Song;
+        p.tempo_changes.push(crate::TempoPoint { tick: TICKS_PER_BAR * 2, bpm: 150.0, ramp: true });
+        // Clicks every beat of a 100 BPM loop, warped in Beats.
+        let beat = (SR as f32 * 0.6) as usize;
+        let mut left = vec![0.0f32; beat * 8];
+        for k in 0..8 {
+            for i in 0..2_000 {
+                left[k * beat + i] = (i as f32 * 0.07).sin() * (-(i as f32) / 400.0).exp();
+            }
+        }
+        let sample = Arc::new(Sample { name: "loop".into(), sample_rate: SR as f32, right: left.clone(), left, markers: Vec::new() });
+        p.audio_clips.push(AudioClipDef {
+            path: "loop.wav".into(),
+            track: 2,
+            start: 96,
+            len: TICKS_PER_BAR * 3,
+            warp: true,
+            bpm: 100.0,
+            warp_mode: WarpAlgo::Beats,
+            transpose: 2.0,
+            looped: true,
+            ..Default::default()
+        });
+        let loader = |path: &str| (path == "loop.wav").then(|| sample.clone());
+        let out = render_song(&p, SR, &loader, RenderMode::Song);
+        // Playback: the interface renders in the background, the engine reads the cache.
+        let jobs = p.warp_jobs(SR as f32, &loader);
+        assert_eq!(jobs.len(), 1);
+        for job in &jobs {
+            warp::render_cached(job);
+        }
+        let (mut engine, mut handle) = p.build_engine_with(SR as f32, &loader, &|job| warp::cached(job.key));
+        handle.send(Command::Play).unwrap();
+        let mut played = Vec::with_capacity(out.len());
+        let mut block = vec![0.0f32; 2 * 333];
+        while played.len() < out.len() {
+            engine.process(&mut block, 2);
+            played.extend_from_slice(&block);
+        }
+        assert!(peak(&out) > 0.1);
+        let worst = out.iter().zip(&played).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+        assert!(worst < 1e-5, "render and playback differ by {worst}");
+        // Until its render is ready a warped clip plays resampled: in time, not the same sound.
+        let (mut engine, mut handle) = p.build_engine_with(SR as f32, &loader, &|_| None);
+        handle.send(Command::Play).unwrap();
+        let mut fallback = Vec::with_capacity(out.len());
+        while fallback.len() < out.len() {
+            engine.process(&mut block, 2);
+            fallback.extend_from_slice(&block);
+        }
+        assert!(peak(&fallback) > 0.1);
+        assert!(out.iter().zip(&fallback).any(|(a, b)| (a - b).abs() > 1e-3));
     }
 
     fn u16_at(b: &[u8], i: usize) -> u16 {
