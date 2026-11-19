@@ -15,7 +15,7 @@ use crate::effects::CharSaturation;
 use crate::effects::Lofi;
 use crate::effects::VintageVerb;
 use crate::effects::Amp;
-use crate::instruments::Guitar;
+use crate::instruments::{Guitar, Strings};
 use crate::instruments::DrumMachine;
 use crate::instruments::DrumPads;
 use crate::instrument::Instrument;
@@ -133,6 +133,13 @@ pub fn instruments() -> &'static [InstrumentKind] {
             category: "Acoustic",
             description: "Modeled guitars: steel acoustic, nylon, electric with amp and cabinet, bass; strums, slides, palm mute",
             create: || Box::new(Guitar::new()),
+        },
+        InstrumentKind {
+            id: "strings",
+            name: "Strings",
+            category: "Acoustic",
+            description: "Bowed violin, viola, cello and double bass, solo or in sections: legato, staccato, pizzicato, tremolo",
+            create: || Box::new(Strings::new()),
         },
         InstrumentKind {
             id: "epiano",

@@ -7736,3 +7736,75 @@ msgstr "Glisser de côté : position de l'archet\nPrès du chevalet (sul pontice
 
 msgid "Drag sideways: brightness"
 msgstr "Glisser de côté : brillance"
+
+msgid "Articulation"
+msgstr "Articulation"
+
+msgid "Bow"
+msgstr "Archet"
+
+msgid "Bowed violin, viola, cello and double bass, solo or in sections: legato, staccato, pizzicato, tremolo"
+msgstr "Violon, alto, violoncelle et contrebasse à l'archet, en solo ou en pupitres : legato, staccato, pizzicato, trémolo"
+
+msgid "Bow Noise"
+msgstr "Bruit d'archet"
+
+msgid "Bow Position"
+msgstr "Position de l'archet"
+
+msgid "Bow Pressure"
+msgstr "Pression de l'archet"
+
+msgid "Cello"
+msgstr "Violoncelle"
+
+msgid "Double Bass"
+msgstr "Contrebasse"
+
+msgid "Duo"
+msgstr "Duo"
+
+msgid "Ensemble"
+msgstr "Ensemble"
+
+msgid "Full Section"
+msgstr "Pupitre complet"
+
+msgid "Key Switches"
+msgstr "Notes de commutation"
+
+msgid "Pizzicato"
+msgstr "Pizzicato"
+
+msgid "Quartet"
+msgstr "Quatuor"
+
+msgid "Section"
+msgstr "Pupitre"
+
+msgid "Section Size"
+msgstr "Taille du pupitre"
+
+msgid "Strings"
+msgstr "Cordes"
+
+msgid "Trio"
+msgstr "Trio"
+
+msgid "Vibrato"
+msgstr "Vibrato"
+
+msgid "Vibrato Delay"
+msgstr "Retard du vibrato"
+
+msgid "Vibrato Depth"
+msgstr "Profondeur du vibrato"
+
+msgid "Vibrato Rate"
+msgstr "Vitesse du vibrato"
+
+msgid "Viola"
+msgstr "Alto"
+
+msgid "Violin"
+msgstr "Violon"

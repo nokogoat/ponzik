@@ -1,0 +1,10 @@
+{
+  "kind": "strings",
+  "name": "Viola Section",
+  "params": [
+    [0, 1],
+    [8, 15],
+    [13, 4],
+    [19, 0.45]
+  ]
+}

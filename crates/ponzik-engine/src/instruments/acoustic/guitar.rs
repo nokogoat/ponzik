@@ -1012,7 +1012,7 @@ mod tests {
 
     #[test]
     fn every_model_is_in_tune_across_the_neck() {
-        for model in 0..4 {
+        for (model, name) in MODELS.iter().enumerate() {
             let range: &[u8] = if model == 3 { &[28, 33, 40, 45, 52, 60] } else { &[40, 45, 52, 57, 64, 71, 76, 84] };
             for &note in range {
                 let mut g = guitar(model);
@@ -1020,14 +1020,14 @@ mod tests {
                 // Skip the attack (tension modulation, pluck).
                 let hz = pitch(&s[9_600..], SR).unwrap_or_else(|| panic!("model {model} note {note}: no pitch"));
                 let off = cents_off(hz, note as f32);
-                assert!(off.abs() < 8.0, "model {} note {note}: {off:.1} cents ({hz} Hz)", MODELS[model]);
+                assert!(off.abs() < 8.0, "model {} note {note}: {off:.1} cents ({hz} Hz)", name);
             }
         }
     }
 
     #[test]
     fn stable_for_all_notes_and_velocities() {
-        for model in 0..4 {
+        for model in 0..MODELS.len() {
             for technique in 0..3 {
                 let make = move || -> Box<dyn Instrument> {
                     let mut g = guitar(model);
@@ -1042,14 +1042,14 @@ mod tests {
 
     #[test]
     fn velocity_brightens_the_tone() {
-        for model in 0..4 {
+        for (model, name) in MODELS.iter().enumerate() {
             let c = |vel| {
                 let mut g = guitar(model);
                 let s = pluck(&mut g, 52, vel, 0.3);
                 centroid(&s[480..480 + 4_096], SR)
             };
             let (soft, hard) = (c(0.2), c(1.0));
-            assert!(hard > soft * 1.2, "model {}: {soft} → {hard}", MODELS[model]);
+            assert!(hard > soft * 1.2, "model {}: {soft} → {hard}", name);
         }
     }
 

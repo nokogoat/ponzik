@@ -1,0 +1,11 @@
+{
+  "kind": "strings",
+  "name": "Chamber Quartet",
+  "params": [
+    [0, 4],
+    [8, 18],
+    [13, 0],
+    [16, 0.6],
+    [17, 0]
+  ]
+}

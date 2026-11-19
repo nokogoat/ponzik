@@ -172,10 +172,55 @@ fn guitar_parts() -> Vec<Part> {
     parts
 }
 
+fn string_parts() -> Vec<Part> {
+    let mut parts = Vec::new();
+    // Ensemble chords with a mod wheel swell on each: Cmaj7 Am7 Fmaj7 G.
+    let mut p = Part::new("strings", "Warm Strings Ensemble", 17.0, 0.35);
+    let chords: [&[u8]; 4] = [&[36, 48, 55, 64, 71], &[33, 45, 55, 60, 67], &[29, 41, 57, 64, 69], &[31, 43, 55, 62, 71]];
+    for (k, c) in chords.iter().enumerate() {
+        let t = k as f32 * 3.8;
+        p.chord(t, c, 0.7, 3.7);
+        for i in 0..=20 {
+            let x = i as f32 / 20.0;
+            let w = 0.35 + 0.55 * (std::f32::consts::PI * x).sin();
+            p.events.push((t + x * 3.7, Ev::Cc(1, w)));
+        }
+    }
+    parts.push(p);
+    // Solo cello, legato (overlapping notes) with expression.
+    let mut p = Part::new("strings", "Solo Cello Legato", 12.0, 0.3);
+    p.events.push((0.0, Ev::Cc(1, 0.55)));
+    let line = [(48u8, 0.0, 1.6), (55, 1.5, 0.9), (53, 2.3, 0.7), (52, 2.9, 0.7), (50, 3.5, 1.2), (48, 4.6, 0.7), (47, 5.2, 0.7), (48, 5.8, 2.6), (43, 8.3, 2.8)];
+    for &(n, t, d) in &line {
+        p.note(t, n, 0.7, d + 0.12);
+    }
+    for i in 0..=40 {
+        let x = i as f32 / 40.0;
+        p.events.push((x * 11.0, Ev::Cc(1, 0.4 + 0.45 * (std::f32::consts::PI * 2.0 * x).sin().abs())));
+    }
+    parts.push(p);
+    // Pizzicato section: a walking figure.
+    let mut p = Part::new("strings", "Pizzicato Section", 5.5, 0.3);
+    for (k, &n) in [48u8, 55, 60, 64, 62, 59, 55, 50, 53, 57, 60, 65, 64, 60, 55, 48].iter().enumerate() {
+        p.note(k as f32 * 0.3, n, 0.6 + 0.3 * ((k % 4 == 0) as u8 as f32), 0.2);
+    }
+    parts.push(p);
+    // Tremolo, cinematic.
+    let mut p = Part::new("strings", "Tremolo Strings", 5.0, 0.35);
+    p.events.push((0.0, Ev::Cc(1, 0.4)));
+    p.chord(0.0, &[40, 52, 59, 64], 0.8, 4.0);
+    for i in 0..=20 {
+        p.events.push((i as f32 * 0.2, Ev::Cc(1, 0.3 + 0.035 * i as f32)));
+    }
+    parts.push(p);
+    parts
+}
+
 #[test]
 #[ignore]
 fn render_acoustic_demo() {
-    let parts = guitar_parts();
+    let mut parts = guitar_parts();
+    parts.extend(string_parts());
     let mut out: Vec<f32> = Vec::new();
     println!("{:<28} {:>8} {:>10} {:>8}", "part", "audio s", "cpu ms", "x RT");
     for p in &parts {
