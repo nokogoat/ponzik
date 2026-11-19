@@ -31,7 +31,7 @@ pub use fm::FmSynth;
 pub use granular::Granular;
 pub use kick::Kick;
 pub use piano::Piano;
-pub use mallets::{MODEL_DATA as MALLET_MODELS, Mallets};
+pub use mallets::{MODEL_DATA as MALLET_MODELS, MODELS as MALLET_NAMES, Mallets};
 pub use organ::Organ;
 pub use pluck::Pluck;
 pub use pulse::{Pulse, PulseParams};

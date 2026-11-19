@@ -3015,6 +3015,23 @@ msgstr "Cloches tubulaires"
 msgid "Steel Drum"
 msgstr "Steel drum"
 
+# --- Keyboard visuals ---
+
+msgid "Drag: pull the drawbar out (louder) or push it in"
+msgstr "Glisser : tirer la tirette (plus fort) ou la repousser"
+
+msgid "Modes of the bar after the mallet\nDrag: hardness · wheel: instrument"
+msgstr "Modes de la lame après la mailloche\nGlisser : dureté · molette : instrument"
+
+msgid "Pickup: output for a soft and a hard strike\nDrag: gap · wheel: grit"
+msgstr "Micro : sortie pour une frappe douce et une frappe forte\nGlisser : écart · molette : grain"
+
+msgid "Pickup: output for a soft and a hard strike\nDrag: offset · wheel: distance"
+msgstr "Micro : sortie pour une frappe douce et une frappe forte\nGlisser : décalage · molette : distance"
+
+msgid "Rotary speaker: horn and drum\nMod wheel or Speed: slow, fast, stop"
+msgstr "Cabine rotative : pavillon et tambour\nMolette de modulation ou Vitesse : lent, rapide, arrêt"
+
 msgid "Saturator"
 msgstr "Saturateur"
 

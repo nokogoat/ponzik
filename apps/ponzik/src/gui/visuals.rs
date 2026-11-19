@@ -123,11 +123,11 @@ impl App {
         params.iter().find(|p| p.id == id)
     }
 
-    fn value_of(&self, device: Device, params: &[ParamInfo], id: u32) -> f32 {
+    pub(super) fn value_of(&self, device: Device, params: &[ParamInfo], id: u32) -> f32 {
         Self::info(params, id).map_or(0.0, |p| self.param_value(device, p))
     }
 
-    fn set_value_of(&mut self, device: Device, params: &[ParamInfo], id: u32, v: f32) {
+    pub(super) fn set_value_of(&mut self, device: Device, params: &[ParamInfo], id: u32, v: f32) {
         if let Some(p) = Self::info(params, id) {
             self.set_param_value(device, p, v);
         }
@@ -586,6 +586,7 @@ pub fn response_kind(kind: &str) -> Option<(Probe, f32)> {
         "char_delay" => Some((Probe::Echoes, 0.0)),
         "vintage_verb" => Some((Probe::Tail, 5.0)),
         "bus_comp" | "master_limiter" | "char_saturation" | "lofi" => Some((Probe::Drawn, 0.0)),
+        "rhodes" | "wurli" | "organ" | "mallets" => Some((Probe::Drawn, 0.0)),
         _ => None,
     }
 }
@@ -739,6 +740,9 @@ impl App {
             (Probe::Drawn, "bus_comp") => return self.bus_comp_graph(c, input, r, device, params),
             (Probe::Drawn, "master_limiter") => return self.limiter_graph(c, input, r, device, params),
             (Probe::Drawn, "char_saturation") => return self.char_saturation_graph(c, input, r, device, params),
+            (Probe::Drawn, "rhodes" | "wurli") => return self.ep_graph(c, input, r, device, params),
+            (Probe::Drawn, "organ") => return self.organ_graph(c, input, r, device, params),
+            (Probe::Drawn, "mallets") => return self.mallets_graph(c, input, r, device, params),
             (Probe::Drawn, _) => return self.lofi_graph(c, input, r, device, params),
             (Probe::Echoes, _) => return self.echoes_graph(c, input, r, device, kind, params),
             (Probe::Tail, _) => return self.tail_graph(c, input, r, device, kind, params),
@@ -772,7 +776,7 @@ impl App {
     /// Glisser horizontalement : `drag_id` de `range` unités sur toute la largeur ;
     /// molette : `wheel_id`, multiplié (`mul`) ou décalé de `step` par cran.
     #[allow(clippy::too_many_arguments)]
-    fn graph_gestures(
+    pub(super) fn graph_gestures(
         &mut self,
         input: &Input,
         id: u64,

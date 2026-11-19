@@ -44,6 +44,7 @@ mod record;
 mod session;
 mod settings;
 mod sync;
+mod keys_visuals;
 mod visuals;
 mod warping;
 mod theme;
