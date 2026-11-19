@@ -323,6 +323,14 @@ impl VoiceTracker {
         self.hop * self.decim
     }
 
+    /// Time between two analyses (one [`VoiceFrame`]) at `sample_rate`, in seconds.
+    pub fn hop_seconds(sample_rate: f32) -> f32 {
+        let sample_rate = sample_rate.max(8_000.0);
+        let decim = ((sample_rate / ANALYSIS_RATE).round() as usize).max(1);
+        let hop = ((HOP_SECONDS * sample_rate / decim as f32).round() as usize).max(1);
+        (hop * decim) as f32 / sample_rate
+    }
+
     /// Reaction time of the last note started from silence: from the voice's
     /// attack to the note, in seconds.
     pub fn reaction(&self) -> f32 {
@@ -1052,6 +1060,7 @@ mod tests {
                 }
             });
             assert_eq!(keys, [57], "at {sr} Hz");
+            assert_eq!(VoiceTracker::hop_seconds(sr), t.hop_samples() as f32 / sr);
         }
     }
 }
