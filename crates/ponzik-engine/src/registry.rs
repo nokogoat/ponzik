@@ -18,8 +18,8 @@ use crate::instruments::DrumMachine;
 use crate::instruments::DrumPads;
 use crate::instrument::Instrument;
 use crate::instruments::{
-    Bass303, DrumKind, DrumSynth, EPiano, ExternalMidi, FmSynth, Granular, Kick, Organ, Piano, Pluck, Pulse, Sampler, Slicer,
-    WaveSynth,
+    Bass303, DrumKind, DrumSynth, EPiano, ElectricPiano, ExternalMidi, FmSynth, Granular, Kick, Organ, Piano, Pluck,
+    Pulse, Sampler, Slicer, WaveSynth,
 };
 use crate::note_fx::{Arpeggiator, Chord, Humanizer, NoteFx, Repeat, ScaleSnap};
 
@@ -131,6 +131,20 @@ pub fn instruments() -> &'static [InstrumentKind] {
             category: "Keys",
             description: "FM electric piano, tine and bell, stereo tremolo",
             create: || Box::new(EPiano::new()),
+        },
+        InstrumentKind {
+            id: "rhodes",
+            name: "Tine Piano",
+            category: "Keys",
+            description: "Modeled tine electric piano: tone bar, magnetic pickup bark, felt dampers, stereo tremolo, phaser and chorus",
+            create: || Box::new(ElectricPiano::tine()),
+        },
+        InstrumentKind {
+            id: "wurli",
+            name: "Reed Piano",
+            category: "Keys",
+            description: "Modeled reed electric piano: electrostatic pickup growl, gritty preamp, tremolo",
+            create: || Box::new(ElectricPiano::reed()),
         },
         InstrumentKind {
             id: "organ",

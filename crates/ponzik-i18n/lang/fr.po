@@ -2918,6 +2918,47 @@ msgstr "C3"
 msgid "Rotary"
 msgstr "Cabine rotative"
 
+# --- Electric pianos ---
+
+msgid "Tine Piano"
+msgstr "Piano à lames"
+
+msgid "Reed Piano"
+msgstr "Piano à anches"
+
+msgid "Modeled tine electric piano: tone bar, magnetic pickup bark, felt dampers, stereo tremolo, phaser and chorus"
+msgstr "Piano électrique à lames modélisé : barre de tonalité, grognement du micro magnétique, étouffoirs en feutre, trémolo stéréo, phaser et chorus"
+
+msgid "Modeled reed electric piano: electrostatic pickup growl, gritty preamp, tremolo"
+msgstr "Piano électrique à anches modélisé : grognement du micro électrostatique, préampli granuleux, trémolo"
+
+msgid "Tine"
+msgstr "Lame"
+
+msgid "Reed"
+msgstr "Anche"
+
+msgid "Hammer"
+msgstr "Marteau"
+
+msgid "Damper"
+msgstr "Étouffoir"
+
+msgid "Pickup Offset"
+msgstr "Décalage du micro"
+
+msgid "Pickup Distance"
+msgstr "Distance du micro"
+
+msgid "Pickup Gap"
+msgstr "Écart du micro"
+
+msgid "Grit"
+msgstr "Grain"
+
+msgid "Auto Pan"
+msgstr "Panoramique auto"
+
 msgid "Saturator"
 msgstr "Saturateur"
 
