@@ -4,6 +4,7 @@
 // Les fonctions de dessin prennent naturellement position, taille et couleur.
 #![allow(clippy::too_many_arguments)]
 
+mod acoustic;
 mod app;
 mod arrange;
 mod assistant;

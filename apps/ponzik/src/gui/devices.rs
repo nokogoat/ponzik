@@ -157,6 +157,8 @@ pub(super) fn card_width(kind: &str, params: &'static [ParamInfo]) -> f32 {
         SAMPLE_W + GROUP_GAP
     } else if super::visuals::response_kind(kind).is_some() {
         RESPONSE_W + GROUP_GAP
+    } else if super::acoustic::acoustic_kind(kind) {
+        super::acoustic::ACOUSTIC_W + GROUP_GAP
     } else {
         0.0
     };
@@ -514,6 +516,10 @@ impl App {
         } else if super::visuals::response_kind(&kind).is_some() {
             self.response_graph(c, input, Rect::new(x, body.y + 4.0, RESPONSE_W, body.h - 10.0), device, &kind, params);
             x += RESPONSE_W + GROUP_GAP;
+        } else if super::acoustic::acoustic_kind(&kind) {
+            let w = super::acoustic::ACOUSTIC_W;
+            self.acoustic_visual(c, input, Rect::new(x, body.y + 4.0, w, body.h - 10.0), device, &kind, params);
+            x += w + GROUP_GAP;
         }
         let key = device_key(device);
         for (gi, g) in groups(params).into_iter().enumerate() {
