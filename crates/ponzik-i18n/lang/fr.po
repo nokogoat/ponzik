@@ -7555,12 +7555,6 @@ msgstr "Piano à queue"
 msgid "Modeled acoustic piano: stiff strings, felt hammers, soundboard, sympathetic resonance and real pedals, no samples"
 msgstr "Piano acoustique modélisé : cordes raides, marteaux de feutre, table d'harmonie, résonance sympathique et vraies pédales, sans échantillons"
 
-msgid "Hammer"
-msgstr "Marteau"
-
-msgid "Hardness"
-msgstr "Dureté"
-
 msgid "Velocity curve"
 msgstr "Courbe de vélocité"
 
