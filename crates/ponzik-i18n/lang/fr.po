@@ -7346,3 +7346,72 @@ msgstr "dessiné"
 
 msgid "{}\nUp to {:.0} ticks late · applied without moving the notes"
 msgstr "{}\nJusqu'à {:.0} ticks de retard · appliqué sans déplacer les notes"
+
+msgid "Grand Piano"
+msgstr "Piano à queue"
+
+msgid "Modeled acoustic piano: stiff strings, felt hammers, soundboard, sympathetic resonance and real pedals, no samples"
+msgstr "Piano acoustique modélisé : cordes raides, marteaux de feutre, table d'harmonie, résonance sympathique et vraies pédales, sans échantillons"
+
+msgid "Hammer"
+msgstr "Marteau"
+
+msgid "Hardness"
+msgstr "Dureté"
+
+msgid "Velocity curve"
+msgstr "Courbe de vélocité"
+
+msgid "Felt"
+msgstr "Feutre"
+
+msgid "Strings"
+msgstr "Cordes"
+
+msgid "Unison detune"
+msgstr "Désaccord des unissons"
+
+msgid "Stretch"
+msgstr "Étirement"
+
+msgid "Tuning"
+msgstr "Accordage"
+
+msgid "Material"
+msgstr "Matière"
+
+msgid "Toy rods"
+msgstr "Tiges de piano jouet"
+
+msgid "Celesta bars"
+msgstr "Lames de célesta"
+
+msgid "Lid"
+msgstr "Couvercle"
+
+msgid "Soundboard"
+msgstr "Table d'harmonie"
+
+msgid "Room"
+msgstr "Pièce"
+
+msgid "Noises"
+msgstr "Bruits"
+
+msgid "Hammer noise"
+msgstr "Bruit des marteaux"
+
+msgid "Release noise"
+msgstr "Bruit de relâche"
+
+msgid "Pedal noise"
+msgstr "Bruit des pédales"
+
+msgid "Perspective"
+msgstr "Perspective"
+
+msgid "Player"
+msgstr "Pianiste"
+
+msgid "Audience"
+msgstr "Public"

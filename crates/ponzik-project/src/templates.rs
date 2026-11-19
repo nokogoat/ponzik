@@ -229,7 +229,7 @@ fn ambient() -> Project {
     let mut p = base(tr("Ambient"), 80.0, 2, ScaleKind::Lydian);
     let pad = InstrumentDef::new("wavetable").with(20, 1.5).with(23, 3.0).with(10, 1_200.0).with(12, 0.0);
     let pad = p.add_channel(tr("Pad"), pad, 50);
-    let keys = p.add_channel(tr("Piano"), InstrumentDef::new("epiano").with(0, 0.3), 62);
+    let keys = p.add_channel(tr("Piano"), InstrumentDef::new("piano").with(0, 0.3).with(13, 0.4), 62);
     let pluck = p.add_channel(tr("Plucked strings"), InstrumentDef::new("pluck").with(1, 6.0), 74);
     let bell = p.add_channel(tr("Bell"), InstrumentDef::new("fm"), 86);
     p.channels[pad].gain = 0.5;

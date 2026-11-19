@@ -18,7 +18,8 @@ use crate::instruments::DrumMachine;
 use crate::instruments::DrumPads;
 use crate::instrument::Instrument;
 use crate::instruments::{
-    Bass303, DrumKind, DrumSynth, EPiano, ExternalMidi, FmSynth, Granular, Kick, Pluck, Pulse, Sampler, Slicer, WaveSynth,
+    Bass303, DrumKind, DrumSynth, EPiano, ExternalMidi, FmSynth, Granular, Kick, Piano, Pluck, Pulse, Sampler, Slicer,
+    WaveSynth,
 };
 use crate::note_fx::{Arpeggiator, Chord, Humanizer, NoteFx, Repeat, ScaleSnap};
 
@@ -116,6 +117,13 @@ pub fn instruments() -> &'static [InstrumentKind] {
             category: "Synths",
             description: "Physical Karplus-Strong string with pick, body and stereo width",
             create: || Box::new(Pluck::new()),
+        },
+        InstrumentKind {
+            id: "piano",
+            name: "Grand Piano",
+            category: "Keys",
+            description: "Modeled acoustic piano: stiff strings, felt hammers, soundboard, sympathetic resonance and real pedals, no samples",
+            create: || Box::new(Piano::new()),
         },
         InstrumentKind {
             id: "epiano",
