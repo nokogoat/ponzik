@@ -94,7 +94,7 @@ Proprietary instruments cannot be copied, so Ponzik builds its own equivalents.
 | DirectWave, channel sampler | Multisample sampler | ✅ Sampler |
 | Slicex, Fruity Slicer 2 | Loop slicing | ✅ Slicer |
 | Fruity Granulizer | Granular | ✅ Granular |
-| FL Keys, Plucked! | Piano, plucked strings | ✅ Electric Piano, Plucked Strings |
+| FL Keys, Plucked! | Piano, plucked strings | ✅ Electric Piano, Tine Piano, Reed Piano, Tonewheel Organ (with rotary speaker), Plucked Strings |
 | Autogun | FM preset player | ⬜ |
 | Layer, Patcher | Instrument stacking, modular chains | ⬜ |
 | Loop Starter | Generates genre loops in the Channel Rack | ⬜ |
@@ -107,7 +107,7 @@ Proprietary instruments cannot be copied, so Ponzik builds its own equivalents.
 | Operator | 4-operator FM | ✅ Ponzik FM |
 | Wavetable | Wavetable | ✅ Ponzik Wave |
 | Meld | Macro oscillators, MPE | ⬜ |
-| Collision, Tension, Electric | Physical modeling (percussion, strings, electric piano) | 🟡 Plucked Strings, Electric Piano |
+| Collision, Tension, Electric | Physical modeling (percussion, strings, electric piano) | 🟡 Mallets (modal marimba, vibes, xylophone, glockenspiel, celesta, kalimba, chimes, steel drum), Tine Piano and Reed Piano (modeled pickups), Plucked Strings |
 | Simpler, Sampler | Simple and multisample sampler | ✅ Sampler |
 | Drum Rack, Drum Sampler, Impulse | Pad-based drums | 🟡 DrumSynth, Drum Machine |
 | Granulator III | Granular | ✅ Granular |
