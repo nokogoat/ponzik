@@ -209,15 +209,20 @@ pub struct VoiceTracker {
     tau_max: usize,
     hop: usize,
     since_hop: usize,
-    /// Mean square of the input (fast follower) and its coefficients.
+    /// Mean square of the input (fast follower) and its coefficients; the
+    /// recent low of its level (starts high: it falls to the level at once).
     env: f32,
     env_attack: f32,
     env_release: f32,
     valley_db: f32,
     /// Input samples seen.
     clock: u64,
-    /// Where the current attack started (input samples).
+    /// Where the current attack started (input samples), and where the
+    /// level started rising from its low.
     onset_at: Option<u64>,
+    rising_since: Option<u64>,
+    /// Where the last note started.
+    last_start: u64,
     sounding: Option<Sounding>,
     /// Consecutive pitched hops agreeing with each other, and the last pitch.
     stable: u32,
@@ -269,9 +274,11 @@ impl VoiceTracker {
             env: 0.0,
             env_attack: 1.0 - ms(0.002),
             env_release: 1.0 - ms(0.01),
-            valley_db: -120.0,
+            valley_db: 0.0,
             clock: 0,
             onset_at: None,
+            rising_since: None,
+            last_start: 0,
             sounding: None,
             stable: 0,
             last_pitch: f32::NAN,
@@ -352,8 +359,9 @@ impl VoiceTracker {
         self.full.fill(0.0);
         (self.phase, self.pos, self.full_pos, self.filled, self.since_hop) = (0, 0, 0, 0, 0);
         self.env = 0.0;
-        self.valley_db = -120.0;
+        self.valley_db = 0.0;
         self.onset_at = None;
+        self.rising_since = None;
         self.sounding = None;
         self.stable = 0;
         self.last_pitch = f32::NAN;
@@ -416,12 +424,20 @@ impl VoiceTracker {
         self.valley_db = (self.valley_db + VALLEY_RISE_DB_PER_SEC * hop_secs).min(level_db);
         let gate = self.config.gate_db - if self.sounding.is_some_and(|s| !s.resting) { GATE_HYSTERESIS_DB } else { 0.0 };
         let mut attack = false;
+        // Where the level started to leave its low: the attack's start.
+        if level_db < self.valley_db + 3.0 {
+            self.rising_since = None;
+        } else if self.rising_since.is_none() {
+            let hop = self.hop_samples() as u64;
+            self.rising_since = Some(self.clock.saturating_sub(hop + (0.002 * self.sample_rate) as u64));
+        }
         if level_db >= self.config.gate_db && level_db - self.valley_db > ONSET_DB {
             attack = true;
-            // The attack started when the level left its low, a few hops ago
-            // at most: the follower's own rise is counted in.
-            let rise = ((level_db - self.valley_db) / 60.0 * 0.004 * self.sample_rate) as u64;
-            self.onset_at = Some(self.clock.saturating_sub(rise.min((0.006 * self.sample_rate) as u64)));
+            // One attack per rise: its start is kept while the level climbs.
+            let recent = self.onset_at.is_some_and(|o| self.clock - o < (0.1 * self.sample_rate) as u64);
+            if !recent {
+                self.onset_at = Some(self.rising_since.unwrap_or(self.clock));
+            }
             self.valley_db = level_db;
         }
         let detected = if level_db >= gate - 10.0 { self.detect() } else { None };
@@ -433,7 +449,7 @@ impl VoiceTracker {
             && pitch >= f32::from(c.low) - 0.5
             && pitch <= f32::from(c.high) + 0.5;
         self.decide(at, voiced, pitch, level_db, attack, emit);
-        let shown = if detected.is_some() && level_db >= gate { pitch } else { f32::NAN };
+        let shown = if voiced { pitch } else { f32::NAN };
         emit(at, VoiceEvent::Frame(VoiceFrame { pitch: shown, clarity, level_db, note: self.sounding.map(|s| s.key) }));
     }
 
@@ -554,7 +570,9 @@ impl VoiceTracker {
     }
 
     fn start(&mut self, at: usize, key: u8, level_db: f32, emit: &mut impl FnMut(usize, VoiceEvent)) {
-        let onset = self.onset_at.map_or(0, |o| self.clock.saturating_sub(o));
+        // Only an attack after the previous note's own counts.
+        let after = self.last_start + (0.06 * self.sample_rate) as u64;
+        let onset = self.onset_at.filter(|&o| o >= after).map_or(0, |o| self.clock.saturating_sub(o));
         // An attack long gone (a note re-entered after a slide) is not a reaction.
         let onset = if onset as f32 > 0.25 * self.sample_rate { 0 } else { onset };
         emit(at, VoiceEvent::NoteOn { key, velocity: self.velocity(level_db), onset: onset as u32 });
@@ -562,6 +580,7 @@ impl VoiceTracker {
             self.reaction = onset as f32 / self.sample_rate;
         }
         self.onset_at = None;
+        self.last_start = self.clock;
         self.sounding = Some(Sounding { key, start: self.clock, resting: false });
         self.last_bend = 0.0;
         self.candidate = None;
@@ -672,7 +691,8 @@ pub struct NoteSpan {
 /// of the real-time tracker. Starts are moved back to the attacks; notes
 /// shorter than [`VoiceConfig::min_note`] are dropped. Allocates.
 pub fn transcribe(signal: &[f32], sample_rate: f32, config: &VoiceConfig) -> Vec<NoteSpan> {
-    let mut t = VoiceTracker::new(sample_rate, VoiceConfig { mode: VoiceMode::Normal, retune: 0.0, ..*config });
+    // The shortest note is enforced on the result, on the notes' real lengths.
+    let mut t = VoiceTracker::new(sample_rate, VoiceConfig { mode: VoiceMode::Normal, retune: 0.0, min_note: 0.0, ..*config });
     let mut notes: Vec<NoteSpan> = Vec::new();
     let mut open: Option<NoteSpan> = None;
     let tail = vec![0.0; (0.3 * sample_rate) as usize];
@@ -852,6 +872,18 @@ mod tests {
         let worst = lat.iter().cloned().fold(0.0, f32::max);
         eprintln!("voice → note latency per note (ms): {lat:.1?}\nmean {mean:.1} ms, worst {worst:.1} ms");
         assert!(mean < 22.0 && worst < 30.0, "mean {mean} ms, worst {worst} ms");
+        // Each note knows its own reaction time: where it was sung.
+        let events = run(&signal, VoiceConfig::default());
+        let onsets: Vec<f32> = events
+            .iter()
+            .filter_map(|e| match e.1 {
+                VoiceEvent::NoteOn { onset, .. } => Some(onset as f32 / SR * 1000.0),
+                _ => None,
+            })
+            .collect();
+        for (o, l) in onsets.iter().zip(&lat) {
+            assert!((o - l).abs() < 6.0, "reported reaction {o} ms, measured {l} ms");
+        }
     }
 
     #[test]
