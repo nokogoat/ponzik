@@ -200,7 +200,12 @@ pub(crate) struct TubeDrive {
     os: Oversampler2x,
     dc: f32,
     dc_coef: f32,
+    /// Curve of the last drive setting: (drive, gain, bias, rest, makeup).
+    curve: (f32, f32, f32, f32, f32),
 }
+
+/// Typical level into the amp: the makeup keeps it where it was.
+const DRIVE_REF: f32 = 0.25;
 
 impl TubeDrive {
     pub fn set_sample_rate(&mut self, sample_rate: f32) {
@@ -213,22 +218,29 @@ impl TubeDrive {
         self.dc = 0.0;
     }
 
-    /// `drive` in [0, 1]: clean to growling; levels stay comparable.
+    #[inline]
+    fn shape(u: f32) -> f32 {
+        // A tube clips its two halves differently.
+        if u > 0.0 { u.tanh() } else { 0.85 * (u / 0.85).tanh() }
+    }
+
+    /// `drive` in [0, 1]: clean to growling; a signal around −12 dBFS keeps
+    /// its level, quieter ones come up, louder ones flatten.
     #[inline]
     pub fn process(&mut self, x: f32, drive: f32) -> f32 {
         if drive <= 0.001 {
             return x;
         }
-        let gain = 1.0 + 24.0 * drive * drive;
-        let bias = 0.18 * drive;
-        let off = (gain * bias).tanh();
-        let makeup = 1.0 / gain.powf(0.85);
-        let y = self.os.process(x, |v| {
-            let u = gain * v + gain * bias;
-            // A tube clips its two halves differently.
-            let s = if u > 0.0 { u.tanh() } else { 0.85 * (u / 0.85).tanh() };
-            (s - off) * makeup
-        });
+        if drive != self.curve.0 {
+            let gain = 1.0 + 24.0 * drive * drive;
+            // Bias after the gain: the tube idles off-centre, never saturated at rest.
+            let bias = 0.4 * drive;
+            let rest = Self::shape(bias);
+            let makeup = DRIVE_REF / (Self::shape(gain * DRIVE_REF + bias) - rest).max(1e-3);
+            self.curve = (drive, gain, bias, rest, makeup);
+        }
+        let (_, gain, bias, rest, makeup) = self.curve;
+        let y = self.os.process(x, |v| (Self::shape(gain * v + bias) - rest) * makeup);
         self.dc += (y - self.dc) * self.dc_coef;
         flush_denormal(y - self.dc)
     }
