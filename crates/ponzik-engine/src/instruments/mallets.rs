@@ -334,9 +334,9 @@ impl Instrument for Mallets {
             v.modes[k].tune(hz * m.ratios[k], v.t60[k], sr);
         }
         v.count = count;
-        // Tube: unit gain at resonance, then scaled by the setting.
         v.tube.tune(hz * m.ratios[0], TUBE_T60, sr);
-        v.tube_in = resonator * 1.6 * 6.9 / (std::f32::consts::TAU * hz * TUBE_T60);
+        // A two-pole resonance peaks at 1 / (2 (1 − r)) = T60 · sr / 13.8.
+        v.tube_in = resonator * 1.6 * 13.8 / (TUBE_T60 * sr);
         v.strike.hit(1.0, contact, sr);
     }
 
