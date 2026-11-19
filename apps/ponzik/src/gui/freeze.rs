@@ -348,6 +348,10 @@ impl App {
                 .tip(tr("From the clip's pitches (chromagram), then apply it to the project"))
                 .sep(),
         );
+        v.push(
+            MenuItem::new(Icon::Voice, tr("Convert to notes"), Action::AudioToNotes(i))
+                .tip(tr("A sung or played melody (one note at a time) into a pattern on the selected channel")),
+        );
         v.push(MenuItem::new(Icon::Groove, tr("Extract a groove"), Action::ExtractAudioGroove(i)).tip(tr("Timing and accents of the clip's attacks, saved in the groove pool")));
         v.push(MenuItem::new(Icon::Trash, tr("Delete the clip"), Action::DeleteAudioClip(i)).tip(tr("Hold right-click: sweep to erase")).sep());
         (name, v)

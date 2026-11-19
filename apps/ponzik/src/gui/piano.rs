@@ -803,6 +803,18 @@ impl App {
             }
         }
 
+        // Notes being recorded (keyboard, controller or voice): they grow until released.
+        if self.record && self.playing && self.project.mode == PlayMode::Pattern(pat) {
+            let now = self.cycle_position() as f32;
+            for h in self.held.iter().filter(|h| h.channel == ch) {
+                let Some(start) = h.start.map(|s| s as f32) else { continue };
+                let end = if now >= start { now } else { pat_len };
+                let nr = Rect::new(x_of(start), y_of(h.key as f32) + 1.0, (x_of(end) - x_of(start)).max(3.0), KEY_H - 2.0);
+                c.fill_rrect(nr, 4.0, t.negative.alpha(0.3));
+                c.stroke_rrect(nr, 4.0, 1.0, t.negative.alpha(0.85));
+            }
+        }
+
         // Tête de lecture.
         if self.playing && self.project.mode == PlayMode::Pattern(pat) {
             let x = x_of(self.cycle_position() as f32);
@@ -825,7 +837,8 @@ impl App {
             let key = k as u8;
             let y = y_of(k as f32);
             let r = Rect::new(keys.x, y, keys.w, KEY_H);
-            let playing = self.preview == Some((ch, key));
+            // Previewed, held on a keyboard or a controller, or sung.
+            let playing = self.preview == Some((ch, key)) || self.held.iter().any(|h| h.channel == ch && h.key == key);
             let hov = hover_key == Some(key);
             if is_black(key) {
                 let fill = if playing { t.accent } else { t.bg_deep.mix(t.raised_hi, hov as u8 as f32 * 0.6) };
@@ -842,6 +855,13 @@ impl App {
             if key % 12 == 0 {
                 self.text_right(c, self.f.mono_med, 10.0, r.right() - 6.0, r.y + r.h * 0.5, &note_name(key), t.bg_deep.alpha(0.7));
             }
+        }
+        // The voice's pitch now, between the keys: a cursor that follows it.
+        if let Some(pv) = self.voice.live_pitch().filter(|_| self.voice_channel() == Some(ch)) {
+            let y = y_of(pv) + KEY_H * 0.5;
+            c.fill_rect(Rect::new(keys.x, y - 1.0, keys.w, 2.0), t.accent_hot.alpha(0.85));
+            c.fill_circle(keys.right() - 6.0, y, 6.0, t.accent.alpha(0.25));
+            c.fill_circle(keys.right() - 6.0, y, 3.0, t.accent_hot);
         }
         let kid = wid("pr-keys", 0, 0);
         if self.hovered(input, kid, keys) && input.pressed {

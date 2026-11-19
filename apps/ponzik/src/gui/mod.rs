@@ -51,6 +51,7 @@ mod warping;
 mod theme;
 mod tools;
 mod tour;
+mod voice;
 mod tracks;
 mod widgets;
 
@@ -739,6 +740,12 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     if std::env::var_os("PONZIK_CAPTURE").is_some() {
         app.screenshot_capture();
     }
+    // PONZIK_VOICE=1|piano|chord: voice to notes, a simulated singer on the
+    // input (through the engine's full-duplex path).
+    let mut singer = std::env::var("PONZIK_VOICE").ok().map(|mode| {
+        app.screenshot_voice(&mode);
+        voice::DemoSinger::new(SR as f32)
+    });
     // PONZIK_CLIP=audio[,markers|tones|off]|pattern: a clip and its clip panel.
     if let Ok(spec) = std::env::var("PONZIK_CLIP") {
         app.screenshot_clip(&spec);
@@ -797,6 +804,14 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     let file_drop: Option<Vec<std::path::PathBuf>> =
         std::env::var("PONZIK_FILE_DROP").ok().map(|v| v.split('|').map(std::path::PathBuf::from).collect());
     let mut audio = vec![0.0f32; 800 * 2];
+    let mut sung = vec![0.0f32; 800 * 2];
+    // The singer sings a few seconds before the capture: the trail fills up.
+    if let Some(s) = singer.as_mut() {
+        for _ in 0..200 {
+            sing_block(&mut engine, s, &mut sung, &mut audio);
+            app.frame(&mut canvas, &input, 1.0 / 60.0);
+        }
+    }
     // ~1,6 s : la tête de lecture tombe sur un temps fort, les VU-mètres sont lancés.
     // PONZIK_BENCH : temps moyen d'une image, complète puis suivie (seules les
     // zones modifiées sont rastérisées, comme dans la fenêtre).
@@ -810,7 +825,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
         } else if i == 9 {
             input.dropped = None;
         }
-        engine.process(&mut audio, 2);
+        match singer.as_mut() {
+            Some(s) => sing_block(&mut engine, s, &mut sung, &mut audio),
+            None => engine.process(&mut audio, 2),
+        }
         app.editors_tick();
         let a0 = crate::alloc_count::allocations();
         let t0 = Instant::now();
@@ -846,6 +864,16 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     }
     let png = encode_png(canvas.pixels(), pw, ph);
     std::fs::write(path, png).map_err(|e| format!("{path}: {e}"))
+}
+
+/// One image of audio with the simulated singer on the input.
+fn sing_block(engine: &mut ponzik_engine::Engine, singer: &mut voice::DemoSinger, sung: &mut [f32], audio: &mut [f32]) {
+    for frame in sung.chunks_exact_mut(2) {
+        let x = singer.next_sample();
+        frame[0] = x;
+        frame[1] = x;
+    }
+    engine.process_duplex(sung, 2, audio, 2);
 }
 
 #[cfg(test)]

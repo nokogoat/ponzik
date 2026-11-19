@@ -7848,3 +7848,132 @@ msgstr "Tuba"
 
 msgid "Winds"
 msgstr "Bois"
+
+msgid "A note per sung note\nNew pitches and new attacks retrigger"
+msgstr "Une note par note chantée\nChaque nouvelle hauteur et chaque attaque relancent"
+
+msgid "A sung or played melody (one note at a time) into a pattern on the selected channel"
+msgstr "Une mélodie chantée ou jouée (une note à la fois) devient un pattern sur le canal choisi"
+
+msgid "Add a channel to play the notes first"
+msgstr "Ajoutez d'abord un canal pour jouer les notes"
+
+msgid "An octave down"
+msgstr "Une octave plus bas"
+
+msgid "An octave up"
+msgstr "Une octave plus haut"
+
+msgid "Audio to notes"
+msgstr "Audio en notes"
+
+msgid "Confidence"
+msgstr "Fiabilité"
+
+msgid "Convert to notes"
+msgstr "Convertir en notes"
+
+msgid "Every semitone"
+msgstr "Tous les demi-tons"
+
+msgid "Gate\nQuieter than this is ignored (room noise, breath)"
+msgstr "Seuil\nPlus faible, c'est ignoré (bruit de la pièce, souffle)"
+
+msgid "Hear voice"
+msgstr "Entendre la voix"
+
+msgid "Hear your dry voice on the instrument's mixer track\nUse headphones to avoid feedback"
+msgstr "Entendre votre voix brute sur la piste de mixage de l'instrument\nUtilisez un casque pour éviter le larsen"
+
+msgid "Highest note of your voice"
+msgstr "Note la plus aiguë de votre voix"
+
+msgid "In 1"
+msgstr "Entrée 1"
+
+msgid "In 2"
+msgstr "Entrée 2"
+
+msgid "Lowest note of your voice\nHigher reacts faster (shorter analysis)"
+msgstr "Note la plus grave de votre voix\nPlus haut, ça réagit plus vite (analyse plus courte)"
+
+msgid "Microphone, input channel and level\nOpens the recording panel"
+msgstr "Micro, canal d'entrée et niveau\nOuvre le panneau d'enregistrement"
+
+msgid "No input"
+msgstr "Aucune entrée"
+
+msgid "No pitched notes found in the clip"
+msgstr "Aucune note tonale trouvée dans le clip"
+
+msgid "Notes overlap when the pitch moves\nSynths with portamento glide"
+msgstr "Les notes se chevauchent quand la hauteur bouge\nLes synthés avec portamento glissent"
+
+msgid "Pick a project scale in the top bar to snap to it"
+msgstr "Choisissez une gamme du projet dans la barre du haut pour vous y caler"
+
+msgid "Plays {}"
+msgstr "Joue {}"
+
+msgid "Reaction about {} ms + audio {} ms"
+msgstr "Réaction d'environ {} ms + audio {} ms"
+
+msgid "Reaction {} ms + audio {} ms = {} ms from voice to sound"
+msgstr "Réaction {} ms + audio {} ms = {} ms de la voix au son"
+
+msgid "Record in pattern mode to write the notes · Ctrl+Shift+C: capture"
+msgstr "Enregistrez en mode pattern pour écrire les notes · Ctrl+Maj+C : capturer"
+
+msgid "Recording: played notes go into \"{}\""
+msgstr "Enregistrement : les notes jouées vont dans « {} »"
+
+msgid "Retune"
+msgstr "Recalage"
+
+msgid "Retune\n0 %: hard snap to the note (robotic)\n100 %: the note follows your bends and vibrato"
+msgstr "Recalage\n0 % : calée net sur la note (effet robot)\n100 % : la note suit vos glissés et votre vibrato"
+
+msgid "Sing or hum"
+msgstr "Chantez ou fredonnez"
+
+msgid "Snap"
+msgstr "Caler"
+
+msgid "Snap to the project scale\nOnly its notes are played"
+msgstr "Caler sur la gamme du projet\nSeules ses notes sont jouées"
+
+msgid "Snap to the project scale\nPick a scale in the top bar first"
+msgstr "Caler sur la gamme du projet\nChoisissez d'abord une gamme dans la barre du haut"
+
+msgid "The last note keeps sounding through silences"
+msgstr "La dernière note continue de sonner pendant les silences"
+
+msgid "Transpose the notes, in semitones\nDouble-click: 0"
+msgstr "Transposer les notes, en demi-tons\nDouble-clic : 0"
+
+msgid "Turn the voice on to see your pitch"
+msgstr "Activez la voix pour voir votre hauteur"
+
+msgid "Velocity sensitivity\nHow much your loudness sets the velocity"
+msgstr "Sensibilité à la vélocité\nÀ quel point votre volume règle la vélocité"
+
+msgid "Voice range"
+msgstr "Tessiture"
+
+msgid "Voice to Notes"
+msgstr "Voix en notes"
+
+msgid "Voice to notes off"
+msgstr "Voix en notes désactivée"
+
+msgid "Voice to notes on or off"
+msgstr "Activer ou couper la voix en notes"
+
+msgid "Voice to notes: sing or hum to play the selected instrument\nRight-click: options"
+msgstr "Voix en notes : chantez ou fredonnez pour jouer l'instrument choisi\nClic droit : options"
+
+msgid "Voice to notes: sing or hum to play {}"
+msgstr "Voix en notes : chantez ou fredonnez pour jouer {}"
+
+msgid "Waiting for your voice…"
+msgstr "En attente de votre voix…"

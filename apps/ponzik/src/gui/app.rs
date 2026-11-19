@@ -398,6 +398,8 @@ pub enum Action {
     DetectKey(super::groove::KeySource),
     /// Saves the groove of an audio clip's attacks in the pool.
     ExtractAudioGroove(usize),
+    /// An audio clip's monophonic line into a pattern.
+    AudioToNotes(usize),
 }
 
 /// Ligne de menu : une icône (ou la couleur d'un pattern), un nom court, une
@@ -690,6 +692,8 @@ pub struct App {
     taps: Vec<f32>,
     /// Enregistrement audio : entrée, pistes armées, prises, panneau.
     pub rec: super::record::RecordState,
+    /// Voice to notes: the toggle, its panel and the notes sung.
+    pub voice: super::voice::VoiceState,
     /// Piste en solo (non enregistrée) : les autres sont coupées dans le moteur.
     pub solo: Option<usize>,
     /// Playing state of the Session view (not saved).
@@ -868,6 +872,7 @@ impl App {
             session_ui: Default::default(),
             solo: None,
             rec: Default::default(),
+            voice: Default::default(),
             start_marker: 0.0,
             clipboard_notes: Vec::new(),
             clipboard_clip: None,
@@ -1843,6 +1848,7 @@ impl App {
         self.engine.collect_garbage();
         self.poll_warps();
         self.record_tick(dt);
+        self.voice_tick();
         self.position = self.engine.position();
         self.advance_session();
         // Tant que le moteur n'a pas reçu l'ordre de lecture, le pré-compte demandé reste affiché.
@@ -1876,12 +1882,17 @@ impl App {
 
     /// Position dans la boucle courante, en ticks.
     pub fn cycle_position(&self) -> f64 {
+        self.cycle_of(self.position)
+    }
+
+    /// Where song position `tick` falls in the current loop, in ticks.
+    pub fn cycle_of(&self, tick: f64) -> f64 {
         match self.project.mode {
             PlayMode::Pattern(p) => {
                 let len = self.project.patterns.get(p).map_or(TICKS_PER_BAR, |p| p.len.max(1)) as f64;
-                self.position.rem_euclid(len)
+                tick.rem_euclid(len)
             }
-            PlayMode::Song | PlayMode::Session => self.position,
+            PlayMode::Song | PlayMode::Session => tick,
         }
     }
 
@@ -1898,6 +1909,7 @@ impl App {
             || self.track_meters.iter().any(Meter::active)
             || self.channel_meters.iter().any(Meter::active)
             || self.rec.needs_redraw()
+            || self.voice.needs_redraw()
     }
 
     /// Vrai si l'image doit suivre à 60 images/s : animation, glisser, défilement.
@@ -2023,7 +2035,7 @@ impl App {
         };
         // Séparateurs et fenêtres flottantes : tailles des zones, et souris captée au-dessus.
         let (sb, pn, covered) = self.layout_begin(ui, w, h);
-        let covered = covered || self.record_covers(ui);
+        let covered = covered || self.record_covers(ui) || self.voice_covers(ui);
         let below;
         let under = if covered {
             below = super::float::masked(ui);
@@ -2046,6 +2058,7 @@ impl App {
         self.top_bar(c, under, Rect::new(0.0, 0.0, w, TOP_BAR));
         self.float_layer(c, ui);
         self.record_panel(c, ui, Rect::new(0.0, 0.0, w, h));
+        self.voice_panel(c, ui, Rect::new(0.0, 0.0, w, h));
         if self.popup.is_none() {
             self.recovery_prompt(c, input, w);
             self.learn_banner(c, input, w);
@@ -2209,6 +2222,8 @@ impl App {
                 let col = if self.rec.clipped { self.theme.negative } else { self.theme.accent };
                 c.fill_rrect(Rect::new(mic.x + 8.0, mic.bottom() - 5.0, (mic.w - 16.0) * lv, 2.0), 1.0, col);
             }
+            x += 40.0;
+            self.voice_button(c, input, Rect::new(x, cy - 18.0, 36.0, 36.0));
             x += 40.0;
             self.auto_arm_button(c, input, Rect::new(x, cy - 18.0, 36.0, 36.0));
             x += 40.0;
@@ -3949,6 +3964,7 @@ impl App {
             }
             Action::DetectKey(source) => self.detect_key(source, anchor),
             Action::ExtractAudioGroove(i) => self.extract_audio_groove(i),
+            Action::AudioToNotes(i) => self.audio_clip_to_notes(i),
             Action::OpenTool(tool) => self.open_tool(tool, anchor),
             Action::JumpHistory(n) => self.jump_history(n),
             Action::RemoveAutomation(target) => {
@@ -4386,7 +4402,7 @@ pub fn key_name(key: u8) -> &'static str {
 }
 
 /// « A minor », « D dorian » ; « Chromatic » sans gamme.
-fn scale_label(key: u8, scale: ScaleKind) -> String {
+pub(super) fn scale_label(key: u8, scale: ScaleKind) -> String {
     let mode = match scale {
         ScaleKind::Chromatic => return tr("Chromatic").into(),
         ScaleKind::Major => tr("major"),

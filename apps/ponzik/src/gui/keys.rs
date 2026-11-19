@@ -88,15 +88,24 @@ impl App {
     }
 
     pub fn live_note_off(&mut self, code: u16) {
+        self.end_held(code, None);
+    }
+
+    /// Ends a held note; recording, it is written into the pattern, ending
+    /// at `end` (in the loop, ticks) or now. The voice's notes are already
+    /// played by the engine: only the keyboard's are sent.
+    pub(super) fn end_held(&mut self, code: u16, end: Option<f64>) {
         let Some(i) = self.held.iter().position(|h| h.code == code) else { return };
         let h = self.held.remove(i);
-        self.send(Command::NoteOff { channel: h.channel, note: h.key });
+        if !super::voice::is_voice_code(code) {
+            self.send(Command::NoteOff { channel: h.channel, note: h.key });
+        }
         let now = self.ctl.now();
         self.note_log.note_off(h.channel, h.key, now);
         let Some(start) = h.start else { return };
         let pat = self.project.current_pattern;
         let len_pat = self.project.patterns[pat].len.max(1) as f64;
-        let mut len = self.cycle_position() - start;
+        let mut len = end.unwrap_or_else(|| self.cycle_position()) - start;
         if len <= 0.0 {
             len += len_pat;
         }
@@ -153,7 +162,7 @@ impl App {
 
     /// Relâche tout (perte du focus, arrêt).
     pub fn release_all_held(&mut self) {
-        let codes: Vec<u16> = self.held.iter().map(|h| h.code).collect();
+        let codes: Vec<u16> = self.held.iter().map(|h| h.code).filter(|&c| !super::voice::is_voice_code(c)).collect();
         for code in codes {
             self.live_note_off(code);
         }

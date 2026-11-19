@@ -189,6 +189,8 @@ pub enum Icon {
     Groove,
     /// A magnifying glass over a note: detect the key.
     Detect,
+    /// A microphone and a note: voice to notes.
+    Voice,
 }
 
 /// Diagonal stripes over `r` (clipped to it): offline clips and samples.
@@ -469,6 +471,15 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
                 let x = -7.0 + i as f32 * 4.0 + dx;
                 c.fill_rrect(rr(x, 5.5 - h, 2.2, h), 1.0 * s, col.alpha(if dx > 0.0 { 0.65 } else { 1.0 }));
             }
+        }
+        Icon::Voice => {
+            // Small microphone on the left, an eighth note on the right.
+            c.stroke_rrect(rr(-7.6, -7.2, 4.6, 8.6), 2.3 * s, stroke, col);
+            c.stroke_arc(cx - 5.3 * s, cy - 1.6 * s, 4.3 * s, 0.2, std::f32::consts::PI - 0.2, stroke * 0.9, col);
+            c.stroke_polyline(&[p(-5.3, 2.7), p(-5.3, 6.6)], stroke * 0.9, col);
+            c.stroke_polyline(&[p(-7.8, 6.8), p(-2.8, 6.8)], stroke * 0.9, col);
+            c.fill_circle(cx + 3.4 * s, cy + 4.6 * s, 2.5 * s, col);
+            c.stroke_polyline(&[p(5.6, 4.4), p(5.6, -6.8), p(8.2, -3.8)], stroke, col);
         }
         Icon::Detect => {
             c.stroke_circle(cx - 1.5 * s, cy - 1.5 * s, 5.2 * s, stroke, col);
