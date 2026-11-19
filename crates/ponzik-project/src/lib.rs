@@ -56,6 +56,7 @@ pub mod session;
 pub mod templates;
 mod tracks;
 pub mod transform;
+pub mod voice;
 pub mod warp;
 
 pub use arrange::{MARKER_COLORS, Placement, TimeSlice};

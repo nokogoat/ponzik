@@ -492,6 +492,11 @@ impl Project {
         self.scale.contains(self.key, note)
     }
 
+    /// Pitch classes of the project's scale as a mask (bit 0: C … bit 11: B).
+    pub fn scale_mask(&self) -> u16 {
+        self.scale.intervals().iter().fold(0, |m, &i| m | 1 << ((self.key % 12 + i) % 12))
+    }
+
     /// Note de la gamme du projet la plus proche (« coller à la gamme »).
     pub fn snap(&self, note: u8) -> u8 {
         self.scale.snap(self.key, note)
