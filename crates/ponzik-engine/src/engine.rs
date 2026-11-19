@@ -7,6 +7,7 @@ use ponzik_dsp::util::balance_gains;
 use crate::audition::Audition;
 use crate::effect::Effect;
 use crate::freeze::{FreezeClock, Frozen, Tap};
+use crate::voice::{VoiceInput, VoiceReport, VoiceReports, VoiceSettings};
 use crate::input::{CALIBRATION_CLICKS, InputChain, InputConsumer, InputSource, InputStrip, RecordBuffer, RecordChunk, calibration_click, deinterleave};
 use crate::instrument::Instrument;
 use crate::meter::{PeakMeter, peak};
@@ -162,6 +163,8 @@ pub enum Command {
     /// Ports (bit par indice de port) qui reçoivent l'horloge MIDI, Start,
     /// Stop, Continue et Song Position Pointer ; 0 : horloge coupée.
     SetMidiClock { ports: u32 },
+    /// Voice to notes: the input plays the chosen channel's instrument.
+    SetVoice(VoiceSettings),
 }
 
 impl std::fmt::Debug for Command {
@@ -219,6 +222,7 @@ impl std::fmt::Debug for Command {
             Command::Calibrate(_) => "Calibrate",
             Command::SetMidiOut(_) => "SetMidiOut",
             Command::SetMidiClock { .. } => "SetMidiClock",
+            Command::SetVoice(_) => "SetVoice",
         };
         f.write_str(name)
     }
@@ -318,6 +322,7 @@ pub struct EngineHandle {
     recordings: Vec<Box<RecordBuffer>>,
     calibration: Option<Box<RecordBuffer>>,
     sample_rate: f32,
+    voice: VoiceReports,
 }
 
 impl EngineHandle {
@@ -466,6 +471,11 @@ impl EngineHandle {
     }
 
     /// Enregistrements terminés depuis le dernier appel (tampons vides compris).
+    /// Voice to notes: pitch frames and notes played since the last call.
+    pub fn drain_voice(&mut self, f: impl FnMut(VoiceReport)) {
+        self.voice.drain(f);
+    }
+
     pub fn take_recordings(&mut self) -> Vec<Box<RecordBuffer>> {
         self.collect_garbage();
         std::mem::take(&mut self.recordings)
@@ -546,6 +556,8 @@ pub struct Engine {
     /// les canaux sont rendus en parallèle ; additionné ensuite dans l'ordre.
     lanes_l: Vec<f32>,
     lanes_r: Vec<f32>,
+    /// Voice to notes: tracker of the input and its notes of the block.
+    voice: VoiceInput,
 }
 
 /// État de lecture d'un clip audio entre deux blocs.
@@ -793,6 +805,7 @@ impl Engine {
             parallel: AtomicBool::new(false),
             record_room: std::array::from_fn(|_| AtomicU64::new(0)),
         });
+        let (voice, voice_reports) = VoiceInput::new(sample_rate, MAX_BLOCK);
         let mut voices = Vec::with_capacity(MAX_AUDIO_VOICES);
         voices.resize(sequence.audio_clips.len().min(MAX_AUDIO_VOICES), AudioVoice::default());
         let engine = Engine {
@@ -842,6 +855,7 @@ impl Engine {
             parallel_on: true,
             lanes_l: Vec::new(),
             lanes_r: Vec::new(),
+            voice,
         };
         let handle = EngineHandle {
             commands: tx,
@@ -851,6 +865,7 @@ impl Engine {
             recordings: Vec::new(),
             calibration: None,
             sample_rate,
+            voice: voice_reports,
         };
         (engine, handle)
     }
@@ -1364,6 +1379,17 @@ impl Engine {
         self.mixer.freeze_clock = freeze;
         self.midi_clock.process(&mut self.midi, self.playing, pos_start, contiguous, n, to, &frame_of, self.clock);
 
+        // The input is read before the channels play: the voice's notes
+        // start in this block, on their sample.
+        let has_input = self.read_input(input, in_channels, n);
+        self.voice.analyze(has_input.then(|| (&self.input_l[..n], &self.input_r[..n])));
+        let view = self.sequence.tempo_view();
+        for e in &mut self.voice.events {
+            if self.playing {
+                e.2 = view.tick_at_secs(t0 + e.0 as f64 / sr);
+            }
+        }
+
         self.mixer.clear(n);
         self.modulate_channels(n);
         self.mixer.clock = self.mod_clock();
@@ -1375,6 +1401,7 @@ impl Engine {
         let mut i = 0;
         let mut next_event = 0;
         let mut next_ctl = 0;
+        let mut next_voice = 0;
         while i < n {
             let now = self.clock + i as u64;
             // Controllers first: a bend on a note's start applies to it.
@@ -1414,6 +1441,14 @@ impl Engine {
                 }
             }
             next_event = due;
+            // Notes of the voice, like a controller's.
+            while let Some(&(frame, ev, tick)) = self.voice.events.get(next_voice) {
+                if frame > i {
+                    break;
+                }
+                next_voice += 1;
+                self.voice.apply(ev, tick, &mut self.channels, now);
+            }
             for ch in &mut self.channels {
                 ch.flush(now);
             }
@@ -1423,6 +1458,9 @@ impl Engine {
                 end = end.min(frame.clamp(i + 1, n));
             }
             if let Some(&(frame, _, _)) = self.ctl_events.get(next_ctl) {
+                end = end.min(frame.clamp(i + 1, n));
+            }
+            if let Some(&(frame, _, _)) = self.voice.events.get(next_voice) {
                 end = end.min(frame.clamp(i + 1, n));
             }
             let next_off = self.channels.iter().filter_map(Channel::next_off).min();
@@ -1444,7 +1482,9 @@ impl Engine {
         }
 
         self.render_audio_clips(pos_start, n, t0);
-        self.capture_input(input, in_channels, pos_start, n, spt);
+        if has_input {
+            self.route_input(pos_start, n, spt);
+        }
         self.metronome_click(pos_start, n, t0, spt);
         match active {
             Some(pool) => self.mixer.process_parallel(n, &self.state.track_peaks, pool),
@@ -1495,16 +1535,15 @@ impl Engine {
     }
 
     /// Lit l'entrée (directe en duplex, sinon la file) : calibrage sur l'entrée
-    /// brute, tranche d'entrée, crête, écoute des pistes, puis prises si le
-    /// transport tourne.
-    fn capture_input(&mut self, direct: &[f32], in_channels: usize, pos_start: f64, n: usize, spt: f64) {
+    /// brute, tranche d'entrée, crête. Faux sans entrée.
+    fn read_input(&mut self, direct: &[f32], in_channels: usize, n: usize) -> bool {
         let (l, r) = (&mut self.input_l[..n], &mut self.input_r[..n]);
         if in_channels > 0 {
             deinterleave(direct, in_channels, l, r);
         } else if let Some(input) = self.input.as_mut() {
             input.read(l, r);
         } else {
-            return;
+            return false;
         }
         if let Some(cal) = self.calibration.as_mut() {
             cal.write(l, r);
@@ -1519,6 +1558,11 @@ impl Engine {
             self.state.input_clip.store(true, Ordering::Relaxed);
         }
         self.state.input_peak.record(peak(l), peak(r));
+        true
+    }
+
+    /// Écoute des pistes, puis prises si le transport tourne.
+    fn route_input(&mut self, pos_start: f64, n: usize, spt: f64) {
         for track in 0..self.mixer.len() {
             let Some(source) = self.mixer.monitor[track] else { continue };
             let (sl, sr) = source.pick(&self.input_l[..n], &self.input_r[..n]);
@@ -1792,6 +1836,8 @@ impl Engine {
                 self.count_in = 0.0;
                 self.playing = false;
                 self.silence_all();
+                let now = self.clock;
+                self.voice.silence(&mut self.channels, now);
                 self.mixer.reset_effects();
                 self.finish_recording(None);
             }
@@ -1824,6 +1870,8 @@ impl Engine {
             }
             Command::RemoveChannel(idx) => {
                 if idx < self.channels.len() {
+                    let now = self.clock;
+                    self.voice.silence(&mut self.channels, now);
                     let mut ch = self.channels.remove(idx);
                     // Un instrument externe ne doit laisser aucune note pendue.
                     ch.silence();
@@ -2076,6 +2124,10 @@ impl Engine {
             }
             Command::SetLowLatencyMonitoring(on) => self.low_latency = on,
             Command::SetInputStrip(strip) => self.strip.set(strip),
+            Command::SetVoice(settings) => {
+                let now = self.clock;
+                self.voice.set(settings, &mut self.channels, now);
+            }
             Command::Record { track, armed, buffer } => {
                 let track = track.min(self.mixer.len() - 1);
                 self.finish_recording(Some(track));

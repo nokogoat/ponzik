@@ -31,6 +31,7 @@ pub mod ring;
 pub mod sample;
 pub mod sequence;
 pub mod tempo_map;
+pub mod voice;
 pub mod wav;
 
 pub use editor::{Editor, EditorEvent, EditorSize, ParentWindow, PluginEditor, RunLoop, StateContext};
@@ -52,4 +53,5 @@ pub use sequence::{
     AudioClip, AutoPoint, AutoScope, AutoTarget, AutomationLane, Clip, ClipWarp, MAX_FINE, MAX_RATCHET, Note, NoteCond, PPQ, Pattern, PlayMode, Sequence, SessionSlot,
     TICKS_PER_BAR, TICKS_PER_STEP, WarpMap, WarpMarker, equal_power, fade_shape, splitmix,
 };
+pub use voice::{VoiceConfig, VoiceEvent, VoiceFrame, VoiceMode, VoiceReport, VoiceSettings};
 pub use tempo_map::{BarBeat, TempoMap, TempoPoint, TempoView, TimeSig};

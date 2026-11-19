@@ -239,6 +239,21 @@ impl Channel {
         true
     }
 
+    /// Live pitch of a note played by the voice, `semitones` from its key:
+    /// the note's own expression when the instrument follows them and no
+    /// note effect changes the keys (`true`), otherwise the channel's pitch
+    /// bend, within its range (`false`).
+    pub(crate) fn voice_bend(&mut self, key: u8, semitones: f32, secs: f32) -> bool {
+        if self.instrument.supports_expression() && !self.has_note_fx() {
+            self.express(key, NoteExpression::Tuning { semitones, secs });
+            true
+        } else {
+            let bend = (semitones / crate::PITCH_BEND_RANGE).clamp(-1.0, 1.0);
+            self.instrument.controller(crate::Controller::PitchBend(bend));
+            false
+        }
+    }
+
     pub(crate) fn release_due(&mut self, now: u64) {
         let mut i = 0;
         while i < self.pending_offs.len() {
