@@ -24,14 +24,11 @@ msgstr "{} notes"
 msgid "Language"
 msgstr "Langue"
 
-
-
 msgid "Interface in {} · takes effect immediately"
 msgstr "Interface : {} · effet immédiat"
 
 msgid "Language: {}"
 msgstr "Langue : {}"
-
 
 # --- Parameter values ---
 
@@ -610,7 +607,6 @@ msgstr "Jouer le morceau"
 
 msgid "Play the session"
 msgstr "Jouer la session"
-
 
 msgid "Position\nbar . beat . step"
 msgstr "Position\nmesure . temps . pas"
@@ -1793,7 +1789,6 @@ msgstr "Transpo."
 
 msgid "Nudge notes"
 msgstr "Décaler des notes"
-
 
 msgid "Lime"
 msgstr "Lime"
@@ -4638,8 +4633,6 @@ msgstr "Annulé dans le Sample Lab : {}"
 
 # --- Recording panel headings ---
 
-
-
 msgid "24-bit"
 msgstr "24 bits"
 
@@ -6561,7 +6554,6 @@ msgstr "Ligne de basse"
 msgid "Center"
 msgstr "Centre"
 
-
 msgid "Chord length"
 msgstr "Durée accord"
 
@@ -6573,7 +6565,6 @@ msgstr "Les accords deviennent des arpèges"
 
 msgid "Condition"
 msgstr "Condition"
-
 
 msgid "Contour"
 msgstr "Contour"
@@ -6727,7 +6718,6 @@ msgstr "Relancer"
 
 msgid "Repeats"
 msgstr "Répétitions"
-
 
 msgid "Replaces {} note"
 msgstr "Remplace {} note"
@@ -7031,7 +7021,6 @@ msgstr "{} est gelé"
 
 msgid "{} unfrozen: its devices play again"
 msgstr "{} dégelé : ses appareils jouent de nouveau"
-
 
 # --- Take comping ---
 
@@ -7674,9 +7663,6 @@ msgstr "Harmoniques"
 msgid "Mic Position"
 msgstr "Position du micro"
 
-msgid "Model"
-msgstr "Modèle"
-
 msgid "Modeled guitars: steel acoustic, nylon, electric with amp and cabinet, bass; strums, slides, palm mute"
 msgstr "Guitares modélisées : folk acier, nylon, électrique avec ampli et baffle, basse ; grattés, glissés, étouffé"
 
@@ -7785,14 +7771,8 @@ msgstr "Pupitre"
 msgid "Section Size"
 msgstr "Taille du pupitre"
 
-msgid "Strings"
-msgstr "Cordes"
-
 msgid "Trio"
 msgstr "Trio"
-
-msgid "Vibrato"
-msgstr "Vibrato"
 
 msgid "Vibrato Delay"
 msgstr "Retard du vibrato"
