@@ -83,7 +83,7 @@ mod tests {
             assert!((n.len as f64 - 0.8 * ppq as f64).abs() < ppq as f64 * 0.15, "note {i} lasts {} ticks", n.len);
         }
         // A shorter clip keeps only what it plays.
-        let short = AudioClipDef { len: 2 * ppq, ..clip };
+        let short = AudioClipDef { len: 2 * ppq - ppq / 4, ..clip };
         assert_eq!(notes_from_audio(&short, &sample, &map, &VoiceConfig::default()).len(), 2);
     }
 
