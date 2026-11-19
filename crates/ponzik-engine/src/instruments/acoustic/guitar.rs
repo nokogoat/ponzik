@@ -964,10 +964,12 @@ impl Instrument for Guitar {
                         y = self.bodies[ch].process(y);
                     }
                     y -= self.dc[ch].lowpass(y);
-                    if self.amp_on {
-                        y = self.amp.process(ch, y * 2.0);
-                    }
                     *x = flush_denormal(y);
+                }
+                if self.amp_on {
+                    // One amp, one speaker: like the real thing, the amp is mono.
+                    let y = flush_denormal(self.amp.process(0, out[0] + out[1]));
+                    out = [y, y];
                 }
                 let g = gain * self.expression.next_value();
                 left[i] += soft_clip(out[0] * g);
