@@ -337,14 +337,14 @@ impl App {
         let p = self.voice.prefs;
         let chromatic = self.project.scale == ScaleKind::Chromatic;
         self.text(c, self.f.sans, 11.0, inner.x, y + 6.0, tr("Snap"), t.muted);
-        self.text(c, self.f.sans, 11.0, inner.x + 158.0, y + 6.0, tr("Notes"), t.muted);
+        self.text(c, self.f.sans, 11.0, inner.x + 178.0, y + 6.0, tr("Notes"), t.muted);
         y += 16.0;
         let scale_label = if chromatic { tr("Scale").to_string() } else { super::app::scale_label(self.project.key, self.project.scale) };
         let snaps = [scale_label.as_str(), tr("Chromatic")];
         let scale_tip = if chromatic { tr("Snap to the project scale\nPick a scale in the top bar first") } else { tr("Snap to the project scale\nOnly its notes are played") };
         let stips: [(&str, &str); 2] = [(scale_tip, ""), (tr("Every semitone"), "")];
         let sel = if p.snap_scale && !chromatic { 0 } else { 1 };
-        if let Some(i) = self.segmented_tips(c, input, wid("voice-snap", 0, 0), Rect::new(inner.x, y, 150.0, 32.0), &snaps, &stips, sel) {
+        if let Some(i) = self.segmented_tips(c, input, wid("voice-snap", 0, 0), Rect::new(inner.x, y, 170.0, 32.0), &snaps, &stips, sel) {
             self.voice.prefs.snap_scale = i == 0;
             if i == 0 && chromatic {
                 self.toast(tr("Pick a project scale in the top bar to snap to it"));
@@ -357,7 +357,7 @@ impl App {
             (tr("The last note keeps sounding through silences"), ""),
         ];
         let msel = VoiceMode::ALL.iter().position(|&m| m == p.mode).unwrap_or(0);
-        if let Some(i) = self.segmented_tips(c, input, wid("voice-mode", 0, 0), Rect::new(inner.x + 158.0, y, inner.w - 158.0, 32.0), &modes, &mtips, msel) {
+        if let Some(i) = self.segmented_tips(c, input, wid("voice-mode", 0, 0), Rect::new(inner.x + 178.0, y, inner.w - 178.0, 32.0), &modes, &mtips, msel) {
             self.voice.prefs.mode = VoiceMode::ALL[i];
         }
         y += 42.0;

@@ -7889,10 +7889,10 @@ msgid "Highest note of your voice"
 msgstr "Note la plus aiguë de votre voix"
 
 msgid "In 1"
-msgstr "Entrée 1"
+msgstr "Ent. 1"
 
 msgid "In 2"
-msgstr "Entrée 2"
+msgstr "Ent. 2"
 
 msgid "Lowest note of your voice\nHigher reacts faster (shorter analysis)"
 msgstr "Note la plus grave de votre voix\nPlus haut, ça réagit plus vite (analyse plus courte)"
