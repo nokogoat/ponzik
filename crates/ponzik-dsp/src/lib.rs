@@ -1,5 +1,5 @@
 //! Briques DSP de Ponzik : oscillateurs, enveloppes, filtres, retards,
-//! dynamique et suréchantillonnage, plus l'analyse (FFT, spectre, sonie,
+//! dynamique, résonateurs modaux et suréchantillonnage, plus l'analyse (FFT, spectre, sonie,
 //! accordeur, chromagramme).
 //!
 //! Aucune allocation après construction, aucune dépendance : tout ici est utilisable
@@ -16,6 +16,7 @@ pub mod env;
 pub mod fft;
 pub mod filter;
 pub mod lfo;
+pub mod modal;
 pub mod loudness;
 pub mod noise;
 pub mod onset;
