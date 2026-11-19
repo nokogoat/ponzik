@@ -4,7 +4,7 @@
 use crate::effect::Effect;
 use crate::effects::{
     AutoFilter, Bitcrusher, Chorus, Compressor, Delay, Ducker, Eq, Gate, Imager, Limiter, Ott, Phaser, PitchShifter,
-    Pompe, Reverb, Saturator, Shimmer, Tranche, Transient, Utility,
+    Pompe, Reverb, Rotary, Saturator, Shimmer, Tranche, Transient, Utility,
 };
 use crate::effects::BusComp;
 use crate::effects::EffectRack;
@@ -269,6 +269,13 @@ pub fn effects() -> &'static [EffectKind] {
             category: "Modulation",
             description: "Phaser with 4 to 12 stages",
             create: || Box::new(Phaser::default()),
+        },
+        EffectKind {
+            id: "rotary",
+            name: "Rotary Speaker",
+            category: "Modulation",
+            description: "Spinning horn and drum cabinet: Doppler, slow and fast with real inertia, tube drive, stereo mics",
+            create: || Box::new(Rotary::default()),
         },
         EffectKind {
             id: "saturator",

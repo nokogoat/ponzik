@@ -2830,6 +2830,41 @@ msgstr "Chorus et flanger stéréo"
 msgid "Phaser with 4 to 12 stages"
 msgstr "Phaser de 4 à 12 étages"
 
+# --- Rotary speaker ---
+
+msgid "Rotary Speaker"
+msgstr "Cabine rotative"
+
+msgid "Spinning horn and drum cabinet: Doppler, slow and fast with real inertia, tube drive, stereo mics"
+msgstr "Cabine à pavillon et tambour tournants : effet Doppler, lent et rapide avec une vraie inertie, saturation à lampes, micros stéréo"
+
+msgid "Rotors"
+msgstr "Rotors"
+
+msgid "Speed"
+msgstr "Vitesse"
+
+msgid "Slow"
+msgstr "Lent"
+
+msgid "Fast"
+msgstr "Rapide"
+
+msgid "Inertia"
+msgstr "Inertie"
+
+msgid "Horn/Drum"
+msgstr "Pavillon/Tambour"
+
+msgid "Microphones"
+msgstr "Micros"
+
+msgid "Mic Width"
+msgstr "Écart des micros"
+
+msgid "Mic Distance"
+msgstr "Distance des micros"
+
 msgid "Saturator"
 msgstr "Saturateur"
 
