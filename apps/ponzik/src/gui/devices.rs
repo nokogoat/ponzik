@@ -151,6 +151,8 @@ pub(super) fn card_width(kind: &str, params: &'static [ParamInfo]) -> f32 {
     let body: f32 = g.iter().map(|g| g.width).sum::<f32>() + (g.len() - 1) as f32 * GROUP_GAP;
     let extra = if transfer_kind(kind) {
         TRANSFER + GROUP_GAP
+    } else if kind == "piano" {
+        super::grand::WIDTH + GROUP_GAP
     } else if sample_kind(kind) {
         SAMPLE_W + GROUP_GAP
     } else if super::visuals::response_kind(kind).is_some() {
@@ -503,6 +505,9 @@ impl App {
             let side = TRANSFER.min(body.h - 6.0);
             self.transfer_graph(c, input, Rect::new(x, body.y + 4.0, side, side), device, &kind, params);
             x += TRANSFER + GROUP_GAP;
+        } else if kind == "piano" {
+            self.grand_piano_view(c, input, Rect::new(x, body.y + 4.0, super::grand::WIDTH, body.h - 10.0), device, params);
+            x += super::grand::WIDTH + GROUP_GAP;
         } else if sample_kind(&kind) {
             self.sample_view(c, input, Rect::new(x, body.y + 4.0, SAMPLE_W, body.h - 10.0), device, params);
             x += SAMPLE_W + GROUP_GAP;

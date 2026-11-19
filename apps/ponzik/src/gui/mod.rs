@@ -20,6 +20,7 @@ mod editors;
 mod dropouts;
 mod float;
 mod freeze;
+mod grand;
 mod groove;
 mod keymap;
 mod keys;

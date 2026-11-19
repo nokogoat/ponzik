@@ -7415,3 +7415,15 @@ msgstr "Pianiste"
 
 msgid "Audience"
 msgstr "Public"
+
+msgid "Lid: drag up to open, down to close"
+msgstr "Couvercle : tirer vers le haut pour ouvrir, vers le bas pour fermer"
+
+msgid "Hammer hardness: drag up for a brighter felt"
+msgstr "Dureté des marteaux : tirer vers le haut pour un feutre plus brillant"
+
+msgid "Una corda"
+msgstr "Una corda"
+
+msgid "Sostenuto"
+msgstr "Sostenuto"
