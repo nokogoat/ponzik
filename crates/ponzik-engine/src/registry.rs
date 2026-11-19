@@ -18,7 +18,7 @@ use crate::instruments::DrumMachine;
 use crate::instruments::DrumPads;
 use crate::instrument::Instrument;
 use crate::instruments::{
-    Bass303, DrumKind, DrumSynth, EPiano, ExternalMidi, FmSynth, Granular, Kick, Piano, Pluck, Pulse, Sampler, Slicer,
+    Bass303, DrumKind, DrumSynth, EPiano, ExternalMidi, FmSynth, Granular, Kick, Organ, Piano, Pluck, Pulse, Sampler, Slicer,
     WaveSynth,
 };
 use crate::note_fx::{Arpeggiator, Chord, Humanizer, NoteFx, Repeat, ScaleSnap};
@@ -131,6 +131,13 @@ pub fn instruments() -> &'static [InstrumentKind] {
             category: "Keys",
             description: "FM electric piano, tine and bell, stereo tremolo",
             create: || Box::new(EPiano::new()),
+        },
+        InstrumentKind {
+            id: "organ",
+            name: "Tonewheel Organ",
+            category: "Keys",
+            description: "Drawbar organ: 91 tonewheels, key click, percussion, scanner vibrato, tube drive and rotary speaker",
+            create: || Box::new(Organ::new()),
         },
         InstrumentKind {
             id: "drum_machine",

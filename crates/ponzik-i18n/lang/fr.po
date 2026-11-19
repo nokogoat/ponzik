@@ -2865,6 +2865,59 @@ msgstr "Écart des micros"
 msgid "Mic Distance"
 msgstr "Distance des micros"
 
+# --- Tonewheel organ ---
+
+msgid "Tonewheel Organ"
+msgstr "Orgue à roues phoniques"
+
+msgid "Drawbar organ: 91 tonewheels, key click, percussion, scanner vibrato, tube drive and rotary speaker"
+msgstr "Orgue à tirettes : 91 roues phoniques, clic de touche, percussion, vibrato à scanner, saturation à lampes et cabine rotative"
+
+msgid "Drawbars"
+msgstr "Tirettes"
+
+msgid "Tonewheels"
+msgstr "Roues phoniques"
+
+msgid "Key Click"
+msgstr "Clic de touche"
+
+msgid "Leakage"
+msgstr "Fuite"
+
+msgid "Perc Decay"
+msgstr "Déclin de la percussion"
+
+msgid "Perc Volume"
+msgstr "Volume de la percussion"
+
+msgid "Normal"
+msgstr "Normal"
+
+msgid "Vibrato"
+msgstr "Vibrato"
+
+msgid "V1"
+msgstr "V1"
+
+msgid "V2"
+msgstr "V2"
+
+msgid "V3"
+msgstr "V3"
+
+msgid "C1"
+msgstr "C1"
+
+msgid "C2"
+msgstr "C2"
+
+msgid "C3"
+msgstr "C3"
+
+msgid "Rotary"
+msgstr "Cabine rotative"
+
 msgid "Saturator"
 msgstr "Saturateur"
 
