@@ -4,6 +4,7 @@
 //! (les ids valent l'indice dans la table `PARAMS`) et recalcule ses
 //! coefficients à chaque `set_param`, sans allouer.
 
+pub(crate) mod amp;
 mod autofilter;
 mod bitcrusher;
 mod bus_comp;
@@ -34,6 +35,7 @@ mod transient;
 mod utility;
 mod vintage_verb;
 
+pub use amp::Amp;
 pub use autofilter::AutoFilter;
 pub use bitcrusher::Bitcrusher;
 pub use bus_comp::BusComp;
