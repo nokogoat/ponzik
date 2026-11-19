@@ -7808,3 +7808,63 @@ msgstr "Alto"
 
 msgid "Violin"
 msgstr "Violon"
+
+msgid "Brass"
+msgstr "Cuivres"
+
+msgid "Brassiness"
+msgstr "Cuivré"
+
+msgid "Clarinet"
+msgstr "Clarinette"
+
+msgid "Cup"
+msgstr "Sourdine bol"
+
+msgid "Fall"
+msgstr "Chute"
+
+msgid "Flute"
+msgstr "Flûte"
+
+msgid "French Horn"
+msgstr "Cor"
+
+msgid "Growl"
+msgstr "Growl"
+
+msgid "Harmon"
+msgstr "Sourdine wah-wah"
+
+msgid "Modeled flute, clarinet and oboe with breath noise and expressive vibrato"
+msgstr "Flûte, clarinette et hautbois modélisés, avec souffle et vibrato expressif"
+
+msgid "Modeled trumpet, trombone, French horn, tuba and sax: breath dynamics, mutes, growl, falls, sections"
+msgstr "Trompette, trombone, cor, tuba et saxophone modélisés : nuances au souffle, sourdines, growl, chutes, pupitres"
+
+msgid "Oboe"
+msgstr "Hautbois"
+
+msgid "Phrasing"
+msgstr "Phrasé"
+
+msgid "Sax"
+msgstr "Saxophone"
+
+msgid "Scoop"
+msgstr "Attaque par en dessous"
+
+msgid "Straight"
+msgstr "Sourdine sèche"
+
+msgid "Trombone"
+msgstr "Trombone"
+
+msgid "Trumpet"
+msgstr "Trompette"
+
+msgid "Tuba"
+msgstr "Tuba"
+
+msgid "Winds"
+msgstr "Bois"

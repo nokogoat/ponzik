@@ -199,14 +199,6 @@ impl Rng {
     }
 }
 
-/// tanh, rational approximation (exact at 0, saturates at ±1).
-#[inline]
-pub(crate) fn fast_tanh(x: f32) -> f32 {
-    let x = x.clamp(-3.0, 3.0);
-    let x2 = x * x;
-    x * (27.0 + x2) / (27.0 + 9.0 * x2)
-}
-
 /// Channel controllers as the acoustic instruments read them.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Controls {

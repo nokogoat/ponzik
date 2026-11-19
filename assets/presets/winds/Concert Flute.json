@@ -1,0 +1,10 @@
+{
+  "kind": "winds",
+  "name": "Concert Flute",
+  "params": [
+    [0, 0],
+    [1, 0.3],
+    [2, 0.55],
+    [5, 16]
+  ]
+}

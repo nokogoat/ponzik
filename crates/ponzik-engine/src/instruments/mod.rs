@@ -21,7 +21,7 @@ mod sampler;
 mod slicer;
 mod wavetable;
 
-pub use acoustic::{Guitar, Strings};
+pub use acoustic::{Brass, Guitar, Strings, Winds};
 pub use bass303::Bass303;
 pub use drum_machine::DrumMachine;
 pub use drum_pads::DrumPads;

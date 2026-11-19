@@ -36,7 +36,7 @@ fn allocs() -> usize {
 }
 
 /// Instruments covered; each is played with every value of its choice parameters.
-const KINDS: &[&str] = &["guitar", "strings"];
+const KINDS: &[&str] = &["guitar", "strings", "brass", "winds"];
 
 #[test]
 fn acoustic_instruments_never_allocate() {

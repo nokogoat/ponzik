@@ -216,17 +216,65 @@ fn string_parts() -> Vec<Part> {
     parts
 }
 
+fn blown_parts() -> Vec<Part> {
+    let mut parts = Vec::new();
+    // Brass hits: short accented chords, then a held swell.
+    let mut p = Part::new("brass", "Brass Section Hits", 5.0, 0.3);
+    p.events.push((0.0, Ev::Cc(1, 0.95)));
+    for (k, c) in [[55u8, 62, 67, 71], [57, 64, 69, 72], [55, 62, 67, 71], [53, 60, 65, 69]].iter().enumerate() {
+        p.chord(k as f32 * 0.65, c, 0.95, 0.25);
+    }
+    p.chord(2.8, &[52, 59, 64, 67], 0.95, 1.6);
+    parts.push(p);
+    let mut p = Part::new("brass", "Cinematic Brass", 7.0, 0.4);
+    p.chord(0.0, &[41, 48, 53, 57], 0.8, 5.5);
+    for i in 0..=30 {
+        let x = i as f32 / 30.0;
+        p.events.push((x * 5.5, Ev::Cc(1, 0.25 + 0.7 * x)));
+    }
+    parts.push(p);
+    let mut p = Part::new("brass", "Muted Trumpet", 6.0, 0.3);
+    p.events.push((0.0, Ev::Cc(1, 0.6)));
+    for &(n, t, d) in &[(67u8, 0.0, 0.4), (70, 0.45, 0.4), (72, 0.9, 0.9), (70, 1.85, 0.3), (67, 2.2, 0.3), (65, 2.55, 1.6)] {
+        p.note(t, n, 0.8, d);
+    }
+    parts.push(p);
+    let mut p = Part::new("brass", "Tenor Sax", 6.0, 0.3);
+    p.events.push((0.0, Ev::Cc(1, 0.6)));
+    for &(n, t, d) in &[(58u8, 0.0, 0.5), (61, 0.45, 0.35), (63, 0.8, 0.35), (65, 1.15, 0.9), (63, 2.0, 0.3), (61, 2.3, 0.3), (58, 2.6, 1.8)] {
+        p.note(t, n, 0.8, d + 0.05);
+    }
+    parts.push(p);
+    // Flute melody, legato, with breath.
+    let mut p = Part::new("winds", "Breathy Flute", 8.0, 0.4);
+    p.events.push((0.0, Ev::Cc(1, 0.55)));
+    for &(n, t, d) in &[(76u8, 0.0, 0.8), (79, 0.75, 0.4), (81, 1.1, 0.4), (83, 1.45, 1.0), (81, 2.4, 0.4), (79, 2.75, 0.4), (76, 3.1, 0.8), (74, 3.85, 0.4), (76, 4.2, 2.2)] {
+        p.note(t, n, 0.75, d + 0.06);
+    }
+    parts.push(p);
+    let mut p = Part::new("winds", "Clarinet Solo", 6.0, 0.35);
+    p.events.push((0.0, Ev::Cc(1, 0.5)));
+    for &(n, t, d) in &[(62u8, 0.0, 0.6), (65, 0.55, 0.6), (69, 1.1, 0.6), (67, 1.65, 0.6), (65, 2.2, 0.6), (64, 2.75, 0.6), (62, 3.3, 1.8)] {
+        p.note(t, n, 0.7, d + 0.05);
+    }
+    parts.push(p);
+    parts
+}
+
 #[test]
 #[ignore]
 fn render_acoustic_demo() {
     let mut parts = guitar_parts();
     parts.extend(string_parts());
+    parts.extend(blown_parts());
     let mut out: Vec<f32> = Vec::new();
-    println!("{:<28} {:>8} {:>10} {:>8}", "part", "audio s", "cpu ms", "x RT");
+    println!("{:<34} {:>8} {:>10} {:>8} {:>6} {:>6}", "part", "audio s", "cpu ms", "x RT", "peak", "rms");
     for p in &parts {
         let (audio, cpu) = render(p);
         let rt = p.secs as f64 / cpu.max(1e-9);
-        println!("{:<28} {:>8.1} {:>10.1} {:>8.0}", format!("{}/{}", p.kind, p.preset), p.secs, cpu * 1e3, rt);
+        let peak = audio.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+        let rms = (audio.iter().map(|s| s * s).sum::<f32>() / audio.len() as f32).sqrt();
+        println!("{:<34} {:>8.1} {:>10.1} {:>8.0} {:>6.2} {:>6.3}", format!("{}/{}", p.kind, p.preset), p.secs, cpu * 1e3, rt, peak, rms);
         out.extend(audio);
         out.extend(std::iter::repeat_n(0.0, (0.4 * SR) as usize * 2));
     }
