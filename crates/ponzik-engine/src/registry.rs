@@ -14,6 +14,8 @@ use crate::effects::MixAssistant;
 use crate::effects::CharSaturation;
 use crate::effects::Lofi;
 use crate::effects::VintageVerb;
+use crate::effects::Amp;
+use crate::instruments::Guitar;
 use crate::instruments::DrumMachine;
 use crate::instruments::DrumPads;
 use crate::instrument::Instrument;
@@ -124,6 +126,13 @@ pub fn instruments() -> &'static [InstrumentKind] {
             category: "Keys",
             description: "Modeled acoustic piano: stiff strings, felt hammers, soundboard, sympathetic resonance and real pedals, no samples",
             create: || Box::new(Piano::new()),
+        },
+        InstrumentKind {
+            id: "guitar",
+            name: "Guitar",
+            category: "Acoustic",
+            description: "Modeled guitars: steel acoustic, nylon, electric with amp and cabinet, bass; strums, slides, palm mute",
+            create: || Box::new(Guitar::new()),
         },
         InstrumentKind {
             id: "epiano",
@@ -311,6 +320,13 @@ pub fn effects() -> &'static [EffectKind] {
             category: "Saturation",
             description: "Oversampled saturation: soft, hard, tube, fold, rectifier",
             create: || Box::new(Saturator::default()),
+        },
+        EffectKind {
+            id: "amp",
+            name: "Amp & Cab",
+            category: "Saturation",
+            description: "Guitar amp and speaker cabinet: clean, crunch, lead and bass amps, tone stack, sag, mic position",
+            create: || Box::new(Amp::default()),
         },
         EffectKind {
             id: "bitcrusher",

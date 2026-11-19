@@ -7623,3 +7623,107 @@ msgstr "Una corda"
 
 msgid "Sostenuto"
 msgstr "Sostenuto"
+msgid "12th Fret"
+msgstr "12e case"
+
+msgid "7th Fret"
+msgstr "7e case"
+
+msgid "5th Fret"
+msgstr "5e case"
+
+msgid "1x12 Open Back"
+msgstr "1x12 ouvert"
+
+msgid "2x12 Combo"
+msgstr "Combo 2x12"
+
+msgid "4x10 Bass"
+msgstr "Basse 4x10"
+
+msgid "4x12 Closed"
+msgstr "4x12 fermé"
+
+msgid "Acoustic"
+msgstr "Acoustique"
+
+msgid "Amp & Cab"
+msgstr "Ampli et baffle"
+
+msgid "Cabinet"
+msgstr "Baffle"
+
+msgid "Crunch"
+msgstr "Crunch"
+
+msgid "Electric"
+msgstr "Électrique"
+
+msgid "Finger"
+msgstr "Doigts"
+
+msgid "Fret Noise"
+msgstr "Bruits de frettes"
+
+msgid "Guitar amp and speaker cabinet: clean, crunch, lead and bass amps, tone stack, sag, mic position"
+msgstr "Ampli guitare et baffle : amplis clair, crunch, lead et basse, égaliseur, affaissement, position du micro"
+
+msgid "Harmonics"
+msgstr "Harmoniques"
+
+msgid "Mic Position"
+msgstr "Position du micro"
+
+msgid "Model"
+msgstr "Modèle"
+
+msgid "Modeled guitars: steel acoustic, nylon, electric with amp and cabinet, bass; strums, slides, palm mute"
+msgstr "Guitares modélisées : folk acier, nylon, électrique avec ampli et baffle, basse ; grattés, glissés, étouffé"
+
+msgid "Nylon"
+msgstr "Nylon"
+
+msgid "Palm Mute"
+msgstr "Étouffé (paume)"
+
+msgid "Pick"
+msgstr "Médiator"
+
+msgid "Pickup Position"
+msgstr "Position du micro guitare"
+
+msgid "Playing"
+msgstr "Jeu"
+
+msgid "Play Mode"
+msgstr "Mode de jeu"
+
+msgid "Pluck Position"
+msgstr "Point d'attaque"
+
+msgid "Poly"
+msgstr "Poly"
+
+msgid "Presence"
+msgstr "Présence"
+
+msgid "Sag"
+msgstr "Affaissement"
+
+msgid "Slap"
+msgstr "Slap"
+
+msgid "Slide Time"
+msgstr "Durée du glissé"
+
+msgid "Steel Acoustic"
+msgstr "Folk acier"
+
+msgid "Strum Direction"
+msgstr "Sens du gratté"
+
+msgid "Technique"
+msgstr "Technique"
+
+msgid "Treble"
+msgstr "Aigus"
