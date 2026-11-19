@@ -1,6 +1,6 @@
 //! Briques DSP de Ponzik : oscillateurs, enveloppes, filtres, retards,
 //! dynamique, résonateurs modaux et suréchantillonnage, plus l'analyse (FFT, spectre, sonie,
-//! accordeur, chromagramme).
+//! accordeur, chromagramme, voix vers notes).
 //!
 //! Aucune allocation après construction, aucune dépendance : tout ici est utilisable
 //! directement dans le thread audio, sauf les outils d'édition hors ligne
@@ -28,4 +28,5 @@ pub mod stretch;
 pub mod tempo;
 pub mod tuner;
 pub mod util;
+pub mod voice;
 pub mod warp;
