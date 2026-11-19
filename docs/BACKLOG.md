@@ -132,7 +132,7 @@ template" (V1-12)**.
 | V3-4 | **Project versions**: named snapshots, comparison and rollback, with continuous autosave | Replaces "project_final_v7_REAL.flp" | M | project, ui | V1-2 | ⬜ |
 | V3-5 | **Pitch correction**: YIN detection, notes as editable blobs (pitch, vibrato, length, formants), an automatic mode tuned to the scale | Melodyne and Newtone; a must for vocals | L | dsp (PSOLA), engine, ui | V1-3, V2-11 | ⬜ (YIN tuner already in the DSP crate) |
 | V3-6 | **Spectral editing**: a clip spectrogram, brush eraser and attenuation, noise reduction | Cleaning up takes (Edison, RX, SpectraLayers) | L | dsp (STFT), ui | V1-10 | ⬜ |
-| V3-7 | **Audio to MIDI** (drums, melody, harmony) | Live does it; useful for reworking a sample | L | dsp | V3-5 | ⬜ |
+| V3-7 | **Audio to MIDI** (drums, melody, harmony) | Live does it; useful for reworking a sample | L | dsp | V3-5 | 🟡 melody done: Voice to Notes (sing or hum to play and record the selected instrument in real time) and Convert to notes on audio clips; drums and harmony to do |
 | V3-8 | Local **stem separation** | Live 12.3, FL, Studio One 7 and Cubase 15 all have it. Without dependencies it needs a small hand-written neural network, which makes it the heaviest project | L | dsp | – | ⬜ |
 | V3-9 | **Modular grid**: patch modules (oscillator, filter, envelope, logic, delay) to build your own instruments and effects (Bitwig's The Grid, FL's Patcher) | Unlimited power for sound designers | L | engine, ui | V2-6 | ⬜ |
 | V3-10 | **MPE**: per-note pressure, glide and timbre, on input, in the piano roll and in the native instruments | Expressive controllers, Meld, Push 3 | L | midi, engine, project, ui | – | ⬜ |

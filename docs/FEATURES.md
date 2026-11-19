@@ -66,7 +66,7 @@ Legend: **FL** = FL Studio · **AB** = Ableton Live · ✅ done in Ponzik · �
 | Warp: markers, Beats, Tones, Texture, Re-Pitch, Complex, Complex Pro modes | AB | ⬜ |
 | High-quality time stretching and pitch shifting | FL · AB | ⬜ |
 | Transient detection, slicing to MIDI or a Drum Rack | FL · AB | ⬜ |
-| Audio to MIDI conversion (drums, melody, harmony) | AB | ⬜ |
+| Audio to MIDI conversion (drums, melody, harmony) | AB | 🟡 melody: Voice to Notes plays the selected instrument live from singing or humming (YIN tracker on the input thread, about 12 ms reaction, scale snap, retune bends, chords through note effects, recorded into the pattern) and an audio clip's monophonic line converts to a pattern; no drums or harmony |
 | Stem separation (vocals, drums, bass, instruments) | FL · AB | ⬜ |
 | Destructive audio editor (Edison: recording, cleanup, cutting, noise reduction) | FL | ⬜ |
 | Pitch correction (Newtone, Pitcher) | FL | ⬜ |
