@@ -2959,6 +2959,62 @@ msgstr "Grain"
 msgid "Auto Pan"
 msgstr "Panoramique auto"
 
+# --- Mallets ---
+
+msgid "Mallets"
+msgstr "Percussions à clavier"
+
+msgid "Modal marimba, vibraphone, xylophone, glockenspiel, celesta, kalimba, tubular bells and steel drum"
+msgstr "Marimba, vibraphone, xylophone, glockenspiel, célesta, kalimba, cloches tubulaires et steel drum en synthèse modale"
+
+msgid "Mallet"
+msgstr "Mailloche"
+
+msgid "Hardness"
+msgstr "Dureté"
+
+msgid "Strike Position"
+msgstr "Point de frappe"
+
+msgid "Model"
+msgstr "Modèle"
+
+msgid "Resonator"
+msgstr "Résonateur"
+
+msgid "Motor"
+msgstr "Moteur"
+
+msgid "Motor Rate"
+msgstr "Vitesse du moteur"
+
+msgid "Motor Depth"
+msgstr "Profondeur du moteur"
+
+msgid "Marimba"
+msgstr "Marimba"
+
+msgid "Vibraphone"
+msgstr "Vibraphone"
+
+msgid "Xylophone"
+msgstr "Xylophone"
+
+msgid "Glockenspiel"
+msgstr "Glockenspiel"
+
+msgid "Celesta"
+msgstr "Célesta"
+
+msgid "Kalimba"
+msgstr "Kalimba"
+
+msgid "Tubular Bells"
+msgstr "Cloches tubulaires"
+
+msgid "Steel Drum"
+msgstr "Steel drum"
+
 msgid "Saturator"
 msgstr "Saturateur"
 

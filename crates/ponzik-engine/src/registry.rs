@@ -18,7 +18,7 @@ use crate::instruments::DrumMachine;
 use crate::instruments::DrumPads;
 use crate::instrument::Instrument;
 use crate::instruments::{
-    Bass303, DrumKind, DrumSynth, EPiano, ElectricPiano, ExternalMidi, FmSynth, Granular, Kick, Organ, Piano, Pluck,
+    Bass303, DrumKind, DrumSynth, EPiano, ElectricPiano, ExternalMidi, FmSynth, Granular, Kick, Mallets, Organ, Piano, Pluck,
     Pulse, Sampler, Slicer, WaveSynth,
 };
 use crate::note_fx::{Arpeggiator, Chord, Humanizer, NoteFx, Repeat, ScaleSnap};
@@ -145,6 +145,13 @@ pub fn instruments() -> &'static [InstrumentKind] {
             category: "Keys",
             description: "Modeled reed electric piano: electrostatic pickup growl, gritty preamp, tremolo",
             create: || Box::new(ElectricPiano::reed()),
+        },
+        InstrumentKind {
+            id: "mallets",
+            name: "Mallets",
+            category: "Keys",
+            description: "Modal marimba, vibraphone, xylophone, glockenspiel, celesta, kalimba, tubular bells and steel drum",
+            create: || Box::new(Mallets::new()),
         },
         InstrumentKind {
             id: "organ",
