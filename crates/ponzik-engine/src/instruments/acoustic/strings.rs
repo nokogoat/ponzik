@@ -176,7 +176,7 @@ impl Model for Bowed {
             // A finger plucks at the bow point: one sine cycle, narrower when harder.
             let period = self.sr / self.hz;
             let width = (period * (0.5 - 0.3 * velocity)).clamp(3.0, 600.0);
-            self.pulse = (0.0, width, 0.35 * (0.2 + 0.8 * velocity));
+            self.pulse = (0.0, width, 0.9 * (0.2 + 0.8 * velocity));
         }
     }
 
