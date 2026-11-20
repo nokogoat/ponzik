@@ -1457,6 +1457,8 @@ impl App {
     }
 
     pub fn add_sample_channel(&mut self, path: &str) {
+        /// Paramètre « Mode » du Sampler : 0 = One-shot, 1 = Melodic.
+        const SAMPLER_MODE: u32 = 1;
         if !self.ensure_sample(path) {
             return;
         }
@@ -1465,6 +1467,9 @@ impl App {
             .map_or(tr("Sample").to_string(), |s| s.to_string_lossy().into_owned());
         let mut def = InstrumentDef::new("sampler");
         def.sample = Some(path.to_string());
+        // Comme dans FL : un pas joue tout l'échantillon (boucle de break comprise),
+        // quelle que soit la longueur de la note ; « Melodic » la suit.
+        def.set(SAMPLER_MODE, 0.0);
         if registry::instrument_kind("sampler").is_none() {
             self.toast(tr("The sampler is not available yet"));
             return;
