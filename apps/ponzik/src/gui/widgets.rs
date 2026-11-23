@@ -207,6 +207,8 @@ pub enum Icon {
     Moon,
     /// A leaf: eco mode.
     Leaf,
+    /// A snare drum with its sticks: drum sounds.
+    Drum,
 }
 
 /// Diagonal stripes over `r` (clipped to it): offline clips and samples.
@@ -849,6 +851,21 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
             path.close();
             c.fill_path(&path, col.alpha(0.35));
             c.stroke_polyline(&[p(-7.0, 7.0), p(-3.0, 3.0), p(3.5, -3.5)], stroke, col);
+        }
+        Icon::Drum => {
+            // A shell seen from the side, its head as a flat ellipse, two sticks.
+            let top = |a: f32| p(7.0 * a.cos(), -1.5 + 2.2 * a.sin());
+            let ring: Vec<(f32, f32)> = (0..=24).map(|i| top(i as f32 / 24.0 * 2.0 * PI)).collect();
+            c.stroke_polyline(&ring, stroke, col);
+            let bottom: Vec<(f32, f32)> = (0..=12).map(|i| {
+                let a = i as f32 / 12.0 * PI;
+                p(7.0 * a.cos(), 4.5 + 2.2 * a.sin())
+            }).collect();
+            c.stroke_polyline(&bottom, stroke, col);
+            c.stroke_polyline(&[p(-7.0, -1.5), p(-7.0, 4.5)], stroke, col);
+            c.stroke_polyline(&[p(7.0, -1.5), p(7.0, 4.5)], stroke, col);
+            c.stroke_polyline(&[p(-5.5, -7.5), p(-1.0, -2.5)], stroke, col.alpha(0.8));
+            c.stroke_polyline(&[p(5.5, -7.5), p(1.0, -2.5)], stroke, col.alpha(0.8));
         }
     }
 }
