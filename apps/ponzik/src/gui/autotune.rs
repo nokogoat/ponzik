@@ -537,6 +537,16 @@ impl App {
         }
     }
 
+    /// Sets a setting of the corrector. Picking a key or scale by hand stops
+    /// following the project's, which would otherwise put it back at once.
+    fn at_set(&mut self, device: Device, p: &ParamInfo, v: f32) {
+        let follow = at::PARAMS.iter().find(|q| q.id == at::P_FOLLOW);
+        if let Some(follow) = follow.filter(|f| matches!(p.id, at::P_KEY | at::P_SCALE) && self.param_value(device, f) >= 0.5) {
+            self.set_param_value(device, follow, 0.0);
+        }
+        self.set_param_value(device, p, v);
+    }
+
     /// One knob or choice, with automation and modulation like any device's.
     fn at_cell(&mut self, c: &mut Canvas, input: &Input, cell: Rect, device: Device, p: &'static ParamInfo) {
         let t = self.theme;
@@ -545,7 +555,7 @@ impl App {
         let mut changed = if p.unit == Unit::Choice { self.choice(c, input, id, cell, p, value) } else { self.knob(c, input, id, cell, p, value) };
         self.mod_knob(c, input, id, cell, device, p, value, &mut changed);
         if let Some(v) = changed {
-            self.set_param_value(device, p, v);
+            self.at_set(device, p, v);
         }
         let target = device_target(device, p.id);
         if p.unit != Unit::Choice && self.kb_enter(id) {
@@ -705,5 +715,12 @@ mod tests {
         assert!(n > 500 && voiced > n / 2, "{n} points, {voiced} voiced");
         let mut c = Canvas::new(1_600, 900);
         app.frame(&mut c, &Input::default(), 1.0 / 60.0);
+        // A key picked by hand sticks: the corrector stops following the project.
+        let device = Device::Effect { track: 1, slot };
+        let key = at::PARAMS.iter().find(|q| q.id == at::P_KEY).unwrap();
+        app.at_set(device, key, 2.0);
+        app.commit("Key");
+        let fx = app.project.tracks[1].inserts[slot].as_ref().unwrap();
+        assert_eq!((fx.get(at::P_KEY), fx.get(at::P_FOLLOW)), (Some(2.0), Some(0.0)));
     }
 }
