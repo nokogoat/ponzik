@@ -65,6 +65,10 @@ review:
     the menu on the right. Context goes to the views that use it (pattern and
     scale in the Channel Rack and the piano roll), the rest to menus. Every item
     can come back from Settings > Workspace; the "Full" profile shows them all.
+14. **Short menus.** A menu fits on the screen without scrolling: related rows
+    go into a submenu (Open recent, Import, Export, Theme in the main menu;
+    effects and instruments by category; a track's output and sends), two
+    levels at most, opened by hovering or with the arrow keys (`gui/menu.rs`).
 
 ---
 
