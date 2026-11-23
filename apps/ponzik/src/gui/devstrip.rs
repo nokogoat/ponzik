@@ -291,8 +291,8 @@ impl App {
             v.push(MenuItem::new(Icon::Power, if bypass { tr("Enable") } else { tr("Bypass") }, Action::Device(d, DeviceOp::Bypass)));
             let first = (0..slot).all(|s| self.project.tracks[track].inserts[s].is_none());
             let last = (slot + 1..INSERT_SLOTS).all(|s| self.project.tracks[track].inserts[s].is_none());
-            v.push(MenuItem::new(Icon::ChevronLeft, tr("Move left"), Action::Device(d, DeviceOp::Move(-1))).detail("Ctrl Shift ←".into()).dim(first));
-            v.push(MenuItem::new(Icon::ChevronRight, tr("Move right"), Action::Device(d, DeviceOp::Move(1))).detail("Ctrl Shift →".into()).dim(last));
+            v.push(MenuItem::new(Icon::ChevronLeft, tr("Move left"), Action::Device(d, DeviceOp::Move(-1))).detail(format!("Ctrl {} ←", tr("Shift"))).dim(first));
+            v.push(MenuItem::new(Icon::ChevronRight, tr("Move right"), Action::Device(d, DeviceOp::Move(1))).detail(format!("Ctrl {} →", tr("Shift"))).dim(last));
         }
         let collapsed = self.is_collapsed(d);
         v.push(MenuItem::new(if collapsed { Icon::Expand } else { Icon::Collapse }, if collapsed { tr("Expand") } else { tr("Collapse") }, Action::Device(d, DeviceOp::Collapse)).sep());
@@ -539,5 +539,54 @@ impl App {
                 _ => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn app() -> App {
+        let project = ponzik_project::demo_project();
+        let none = |_: &str| None;
+        let (_engine, handle) = project.build_engine(48_000.0, &none);
+        let mut app = App::new(handle, project, 48_000);
+        app.focus = Focus::Channel(0);
+        app
+    }
+
+    fn kinds(app: &App, track: usize) -> Vec<String> {
+        app.project.tracks[track].inserts.iter().flatten().map(|e| e.kind.clone()).collect()
+    }
+
+    #[test]
+    fn devices_move_insert_and_fold_from_the_panel() {
+        let mut app = app();
+        let track = app.focused_track();
+        app.project.tracks[track].inserts = std::array::from_fn(|_| None);
+        for kind in ["compressor", "delay", "reverb"] {
+            app.add_effect(track, kind);
+        }
+        assert_eq!(kinds(&app, track), ["compressor", "delay", "reverb"]);
+        // The reverb one place to the left.
+        app.device_op(Device::Effect { track, slot: 2 }, DeviceOp::Move(-1));
+        assert_eq!(kinds(&app, track), ["compressor", "reverb", "delay"]);
+        assert_eq!(app.panel_cursor, Some(StripItem::Dev(Device::Effect { track, slot: 1 })));
+        // A chorus inserted before the reverb.
+        app.insert_effect_at(track, 1, "chorus");
+        assert_eq!(kinds(&app, track), ["compressor", "chorus", "reverb", "delay"]);
+        // Folded, unfolded; all of them.
+        let d = Device::Effect { track, slot: 0 };
+        app.device_op(d, DeviceOp::Collapse);
+        assert!(app.is_collapsed(d));
+        app.collapse_all(false);
+        assert!(!app.is_collapsed(d));
+        app.collapse_all(true);
+        assert!(app.panel_devices().iter().all(|&d| app.is_collapsed(d)));
+        // Bypassed, then removed.
+        app.device_op(d, DeviceOp::Bypass);
+        assert!(app.project.tracks[track].inserts[0].as_ref().is_some_and(|e| e.bypass));
+        app.device_op(d, DeviceOp::Remove);
+        assert_eq!(kinds(&app, track), ["chorus", "reverb", "delay"]);
     }
 }

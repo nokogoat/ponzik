@@ -379,3 +379,101 @@ impl App {
         self.toast(&tr_fmt!("Loop fitted: {} beats from step 1, in time at {} BPM", lp.beats, bpm));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn app() -> App {
+        let project = ponzik_project::demo_project();
+        let none = |_: &str| None;
+        let (_engine, handle) = project.build_engine(48_000.0, &none);
+        let mut app = App::new(handle, project, 48_000);
+        app.set_view(View::Playlist);
+        app
+    }
+
+    /// A 2 s loop (one bar at 120 BPM) in the samples, and its clip.
+    fn with_loop(app: &mut App) -> usize {
+        let left: Vec<f32> = (0..96_000).map(|i| (i as f32 * 0.01).sin()).collect();
+        let s = ponzik_engine::Sample { name: "l".into(), sample_rate: 48_000.0, right: left.clone(), left, markers: Vec::new() };
+        app.samples.insert("l.wav".into(), std::sync::Arc::new(s));
+        app.project.audio_clips.push(ponzik_project::AudioClipDef { path: "l.wav".into(), lane: 6, len: 4 * ponzik_engine::PPQ, warp: true, bpm: 120.0, ..Default::default() });
+        app.project.audio_clips.len() - 1
+    }
+
+    #[test]
+    fn repeats_and_fills_make_a_clip_loop() {
+        let mut app = app();
+        let i = with_loop(&mut app);
+        app.loop_clip(ClipSel::Audio(i), LoopOp::Repeat(4));
+        let c = &app.project.audio_clips[i];
+        assert!(c.looped);
+        assert_eq!(c.len, 4 * TICKS_PER_BAR);
+        // To the end of the song: as far as the other clips go.
+        let end = app.song_end_without(ClipSel::Audio(i));
+        app.loop_clip(ClipSel::Audio(i), LoopOp::SongEnd);
+        assert_eq!(app.project.audio_clips[i].len, end);
+        // Over the time selection.
+        app.time_selection = Some((View::Playlist, 2 * TICKS_PER_BAR, 5 * TICKS_PER_BAR));
+        app.loop_clip(ClipSel::Audio(i), LoopOp::Selection);
+        let c = &app.project.audio_clips[i];
+        assert_eq!((c.start, c.len), (2 * TICKS_PER_BAR, 3 * TICKS_PER_BAR));
+        // A pattern clip repeats its pattern.
+        let plen = app.project.patterns[app.project.clips[0].pattern].len;
+        app.loop_clip(ClipSel::Pattern(0), LoopOp::Repeat(8));
+        assert_eq!(app.project.clips[0].len, plen * 8);
+        // Ctrl+B: a copy right after.
+        let n = app.project.audio_clips.len();
+        app.loop_clip(ClipSel::Audio(i), LoopOp::Duplicate);
+        assert_eq!(app.project.audio_clips.len(), n + 1);
+        assert_eq!(app.project.audio_clips[n].start, 5 * TICKS_PER_BAR);
+    }
+
+    #[test]
+    fn the_brush_lays_copies_along_the_drag_and_takes_them_back() {
+        let mut app = app();
+        let n = app.project.clips.len();
+        let Some(super::super::playlist::ClipDrag::Paint { src, start, period, count }) = app.paint_begin(9, 0) else { panic!("no paint") };
+        let count = app.paint_to(src, start, period, count, (period * 3 + 1) as f32);
+        assert_eq!(count, 4);
+        assert_eq!(app.project.clips.len(), n + 4);
+        assert!(app.project.clips[n..].iter().enumerate().all(|(k, c)| c.lane == 9 && c.start == k as u32 * period));
+        // Back to the left: the extra copies go.
+        assert_eq!(app.paint_to(src, start, period, count, 1.0), 1);
+        assert_eq!(app.project.clips.len(), n + 1);
+    }
+
+    #[test]
+    fn a_loop_on_a_sampler_fits_the_pattern() {
+        use ponzik_engine::instruments::{SAMPLER_BEATS, SAMPLER_MODE, SAMPLER_SYNC};
+        let mut app = app();
+        // Two bars at 120 BPM: a pulse on every beat.
+        let mut left = vec![0.0f32; 4 * 48_000];
+        for beat in 0..8 {
+            for k in 0..2_000 {
+                left[beat * 24_000 + k] = (-(k as f32) / 300.0).exp() * if k % 2 == 0 { 0.9 } else { -0.9 };
+            }
+        }
+        let s = ponzik_engine::Sample { name: "b".into(), sample_rate: 48_000.0, right: left.clone(), left, markers: Vec::new() };
+        app.samples.insert("b.wav".into(), std::sync::Arc::new(s));
+        let mut def = ponzik_project::InstrumentDef::new("sampler");
+        def.sample = Some("b.wav".into());
+        let ch = app.project.add_channel("Break", def, 60);
+        let pat = app.project.current_pattern;
+        app.project.patterns[pat].len = TICKS_PER_BAR;
+        let kick = app.project.patterns[pat].notes[0].len();
+        let lp = app.channel_loop(ch, false).expect("a loop");
+        assert_eq!(lp.beats, 8.0);
+        assert!(!lp.fitted);
+        app.fit_loop_to_pattern(ch);
+        let d = &app.project.channels[ch].instrument;
+        assert_eq!((d.get(SAMPLER_MODE), d.get(SAMPLER_SYNC), d.get(SAMPLER_BEATS)), (Some(0.0), Some(1.0), Some(8.0)));
+        let p = &app.project.patterns[pat];
+        assert_eq!(p.len, 2 * TICKS_PER_BAR);
+        assert_eq!(p.notes[ch].iter().map(|n| n.start).collect::<Vec<_>>(), [0]);
+        // The other channels play their bar twice.
+        assert_eq!(p.notes[0].len(), 2 * kick);
+        assert!(app.channel_loop(ch, true).expect("cached").fitted);
+    }
+}

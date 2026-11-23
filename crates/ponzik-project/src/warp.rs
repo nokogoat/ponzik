@@ -296,7 +296,7 @@ pub fn detect_tempo(sample: &Sample) -> Option<f32> {
 /// ratio first, then the closest to the project tempo. `None` for a sound
 /// too short or too long to be a loop, or with no such match.
 pub fn loop_tempo(duration: f32, heard: f32, project_bpm: f32) -> Option<f32> {
-    if !(1.0..=64.0).contains(&duration) || !(heard > 0.0) {
+    if !(1.0..=64.0).contains(&duration) || heard.is_nan() || heard <= 0.0 {
         return None;
     }
     // Ratios between the tempo heard and the real one, simplest first.
