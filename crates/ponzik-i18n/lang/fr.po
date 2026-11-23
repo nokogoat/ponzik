@@ -9968,3 +9968,125 @@ msgstr "REAPER, LMMS, Ardour, MusicXML…"
 
 msgid "Pick the file: it opens as a new project, with a report of what came across"
 msgstr "Choisissez le fichier : il s'ouvre comme un nouveau projet, avec le bilan de ce qui a été repris"
+msgid "Alto"
+msgstr "Alto"
+
+msgid "Baritone"
+msgstr "Baryton"
+
+msgid "Classic"
+msgstr "Classique"
+
+msgid "Correction"
+msgstr "Correction"
+
+msgid "Flex-Tune"
+msgstr "Flex-Tune"
+
+msgid "Follow project"
+msgstr "Suivre le projet"
+
+msgid "Formant"
+msgstr "Formants"
+
+msgid "Formant shift"
+msgstr "Décalage des formants"
+
+msgid "Input type"
+msgstr "Type de voix"
+
+msgid "Latency"
+msgstr "Latence"
+
+msgid "MIDI channel"
+msgstr "Canal MIDI"
+
+msgid "MIDI target"
+msgstr "Cible MIDI"
+
+msgid "Modern"
+msgstr "Moderne"
+
+msgid "Natural vibrato"
+msgstr "Vibrato naturel"
+
+msgid "Note A"
+msgstr "Note la"
+
+msgid "Note A♭"
+msgstr "Note la♭"
+
+msgid "Note B"
+msgstr "Note si"
+
+msgid "Note B♭"
+msgstr "Note si♭"
+
+msgid "Note C"
+msgstr "Note do"
+
+msgid "Note C♯"
+msgstr "Note do♯"
+
+msgid "Note D"
+msgstr "Note ré"
+
+msgid "Note E"
+msgstr "Note mi"
+
+msgid "Note E♭"
+msgstr "Note mi♭"
+
+msgid "Note F"
+msgstr "Note fa"
+
+msgid "Note F♯"
+msgstr "Note fa♯"
+
+msgid "Note G"
+msgstr "Note sol"
+
+msgid "Pitch Correction"
+msgstr "Correction de hauteur"
+
+msgid "Preserve formants"
+msgstr "Garder les formants"
+
+msgid "Quality"
+msgstr "Qualité"
+
+msgid "Real-time pitch correction, from transparent to hard tune: key and scale, retune speed, humanize, Flex-Tune, vibrato, formants, MIDI target notes"
+msgstr "Correction de hauteur en temps réel, de la retouche invisible au hard tune : tonalité et gamme, vitesse de correction, humanisation, Flex-Tune, vibrato, formants, notes cibles MIDI"
+
+msgid "Reference A4"
+msgstr "La 4 de référence"
+
+msgid "Retune speed"
+msgstr "Vitesse de correction"
+
+msgid "Soprano"
+msgstr "Soprano"
+
+msgid "Tenor"
+msgstr "Ténor"
+
+msgid "Throat"
+msgstr "Gorge"
+
+msgid "Tracking"
+msgstr "Suivi"
+
+msgid "Transition"
+msgstr "Transition"
+
+msgid "Vibrato delay"
+msgstr "Retard du vibrato"
+
+msgid "Vibrato depth"
+msgstr "Profondeur du vibrato"
+
+msgid "Vibrato onset"
+msgstr "Montée du vibrato"
+
+msgid "Vibrato rate"
+msgstr "Vitesse du vibrato"

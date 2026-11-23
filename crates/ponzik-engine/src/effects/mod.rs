@@ -25,6 +25,7 @@ pub mod mix_assistant;
 mod ott;
 mod phaser;
 mod pitch;
+pub mod autotune;
 mod pompe;
 mod reverb;
 pub(crate) mod rotary;
@@ -36,6 +37,7 @@ mod utility;
 mod vintage_verb;
 
 pub use amp::Amp;
+pub use autotune::AutoTune;
 pub use autofilter::AutoFilter;
 pub use bitcrusher::Bitcrusher;
 pub use bus_comp::BusComp;
