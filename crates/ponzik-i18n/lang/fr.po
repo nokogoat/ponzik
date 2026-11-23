@@ -9514,5 +9514,5 @@ msgstr "Voix"
 msgid "Voice to notes: sing or hum to play an instrument"
 msgstr "Voix en notes : chantez ou fredonnez pour jouer un instrument"
 
-msgid "Auto length\nThe pattern grows to its last note: you hear what you see"
-msgstr "Longueur auto\nLe pattern s'allonge jusqu'à sa dernière note : on entend ce qu'on voit"
+msgid "Auto length\nThe pattern ends with its last note: you hear what you see"
+msgstr "Longueur auto\nLe pattern s'arrête à sa dernière note : on entend ce qu'on voit"
