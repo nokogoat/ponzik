@@ -1,0 +1,14 @@
+@prefix lv2:  <http://lv2plug.in/ns/lv2core#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix pset: <http://lv2plug.in/ns/ext/presets#> .
+
+# `@BINARY@` is replaced by the library's file name when a test builds the bundle.
+
+<urn:ponzik:test:gain> a lv2:Plugin ; lv2:binary <@BINARY@> ; rdfs:seeAlso <test.ttl> .
+<urn:ponzik:test:synth> a lv2:Plugin ; lv2:binary <@BINARY@> ; rdfs:seeAlso <test.ttl> .
+<urn:ponzik:test:fixed> a lv2:Plugin ; lv2:binary <@BINARY@> ; rdfs:seeAlso <test.ttl> .
+<urn:ponzik:test:magic> a lv2:Plugin ; lv2:binary <@BINARY@> ; rdfs:seeAlso <test.ttl> .
+
+<urn:ponzik:test:gain#half> a pset:Preset ;
+    lv2:appliesTo <urn:ponzik:test:gain> ;
+    rdfs:seeAlso <presets.ttl> .

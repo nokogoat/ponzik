@@ -64,6 +64,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ponzik-lv2-test-plugin"
+version = "0.1.0"
+dependencies = [
+ "ponzik-lv2",
+]
+
+[[package]]
 name = "ponzik-midi"
 version = "0.1.0"
 
