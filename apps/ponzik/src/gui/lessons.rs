@@ -320,7 +320,7 @@ pub const LESSONS: &[Lesson] = &[
                 Goal::View(View::Playlist),
             ),
             step(Spot::Menu, tr_noop("Open the menu."), Goal::MenuOpen),
-            step(Spot::Menu, tr_noop("Pick Export as WAV, or FLAC for a smaller file."), Goal::Exported),
+            step(Spot::Menu, tr_noop("In Export, pick WAV, or FLAC for a smaller file."), Goal::Exported),
         ],
     },
     Lesson {
@@ -571,6 +571,11 @@ impl Lessons {
 
     pub fn active(&self) -> bool {
         self.run.is_some()
+    }
+
+    /// The current step waits for an export: the menu opens its Export submenu.
+    pub fn wants_export(&self) -> bool {
+        self.current_step().is_some_and(|st| st.goal == Goal::Exported)
     }
 
     /// Lessons done, out of all.

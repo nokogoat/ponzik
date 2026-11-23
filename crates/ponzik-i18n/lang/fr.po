@@ -985,17 +985,8 @@ msgstr "Ouvrir"
 msgid "Save as"
 msgstr "Enregistrer sous"
 
-msgid "Export as WAV"
-msgstr "Exporter en WAV"
-
-msgid "Export stems"
-msgstr "Exporter les pistes"
-
 msgid "One WAV per mixer track"
 msgstr "Un WAV par piste du mixer"
-
-msgid "Export as MIDI"
-msgstr "Exporter en MIDI"
 
 msgid "The current pattern"
 msgstr "Le pattern actuel"
@@ -5537,8 +5528,8 @@ msgstr "Chaque rangée est un son, chaque case une double croche. Clique les cas
 msgid "Click in the grid to draw notes, drag their end to make them longer, right-click to erase. The arrows above pick the channel."
 msgstr "Clique dans la grille pour dessiner des notes, tire leur fin pour les allonger, clic droit pour effacer. Les flèches au-dessus choisissent le canal."
 
-msgid "When it sounds good, open this menu and choose Export as WAV. Ctrl+K finds every other action."
-msgstr "Quand ça sonne bien, ouvre ce menu et choisis Exporter en WAV. Ctrl+K trouve toutes les autres actions."
+msgid "When it sounds good, open this menu, then Export and WAV. Ctrl+K finds every other action."
+msgstr "Quand ça sonne bien, ouvre ce menu, puis Exporter et WAV. Ctrl+K trouve toutes les autres actions."
 
 msgid "Step {} of {}"
 msgstr "Étape {} sur {}"
@@ -6823,9 +6814,6 @@ msgstr "{} · {}"
 msgid "{} → {}"
 msgstr "{} → {}"
 # --- FLAC export ---
-
-msgid "Export as FLAC"
-msgstr "Exporter en FLAC"
 
 msgid "Lossless, 24 bits, about half the size of a WAV"
 msgstr "Sans perte, 24 bits, environ moitié moins lourd qu'un WAV"
@@ -8583,8 +8571,8 @@ msgstr "Déposez un thème .css sur la fenêtre pour l'importer"
 msgid "Edit and save: the theme updates live"
 msgstr "Modifiez et enregistrez : le thème se met à jour en direct"
 
-msgid "Edit themes"
-msgstr "Modifier les thèmes"
+msgid "Edit themes…"
+msgstr "Modifier les thèmes…"
 
 msgid "Every change shows live in the app"
 msgstr "Chaque changement s'affiche en direct dans l'application"
@@ -8945,8 +8933,8 @@ msgstr "Écartez un peu charleston et accords dans l'espace."
 msgid "Piano roll basics"
 msgstr "Bases du piano roll"
 
-msgid "Pick Export as WAV, or FLAC for a smaller file."
-msgstr "Choisissez Exporter en WAV, ou FLAC pour un fichier plus léger."
+msgid "In Export, pick WAV, or FLAC for a smaller file."
+msgstr "Dans Exporter, choisissez WAV, ou FLAC pour un fichier plus léger."
 
 msgid "Pick a key and a scale here."
 msgstr "Choisissez une tonalité et une gamme ici."
@@ -9577,14 +9565,8 @@ msgstr "Tout est gardé : appareils, automation, prises, vue Session. Ctrl+S enr
 msgid "Export copy"
 msgstr "Exporter la copie"
 
-msgid "Export for Ableton Live"
-msgstr "Exporter pour Ableton Live"
-
 msgid "Export for Ableton Live (.als)"
 msgstr "Exporter pour Ableton Live (.als)"
-
-msgid "Export for FL Studio"
-msgstr "Exporter pour FL Studio"
 
 msgid "Export for FL Studio (.flp)"
 msgstr "Exporter pour FL Studio (.flp)"
@@ -9934,3 +9916,58 @@ msgid "{}: not a project Ponzik can open"
 msgstr "{} : pas un projet que Ponzik sait ouvrir"
 msgid "LV2 MIDI effect · {}"
 msgstr "Effet MIDI LV2 · {}"
+# --- Menus: Open recent, Import, Export ---
+
+msgid "Open recent"
+msgstr "Ouvrir un projet récent"
+
+msgid "No recent projects"
+msgstr "Aucun projet récent"
+
+msgid "Clear the list"
+msgstr "Vider la liste"
+
+msgid "Recent projects cleared"
+msgstr "Projets récents effacés"
+
+msgid "missing"
+msgstr "introuvable"
+
+msgid "Import"
+msgstr "Importer"
+
+msgid "Export"
+msgstr "Exporter"
+
+msgid "Its notes in a new pattern"
+msgstr "Ses notes dans un nouveau pattern"
+
+msgid "Opens an .flp as a new project: patterns, playlist, mixer"
+msgstr "Ouvre un .flp comme nouveau projet : patterns, playlist, mixer"
+
+msgid "Opens an .als as a new project: MIDI tracks, tempo, markers"
+msgstr "Ouvre un .als comme nouveau projet : pistes MIDI, tempo, marqueurs"
+
+msgid "Import an Ableton Live set"
+msgstr "Importer un set Ableton Live"
+
+msgid "No Ableton Live set found"
+msgstr "Aucun set Ableton Live trouvé"
+
+msgid "Project for another app"
+msgstr "Projet pour un autre logiciel"
+
+msgid "Stems"
+msgstr "Pistes séparées"
+
+msgid "Sections"
+msgstr "Sections"
+
+msgid "The song, start to end"
+msgstr "Le morceau, du début à la fin"
+
+msgid "REAPER, LMMS, Ardour, MusicXML…"
+msgstr "REAPER, LMMS, Ardour, MusicXML…"
+
+msgid "Pick the file: it opens as a new project, with a report of what came across"
+msgstr "Choisissez le fichier : il s'ouvre comme un nouveau projet, avec le bilan de ce qui a été repris"

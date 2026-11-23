@@ -34,6 +34,7 @@ mod keys;
 mod lanes;
 mod learn;
 mod lessons;
+mod menu;
 mod library;
 mod loops;
 mod midiout;
