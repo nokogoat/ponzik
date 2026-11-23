@@ -58,6 +58,7 @@ mod sync;
 mod keys_visuals;
 mod visuals;
 mod warping;
+mod wavetable;
 mod theme;
 mod themecss;
 mod themes;
@@ -703,6 +704,15 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     if let app::Focus::Channel(ch) = app.focus {
         if let Ok(kind) = std::env::var("PONZIK_INSTRUMENT") {
             app.project.channels[ch].instrument = ponzik_project::InstrumentDef::new(&kind);
+            app.commit(tr("Instrument"));
+        }
+        // PONZIK_INSTRUMENT_PARAMS=0:1,1:0.3 : réglages de l'instrument (identifiant:valeur).
+        if let Ok(spec) = std::env::var("PONZIK_INSTRUMENT_PARAMS") {
+            for (id, v) in spec.split(',').filter_map(|p| p.split_once(':')) {
+                if let (Ok(id), Ok(v)) = (id.trim().parse::<u32>(), v.trim().parse::<f32>()) {
+                    app.project.channels[ch].instrument.set(id, v);
+                }
+            }
             app.commit(tr("Instrument"));
         }
         // PONZIK_PADS=kit[,pad] : Drum Pads with the starter kit, pad n played.
