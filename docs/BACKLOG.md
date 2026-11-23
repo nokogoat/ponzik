@@ -145,7 +145,7 @@ template" (V1-12)**.
 | V3-11 | **Custom actions and command macros**: chain palette actions, name them, give them a shortcut (Reaper actions) | Pro workflows without scripting | M | ui (palette.rs) | – | ⬜ |
 | V3-12 | **Region rendering**: one file per section marker, naming templates (Reaper) | Export an EP or a set of loops in one go | S | project (render.rs) | V2-9 | ✅ "Export sections": one "<project> - <section>.wav" per section (main menu, palette, section menu) |
 | V3-13 | **Ableton Link and MIDI clock** (input and output) | Playing along with other machines | M | engine, midi (in-house UDP networking) | – | ⬜ |
-| V3-14 | **VST3 and LV2 hosting**, plugins sandboxed in a separate process | Access to the whole plugin ecosystem | L | new crate | – | 🟡 VST3 host shipped (`ponzik-vst3`); no LV2 or sandboxing |
+| V3-14 | **VST3 and LV2 hosting**, plugins sandboxed in a separate process | Access to the whole plugin ecosystem | L | new crate | – | 🟡 VST3 (`ponzik-vst3`), LV2 (`ponzik-lv2`) and LADSPA (`ponzik-ladspa`) hosts shipped, scan in child processes; instances not sandboxed |
 | V3-15 | **DAWproject import** (and partial `.als`) | Bring your projects over from elsewhere | L | project | – | 🟡 `.als` import (MIDI tracks and clips, audio clips, tempo, locators) and export; no DAWproject yet |
 | V3-16 | **Master recording (resampling)** from the transport bar (Bitwig 5.3) | Keep an improvised jam | S | engine, ui | – | ⬜ |
 | V3-17 | **Search everywhere**: the palette also searches presets, samples, channels, tracks and markers, and takes you there | Rule 7 | M | ui (palette.rs) | V2-22 | ⬜ |
@@ -234,7 +234,7 @@ already has are not listed here.
   to be checked in every view).
 - **Live**: follow actions (V2-24), Link and MIDI clock (V3-13), looper (outside
   the waves).
-- **Plugins**: LV2 and sandboxed plugins (V3-14).
+- **Plugins**: sandboxed plugin instances (V3-14).
 - **Export and sharing**: FLAC (V2-25), region rendering (V3-12), DAWproject
   (V3-15). MP3 and OGG need an in-house encoder: to do after FLAC.
 
