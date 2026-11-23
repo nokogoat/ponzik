@@ -527,7 +527,9 @@ impl Keymap {
 
     /// L'action déclenchée par une touche.
     pub fn lookup(&self, key: Key, mods: Modifiers) -> Option<Shortcut> {
-        self.binds.iter().find(|(_, c)| c.is_some_and(|c| c.matches(key, mods))).map(|(s, _)| *s)
+        let find = |key| self.binds.iter().find(|(_, c)| c.is_some_and(|c| c.matches(key, mods))).map(|(s, _)| *s);
+        // `+` shares its key with `=` on most layouts: the keypad's + does what `=` does (Ctrl + zooms in).
+        find(key).or_else(|| if key == Key::Char('+') { find(Key::Char('=')) } else { None })
     }
 
     pub fn is_default(&self, s: Shortcut) -> bool {
@@ -582,6 +584,9 @@ mod tests {
         assert_eq!(k.lookup(Key::Char('-'), CTRL), Some(Shortcut::ZoomOut));
         assert_eq!(k.lookup(Key::Char('0'), CTRL), Some(Shortcut::ZoomReset));
         assert_eq!(k.lookup(Key::Char('-'), NONE), Some(Shortcut::PrevPattern));
+        // The keypad's + and −: Ctrl zooms, alone they change the pattern.
+        assert_eq!(k.lookup(Key::Char('+'), CTRL), Some(Shortcut::ZoomIn));
+        assert_eq!(k.lookup(Key::Char('+'), NONE), Some(Shortcut::NextPattern));
         for s in Shortcut::ALL {
             if let Some(c) = s.default_combo() {
                 assert_eq!(k.conflict(c, s), None, "{s:?}");
