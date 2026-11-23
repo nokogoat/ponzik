@@ -1966,9 +1966,6 @@ msgstr "Swing"
 msgid "{:.0}%"
 msgstr "{:.0} %"
 
-msgid "Swing\nDrag or scroll"
-msgstr "Swing\nGlisser ou molette"
-
 msgid "Add an instrument\nor drag one from the browser"
 msgstr "Ajouter un instrument\nou glisser depuis le navigateur"
 
@@ -4050,9 +4047,6 @@ msgstr "Type"
 msgid "{:.1} BPM"
 msgstr "{:.1} BPM"
 
-msgid "{}\nDouble-click: default · right-click: automate, link to a controller"
-msgstr "{}\nDouble-clic : défaut · clic droit : automatiser, lier à un contrôleur"
-
 # --- Recording panel ---
 
 msgid "Microphone \"{}\" unavailable: using the system default input"
@@ -5714,9 +5708,6 @@ msgstr "Déplacement · insertion"
 msgid "Move · overwrite"
 msgstr "Déplacement · remplacement"
 
-msgid "Playlist\nClick: place the chosen pattern · edge: length\nRight-click: erase · on the title: clip menu\nDouble-click: edit · Ctrl+B: duplicate\nRuler: start, loop and time selection\nTop lane: sections · under the ruler: tempo and meter\nWheel: scroll · Ctrl: zoom · middle: pan"
-msgstr "Playlist\nClic : poser le pattern choisi · bord : durée\nClic droit : effacer · sur le titre : menu du clip\nDouble-clic : éditer · Ctrl+B : dupliquer\nRègle : départ, boucle et sélection de temps\nEn haut : sections · sous la règle : tempo et mesure\nMolette : défiler · Ctrl : zoom · milieu : glisser"
-
 msgid "Remove this change"
 msgstr "Retirer ce changement"
 
@@ -5731,9 +5722,6 @@ msgstr "Section · {}"
 
 msgid "Sections\nClick: loop the section · double-click: add a marker\nHeader: drag to move the section (Ctrl: copy, Alt: overwrite)\nDouble-click the header: rename · edge: move the marker\nRight-click: section menu · 1–9: jump to a marker"
 msgstr "Sections\nClic : boucler la section · double-clic : ajouter un marqueur\nEn-tête : glisser pour déplacer la section (Ctrl : copier, Alt : remplacer)\nDouble-clic sur l'en-tête : renommer · bord : déplacer le marqueur\nClic droit : menu de la section · 1–9 : aller à un marqueur"
-
-msgid "Tempo at the playhead\nDrag or scroll · Shift: fine"
-msgstr "Tempo à la tête de lecture\nGlisser ou molette · Maj : fin"
 
 msgid "Tempo change"
 msgstr "Changement de tempo"
@@ -8157,6 +8145,79 @@ msgstr "Chaque changement, dès qu'il est compilé"
 
 msgid "Full changelog"
 msgstr "Journal complet"
+# --- Loops, device panel, keyboard focus ---
+
+msgid "A copy right after it"
+msgstr "Une copie juste après"
+
+msgid "A loop on this channel"
+msgstr "Une boucle sur ce canal"
+
+msgid "A new effect at the end of the chain\nor drag one from the browser"
+msgstr "Un nouvel effet au bout de la chaîne\nou glissez-en un depuis le navigateur"
+
+msgid "Accessibility"
+msgstr "Accessibilité"
+
+msgid "Add effect"
+msgstr "Ajouter un effet"
+
+msgid "Back to the channel {}: its instrument and these effects"
+msgstr "Retour au canal {} : son instrument et ces effets"
+
+msgid "Bypass or enable: {}"
+msgstr "Contourner ou activer : {}"
+
+msgid "Click a name to jump to its device, drag it to reorder. The wheel scrolls the panel; Ctrl+← and Ctrl+→ go from device to device."
+msgstr "Cliquez un nom pour aller à son appareil, glissez-le pour réordonner. La molette fait défiler le panneau ; Ctrl+← et Ctrl+→ passent d'un appareil à l'autre."
+
+msgid "Click the loop badge to play it once per pattern, in time with the project tempo."
+msgstr "Cliquez le badge de boucle pour la jouer une fois par pattern, calée sur le tempo du projet."
+
+msgid "Collapse"
+msgstr "Replier"
+
+msgid "Collapse\nDouble-click its slim card or Expand to open it again"
+msgstr "Replier\nDouble-clic sur la carte fine ou Déplier pour la rouvrir"
+
+msgid "Collapse all the devices"
+msgstr "Replier tous les appareils"
+
+msgid "Collapse or expand: {}"
+msgstr "Replier ou déplier : {}"
+
+msgid "Detach into a window: {}"
+msgstr "Détacher dans une fenêtre : {}"
+
+msgid "Drag the right edge of the clip to repeat the loop as far as you want. Right-click its title: loop to the end of the song, ×2, ×4, ×8."
+msgstr "Tirez le bord droit du clip pour répéter la boucle aussi loin que vous voulez. Clic droit sur son titre : boucler jusqu'à la fin du morceau, ×2, ×4, ×8."
+
+msgid "Duplicate the selected clip"
+msgstr "Dupliquer le clip choisi"
+
+msgid "Enter: apply · Escape: cancel"
+msgstr "Entrée : appliquer · Échap : annuler"
+
+msgid "Expand"
+msgstr "Déplier"
+
+msgid "Expand all the devices"
+msgstr "Déplier tous les appareils"
+
+msgid "Fills the time selection dragged in the ruler"
+msgstr "Remplit la sélection de temps tirée dans la règle"
+
+msgid "Find your devices"
+msgstr "Retrouvez vos appareils"
+
+msgid "Fit loop to pattern"
+msgstr "Caler la boucle sur le pattern"
+
+msgid "Fit loop to pattern: {}"
+msgstr "Caler la boucle sur le pattern : {}"
+
+msgid "Go to device: {}"
+msgstr "Aller à l'appareil : {}"
 
 msgid "Got it"
 msgstr "Compris"
@@ -8305,3 +8366,146 @@ msgstr "cet appareil n'a pas d'état"
 
 msgid "this plugin has no state"
 msgstr "ce plugin n'a pas d'état"
+msgid "Insert an effect"
+msgstr "Insérer un effet"
+
+msgid "Insert an effect before"
+msgstr "Insérer un effet avant"
+
+msgid "Insert an effect here"
+msgstr "Insérer un effet ici"
+
+msgid "Keyboard focus: devices and transport (Tab, arrows, Enter)"
+msgstr "Focus clavier : appareils et transport (Tab, flèches, Entrée)"
+
+msgid "Loop fitted: {} beats from step 1, in time at {} BPM"
+msgstr "Boucle calée : {} temps dès le pas 1, en mesure à {} BPM"
+
+msgid "Loop on: the clip repeats as you drag"
+msgstr "Boucle activée : le clip se répète à mesure que vous tirez"
+
+msgid "Loop the selected clip over the time selection"
+msgstr "Boucler le clip choisi sur la sélection de temps"
+
+msgid "Loop the selected clip to the end of the song"
+msgstr "Boucler le clip choisi jusqu'à la fin du morceau"
+
+msgid "Loop to end of song"
+msgstr "Boucler jusqu'à la fin"
+
+msgid "Loop to time selection"
+msgstr "Boucler sur la sélection"
+
+msgid "Loop · {} beats at {} BPM\nFitted: once per pattern, in time with the project\nClick: fit it again"
+msgstr "Boucle · {} temps à {} BPM\nCalée : une fois par pattern, en mesure avec le projet\nClic : la recaler"
+
+msgid "Loop · {} beats at {} BPM: longer than its step, it plays on over {} steps\nClick: fit it to the pattern (once per pattern, in time)"
+msgstr "Boucle · {} temps à {} BPM : plus longue que son pas, elle déborde sur {} pas\nClic : la caler sur le pattern (une fois par pattern, en mesure)"
+
+msgid "Looped over the time selection · {} bars"
+msgstr "Bouclé sur la sélection de temps · {} mes."
+
+msgid "Looped to the end of the song · bar {}"
+msgstr "Bouclé jusqu'à la fin du morceau · mesure {}"
+
+msgid "Make the loop last"
+msgstr "Faites durer la boucle"
+
+msgid "Mixer track {}: {}\nClick: go to its effects · double-click: open the track alone"
+msgstr "Piste de mixage {} : {}\nClic : aller à ses effets · double-clic : ouvrir la piste seule"
+
+msgid "Move an effect"
+msgstr "Déplacer un effet"
+
+msgid "Not a value for {}: {}"
+msgstr "Valeur impossible pour {} : {}"
+
+msgid "Nothing plays after this clip yet: try Repeat ×4"
+msgstr "Rien ne joue encore après ce clip : essayez Répéter ×4"
+
+msgid "Paint brush\nDrag along a lane: copies of the pattern, or of the audio clip selected"
+msgstr "Pinceau\nGlissez le long d'une ligne : copies du pattern, ou du clip audio choisi"
+
+msgid "Paint brush off"
+msgstr "Couper le pinceau"
+
+msgid "Paint brush: drag along a lane to lay copies of a clip"
+msgstr "Pinceau : glisser le long d'une ligne pour poser des copies d'un clip"
+
+msgid "Paint clips"
+msgstr "Peindre des clips"
+
+msgid "Paint mode off"
+msgstr "Pinceau désactivé"
+
+msgid "Paint mode: drag along a lane to lay copies · B to stop"
+msgstr "Pinceau : glissez le long d'une ligne pour poser des copies · B pour arrêter"
+
+msgid "Playlist\nClick: place the chosen pattern · edge: length, a loop repeats\nRight-click: erase · on the title: clip menu (loop to the end, ×4…)\nDouble-click: edit · Ctrl+B: duplicate · B: paint brush\nRuler: start, loop and time selection\nTop lane: sections · under the ruler: tempo and meter\nWheel: scroll · Ctrl: zoom · middle: pan"
+msgstr "Playlist\nClic : poser le pattern choisi · bord : longueur, une boucle se répète\nClic droit : effacer · sur le titre : menu du clip (boucler jusqu'à la fin, ×4…)\nDouble-clic : éditer · Ctrl+B : dupliquer · B : pinceau\nRègle : départ, boucle et sélection de temps\nLigne du haut : sections · sous la règle : tempo et mesure\nMolette : défiler · Ctrl : zoom · milieu : déplacer"
+
+msgid "Plays the whole loop once per pattern from step 1, stretched to the project tempo"
+msgstr "Joue toute la boucle une fois par pattern dès le pas 1, étirée au tempo du projet"
+
+msgid "Repeat the selected clip ×{}"
+msgstr "Répéter le clip choisi ×{}"
+
+msgid "Repeat ×{}"
+msgstr "Répéter ×{}"
+
+msgid "Repeated ×{} · {} bars"
+msgstr "Répété ×{} · {} mes."
+
+msgid "Repeats the clip up to the end of the other clips"
+msgstr "Répète le clip jusqu'au bout des autres clips"
+
+msgid "Reset to default"
+msgstr "Remettre par défaut"
+
+msgid "Show its settings again"
+msgstr "Réafficher ses réglages"
+
+msgid "Swing\nDrag or scroll · double-click: 0%"
+msgstr "Swing\nGlisser ou molette · double-clic : 0 %"
+
+msgid "Tempo at the playhead\nDrag or scroll · Shift: fine · double-click: type it"
+msgstr "Tempo à la tête de lecture\nGlisser ou molette · Maj : fin · double-clic : le taper"
+
+msgid "The clip plays its loop this many times"
+msgstr "Le clip joue sa boucle autant de fois"
+
+msgid "This channel plays no loop: drop a loop on it first"
+msgstr "Ce canal ne joue pas de boucle : déposez-y d'abord une boucle"
+
+msgid "Track {} · {} effect"
+msgstr "Piste {} · {} effet"
+
+msgid "Track {} · {} effects"
+msgstr "Piste {} · {} effets"
+
+msgid "Type a value"
+msgstr "Taper une valeur"
+
+msgid "Type a value…"
+msgstr "Taper une valeur…"
+
+msgid "bar {}"
+msgstr "mesure {}"
+
+msgid "{}\nClick: go to it"
+msgstr "{}\nClic : y aller"
+
+msgid "{}\nClick: go to it · drag: move it · right-click: bypass, remove, detach, presets"
+msgstr "{}\nClic : y aller · glisser : le déplacer · clic droit : contourner, retirer, détacher, presets"
+
+msgid "{}\nClick: go to it · right-click: its menu"
+msgstr "{}\nClic : y aller · clic droit : son menu"
+
+msgid "{}\nDrag, wheel or arrows · double-click: default\nRight-click: type a value, automate, link to a controller"
+msgstr "{}\nGlisser, molette ou flèches · double-clic : défaut\nClic droit : taper une valeur, automatiser, lier à un contrôleur"
+
+msgid "{} · {} of {}"
+msgstr "{} · {} sur {}"
+
+msgid "Tempo Sync"
+msgstr "Synchro tempo"
