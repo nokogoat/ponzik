@@ -1,4 +1,5 @@
 mod alloc_count;
+mod bench;
 mod build_info;
 mod gui;
 mod install;
@@ -27,6 +28,7 @@ Usage:
   ponzik                                   opens the interface (house demo)
   ponzik breakcore                         opens the interface on the breakcore demo
   ponzik zalgo                             opens the interface on the rage × techno demo
+  ponzik new                               opens the interface on an empty project
   ponzik play [seconds]                    plays the demo in the terminal (Enter to stop)
   ponzik render <output.wav> [song|pattern] [breakcore|zalgo]
                                            exports a demo as a 24-bit WAV
@@ -37,6 +39,9 @@ Usage:
                                            PONZIK_SAMPLELAB=demo|<wav> opens the Sample Lab;
                                            PONZIK_SCALE_UI=2 renders at 2× for HiDPI;
                                            PONZIK_LANG=fr picks the language)
+  ponzik bench [house|breakcore|zalgo|empty|<file>] [seconds]
+                                           measures audio block times, the heaviest
+                                           tracks and devices, interface images, memory
   ponzik library [dir]                     renders the bundled sound library (24-bit WAV)
                                            into dir (default: ~/Music/Ponzik/Library)
   ponzik check-update [nightly|stable]     asks GitHub for a newer release
@@ -51,7 +56,11 @@ Usage:
   ponzik help                              shows this help")
 }
 
+/// When the process started, for the startup time (`PONZIK_PROFILE=1`).
+pub static STARTED: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+
 fn main() -> ExitCode {
+    STARTED.get_or_init(Instant::now);
     gui::init_language();
     let args: Vec<String> = std::env::args().skip(1).collect();
     // Internal: loads one plugin for the scan, in this throwaway process.
@@ -68,6 +77,8 @@ fn main() -> ExitCode {
         None => gui::run(demo_project(), None),
         Some("breakcore") => gui::run(ponzik_project::demo_breakcore(), None),
         Some("zalgo") => gui::run(ponzik_project::demo_zalgo(), None),
+        Some("new") => gui::run(ponzik_project::Project::empty(), None),
+        Some("bench") => bench::bench(&args[1..]),
         Some(a) if project_arg(a).is_some() => gui::run(demo_project(), project_arg(a)),
         Some("install") => cli_install(&args[1..]),
         Some("uninstall") => cli_uninstall(&args[1..]),

@@ -383,6 +383,8 @@ struct Profile {
     dirty: f64,
     ops: usize,
     allocs: u64,
+    /// The first image is still to come (startup time).
+    first: bool,
 }
 
 impl Profile {
@@ -397,6 +399,7 @@ impl Profile {
             dirty: 0.0,
             ops: 0,
             allocs: 0,
+            first: true,
         }
     }
 
@@ -428,7 +431,7 @@ impl Profile {
                 self.allocs / self.frames.max(1) as u64,
                 busy * 100.0,
             );
-            *self = Self::new();
+            *self = Self { first: false, ..Self::new() };
         }
     }
 }
@@ -558,6 +561,11 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
                 window.present_rects(canvas.pixels(), w, h, canvas.dirty_rects()).map_err(|e| e.to_string())?;
             }
             if let Some(p) = profile.as_mut() {
+                if p.first {
+                    p.first = false;
+                    let since = crate::STARTED.get().map_or(0.0, |t| t.elapsed().as_secs_f64() * 1e3);
+                    eprintln!("profile: first image on screen {since:.0} ms after start · RSS {}", crate::bench::rss().unwrap_or_default());
+                }
                 let area: usize = canvas.dirty_rects().iter().map(|d| (d.2 - d.0) * (d.3 - d.1)).sum();
                 let allocs = crate::alloc_count::allocations() - allocs;
                 p.frame(now, t_frame, t_raster, Instant::now(), area as f64 / (w as f64 * h as f64), canvas.recorded_ops(), (w, h), allocs);
@@ -946,6 +954,69 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     }
     let png = encode_png(canvas.pixels(), pw, ph);
     std::fs::write(path, png).map_err(|e| format!("{path}: {e}"))
+}
+
+/// Interface timing of `view` for `ponzik bench`: `frames` images drawn in
+/// full, then as many tracked (only what changed is rasterized, as in the
+/// window) while playing, then tracked with the transport stopped and nothing
+/// moving.
+pub fn bench_view(project: ponzik_project::Project, view: &str, width: usize, height: usize, frames: usize) -> Result<crate::bench::FrameTimes, String> {
+    const SR: u32 = 48_000;
+    let samples = compat::project_samples(&project);
+    let (mut engine, handle) = project.build_engine(SR as f32, &|p| samples.get(p).cloned());
+    let mut app = App::new(handle, project, SR);
+    app.samples = samples;
+    let view = view_named(view).ok_or_else(|| format!("unknown view: {view}"))?;
+    if app.view_shown(view) {
+        app.set_view(view);
+    }
+    match view {
+        View::Piano if !app.project.channels.is_empty() => app.focus = app::Focus::Channel(app.project.channels.len().min(5) - 1),
+        View::Mixer => app.focus = app::Focus::Track(0),
+        View::Playlist => app.set_mode(ponzik_engine::PlayMode::Song),
+        _ => {}
+    }
+    app.toggle_play();
+    let mut canvas = Canvas::new(width, height);
+    let input = Input::default();
+    let mut audio = vec![0.0f32; 800 * 2];
+    let tracked = |app: &mut App, engine: &mut ponzik_engine::Engine, canvas: &mut Canvas, audio: &mut [f32], n: usize| {
+        let (mut ui, mut raster, mut allocs) = (Duration::ZERO, Duration::ZERO, 0);
+        for _ in 0..n {
+            engine.process(audio, 2);
+            let a0 = crate::alloc_count::allocations();
+            let t0 = Instant::now();
+            canvas.begin_frame();
+            app.frame(canvas, &input, 1.0 / 60.0);
+            let t1 = Instant::now();
+            canvas.end_frame();
+            ui += t1 - t0;
+            raster += t1.elapsed();
+            allocs += crate::alloc_count::allocations() - a0;
+        }
+        (ui, raster, allocs)
+    };
+    let mut full = Duration::ZERO;
+    for _ in 0..frames {
+        engine.process(&mut audio, 2);
+        let t0 = Instant::now();
+        app.frame(&mut canvas, &input, 1.0 / 60.0);
+        full += t0.elapsed();
+    }
+    tracked(&mut app, &mut engine, &mut canvas, &mut audio, 2);
+    let (ui, raster, allocs) = tracked(&mut app, &mut engine, &mut canvas, &mut audio, frames);
+    app.toggle_play();
+    // Stopped: the meters fall and the animations settle before the measure.
+    tracked(&mut app, &mut engine, &mut canvas, &mut audio, 120);
+    let (idle_ui, idle_raster, _) = tracked(&mut app, &mut engine, &mut canvas, &mut audio, frames);
+    let ms = crate::bench::ms;
+    Ok(crate::bench::FrameTimes {
+        full_ms: ms(full, frames),
+        ui_ms: ms(ui, frames),
+        raster_ms: ms(raster, frames),
+        idle_ms: ms(idle_ui + idle_raster, frames),
+        allocs: allocs / frames.max(1) as u64,
+    })
 }
 
 /// One image of audio with the simulated singer on the input.
