@@ -121,6 +121,68 @@ impl ParamInfo {
             Unit::None => num(v, 2),
         }
     }
+
+    /// Value typed by hand, in the unit shown by [`format`](Self::format):
+    /// « 440 », « 2,5 kHz », « −6 dB », « 250 ms », « 50 % », « L 20 »,
+    /// a choice by its name (or its number from 1). Clamped; `None` when the
+    /// text means nothing.
+    pub fn parse(&self, text: &str) -> Option<f32> {
+        let raw = text.trim();
+        if raw.is_empty() {
+            return None;
+        }
+        let lower = raw.to_lowercase();
+        if self.unit == Unit::Choice {
+            let found = self.choices.iter().position(|c| c.to_lowercase() == lower || tr(c).to_lowercase() == lower);
+            let found = found.or_else(|| {
+                let prefix: Vec<usize> = (0..self.choices.len())
+                    .filter(|&i| tr(self.choices[i]).to_lowercase().starts_with(&lower) || self.choices[i].to_lowercase().starts_with(&lower))
+                    .collect();
+                (prefix.len() == 1).then(|| prefix[0])
+            });
+            let found = found.or_else(|| lower.parse::<usize>().ok().filter(|&n| n >= 1).map(|n| n - 1));
+            return found.map(|i| self.clamp(i as f32));
+        }
+        // Number first (any decimal separator, typographic minus), unit after.
+        let s: String = lower.replace('−', "-").replace(',', ".");
+        let s = s.trim();
+        if self.unit == Unit::Db && (s.contains("inf") || s.contains('∞')) {
+            return Some(self.min);
+        }
+        if self.unit == Unit::Pan {
+            let side = |rest: &str| rest.trim().parse::<f32>().ok().map(|v| v / 100.0);
+            if s == "c" || s == "center" || s == "centre" {
+                return Some(0.0);
+            }
+            for (prefixes, sign) in [(["l", "g"], -1.0), (["r", "d"], 1.0)] {
+                for p in prefixes {
+                    if let Some(rest) = s.strip_prefix(p) {
+                        return side(rest).map(|v| self.clamp(sign * v));
+                    }
+                }
+            }
+        }
+        let end = s
+            .char_indices()
+            .find(|&(i, c)| !(c.is_ascii_digit() || c == '.' || ((c == '-' || c == '+') && i == 0)))
+            .map_or(s.len(), |(i, _)| i);
+        let value: f32 = s[..end].parse().ok()?;
+        if !value.is_finite() {
+            return None;
+        }
+        let unit = s[end..].trim();
+        let v = match self.unit {
+            Unit::Hz if unit.starts_with('k') => value * 1000.0,
+            Unit::Seconds if unit.starts_with("ms") => value / 1000.0,
+            Unit::Seconds if unit.starts_with('s') => value,
+            // A bare number past the longest time reads as milliseconds.
+            Unit::Seconds => if self.max <= 30.0 && value > self.max { value / 1000.0 } else { value },
+            Unit::Percent => value / 100.0,
+            Unit::Pan => value / 100.0,
+            _ => value,
+        };
+        Some(self.clamp(v))
+    }
 }
 
 /// Paramètres exposés par un instrument ou un effet.
@@ -186,5 +248,41 @@ mod tests {
             assert_eq!(c.format(1.2), "Scie");
         });
         assert_eq!(c.clamp(0.7), 1.0);
+    }
+
+    #[test]
+    fn typed_values_parse_in_their_unit() {
+        let hz = ParamInfo::new(0, "f", 20.0, 20_000.0, 1_000.0, Unit::Hz);
+        let db = ParamInfo::new(0, "g", -80.0, 6.0, 0.0, Unit::Db);
+        let s = ParamInfo::new(0, "t", 0.001, 10.0, 0.1, Unit::Seconds);
+        let pc = ParamInfo::new(0, "m", 0.0, 1.0, 0.5, Unit::Percent);
+        let pan = ParamInfo::new(0, "p", -1.0, 1.0, 0.0, Unit::Pan);
+        let c = ParamInfo::choice(0, "Wave", &["Sine", "Saw"], 1);
+        ponzik_i18n::with_lang(ponzik_i18n::Lang::EN, || {
+            assert_eq!(hz.parse("440"), Some(440.0));
+            assert_eq!(hz.parse("2,5 kHz"), Some(2_500.0));
+            assert_eq!(hz.parse("2.5k"), Some(2_500.0));
+            assert_eq!(hz.parse("99999"), Some(20_000.0));
+            assert_eq!(db.parse("−6 dB"), Some(-6.0));
+            assert_eq!(db.parse("-inf"), Some(-80.0));
+            assert_eq!(s.parse("250 ms"), Some(0.25));
+            assert_eq!(s.parse("1.5 s"), Some(1.5));
+            assert_eq!(s.parse("250"), Some(0.25));
+            assert_eq!(pc.parse("50 %"), Some(0.5));
+            assert_eq!(pan.parse("L 20"), Some(-0.2));
+            assert_eq!(pan.parse("r30"), Some(0.3));
+            assert_eq!(pan.parse("C"), Some(0.0));
+            assert_eq!(c.parse("saw"), Some(1.0));
+            assert_eq!(c.parse("si"), Some(0.0));
+            assert_eq!(c.parse("2"), Some(1.0));
+            assert_eq!(db.parse("loud"), None);
+            assert_eq!(db.parse(""), None);
+        });
+        let fr = ponzik_i18n::Lang::from_code("fr").expect("fr");
+        ponzik_i18n::with_lang(fr, || {
+            assert_eq!(c.parse("scie"), Some(1.0));
+            assert_eq!(pan.parse("G 20"), Some(-0.2));
+            assert_eq!(pan.parse("D 50"), Some(0.5));
+        });
     }
 }
