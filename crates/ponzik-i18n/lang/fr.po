@@ -2377,8 +2377,8 @@ msgstr "Drive par bande\nTrait : ton"
 msgid "Multiband off\nLine: tone"
 msgstr "Multibande coupée\nTrait : ton"
 
-msgid "Vinyl: crackle and age\nWave: wow, hiss, bit loss"
-msgstr "Disque : craquements et âge\nOnde : pleurage, souffle, perte de bits"
+msgid "Top: wear filter, hiss (grey) and bit loss (teal) floors\nBottom: wow and flutter pitch, crackles"
+msgstr "En haut : filtre d'usure, planchers du souffle (gris) et de la perte de bits (sarcelle)\nEn bas : hauteur du pleurage et du scintillement, craquements"
 
 msgid "R"
 msgstr "D"
