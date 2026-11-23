@@ -342,11 +342,15 @@ impl App {
             };
             let curve = |x: f32| -> f32 {
                 match kind {
+                    // Sous le seuil, le signal baisse de la plage (−80 dB : coupé).
                     "gate" => {
+                        let range = v(self, 4);
                         if x >= thr {
                             x
+                        } else if range <= -79.9 {
+                            lo - 6.0
                         } else {
-                            x - v(self, 4)
+                            x + range
                         }
                     }
                     "limiter" => (x + makeup).min(v(self, 1)),
