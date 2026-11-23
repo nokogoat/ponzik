@@ -28,17 +28,37 @@ pub const SCAN_TIMEOUT: Duration = Duration::from_secs(45);
 pub enum Format {
     Clap,
     Vst3,
+    Lv2,
+    Ladspa,
 }
 
 impl Format {
-    /// Format of a plugin file or bundle, from its extension.
+    pub const ALL: [Format; 4] = [Format::Clap, Format::Vst3, Format::Lv2, Format::Ladspa];
+
+    /// Format of a plugin file or bundle, from its extension (a shared
+    /// library is a LADSPA one: the other formats have their own extension).
     pub fn of(path: &Path) -> Option<Format> {
         let ext = path.extension()?.to_str()?.to_ascii_lowercase();
         match ext.as_str() {
             "clap" => Some(Format::Clap),
             "vst3" => Some(Format::Vst3),
+            "lv2" => Some(Format::Lv2),
+            _ if ponzik_ladspa::is_library(path) => Some(Format::Ladspa),
             _ => None,
         }
+    }
+
+    /// Format of a device kind (`clap:`, `vst3:`, `lv2:`, `ladspa:`), none for native devices.
+    pub fn of_kind(kind: &str) -> Option<Format> {
+        [
+            (ponzik_clap::KIND_PREFIX, Format::Clap),
+            (ponzik_vst3::KIND_PREFIX, Format::Vst3),
+            (ponzik_lv2::KIND_PREFIX, Format::Lv2),
+            (ponzik_ladspa::KIND_PREFIX, Format::Ladspa),
+        ]
+        .into_iter()
+        .find(|(p, _)| kind.starts_with(p))
+        .map(|(_, f)| f)
     }
 
     /// Short label shown in the browser.
@@ -46,6 +66,8 @@ impl Format {
         match self {
             Format::Clap => "CLAP",
             Format::Vst3 => "VST3",
+            Format::Lv2 => "LV2",
+            Format::Ladspa => "LADSPA",
         }
     }
 
@@ -53,15 +75,52 @@ impl Format {
         match self {
             Format::Clap => "clap",
             Format::Vst3 => "vst3",
+            Format::Lv2 => "lv2",
+            Format::Ladspa => "ladspa",
         }
     }
 
     fn from_tag(tag: &str) -> Option<Format> {
-        match tag {
-            "clap" => Some(Format::Clap),
-            "vst3" => Some(Format::Vst3),
-            _ => None,
-        }
+        Format::ALL.into_iter().find(|f| f.tag() == tag)
+    }
+}
+
+/// The instrument of a plugin kind, `None` for a native kind.
+pub fn instrument_from_kind(kind: &str) -> Option<Result<Box<dyn ponzik_engine::Instrument>, String>> {
+    Some(match Format::of_kind(kind)? {
+        Format::Clap => ponzik_clap::instrument_from_kind(kind),
+        Format::Vst3 => ponzik_vst3::instrument_from_kind(kind),
+        Format::Lv2 => ponzik_lv2::instrument_from_kind(kind),
+        Format::Ladspa => Err("LADSPA plugins are effects".into()),
+    })
+}
+
+/// The effect of a plugin kind, `None` for a native kind.
+pub fn effect_from_kind(kind: &str) -> Option<Result<Box<dyn ponzik_engine::Effect>, String>> {
+    Some(match Format::of_kind(kind)? {
+        Format::Clap => ponzik_clap::effect_from_kind(kind),
+        Format::Vst3 => ponzik_vst3::effect_from_kind(kind),
+        Format::Lv2 => ponzik_lv2::effect_from_kind(kind),
+        Format::Ladspa => ponzik_ladspa::effect_from_kind(kind),
+    })
+}
+
+/// The note effect of a plugin kind (LV2 MIDI effects), `None` for a native kind.
+pub fn note_fx_from_kind(kind: &str) -> Option<Result<Box<dyn ponzik_engine::NoteFx>, String>> {
+    Some(match Format::of_kind(kind)? {
+        Format::Lv2 => ponzik_lv2::note_fx_from_kind(kind),
+        f => Err(format!("{} plugins are not note effects", f.label())),
+    })
+}
+
+/// The plugin's own id in a kind (CLAP id, VST 3 class, LV2 URI, LADSPA
+/// unique id): what stays the same wherever it is installed.
+pub fn plugin_id(kind: &str) -> Option<&str> {
+    match Format::of_kind(kind)? {
+        Format::Clap => ponzik_clap::parse_kind(kind).map(|k| k.1),
+        Format::Vst3 => ponzik_vst3::parse_kind(kind).map(|k| k.1),
+        Format::Lv2 => ponzik_lv2::parse_kind(kind),
+        Format::Ladspa => ponzik_ladspa::parse_kind(kind).map(|k| k.1),
     }
 }
 
@@ -71,9 +130,12 @@ pub struct Found {
     pub id: String,
     pub name: String,
     pub vendor: String,
-    /// VST 3 subcategories (`Fx|Delay`…), empty for CLAP.
+    /// VST 3 subcategories (`Fx|Delay`…), `MIDI` for an LV2 MIDI effect,
+    /// the label of a LADSPA plugin, empty for CLAP.
     pub categories: String,
     pub is_instrument: bool,
+    /// Why Ponzik cannot host this plugin of the file (empty: it can).
+    pub skipped: String,
 }
 
 /// A file that could not be scanned, and why.
@@ -81,6 +143,8 @@ pub struct Found {
 pub struct ScanError {
     pub path: PathBuf,
     pub format: Format,
+    /// The plugin skipped, when the file holds others that load (empty: the whole file).
+    pub name: String,
     pub message: String,
 }
 
@@ -89,6 +153,8 @@ pub struct ScanError {
 pub struct ScanReport {
     pub clap: Vec<ponzik_clap::PluginInfo>,
     pub vst3: Vec<ponzik_vst3::PluginInfo>,
+    pub lv2: Vec<ponzik_lv2::PluginInfo>,
+    pub ladspa: Vec<ponzik_ladspa::PluginInfo>,
     pub errors: Vec<ScanError>,
     /// Files actually loaded by a child (the others came from the cache).
     pub scanned: usize,
@@ -99,6 +165,11 @@ impl ScanReport {
         match result {
             Ok(found) => {
                 for f in found {
+                    if !f.skipped.is_empty() {
+                        let e = ScanError { path: path.to_path_buf(), format, name: f.name.clone(), message: f.skipped.clone() };
+                        self.errors.push(e);
+                        continue;
+                    }
                     match format {
                         Format::Clap => self.clap.push(ponzik_clap::PluginInfo {
                             id: f.id.clone(),
@@ -115,15 +186,32 @@ impl ScanReport {
                             path: path.to_path_buf(),
                             is_instrument: f.is_instrument,
                         }),
+                        Format::Lv2 => self.lv2.push(ponzik_lv2::PluginInfo {
+                            id: f.id.clone(),
+                            name: f.name.clone(),
+                            vendor: f.vendor.clone(),
+                            path: path.to_path_buf(),
+                            is_instrument: f.is_instrument,
+                            is_midi_effect: f.categories == "MIDI",
+                        }),
+                        Format::Ladspa => self.ladspa.push(ponzik_ladspa::PluginInfo {
+                            id: f.id.clone(),
+                            label: f.categories.clone(),
+                            name: f.name.clone(),
+                            vendor: f.vendor.clone(),
+                            path: path.to_path_buf(),
+                        }),
                     }
                 }
             }
-            Err(message) => self.errors.push(ScanError { path: path.to_path_buf(), format, message: message.clone() }),
+            Err(message) => {
+                self.errors.push(ScanError { path: path.to_path_buf(), format, name: String::new(), message: message.clone() })
+            }
         }
     }
 
     pub fn plugin_count(&self) -> usize {
-        self.clap.len() + self.vst3.len()
+        self.clap.len() + self.vst3.len() + self.lv2.len() + self.ladspa.len()
     }
 }
 
@@ -132,7 +220,9 @@ impl ScanReport {
 pub fn candidates() -> Vec<(Format, PathBuf)> {
     let clap = ponzik_clap::plugin_files().into_iter().map(|p| (Format::Clap, p));
     let vst3 = ponzik_vst3::plugin_bundles().into_iter().map(|p| (Format::Vst3, p));
-    clap.chain(vst3).collect()
+    let lv2 = ponzik_lv2::plugin_bundles().into_iter().map(|p| (Format::Lv2, p));
+    let ladspa = ponzik_ladspa::plugin_files().into_iter().map(|p| (Format::Ladspa, p));
+    clap.chain(vst3).chain(lv2).chain(ladspa).collect()
 }
 
 fn clean(s: &str) -> String {
@@ -140,17 +230,32 @@ fn clean(s: &str) -> String {
 }
 
 fn found_line(f: &Found) -> String {
-    format!("{}\t{}\t{}\t{}\t{}", clean(&f.id), f.is_instrument as u8, clean(&f.name), clean(&f.vendor), clean(&f.categories))
+    let line = format!("{}\t{}\t{}\t{}\t{}", clean(&f.id), f.is_instrument as u8, clean(&f.name), clean(&f.vendor), clean(&f.categories));
+    if f.skipped.is_empty() { line } else { format!("{line}\t{}", clean(&f.skipped)) }
 }
 
 fn parse_found(fields: &[&str]) -> Option<Found> {
-    let [id, inst, name, vendor, categories, ..] = fields else { return None };
+    let [id, inst, name, vendor, categories, rest @ ..] = fields else { return None };
     (!id.is_empty()).then(|| Found {
         id: id.to_string(),
         is_instrument: *inst == "1",
         name: name.to_string(),
         vendor: vendor.to_string(),
         categories: categories.to_string(),
+        // Older caches have no sixth field.
+        skipped: rest.first().map_or(String::new(), |s| s.to_string()),
+    })
+}
+
+/// Lines for the plugins a file holds that Ponzik cannot host.
+fn skipped_found(skipped: impl Iterator<Item = (String, String)>) -> impl Iterator<Item = Found> {
+    skipped.enumerate().map(|(i, (name, reason))| Found {
+        id: format!("skipped-{i}"),
+        name,
+        vendor: String::new(),
+        categories: String::new(),
+        is_instrument: false,
+        skipped: reason,
     })
 }
 
@@ -160,15 +265,51 @@ pub fn scan_child(path: &Path) -> (String, bool) {
     let result: Result<Vec<Found>, String> = match Format::of(path) {
         Some(Format::Clap) => ponzik_clap::scan_file(path).map(|v| {
             v.into_iter()
-                .map(|p| Found { id: p.id, name: p.name, vendor: p.vendor, categories: String::new(), is_instrument: p.is_instrument })
+                .map(|p| Found {
+                    id: p.id,
+                    name: p.name,
+                    vendor: p.vendor,
+                    categories: String::new(),
+                    is_instrument: p.is_instrument,
+                    skipped: String::new(),
+                })
                 .collect()
         }),
         Some(Format::Vst3) => ponzik_vst3::scan_bundle(path).map(|v| {
             v.into_iter()
-                .map(|p| Found { id: p.id, name: p.name, vendor: p.vendor, categories: p.categories, is_instrument: p.is_instrument })
+                .map(|p| Found {
+                    id: p.id,
+                    name: p.name,
+                    vendor: p.vendor,
+                    categories: p.categories,
+                    is_instrument: p.is_instrument,
+                    skipped: String::new(),
+                })
                 .collect()
         }),
-        None => Err(tr("not a CLAP or VST 3 plugin").into()),
+        Some(Format::Lv2) => ponzik_lv2::scan_bundle(path).map(|(ok, skipped)| {
+            let ok = ok.into_iter().map(|p| Found {
+                categories: if p.is_midi_effect { "MIDI".into() } else { String::new() },
+                id: p.id,
+                name: p.name,
+                vendor: p.vendor,
+                is_instrument: p.is_instrument,
+                skipped: String::new(),
+            });
+            ok.chain(skipped_found(skipped.into_iter().map(|s| (s.name, s.reason)))).collect()
+        }),
+        Some(Format::Ladspa) => ponzik_ladspa::scan_file(path).map(|(ok, skipped)| {
+            let ok = ok.into_iter().map(|p| Found {
+                id: p.id,
+                name: p.name,
+                vendor: p.vendor,
+                categories: p.label,
+                is_instrument: false,
+                skipped: String::new(),
+            });
+            ok.chain(skipped_found(skipped.into_iter())).collect()
+        }),
+        None => Err(tr("not a CLAP, VST 3, LV2 or LADSPA plugin").into()),
     };
     match result {
         Ok(found) => {
@@ -424,7 +565,14 @@ mod tests {
     use super::*;
 
     fn found(id: &str, inst: bool) -> Found {
-        Found { id: id.into(), name: format!("Name {id}"), vendor: "V\tendor".into(), categories: "Fx".into(), is_instrument: inst }
+        Found {
+            id: id.into(),
+            name: format!("Name {id}"),
+            vendor: "V\tendor".into(),
+            categories: "Fx".into(),
+            is_instrument: inst,
+            skipped: String::new(),
+        }
     }
 
     #[test]

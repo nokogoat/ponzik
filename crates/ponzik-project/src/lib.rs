@@ -92,7 +92,8 @@ pub use templates::templates;
 pub struct InstrumentDef {
     /// Identifiant du registre natif, `clap:<chemin>#<id>` pour un plugin CLAP
     /// (voir [`ponzik_clap::kind_for`]) ou `vst3:<chemin>#<classe>` pour un
-    /// plugin VST 3 (voir [`ponzik_vst3::kind_for`]).
+    /// plugin VST 3 (voir [`ponzik_vst3::kind_for`]), `lv2:<uri>` pour un plugin
+    /// LV2, `ladspa:<chemin>#<id>` pour un plugin LADSPA.
     pub kind: String,
     /// Valeurs qui diffèrent des défauts : (identifiant, valeur).
     pub params: Vec<(u32, f32)>,
@@ -984,12 +985,9 @@ impl Project {
     /// Un plugin CLAP ou VST 3 introuvable ou défaillant est remplacé par Pulse (le projet
     /// garde son identifiant d'origine).
     pub fn make_instrument(def: &InstrumentDef, sample_rate: f32, loader: SampleLoader) -> Box<dyn Instrument> {
-        let created = if def.kind.starts_with(ponzik_clap::KIND_PREFIX) {
-            ponzik_clap::instrument_from_kind(&def.kind).map_err(|e| eprintln!("CLAP : {e}")).ok()
-        } else if def.kind.starts_with(ponzik_vst3::KIND_PREFIX) {
-            ponzik_vst3::instrument_from_kind(&def.kind).map_err(|e| eprintln!("VST 3 : {e}")).ok()
-        } else {
-            registry::create_instrument(&def.kind)
+        let created = match plugins::instrument_from_kind(&def.kind) {
+            Some(r) => r.map_err(|e| eprintln!("{}: {e}", def.kind)).ok(),
+            None => registry::create_instrument(&def.kind),
         };
         let mut inst = created.or_else(|| registry::create_instrument("pulse")).expect("le registre contient Pulse");
         // The plugin's own state first, before activation; the saved values
@@ -1035,12 +1033,9 @@ impl Project {
         if def.kind == rack::RACK {
             return Some(rack::make_rack(def, sample_rate, bpm));
         }
-        let mut fx = if def.kind.starts_with(ponzik_clap::KIND_PREFIX) {
-            ponzik_clap::effect_from_kind(&def.kind).map_err(|e| eprintln!("CLAP : {e}")).ok()?
-        } else if def.kind.starts_with(ponzik_vst3::KIND_PREFIX) {
-            ponzik_vst3::effect_from_kind(&def.kind).map_err(|e| eprintln!("VST 3 : {e}")).ok()?
-        } else {
-            registry::create_effect(&def.kind)?
+        let mut fx = match plugins::effect_from_kind(&def.kind) {
+            Some(r) => r.map_err(|e| eprintln!("{}: {e}", def.kind)).ok()?,
+            None => registry::create_effect(&def.kind)?,
         };
         if let Some(state) = &def.state
             && let Err(e) = fx.load_state(state)
@@ -1057,7 +1052,10 @@ impl Project {
 
     /// `None` si l'identifiant est inconnu.
     pub fn make_note_fx(def: &NoteFxDef, sample_rate: f32, bpm: f32) -> Option<Box<dyn NoteFx>> {
-        let mut fx = registry::create_note_fx(&def.kind)?;
+        let mut fx = match plugins::note_fx_from_kind(&def.kind) {
+            Some(r) => r.map_err(|e| eprintln!("{}: {e}", def.kind)).ok()?,
+            None => registry::create_note_fx(&def.kind)?,
+        };
         fx.set_sample_rate(sample_rate);
         fx.set_tempo(bpm);
         for &(id, v) in &def.params {

@@ -69,10 +69,10 @@ pub fn parse_state(text: &str) -> Option<PluginState> {
 }
 
 /// Folder name of a device kind's presets: a plugin's own id (CLAP plugin
-/// id, VST 3 class id), so that its presets follow it wherever it is
+/// id, VST 3 class id, LV2 URI, LADSPA id), so that its presets follow it wherever it is
 /// installed; the kind itself for native devices.
 pub fn preset_folder(kind: &str) -> &str {
-    ponzik_clap::parse_kind(kind).or_else(|| ponzik_vst3::parse_kind(kind)).map_or(kind, |(_, id)| id)
+    crate::plugins::plugin_id(kind).unwrap_or(kind)
 }
 
 /// Chains and mappings of a rack preset (`None` for other presets).

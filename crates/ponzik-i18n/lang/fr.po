@@ -760,8 +760,8 @@ msgstr "Effets"
 msgid "Samples"
 msgstr "Échantillons"
 
-msgid "CLAP and VST 3 plugins"
-msgstr "Plugins CLAP et VST 3"
+msgid "Plugins: CLAP, VST 3, LV2 and LADSPA"
+msgstr "Plugins : CLAP, VST 3, LV2 et LADSPA"
 
 msgid "Search"
 msgstr "Rechercher"
@@ -772,8 +772,8 @@ msgstr "Rien de trouvé"
 msgid "No WAV files"
 msgstr "Aucun fichier WAV"
 
-msgid "No CLAP or VST 3 plugins"
-msgstr "Aucun plugin CLAP ni VST 3"
+msgid "No CLAP, VST 3, LV2 or LADSPA plugins"
+msgstr "Aucun plugin CLAP, VST 3, LV2 ni LADSPA"
 
 msgid "{}\nClick: add · drag: drop"
 msgstr "{}\nClic : ajouter · glisser : déposer"
@@ -5152,7 +5152,6 @@ msgstr "Importer un projet FL Studio"
 msgid "Import an FL Studio project (.flp)"
 msgstr "Importer un projet FL Studio (.flp)"
 
-
 # --- Drum Pads ---
 
 msgid "Drum Pads"
@@ -5264,7 +5263,6 @@ msgstr "Déclin : glisse à gauche pour raccourcir la frappe, tout à droite pou
 
 msgid "Drop a WAV on a pad"
 msgstr "Dépose un WAV sur un pad"
-
 
 msgid "FL Studio {}.{}.{} project, {} PPQ converted to {}"
 msgstr "Projet FL Studio {}.{}.{}, {} PPQ convertis en {}"
@@ -6013,8 +6011,8 @@ msgstr "{} · {} cibles"
 
 # --- Plugin scan ---
 
-msgid "not a CLAP or VST 3 plugin"
-msgstr "pas un plugin CLAP ni VST 3"
+msgid "not a CLAP, VST 3, LV2 or LADSPA plugin"
+msgstr "pas un plugin CLAP, VST 3, LV2 ni LADSPA"
 
 msgid "could not start the scan: {}"
 msgstr "impossible de lancer l'analyse : {}"
@@ -9738,7 +9736,6 @@ msgstr "Ouvrir un projet…"
 msgid "Otherwise this screen opens at every launch · also in Settings › Workspace"
 msgstr "Sinon cet écran s'ouvre à chaque lancement · aussi dans Réglages › Espace de travail"
 
-
 msgid "Recent projects"
 msgstr "Projets récents"
 
@@ -9935,3 +9932,5 @@ msgstr "{} items vidéo"
 
 msgid "{}: not a project Ponzik can open"
 msgstr "{} : pas un projet que Ponzik sait ouvrir"
+msgid "LV2 MIDI effect · {}"
+msgstr "Effet MIDI LV2 · {}"
