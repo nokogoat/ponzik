@@ -23,6 +23,20 @@ const SILENCE_HOLD: f64 = 0.2;
 /// Durée maximale de la queue (réverbs, délais), en secondes.
 pub const MAX_TAIL: f64 = 10.0;
 
+/// Exports with the smart disable of the live engine (faster), or exact (off).
+static FAST_RENDER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Offline renders from now on: `true` lets silent inserts sleep as they do
+/// live (faster, may cut tails under −94 dBFS); `false` (the default) runs
+/// every insert on every block, for an exact render.
+pub fn set_fast_render(on: bool) {
+    FAST_RENDER.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn fast_render() -> bool {
+    FAST_RENDER.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RenderMode {
     /// Toute la playlist, puis la queue jusqu'au silence.
@@ -77,6 +91,7 @@ pub fn render_song_threads(
     project.loop_range = matches!(mode, RenderMode::Region(..)).then_some((from, to));
     // La séquence initiale du moteur est déjà complète (clips audio compris).
     let (mut engine, mut handle) = project.build_engine(sample_rate as f32, loader);
+    engine.set_smart_disable(fast_render());
     engine.set_worker_threads(workers);
     if from > 0 {
         let _ = handle.send(Command::Locate(from as f64));
@@ -156,6 +171,7 @@ pub fn render_taps(project: &Project, sample_rate: u32, loader: SampleLoader, mo
     project.mode = play_mode;
     project.loop_range = matches!(mode, RenderMode::Region(..)).then_some((from, to));
     let (mut engine, mut handle) = project.build_engine(sample_rate as f32, loader);
+    engine.set_smart_disable(fast_render());
     engine.set_worker_threads(default_worker_threads());
     engine.set_taps(taps);
     // On the frame grid of the song played from its start: the render's first

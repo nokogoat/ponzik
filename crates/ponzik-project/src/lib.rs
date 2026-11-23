@@ -72,7 +72,7 @@ pub use io::{load, load_from_file, save, save_to_file};
 pub use midi_file::{MidiFile, MidiTrack, import_midi, read_smf, write_smf};
 pub use render::{
     BitDepth, ExportOptions, FileFormat, Levels, Normalize, RenderMode, export_audio, export_wav, normalize, region_file_name,
-    render_regions, render_song, render_stems, write_audio, write_wav, write_wav_channels,
+    fast_render, render_regions, render_song, render_stems, set_fast_render, write_audio, write_wav, write_wav_channels,
 };
 pub use rack::{ModTarget, ModulatorDef, RackDef, RackDevice};
 pub use scale::{ChordKind, ScaleKind, Voicing, chord, revoice};
