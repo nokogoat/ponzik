@@ -1,0 +1,185 @@
+# Builds Ponzik for Linux (AppImage) and Windows (exe and portable zip) and
+# publishes them on GitHub Releases:
+# - every push to main replaces the assets of the rolling `nightly` pre-release;
+# - a `v*` tag (matching the Cargo version) creates a versioned release.
+# The in-app updater reads these releases (see docs/INSTALL.md).
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  meta:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.m.outputs.channel }}
+      version: ${{ steps.m.outputs.version }}
+      build: ${{ steps.m.outputs.build }}
+      hash: ${{ steps.m.outputs.hash }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: m
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            channel=stable
+            tag="${GITHUB_REF#refs/tags/}"
+            if [ "${tag#v}" != "$version" ]; then
+              echo "::error::tag $tag does not match the Cargo version $version"
+              exit 1
+            fi
+          else
+            channel=nightly
+          fi
+          {
+            echo "channel=$channel"
+            echo "version=$version"
+            echo "build=$(git rev-list --count HEAD)"
+            echo "hash=$(git rev-parse --short=9 HEAD)"
+          } >> "$GITHUB_OUTPUT"
+          echo "Ponzik $version, build $(git rev-list --count HEAD), channel $channel"
+
+  linux:
+    name: Linux AppImage
+    needs: meta
+    # The oldest supported runner: the AppImage runs on any glibc at least this old.
+    runs-on: ubuntu-22.04
+    env:
+      PONZIK_CHANNEL: ${{ needs.meta.outputs.channel }}
+      PONZIK_BUILD_NUMBER: ${{ needs.meta.outputs.build }}
+      PONZIK_GIT_HASH: ${{ needs.meta.outputs.hash }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: System packages
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            target
+          key: linux-release-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+          restore-keys: linux-release-${{ hashFiles('Cargo.lock') }}-
+      - name: Build the AppImage
+        run: scripts/build-appimage.sh
+      - name: Smoke test
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          dist/Ponzik-x86_64.AppImage --version
+          dist/Ponzik-x86_64.AppImage screenshot "$RUNNER_TEMP/shot.png" mixer 800 500
+          test -s "$RUNNER_TEMP/shot.png"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/Ponzik-x86_64.AppImage
+          if-no-files-found: error
+
+  windows:
+    name: Windows exe
+    needs: meta
+    runs-on: windows-latest
+    env:
+      PONZIK_CHANNEL: ${{ needs.meta.outputs.channel }}
+      PONZIK_BUILD_NUMBER: ${{ needs.meta.outputs.build }}
+      PONZIK_GIT_HASH: ${{ needs.meta.outputs.hash }}
+      # The icon and version resource are required in release builds.
+      PONZIK_REQUIRE_RC: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            target
+          key: windows-release-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+          restore-keys: windows-release-${{ hashFiles('Cargo.lock') }}-
+      - name: Build
+        run: cargo build --release --locked -p ponzik
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/Ponzik | Out-Null
+          Copy-Item target/release/ponzik.exe dist/Ponzik-windows-x86_64.exe
+          Copy-Item target/release/ponzik.exe dist/Ponzik/Ponzik.exe
+          Copy-Item LICENSE, README.md, docs/CHANGELOG.md, docs/INSTALL.md dist/Ponzik/
+          Compress-Archive -Path dist/Ponzik -DestinationPath dist/Ponzik-windows-x86_64.zip
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          dist/Ponzik-windows-x86_64.exe --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/Ponzik-windows-x86_64.exe
+            dist/Ponzik-windows-x86_64.zip
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: [meta, linux, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CHANNEL: ${{ needs.meta.outputs.channel }}
+      VERSION: ${{ needs.meta.outputs.version }}
+      BUILD: ${{ needs.meta.outputs.build }}
+      HASH: ${{ needs.meta.outputs.hash }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum Ponzik-x86_64.AppImage Ponzik-windows-x86_64.exe Ponzik-windows-x86_64.zip > SHA256SUMS
+          cat SHA256SUMS
+      - name: Release notes
+        run: |
+          git fetch --force --tags
+          scripts/release-notes.sh "$CHANNEL" "$VERSION" "$BUILD" "$HASH" > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
+      - name: Nightly pre-release
+        if: needs.meta.outputs.channel == 'nightly'
+        run: |
+          git tag -f nightly "$GITHUB_SHA"
+          git push -f origin refs/tags/nightly
+          title="Ponzik nightly $VERSION build $BUILD"
+          if gh release view nightly > /dev/null 2>&1; then
+            gh release edit nightly --title "$title" --notes-file "$RUNNER_TEMP/notes.md" --prerelease
+            gh release upload nightly dist/* --clobber
+          else
+            gh release create nightly --title "$title" --notes-file "$RUNNER_TEMP/notes.md" --prerelease dist/*
+          fi
+      - name: Versioned release
+        if: needs.meta.outputs.channel == 'stable'
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Ponzik $GITHUB_REF_NAME" \
+            --notes-file "$RUNNER_TEMP/notes.md" dist/*
