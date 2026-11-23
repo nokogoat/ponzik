@@ -325,9 +325,13 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     // les panneaux ouverts sont retenus pour la prochaine fois.
     app.close_autosave();
     app.save_settings();
-    // "Restart" after an update: the new build takes over.
-    if result.is_ok() {
-        app.relaunch_if_updated();
+    // "Restart" after an update: the new build takes over, once this one has
+    // let go of the audio device and its window.
+    let relaunch = if result.is_ok() { app.updates.relaunch.take() } else { None };
+    drop(app);
+    drop(window);
+    if let Some(target) = relaunch {
+        updates::relaunch(&target);
     }
     result
 }

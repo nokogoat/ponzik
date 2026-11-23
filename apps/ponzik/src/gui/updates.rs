@@ -177,6 +177,15 @@ pub fn open_url(url: &str) {
     let _ = cmd.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
 }
 
+/// After the window closed: starts the new build with the same arguments.
+pub fn relaunch(target: &std::path::Path) {
+    let mut cmd = std::process::Command::new(target);
+    cmd.args(std::env::args_os().skip(1));
+    if let Err(e) = cmd.spawn() {
+        eprintln!("restart failed ({}): {e}", target.display());
+    }
+}
+
 /// Removes what the previous update left (`Ponzik.exe.old`), at startup.
 pub fn cleanup_previous() {
     if let Some(target) = install_target() {
@@ -394,16 +403,6 @@ impl App {
     /// The program should end now (restart into the update).
     pub fn quit_requested(&self) -> bool {
         self.updates.relaunch.is_some()
-    }
-
-    /// After the window closed: starts the new build with the same arguments.
-    pub fn relaunch_if_updated(&self) {
-        let Some(target) = &self.updates.relaunch else { return };
-        let mut cmd = std::process::Command::new(target);
-        cmd.args(std::env::args_os().skip(1));
-        if let Err(e) = cmd.spawn() {
-            eprintln!("restart failed ({}): {e}", target.display());
-        }
     }
 
     /// Fake states for the screenshots (`PONZIK_UPDATE=available|downloading|installed|uptodate|error|offline`).
