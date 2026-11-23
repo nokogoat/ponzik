@@ -290,6 +290,47 @@ pub fn detect_tempo(sample: &Sample) -> Option<f32> {
     Some(snap_to_loop(bpm, sample.duration()))
 }
 
+/// Tempo of a loop lasting `duration` seconds, from the tempo heard in it
+/// (`heard`, often off by a simple ratio on breakbeats: 3/2, 2, 4/3…): the
+/// whole number of bars whose tempo matches what was heard, the simplest
+/// ratio first, then the closest to the project tempo. `None` for a sound
+/// too short or too long to be a loop, or with no such match.
+pub fn loop_tempo(duration: f32, heard: f32, project_bpm: f32) -> Option<f32> {
+    if !(1.0..=64.0).contains(&duration) || !(heard > 0.0) {
+        return None;
+    }
+    // Ratios between the tempo heard and the real one, simplest first.
+    const RATIOS: [(f32, f32); 7] = [(1.0, 0.0), (2.0, 1.0), (0.5, 1.0), (1.5, 2.0), (2.0 / 3.0, 2.0), (4.0 / 3.0, 3.0), (0.75, 3.0)];
+    const BARS: [f32; 10] = [1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0, 24.0, 32.0];
+    let project = if project_bpm > 0.0 { project_bpm } else { 120.0 };
+    let mut best: Option<(f32, f32)> = None;
+    for bars in BARS {
+        let tempo = bars * 240.0 / duration;
+        if !(60.0..=200.0).contains(&tempo) {
+            continue;
+        }
+        for (ratio, cost) in RATIOS {
+            if (tempo / (heard * ratio)).ln().abs() < 0.04 {
+                let score = cost + 1.5 * (tempo / project).ln().abs() + if bars == 3.0 || bars == 6.0 || bars == 12.0 || bars == 24.0 { 1.5 } else { 0.0 };
+                if best.is_none_or(|(s, _)| score < s) {
+                    best = Some((score, tempo));
+                }
+            }
+        }
+    }
+    best.map(|(_, t)| t)
+}
+
+/// Tempo of a file when it is a loop (a whole number of bars), from the
+/// tempo [`detect_tempo`] heard in it: clips placed in the song warp and
+/// repeat right away.
+pub fn loop_bpm(sample: &Sample, heard: f32, project_bpm: f32) -> Option<f32> {
+    if is_loop(sample, heard) {
+        return Some(heard);
+    }
+    loop_tempo(sample.duration(), heard, project_bpm)
+}
+
 /// True when the file lasts a whole number of bars at `bpm` (a loop: worth
 /// warping right away).
 pub fn is_loop(sample: &Sample, bpm: f32) -> bool {
@@ -475,5 +516,22 @@ mod tests {
         let s = tone(220.0, 2.0);
         assert!(is_loop(&s, 120.0));
         assert!(!is_loop(&s, 100.0));
+    }
+
+    #[test]
+    fn breakbeat_loops_find_their_tempo_from_their_length() {
+        // Two bars at 170 BPM, heard at 2/3 of the tempo (an irregular break).
+        let two_bars = 8.0 * 60.0 / 170.0;
+        let t = loop_tempo(two_bars, 113.46, 124.0).unwrap();
+        assert!((t - 170.0).abs() < 0.01, "{t}");
+        // Heard right: one bar at 120.
+        assert!((loop_tempo(2.0, 119.0, 124.0).unwrap() - 120.0).abs() < 0.01);
+        // Heard at double time: four bars at 90, not two at 180.
+        let t = loop_tempo(4.0 * 240.0 / 90.0, 180.5, 90.0).unwrap();
+        assert!((t - 90.0).abs() < 0.01, "{t}");
+        // A one-shot, a whole song, a length with no matching tempo.
+        assert_eq!(loop_tempo(0.4, 120.0, 120.0), None);
+        assert_eq!(loop_tempo(200.0, 120.0, 120.0), None);
+        assert_eq!(loop_tempo(2.0 * 240.0 / 128.0, 110.0, 120.0), None);
     }
 }

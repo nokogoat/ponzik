@@ -379,6 +379,54 @@ impl AudioClipDef {
         };
         ticks.round().max(TICKS_PER_STEP as f64) as u32
     }
+
+    /// Ticks (absolute) inside the clip where a looped file starts over, at
+    /// most `max` of them; empty when the clip does not loop.
+    pub fn loop_starts(&self, duration: f64, map: &TempoMap, max: usize) -> Vec<f64> {
+        let mut out = Vec::new();
+        if !self.looped || duration <= 0.0 {
+            return out;
+        }
+        let (start, end) = (self.start as f64, self.start as f64 + self.len as f64);
+        if self.warp {
+            let w = self.warp_map();
+            let (b0, b1, at) = (w.beat_at(0.0), w.beat_at(duration), w.beat_at(self.offset.rem_euclid(duration)));
+            let period = (b1 - b0) * PPQ as f64;
+            if period < 1.0 {
+                return out;
+            }
+            let mut tick = start + (b1 - at) * PPQ as f64;
+            while tick < end - 0.5 && out.len() < max {
+                out.push(tick);
+                tick += period;
+            }
+        } else {
+            let from = map.secs_at(start);
+            let mut secs = duration - self.offset.rem_euclid(duration);
+            loop {
+                let tick = map.tick_at_secs(from + secs);
+                if tick >= end - 0.5 || out.len() >= max {
+                    break;
+                }
+                out.push(tick);
+                secs += duration;
+            }
+        }
+        out
+    }
+
+    /// Length in ticks of one pass of the whole file from the clip start (a
+    /// repetition of a looped clip).
+    pub fn loop_period(&self, duration: f64, map: &TempoMap) -> u32 {
+        let ticks = if self.warp {
+            let w = self.warp_map();
+            (w.beat_at(duration) - w.beat_at(0.0)) * PPQ as f64
+        } else {
+            let from = map.secs_at(self.start as f64);
+            map.tick_at_secs(from + duration.max(0.0)) - self.start as f64
+        };
+        ticks.round().max(TICKS_PER_STEP as f64) as u32
+    }
 }
 
 /// Rôle d'une piste de mixer.
@@ -1492,6 +1540,24 @@ mod tests {
         p.insert_gap(96 + 2 * PPQ, PPQ);
         let right = p.audio_clips.iter().find(|c| c.start == 96 + 3 * PPQ).expect("right part");
         assert!((right.offset - 2.5).abs() < 1e-9, "{}", right.offset);
+    }
+
+    #[test]
+    fn looped_clips_mark_where_the_file_starts_over() {
+        let map = TempoMap::constant(120.0);
+        // A 2 s loop (one bar at 120 BPM) stretched over four bars.
+        let plain = AudioClipDef { start: 96, len: 16 * PPQ, looped: true, ..Default::default() };
+        let starts = plain.loop_starts(2.0, &map, 64);
+        assert_eq!(starts.iter().map(|&t| t.round() as u32).collect::<Vec<_>>(), [96 + 4 * PPQ, 96 + 8 * PPQ, 96 + 12 * PPQ]);
+        assert_eq!(plain.loop_period(2.0, &map), 4 * PPQ);
+        // Warped at 60 BPM: the file lasts two beats, wherever the song tempo is.
+        let warped = AudioClipDef { warp: true, bpm: 60.0, offset: 1.0, ..plain.clone() };
+        let starts = warped.loop_starts(2.0, &map, 64);
+        assert_eq!(starts.first().map(|t| t.round() as u32), Some(96 + PPQ));
+        assert_eq!(starts.len(), 8);
+        assert_eq!(warped.loop_period(2.0, &map), 2 * PPQ);
+        // Not looped: no marks.
+        assert!(AudioClipDef { looped: false, ..plain }.loop_starts(2.0, &map, 64).is_empty());
     }
 
     #[test]
