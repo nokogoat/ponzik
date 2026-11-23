@@ -1,0 +1,18 @@
+{
+  "kind": "autotune",
+  "name": "Classic Robot",
+  "params": [
+    [
+      0,
+      0
+    ],
+    [
+      10,
+      1
+    ],
+    [
+      11,
+      0
+    ]
+  ]
+}
