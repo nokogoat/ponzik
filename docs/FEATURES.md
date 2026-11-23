@@ -70,7 +70,7 @@ Legend: **FL** = FL Studio · **AB** = Ableton Live · ✅ done in Ponzik · �
 | Audio to MIDI conversion (drums, melody, harmony) | AB | 🟡 melody: Voice to Notes plays the selected instrument live from singing or humming (YIN tracker on the input thread, about 12 ms reaction, scale snap, retune bends, chords through note effects, recorded into the pattern) and an audio clip's monophonic line converts to a pattern; no drums or harmony |
 | Stem separation (vocals, drums, bass, instruments) | FL · AB | ⬜ |
 | Destructive audio editor (Edison: recording, cleanup, cutting, noise reduction) | FL | ⬜ |
-| Pitch correction (Newtone, Pitcher) | FL | ⬜ |
+| Pitch correction (Newtone, Pitcher) | FL | 🟡 real time: **Pitch Correction** (Auto-Tune style) with key and scale following the project, per-note remove or bypass, retune speed from 0 ms hard tune to 400 ms, humanize, Flex-Tune, natural and created vibrato, formant-preserving PSOLA (Modern) or the classic splice sound, MIDI target notes from a channel, live pitch graph; no offline note editing of recorded clips yet (Newtone/Melodyne style) |
 | Time correction (NewTime) | FL | ⬜ |
 | Groove pool, groove extraction and application | AB | ⬜ |
 | Freeze, flatten, consolidate, bounce to a new track, paste bounced audio, group bounce | FL · AB | ✅ freeze channels and mixer tracks, bounce in place or to a new track, consolidate clips, render a time selection to a new track; no flatten |
@@ -128,7 +128,7 @@ Proprietary instruments cannot be copied, so Ponzik builds its own equivalents.
 | Delay | Delay 3, Delay Bank, Multiband Delay | Delay, Echo, Filter Delay, Grain Delay, Align Delay | ✅ tempo-synced Delay, Character Delay (tape, analog, digital) |
 | Modulation | Chorus, Vintage Chorus, Flanger, Flangus, Phaser, Vintage Phaser | Chorus-Ensemble, Phaser-Flanger, Auto Pan-Tremolo | ✅ Chorus, Phaser, Pump |
 | Filters | Love Philter, Filter, Free Filter | Auto Filter, Spectral Resonator, Resonators, Corpus | ✅ AutoFilter |
-| Pitch and frequency | Pitch Shifter, Frequency Shifter, Pitcher, Newtone | Shifter, Auto Shift | ✅ Pitch Shifter |
+| Pitch and frequency | Pitch Shifter, Frequency Shifter, Pitcher, Newtone | Shifter, Auto Shift | ✅ Pitch Shifter, Pitch Correction (Pitcher and Auto Shift equivalent: scale or MIDI target, retune speed, formants, vibrato) |
 | Rhythmic effects | Gross Beat, Scratcher | Beat Repeat, Looper | ✅ Slice |
 | Spectral | – | Spectral Time | ⬜ |
 | Vocoder | Vocodex, Vocoder | Vocoder | ⬜ |
@@ -233,12 +233,14 @@ sync, values typed by hand for every knob, Session
 view, a mixer of up to 1,000 tracks (inserts, sends, routing, solo, sidechain, PDC, master
 LUFS and spectrum), devices with visuals in stacked floating windows. 12 native
 instruments (Pulse, DrumSynth, FM, Wave, Sampler, Acid 303, Kick, Slicer,
-Granular, Plucked Strings, Electric Piano, Drum Machine), 26 native effects (EQ,
+Granular, Plucked Strings, Electric Piano, Drum Machine), 27 native effects (EQ,
 compressor, bus compressor, limiter, mastering limiter, gate, OTT-style multiband, pump,
 ducking, transients, reverb, algorithmic reverb, shimmer, delay,
 character delay, chorus, phaser, saturator, character saturation, bitcrusher,
 noise and texture, autofilter, slice, pitch shifter, stereo imager, utility) and
 5 note effects (arpeggiator, chord, scale, random, repeat). CLAP, VST3, LV2 and LADSPA hosting.
+noise and texture, autofilter, slice, pitch shifter, pitch correction, stereo imager, utility) and
+5 note effects (arpeggiator, chord, scale, random, repeat). CLAP and VST3 hosting.
 JSON projects with templates, autosave and crash recovery, undo with a history
 panel, MIDI file import and export, audio recording, count-in and tap tempo, WAV
 export (16/24/32-bit float) and FLAC export (16/24-bit) with normalization and
