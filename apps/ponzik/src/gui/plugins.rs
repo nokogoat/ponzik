@@ -45,6 +45,9 @@ impl App {
             let scanner = |path: &Path| {
                 let mut c = Command::new(&exe);
                 c.arg("scan-plugin").arg(path);
+                // Windows: no console window per scanned plugin (CREATE_NO_WINDOW).
+                #[cfg(windows)]
+                std::os::windows::process::CommandExt::creation_flags(&mut c, 0x0800_0000);
                 c
             };
             let _ = tx.send(plugins::scan(&scanner, Some(&cache_path()), force, plugins::SCAN_TIMEOUT));

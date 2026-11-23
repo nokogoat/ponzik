@@ -1,4 +1,5 @@
 mod alloc_count;
+mod build_info;
 mod gui;
 #[cfg(test)]
 mod i18n_coverage;
@@ -37,6 +38,8 @@ Usage:
                                            PONZIK_LANG=fr picks the language)
   ponzik library [dir]                     renders the bundled sound library (24-bit WAV)
                                            into dir (default: ~/Music/Ponzik/Library)
+  ponzik check-update [nightly|stable]     asks GitHub for a newer release
+  ponzik version                           shows the version and build
   ponzik help                              shows this help")
 }
 
@@ -47,6 +50,12 @@ fn main() -> ExitCode {
     if args.first().is_some_and(|a| a == "scan-plugin") {
         return scan_plugin(args.get(1).map(String::as_str));
     }
+    // Windows: the program is a console program (the command line prints), but
+    // started from the Explorer it only owns a console of its own: let it go.
+    #[cfg(windows)]
+    if args.first().is_none_or(|a| a == "breakcore" || a == "zalgo") {
+        detach_own_console();
+    }
     let result = match args.first().map(String::as_str) {
         None => gui::run(demo_project()),
         Some("breakcore") => gui::run(ponzik_project::demo_breakcore()),
@@ -55,6 +64,11 @@ fn main() -> ExitCode {
         Some("render") => render(&args[1..]),
         Some("screenshot") => screenshot(&args[1..]),
         Some("library") => library(args.get(1).map(String::as_str)),
+        Some("version" | "--version" | "-V") => {
+            println!("Ponzik {}", build_info::describe());
+            Ok(())
+        }
+        Some("check-update") => check_update(args.get(1).map(String::as_str)),
         Some("help" | "-h" | "--help") => {
             println!("{}", help());
             Ok(())
@@ -68,6 +82,46 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Frees the console window Windows opened for this process alone (started
+/// from the Explorer); a console shared with a terminal stays.
+#[cfg(windows)]
+fn detach_own_console() {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetConsoleProcessList(list: *mut u32, count: u32) -> u32;
+        fn FreeConsole() -> i32;
+    }
+    let mut ids = [0u32; 4];
+    // SAFETY: the buffer holds `ids.len()` process ids.
+    let n = unsafe { GetConsoleProcessList(ids.as_mut_ptr(), ids.len() as u32) };
+    if n == 1 {
+        // SAFETY: no handle of the console is kept; writes to it fail quietly afterwards.
+        unsafe { FreeConsole() };
+    }
+}
+
+/// `ponzik check-update [nightly|stable]`: the release of the channel, and
+/// whether it is newer than this build.
+fn check_update(channel: Option<&str>) -> Result<(), String> {
+    use ponzik_project::update::{self, Channel};
+    let channel = match channel {
+        None => Channel::Nightly,
+        Some(c) => Channel::from_id(c).ok_or_else(|| tr_fmt!("unknown channel: {}", c))?,
+    };
+    let token = std::env::var("PONZIK_GITHUB_TOKEN").ok().filter(|t| !t.trim().is_empty());
+    let scratch = std::env::temp_dir().join(format!("ponzik-check-{}.json", std::process::id()));
+    let release = update::fetch_release(channel, token.as_deref(), &scratch).map_err(|e| e.message())?;
+    let current = build_info::version();
+    let Some(latest) = release.version() else {
+        return Err(tr_fmt!("{}: no version in the release", release.tag.as_str()));
+    };
+    println!("{}: {}", tr("This build"), build_info::describe());
+    println!("{} ({}): {} · {}", tr("Latest release"), channel.id(), latest.id(), release.published_at);
+    let msg = if latest.is_newer_than(&current) { tr("An update is available") } else { tr("Ponzik is up to date") };
+    println!("{msg}");
+    Ok(())
 }
 
 /// `ponzik scan-plugin <path>`: what the plugin file holds, on standard output
