@@ -183,6 +183,9 @@ impl EffectDef {
     }
 }
 
+/// Kind of the pitch corrector, which follows the project's key.
+pub const AUTOTUNE: &str = "autotune";
+
 /// Un effet de notes (arpégiateur, accord…) et ses paramètres.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NoteFxDef {
@@ -1211,11 +1214,39 @@ impl Project {
         self.channels.len() - 1
     }
 
+    /// Pitch correctors that follow the project take its key and scale
+    /// (called with every edit, so a change of key reaches them).
+    pub fn follow_key(&mut self) {
+        use ponzik_engine::effects::autotune as at;
+        let scale = ScaleKind::ALL.iter().position(|s| *s == self.scale).unwrap_or(at::CHROMATIC) as f32;
+        let key = f32::from(self.key % 12);
+        for fx in self.tracks.iter_mut().flat_map(|t| t.inserts.iter_mut().flatten()) {
+            if fx.kind == AUTOTUNE && fx.get(at::P_FOLLOW).unwrap_or(1.0) >= 0.5 {
+                if fx.get(at::P_KEY) != Some(key) {
+                    fx.set(at::P_KEY, key);
+                }
+                if fx.get(at::P_SCALE) != Some(scale) {
+                    fx.set(at::P_SCALE, scale);
+                }
+            }
+        }
+    }
+
     pub fn remove_channel(&mut self, idx: usize) {
         if idx >= self.channels.len() {
             return;
         }
         self.channels.remove(idx);
+        // Pitch correctors listening to a channel follow it (or lose it).
+        let gone = (idx + 1) as f32;
+        for fx in self.tracks.iter_mut().flat_map(|t| t.inserts.iter_mut().flatten()).filter(|fx| fx.kind == AUTOTUNE) {
+            let id = ponzik_engine::effects::autotune::P_MIDI_CHANNEL;
+            match fx.get(id).map(f32::round) {
+                Some(v) if v == gone => fx.set(id, 0.0),
+                Some(v) if v > gone => fx.set(id, v - 1.0),
+                _ => {}
+            }
+        }
         for p in &mut self.patterns {
             if idx < p.notes.len() {
                 p.notes.remove(idx);
@@ -1560,6 +1591,43 @@ impl Project {
             groove: None,
         });
         self.patterns.len() - 1
+    }
+}
+
+#[cfg(test)]
+mod autotune_tests {
+    use super::*;
+    use ponzik_engine::effects::autotune as at;
+
+    #[test]
+    fn the_corrector_scales_are_the_projects() {
+        assert_eq!(at::SCALES.len(), ScaleKind::ALL.len());
+        for (i, s) in ScaleKind::ALL.iter().enumerate() {
+            assert_eq!(at::SCALE_STEPS[i], s.intervals(), "{}", s.id());
+        }
+        assert_eq!(ScaleKind::ALL[at::CHROMATIC], ScaleKind::Chromatic);
+    }
+
+    #[test]
+    fn correctors_follow_the_key_and_their_midi_channel() {
+        let mut p = Project::default();
+        let mut fx = EffectDef::new(AUTOTUNE);
+        fx.set(at::P_MIDI_CHANNEL, 3.0);
+        p.tracks[1].inserts[0] = Some(fx.clone());
+        fx.set(at::P_FOLLOW, 0.0);
+        p.tracks[2].inserts[0] = Some(fx);
+        (p.key, p.scale) = (9, ScaleKind::Minor);
+        p.follow_key();
+        let a = p.tracks[1].inserts[0].as_ref().unwrap();
+        assert_eq!((a.get(at::P_KEY), a.get(at::P_SCALE)), (Some(9.0), Some(1.0)));
+        assert_eq!(p.tracks[2].inserts[0].as_ref().unwrap().get(at::P_KEY), None);
+        while p.channels.len() < 4 {
+            p.add_channel("x", InstrumentDef::new("pulse"), 60);
+        }
+        p.remove_channel(0);
+        assert_eq!(p.tracks[1].inserts[0].as_ref().unwrap().get(at::P_MIDI_CHANNEL), Some(2.0));
+        p.remove_channel(1);
+        assert_eq!(p.tracks[1].inserts[0].as_ref().unwrap().get(at::P_MIDI_CHANNEL), Some(0.0));
     }
 }
 

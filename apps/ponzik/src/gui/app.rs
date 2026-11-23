@@ -1489,6 +1489,8 @@ impl App {
     pub fn commit(&mut self, label: &str) {
         // Modulations of a removed or replaced device go with it.
         self.project.prune_modulators();
+        // Pitch correctors following the project take its key and scale.
+        self.project.follow_key();
         if !self.prefs.fixed_pattern_len {
             self.fit_edited_patterns();
         }
