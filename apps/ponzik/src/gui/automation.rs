@@ -115,6 +115,26 @@ impl App {
         }
     }
 
+    /// A value typed by hand (« −6 dB », « 2,5 kHz », « 50 % »…), in the unit
+    /// the control shows; volumes also read decibels.
+    pub fn type_value(&mut self, target: AutoTarget, text: &str) {
+        let Some((label, info)) = self.target_info(target) else { return };
+        let lower = text.to_lowercase();
+        let gain = matches!(target, AutoTarget::ChannelGain(_) | AutoTarget::TrackGain(_));
+        let value = if gain && lower.contains("db") {
+            let db = ParamInfo::new(0, "", -120.0, 12.0, 0.0, Unit::Db).parse(text);
+            db.map(|d| if d <= -119.9 { 0.0 } else { 10f32.powf(d / 20.0) })
+        } else {
+            info.parse(text)
+        };
+        let Some(v) = value else {
+            self.toast(&tr_fmt!("Not a value for {}: {}", label, text));
+            return;
+        };
+        self.set_auto_value(target, v);
+        self.commit(&tr_fmt!("Setting: {}", tr(info.name)));
+    }
+
     /// Crée un couloir d'automation du morceau pour `target`, à la valeur actuelle.
     pub fn create_automation(&mut self, target: AutoTarget, value: f32) {
         if self.project.automation_lane(target, AutoScope::Song).is_some() {

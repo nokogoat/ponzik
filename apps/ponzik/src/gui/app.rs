@@ -232,6 +232,8 @@ pub enum Rename {
     Take(usize, usize),
     /// Language code or name of a new translation file.
     Translation,
+    /// A value typed by hand for a knob or a field.
+    Value(ponzik_engine::AutoTarget),
 }
 
 /// Format badge of a plugin device kind (`CLAP`, `VST3`), none for native devices.
@@ -992,6 +994,20 @@ impl App {
                 self.project.patterns[2].color = 0xf0b44a;
                 self.playlist.selected = Some(1);
                 self.open_popup(Popup::ClipMenu(1), Rect::new(700.0, 168.0, 0.0, 19.0));
+                return;
+            }
+            "param" | "type" => {
+                // The first knob of the panel's first device: its menu, or its typed value.
+                let Some(&device) = self.panel_devices().first() else { return };
+                let (kind, inst) = self.device_kind(device);
+                let Some(p) = super::devices::params_of(&kind, inst).iter().find(|p| p.unit != ponzik_engine::Unit::Choice) else { return };
+                let target = super::devices::device_target(device, p.id);
+                let value = self.param_value(device, p);
+                if name == "type" {
+                    self.open_popup(Popup::Rename { target: Rename::Value(target), text: String::new() }, Rect::new(520.0, 760.0, 220.0, 38.0));
+                } else {
+                    self.open_popup(Popup::Param { target, value, default: p.default }, Rect::new(520.0, 640.0, 0.0, 0.0));
+                }
                 return;
             }
             "colors" => {
@@ -3464,7 +3480,9 @@ impl App {
                 if self.is_automated(*target) {
                     v.push(MenuItem::new(Icon::Trash, tr("Delete the automation"), Action::RemoveAutomation(*target)));
                 }
-                v.push(MenuItem::new(Icon::Reset, tr("Default value"), Action::SetParamValue(*target, *default)));
+                let typed = Popup::Rename { target: Rename::Value(*target), text: String::new() };
+                v.push(MenuItem::new(Icon::Pencil, tr("Type a value…"), Action::Popup(typed)).tip(tr("Enter: apply · Escape: cancel")).detail(tr("Enter").into()));
+                v.push(MenuItem::new(Icon::Reset, tr("Reset to default"), Action::SetParamValue(*target, *default)).detail(tr("double-click").into()));
                 v.extend(self.ctl_menu_items(ponzik_project::midi_map::ControlTarget::Param(*target)));
                 v.extend(self.macro_menu_items(*target));
                 v.extend(self.mod_menu_items(*target));
@@ -4098,6 +4116,10 @@ impl App {
                 }
                 return;
             }
+            Rename::Value(target) => {
+                self.type_value(target, text);
+                return;
+            }
         }
         self.commit(tr("Rename"));
     }
@@ -4198,6 +4220,7 @@ impl App {
                     Rename::SaveAs => tr("Save as"),
                     Rename::Preset(_) => tr("Preset name"),
                     Rename::Translation => tr("New translation · language code or name (es, pt_BR, Deutsch…)"),
+                    Rename::Value(_) => tr("Type a value"),
                     _ => tr("Rename"),
                 };
                 self.text_fit(c, self.f.sans_med, 14.0, r.x + 20.0, r.y + 24.0, title, r.w - 40.0, t.text2);
@@ -4208,6 +4231,15 @@ impl App {
             c.stroke_rrect(field, 10.0, 1.5, t.select.alpha(0.9 * open));
             let ok_x = self.keycap(c, field.right() - 8.0, field.y + field.h * 0.5, tr("Enter"), 0.8);
             let shown = self.fit(self.f.sans_med, 14.0, text, ok_x - field.x - 24.0);
+            // A typed value: the current one shows through while the field is empty.
+            if let Rename::Value(tg) = target
+                && text.is_empty()
+                && let Some((label, info)) = self.target_info(*tg)
+            {
+                let now = info.format(self.auto_value(*tg).unwrap_or(info.default));
+                let ghost = self.fit(self.f.sans, 13.0, &format!("{now} · {label}"), ok_x - field.x - 30.0);
+                self.text(c, self.f.sans, 13.0, field.x + 16.0, field.y + field.h * 0.5, &ghost, t.muted);
+            }
             let tw = self.text(c, self.f.sans_med, 14.0, field.x + 12.0, field.y + field.h * 0.5, &shown, t.text);
             if (self.time * 2.0).fract() < 0.6 {
                 c.fill_rect(Rect::new(field.x + 13.0 + tw, field.y + 9.0, 1.5, field.h - 18.0), t.select);
