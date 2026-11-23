@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
-use ponzik_dsp::biquad::{BUTTERWORTH4_Q, BiquadCoefs};
+use ponzik_dsp::biquad::{BUTTERWORTH4_Q, Biquad, BiquadCoefs};
 use ponzik_engine::ParamInfo;
 use ponzik_i18n::{num, tr, tr_fmt, tr_noop};
 use ponzik_ui::{Canvas, Path, Rect};
@@ -604,6 +604,9 @@ const PROBE_SR: f32 = 16_000.0;
 
 /// Plage des échos et des queues, en dB.
 const TAIL_DB: f32 = 60.0;
+/// Bandes des queues de réverbe : la référence du déclin et les aigus.
+const TAIL_REF_HZ: f32 = 500.0;
+const TAIL_HIGH_HZ: f32 = 4_000.0;
 
 /// Historique de réduction de gain par appareil (une valeur par image).
 const GR_HISTORY: usize = 72;
@@ -701,7 +704,12 @@ impl App {
         let n = (secs * PROBE_SR) as usize;
         let per_col = (n / cols.max(1)).max(1);
         let stereo = probe == Probe::Echoes;
-        let mut env = vec![0.0f32; if stereo { 2 * cols } else { cols }];
+        // Queues : deux bandes, les médiums (500 Hz, où « Déclin » est le RT60) et les aigus (4 kHz).
+        let tail = probe == Probe::Tail;
+        let band = |hz: f32| Biquad::new(BiquadCoefs::bandpass(hz, 1.41, PROBE_SR));
+        let mut mids = [band(TAIL_REF_HZ), band(TAIL_REF_HZ)];
+        let mut highs = [band(TAIL_HIGH_HZ), band(TAIL_HIGH_HZ)];
+        let mut env = vec![0.0f32; if stereo || tail { 2 * cols } else { cols }];
         let (mut l, mut r) = (vec![0.0f32; 256], vec![0.0f32; 256]);
         let mut done = 0;
         while done < n {
@@ -720,6 +728,13 @@ impl App {
                 if stereo {
                     env[col] = env[col].max(l[k].abs());
                     env[cols + col] = env[cols + col].max(r[k].abs());
+                } else if tail {
+                    let m = mids[0].process(l[k]);
+                    let m = mids[1].process(m);
+                    let h = highs[0].process(l[k]);
+                    let h = highs[1].process(h);
+                    env[col] += m * m;
+                    env[cols + col] += h * h;
                 } else {
                     env[col] = env[col].max(l[k].abs().max(r[k].abs()));
                 }
@@ -729,6 +744,12 @@ impl App {
         if probe == Probe::Constant {
             for v in &mut env {
                 *v = (*v / 0.5).min(1.2);
+            }
+        }
+        // Queues : niveau efficace par colonne, plus calme que la crête d'une bande étroite.
+        if tail {
+            for v in &mut env {
+                *v = (*v / per_col as f32).sqrt();
             }
         }
         if self.responses.len() > 64 {
@@ -1181,20 +1202,27 @@ impl App {
         }
         // Relatif au début de la queue diffuse (les premières réflexions peuvent
         // dépasser) : la pente se lit alors comme le déclin à −60 dB.
+        // Chaque bande est rapportée à sa propre crête.
         let start = (((predelay + 0.08) / secs) * cols as f32) as usize;
-        let peak = env.iter().skip(start.min(cols.saturating_sub(1))).fold(1e-6f32, |m, &v| m.max(v));
-        let y_of = |v: f32| g.bottom() - ((db(v / peak) + TAIL_DB) / TAIL_DB).clamp(0.0, 1.0) * g.h;
-        let mut pts: Vec<(f32, f32)> = env.iter().enumerate().map(|(i, &v)| (g.x + i as f32 * 2.0, y_of(v))).collect();
-        let col = if frozen { t.select } else { t.accent };
-        if frozen {
-            // Gel : la queue ne décroît plus, elle tient au niveau atteint juste après l'attaque.
-            let hold_at = ((predelay + 0.15) / secs * cols as f32) as usize;
-            let level = pts.get(hold_at.min(cols.saturating_sub(1))).map_or(g.bottom(), |p| p.1);
-            for p in pts.iter_mut().skip(hold_at) {
-                p.1 = p.1.min(level);
+        let curve = |env: &[f32]| -> Vec<(f32, f32)> {
+            let peak = env.iter().skip(start.min(cols.saturating_sub(1))).fold(1e-6f32, |m, &v| m.max(v));
+            let y_of = |v: f32| g.bottom() - ((db(v / peak) + TAIL_DB) / TAIL_DB).clamp(0.0, 1.0) * g.h;
+            let mut pts: Vec<(f32, f32)> = env.iter().enumerate().map(|(i, &v)| (g.x + i as f32 * 2.0, y_of(v))).collect();
+            if frozen {
+                // Gel : la queue ne décroît plus, elle tient au niveau atteint juste après l'attaque.
+                let hold_at = ((predelay + 0.15) / secs * cols as f32) as usize;
+                let level = pts.get(hold_at.min(cols.saturating_sub(1))).map_or(g.bottom(), |p| p.1);
+                for p in pts.iter_mut().skip(hold_at) {
+                    p.1 = p.1.min(level);
+                }
             }
-        }
-        filled_curve(c, &pts, g.bottom(), col.alpha(0.14), col);
+            pts
+        };
+        let (mids, highs) = env.split_at(cols.min(env.len()));
+        let col = if frozen { t.select } else { t.accent };
+        // Les aigus en trait fin et discret, derrière : l'amortissement se lit à l'écart des deux.
+        c.stroke_polyline(&curve(highs), 1.0, t.text2.alpha(0.55));
+        filled_curve(c, &curve(mids), g.bottom(), col.alpha(0.14), col);
         // Pré-délai, pour les réverbes qui en ont un.
         if find("Pre-delay").is_some() {
             let px = x_of(predelay).round();
@@ -1211,7 +1239,7 @@ impl App {
             let tip = if frozen {
                 tr("Frozen tail\nIt holds as long as Freeze is on")
             } else {
-                tr("Tail over 5 s\nLine: pre-delay · mark: decay")
+                tr("Tail over 5 s: mids filled, highs as a thin line\nLine: pre-delay · mark: decay (−60 dB at 500 Hz)")
             };
             self.set_tip(tip, "");
         }
