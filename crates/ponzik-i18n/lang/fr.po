@@ -1012,15 +1012,6 @@ msgstr "Exporter en MIDI"
 msgid "The current pattern"
 msgstr "Le pattern actuel"
 
-msgid "House demo"
-msgstr "Démo house"
-
-msgid "Breakcore demo"
-msgstr "Démo breakcore"
-
-msgid "Zalgo rave demo"
-msgstr "Démo Zalgo rave"
-
 msgid "Theme"
 msgstr "Thème"
 

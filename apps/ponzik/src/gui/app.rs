@@ -3739,9 +3739,6 @@ impl App {
                         MenuItem::new(Icon::Piano, tr("Import MIDI"), Action::ImportMidiMenu).sep(),
                         MenuItem::new(Icon::Folder, tr("Import an FL Studio project"), Action::ImportFlpMenu),
                         MenuItem::new(Icon::Piano, tr("Export as MIDI"), Action::ExportMidi).tip(tr("The current pattern")),
-                        MenuItem::new(Icon::Play, tr("House demo"), Action::LoadDemo(0)).sep(),
-                        MenuItem::new(Icon::Play, tr("Breakcore demo"), Action::LoadDemo(1)),
-                        MenuItem::new(Icon::Play, tr("Zalgo rave demo"), Action::LoadDemo(2)),
                         MenuItem::new(Icon::Theme, tr("Theme"), Action::Popup(Popup::Themes)).detail(theme).sep(),
                         MenuItem::new(Icon::Layout, tr("Settings"), Action::Popup(Popup::Settings { tab: 0 }))
                             .detail(key(S::Settings))
