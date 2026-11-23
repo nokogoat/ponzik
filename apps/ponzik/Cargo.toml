@@ -15,5 +15,7 @@ ponzik-midi.workspace = true
 ponzik-project.workspace = true
 ponzik-ui.workspace = true
 ponzik-vst3.workspace = true
+ponzik-lv2.workspace = true
+ponzik-ladspa.workspace = true
 ponzik-window.workspace = true
 ponzik-i18n.workspace = true

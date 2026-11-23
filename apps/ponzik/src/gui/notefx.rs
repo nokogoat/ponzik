@@ -50,8 +50,26 @@ pub fn icon(kind: &str) -> Icon {
     }
 }
 
-fn fx_params(kind: &str) -> &'static [ParamInfo] {
-    registry::create_note_fx(kind).map_or(&[], |f| f.params())
+thread_local! {
+    /// Parameters of the plugin note effects (LV2 MIDI effects), read once per kind.
+    static PLUGIN_PARAMS: RefCell<HashMap<String, &'static [ParamInfo]>> = RefCell::new(HashMap::new());
+}
+
+pub(super) fn fx_params(kind: &str) -> &'static [ParamInfo] {
+    if let Some(f) = registry::create_note_fx(kind) {
+        return f.params();
+    }
+    PLUGIN_PARAMS.with(|c| {
+        *c.borrow_mut().entry(kind.to_string()).or_insert_with(|| {
+            ponzik_project::plugins::note_fx_from_kind(kind).and_then(Result::ok).map_or(&[], |f| f.params())
+        })
+    })
+}
+
+/// A note effect kind Ponzik can add: native, or an LV2 MIDI effect.
+fn is_note_fx(kind: &str) -> bool {
+    use ponzik_project::plugins::Format;
+    registry::note_fx_kind(kind).is_some() || Format::of_kind(kind) == Some(Format::Lv2)
 }
 
 fn value(def: &NoteFxDef, p: &ParamInfo) -> f32 {
@@ -170,8 +188,16 @@ impl App {
             .or_else(|| (0..NOTE_FX_SLOTS).find(|&s| self.note_fx_def(ch, s).is_some()))
     }
 
+    /// Shown name of a note effect kind (a plugin's own name).
+    pub(super) fn note_fx_name(&self, kind: &str) -> String {
+        match registry::note_fx_kind(kind) {
+            Some(k) => tr(k.name).to_string(),
+            None => self.plugin_name(kind).unwrap_or_else(|| super::app::display_kind(kind)),
+        }
+    }
+
     pub fn add_note_fx(&mut self, ch: usize, slot: usize, kind: &str) {
-        if registry::note_fx_kind(kind).is_none() || ch >= self.project.channels.len() || slot >= NOTE_FX_SLOTS {
+        if !is_note_fx(kind) || ch >= self.project.channels.len() || slot >= NOTE_FX_SLOTS {
             return;
         }
         let slots = &mut self.project.channels[ch].note_fx;
@@ -241,8 +267,11 @@ impl App {
             1.5,
             if def.is_some() { t.select } else { t.muted },
         );
-        let title = def.as_ref().and_then(|d| registry::note_fx_kind(&d.kind)).map_or(tr("Notes"), |k| tr(k.name));
-        self.text_fit(c, self.f.sans_med, 13.0, card.x + 22.0, head_y, title, card.w - 34.0, t.text);
+        let title = match &def {
+            Some(d) => self.note_fx_name(&d.kind),
+            None => tr("Notes").to_string(),
+        };
+        self.text_fit(c, self.f.sans_med, 13.0, card.x + 22.0, head_y, &title, card.w - 34.0, t.text);
 
         // Emplacements, de haut en bas dans l'ordre de la chaîne.
         let col_x = card.x + INSET;
@@ -270,8 +299,8 @@ impl App {
                     let col = if on { t.select } else { t.text2.mix(t.text, hv) };
                     draw_icon(c, icon(&kind), cx, cy, 17.0, col);
                     if hov {
-                        let name = registry::note_fx_kind(&kind).map_or(kind.as_str(), |k| tr(k.name));
-                        self.set_tip(&tr_fmt!("{}\nRight-click: remove", name), "");
+                        let name = self.note_fx_name(&kind);
+                        self.set_tip(&tr_fmt!("{}\nRight-click: remove", name.as_str()), "");
                         if input.pressed {
                             SELECTED.with(|s| s.borrow_mut().insert(ch, slot));
                         }

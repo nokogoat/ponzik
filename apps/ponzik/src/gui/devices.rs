@@ -80,19 +80,14 @@ thread_local! {
 pub fn params_of(kind: &str, instrument: bool) -> &'static [ParamInfo] {
     PARAMS.with(|cache| {
         *cache.borrow_mut().entry((instrument, kind.to_string())).or_insert_with(|| {
-            if kind.starts_with(ponzik_clap::KIND_PREFIX) {
-                // Plugin CLAP : ses fiches sont créées une fois par type de plugin.
+            use ponzik_project::plugins;
+            if plugins::Format::of_kind(kind).is_some() {
+                // Plugin (CLAP, VST 3, LV2, LADSPA) : ses fiches sont créées une
+                // fois par type de plugin, partagées entre instances.
                 if instrument {
-                    ponzik_clap::instrument_from_kind(kind).map_or(&[], |i| i.params())
+                    plugins::instrument_from_kind(kind).and_then(Result::ok).map_or(&[], |i| i.params())
                 } else {
-                    ponzik_clap::effect_from_kind(kind).map_or(&[], |e| e.params())
-                }
-            } else if kind.starts_with(ponzik_vst3::KIND_PREFIX) {
-                // Plugin VST 3 : idem, fiches partagées entre instances.
-                if instrument {
-                    ponzik_vst3::instrument_from_kind(kind).map_or(&[], |i| i.params())
-                } else {
-                    ponzik_vst3::effect_from_kind(kind).map_or(&[], |e| e.params())
+                    plugins::effect_from_kind(kind).and_then(Result::ok).map_or(&[], |e| e.params())
                 }
             } else if instrument {
                 registry::create_instrument(kind).map_or(&[], |i| i.params())

@@ -95,9 +95,13 @@ impl App {
     pub fn set_plugins(&mut self, mut report: ScanReport) {
         report.clap.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then(a.id.cmp(&b.id)));
         report.vst3.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then(a.id.cmp(&b.id)));
-        report.errors.sort_by(|a, b| a.path.cmp(&b.path));
+        report.lv2.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then(a.id.cmp(&b.id)));
+        report.ladspa.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then(a.id.cmp(&b.id)));
+        report.errors.sort_by(|a, b| a.path.cmp(&b.path).then(a.name.cmp(&b.name)));
         self.plugins = report.clap;
         self.vst3_plugins = report.vst3;
+        self.lv2_plugins = report.lv2;
+        self.ladspa_plugins = report.ladspa;
         self.scan_errors = report.errors;
         // Same counts after a rescan can still hide new plugins: rebuild the list.
         self.browser_cache.0 = None;
@@ -129,7 +133,12 @@ impl App {
                 let cy = row.y + row.h * 0.5;
                 // A red stub where a plugin's line would be.
                 c.fill_rrect(Rect::new(row.x + 12.0, cy - 6.0, 3.0, 12.0), 1.5, t.negative.alpha(0.8));
-                let name = e.path.file_stem().map_or_else(|| e.path.display().to_string(), |s| s.to_string_lossy().into_owned());
+                // A plugin skipped inside a bundle shows by its own name.
+                let name = if e.name.is_empty() {
+                    e.path.file_stem().map_or_else(|| e.path.display().to_string(), |s| s.to_string_lossy().into_owned())
+                } else {
+                    e.name.clone()
+                };
                 let fw = self.fonts.measure(self.f.mono_med, 9.0, e.format.label());
                 self.text_right(c, self.f.mono_med, 9.0, row.right() - 12.0, cy, e.format.label(), t.muted);
                 self.text_fit(c, self.f.sans, 13.0, row.x + 24.0, cy, &name, row.w - 48.0 - fw, t.muted.mix(t.text2, hv));
@@ -169,5 +178,7 @@ impl App {
     pub fn plugin_name(&self, kind: &str) -> Option<String> {
         let clap = self.plugins.iter().find(|p| p.kind() == kind).map(|p| p.name.clone());
         clap.or_else(|| self.vst3_plugins.iter().find(|p| p.kind() == kind).map(|p| p.name.clone()))
+            .or_else(|| self.lv2_plugins.iter().find(|p| p.kind() == kind).map(|p| p.name.clone()))
+            .or_else(|| self.ladspa_plugins.iter().find(|p| p.kind() == kind).map(|p| p.name.clone()))
     }
 }

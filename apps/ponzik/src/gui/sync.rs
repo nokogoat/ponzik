@@ -33,7 +33,7 @@ fn default_param(kind: &str, id: u32) -> f32 {
 }
 
 fn note_fx_default(kind: &str, id: u32) -> f32 {
-    registry::create_note_fx(kind).and_then(|f| f.param_info(id).map(|p| p.default)).unwrap_or(0.0)
+    super::notefx::fx_params(kind).iter().find(|p| p.id == id).map_or(0.0, |p| p.default)
 }
 
 /// Paramètres modifiés entre deux listes (identifiant, valeur).

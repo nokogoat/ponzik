@@ -495,8 +495,17 @@ impl App {
                 (Lead::Glyph(glyph(entry.tags)), tint, l.title, badges)
             }
             Payload::Instrument { kind, .. } | Payload::Effect { kind, .. } => {
+                // One color per format, from the theme.
                 let badges = match plugin_badge(kind) {
-                    Some(b) => vec![(b.to_string(), if b == "CLAP" { t.accent } else { t.select })],
+                    Some(b) => {
+                        let col = match b {
+                            "CLAP" => t.accent,
+                            "VST3" => t.select,
+                            "LV2" => t.warning,
+                            _ => t.frost,
+                        };
+                        vec![(b.to_string(), col)]
+                    }
                     None => Vec::new(),
                 };
                 let icon = match (entry.cat, &entry.payload) {
