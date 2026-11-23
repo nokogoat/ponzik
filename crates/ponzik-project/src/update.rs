@@ -884,4 +884,103 @@ mod tests {
         assert!(Channel::Nightly.api_url().ends_with("/releases/tags/nightly"));
         assert!(Channel::Stable.api_url().ends_with("/releases/latest"));
     }
+
+    /// A tiny HTTP server on localhost: path → body, anything else 404.
+    fn serve(files: Vec<(&'static str, Vec<u8>)>, requests: usize) -> String {
+        use std::io::{BufRead, BufReader};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(requests) {
+                let Ok(mut stream) = stream else { continue };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut first = String::new();
+                let _ = reader.read_line(&mut first);
+                // The rest of the request head.
+                let mut line = String::new();
+                while reader.read_line(&mut line).is_ok_and(|n| n > 2) {
+                    line.clear();
+                }
+                let path = first.split_whitespace().nth(1).unwrap_or("");
+                let (status, body) = match files.iter().find(|(p, _)| *p == path) {
+                    Some((_, b)) => ("200 OK", b.clone()),
+                    None => ("404 Not Found", b"{\"message\": \"Not Found\"}".to_vec()),
+                };
+                let head = format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                let _ = stream.write_all(head.as_bytes()).and_then(|_| stream.write_all(&body));
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    fn curl_available() -> bool {
+        Command::new(if cfg!(windows) { "curl.exe" } else { "curl" }).arg("--version").output().is_ok_and(|o| o.status.success())
+    }
+
+    #[test]
+    fn download_is_verified_end_to_end() {
+        if !curl_available() {
+            return;
+        }
+        let program = b"#!/bin/sh\necho new build\n".to_vec();
+        let good = format!("{}  {ASSET_APPIMAGE}\n", hex(&sha256(&program)));
+        let bad = format!("{}  {ASSET_APPIMAGE}\n", hex(&sha256(b"something else")));
+        let release = |base: &str, sums_path: &str, size: u64| Release {
+            tag: "nightly".into(),
+            assets: vec![
+                Asset { name: ASSET_APPIMAGE.into(), size, download_url: format!("{base}/app"), api_url: String::new() },
+                Asset { name: ASSET_SUMS.into(), size: 0, download_url: format!("{base}{sums_path}"), api_url: String::new() },
+            ],
+            ..Default::default()
+        };
+        let dir = temp_dir("http");
+        let dest = dir.join("download");
+        let base = serve(vec![("/app", program.clone()), ("/sums", good.into_bytes()), ("/bad", bad.into_bytes())], 6);
+
+        // Right size and checksum: kept, then swapped in.
+        download_verified(&release(&base, "/sums", program.len() as u64), ASSET_APPIMAGE, None, &dest).unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), program);
+        let target = dir.join("Ponzik.AppImage");
+        std::fs::write(&target, b"old").unwrap();
+        install_file(&dest, &target, false).unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), program);
+
+        // A checksum that does not match: refused, nothing left behind.
+        let err = download_verified(&release(&base, "/bad", program.len() as u64), ASSET_APPIMAGE, None, &dest).unwrap_err();
+        assert!(matches!(err, FetchError::Local(_)), "{err:?}");
+        assert!(!dest.exists());
+
+        // A missing file: 404.
+        let err = download_verified(&release(&base, "/missing", 1), ASSET_APPIMAGE, None, &dest).unwrap_err();
+        assert_eq!(err, FetchError::NotFound);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn wget_fallback_reads_the_status() {
+        if !Command::new("wget").arg("--version").output().is_ok_and(|o| o.status.success()) {
+            return;
+        }
+        let base = serve(vec![("/a", b"hello".to_vec())], 2);
+        let out = std::env::temp_dir().join(format!("ponzik-wget-{}", std::process::id()));
+        let (ok, missing) = (format!("{base}/a"), format!("{base}/b"));
+        assert!(matches!(wget(&Request { url: &ok, accept: "*/*", token: None, timeout: 5 }, &out), Tool::Status(200)));
+        assert_eq!(std::fs::read(&out).unwrap(), b"hello");
+        assert!(matches!(wget(&Request { url: &missing, accept: "*/*", token: None, timeout: 5 }, &out), Tool::Status(404)));
+        let _ = std::fs::remove_file(out);
+    }
+
+    #[test]
+    fn unreachable_server_is_offline() {
+        if !curl_available() {
+            return;
+        }
+        // A port nobody listens on (bound, then released).
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let url = format!("http://127.0.0.1:{port}/x");
+        let out = std::env::temp_dir().join(format!("ponzik-offline-{}", std::process::id()));
+        let err = fetch_to_file(&Request { url: &url, accept: "*/*", token: None, timeout: 5 }, &out).unwrap_err();
+        assert!(matches!(err, FetchError::Offline(_)), "{err:?}");
+    }
 }
