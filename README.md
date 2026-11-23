@@ -1,202 +1,305 @@
+<div align="center">
+
 # Ponzik
 
 **The free DAW. No more gatekeeping.**
 
-Ponzik is a free, open-source digital audio workstation that pairs the breadth of
-FL Studio with the clarity and ergonomics of Ableton Live. It is built for
-beginners and professionals alike: you can make a beat in thirty seconds, and the
-full power is there when you go looking for it. Everything (audio and MIDI
-drivers, windowing, rendering, fonts, engine, DSP, instruments, effects and
-plugin hosting) is written from scratch in 100% Rust, with zero external crates.
-It runs on Linux and Windows.
+FL Studio's breadth, Ableton Live's clarity — free, open source, for everyone.
 
-> The interface text is currently in French.
+![Ponzik playing the Zalgo Rave demo](docs/images/zg-playlist.png)
 
-## Principles
+</div>
 
-- **Built in-house, 100% Rust, zero dependencies.** No frameworks, no crates. Ponzik
-  talks only to the operating system's own APIs.
-- **FL Studio's workflow, Ableton's clarity.** The same gestures and shortcuts as FL,
-  with progressive disclosure so the interface never gets in your way.
-- **Visuals, not walls of knobs.** An editable EQ curve, transfer curves, drawn
-  envelopes and filters, waveforms, effect responses, spectrum and loudness meters.
+---
 
-## Highlights
+Ponzik is a complete digital audio workstation for making music: beats, songs,
+sampling, recording vocals, mixing and mastering. It is built for beginners and
+professionals alike — you can make a beat in thirty seconds, and the full power is
+there when you go looking for it.
 
-- **Views**: Channel Rack (step sequencer with swing), Piano roll, Playlist
-  (patterns, audio and automation), Ableton-style Session view (8 x 8 clip grid),
-  Mixer. Devices open in stacked floating windows; the browser and bottom panel
-  are resizable.
-- **Composition tools**: project key and scale (out-of-scale rows dimmed, snap to
-  scale), chord stamps and a chord grid (shapes, inversions, voicings, keyboard
-  preview), humanize, ghost notes, velocity lane, copy/paste/duplicate/quantize.
-- **Note effects** placed before the instrument: arpeggiator, chord, scale, random,
-  repeat.
-- **12 native instruments**: Pulse (subtractive), DrumSynth (808/909), Ponzik FM
-  (4 operators), Ponzik Wave (wavetable), Sampler, Acid 303, Kick, Slicer,
-  Granular, Plucked Strings, Electric Piano, Drum Machine (eight layered pads,
-  hi-hat choke).
-- **26 native effects**: EQ, Compressor, Bus Compressor, Multiband (OTT-style upward
-  and downward), Limiter, Mastering Limiter (true peak, lookahead), Gate, Transients,
-  Pump, Ducking, Reverb, Algorithmic Reverb, Shimmer, Delay, Character Delay,
-  Chorus, Phaser, AutoFilter, Saturator, Character Saturation, Bitcrusher, Noise
-  and Texture, Slice, Pitch Shifter, Stereo Imager, Utility.
-- **Third-party plugins**: CLAP and VST3 instruments and effects, with their own
-  interface in a window of its own (edits there are undoable and automatable),
-  their parameters in the device panel and their latency compensated. Plugins are
-  scanned in separate processes, so a broken one can't take Ponzik down.
-- **Mixer**: master plus up to 999 tracks (added, inserted, deleted and moved as you
-  go, compact strips for big sessions), 8 inserts and 4 sends per track, free routing
-  with loop rejection, solo, sidechain key per insert, plugin delay compensation
-  (PDC) on tracks, sends and keys, master LUFS meter and spectrum analyzer.
-- **Recording**: computer keyboard played like a piano, hardware MIDI controllers,
-  audio recording on mixer tracks with monitoring, one-bar count-in, tap tempo.
-- **Projects**: JSON files, unlimited undo with a clickable history panel,
-  templates (Ctrl+N), autosave every two minutes with crash recovery, recent
-  projects, device presets, Standard MIDI File import and export.
-- **Export**: WAV at 16-bit, 24-bit or 32-bit float, stems, peak or LUFS
-  normalization, TPDF dither at 16 bits.
-- **Demos**: `ponzik` (house groove), `ponzik breakcore` ("Amen rave", 180 BPM) and
-  `ponzik zalgo` ("Zalgo Rave", 160 BPM: halftime rage drops, a raw techno switch
-  with an acid 303, risers and impacts from the sound library).
+There are no editions, no paid upgrades, no account and no internet connection
+required. Every feature is in the one free version.
 
-## Build and run
+And it is built **entirely from scratch in 100% Rust with zero dependencies**: audio
+and MIDI drivers, windowing, 2D rendering, fonts, the engine, every instrument and
+effect, the plugin hosts and the file codecs. Ponzik only talks to the operating
+system.
 
-You need a Rust toolchain (1.85 or newer, edition 2024). On Linux, the ALSA
-library is also required (`alsa-lib`, or `libasound2-dev` on Debian and Ubuntu).
-macOS (experimental): Xcode command line tools only; CoreAudio, CoreMIDI and Cocoa
-backends, not yet tested on real hardware.
+## Contents
+
+- [Why Ponzik](#why-ponzik)
+- [Features](#features)
+- [Download](#download)
+- [Build from source](#build-from-source)
+- [Your first beat](#your-first-beat)
+- [Shortcuts](#shortcuts)
+- [Plugins](#plugins)
+- [Platform support](#platform-support)
+- [Architecture](#architecture)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Why Ponzik
+
+- **Free for real.** Not a trial, not a "lite" edition. Everything, forever.
+- **Fast to learn.** FL Studio's gestures and shortcuts, Ableton's calm single-window
+  layout, a guided tour on first launch, tooltips on everything, workspace profiles
+  (Beatmaker, Sampling, Live, Minimal) that hide what you don't use, and a
+  do-anything command palette (Ctrl+K).
+- **Deep when you need it.** Racks with macros, modulators, warping, comping,
+  sidechain, latency compensation, freeze, MIDI learn, live automation, 999 mixer
+  tracks, CLAP and VST3 plugins.
+- **Sounds good out of the box.** Physically modeled pianos, guitars, strings and
+  organs, a generated sound library with 128 sounds and loops, and 400+ factory
+  presets — no downloads.
+- **Light.** A single ~9 MB program that starts instantly and plays a full demo song
+  with about 10 % of one CPU core and well under 100 MB of RAM.
+- **Linux is a first-class citizen**, alongside Windows (macOS is in progress).
+
+## Features
+
+<table>
+<tr><td width="50%"><img src="docs/images/zg-mixer.png" alt="Mixer"></td>
+<td width="50%"><img src="docs/images/piano.png" alt="Piano roll"></td></tr>
+<tr><td><img src="docs/images/lab.png" alt="Sample Lab"></td>
+<td><img src="docs/images/grand.png" alt="Grand Piano"></td></tr>
+</table>
+
+### Make music
+
+- **Channel Rack** step sequencer with swing, per-step chance, conditions and
+  ratchets, like FL Studio.
+- **Piano roll** with scale snapping, a chord grid (shapes, inversions, voicings),
+  slide notes, per-note pan and fine pitch, controller lanes (pitch bend, CCs,
+  parameters), chord names, MIDI tools (arpeggiate, strum, flam, legato, invert,
+  quantize with swing, humanize) and generators (Euclidean rhythms, drum patterns,
+  melodies, chord progressions, basslines that follow the chords).
+- **Playlist** with patterns, audio clips and automation, section markers (Intro,
+  Drop…) you can move and duplicate, tempo changes and ramps, time signatures, take
+  comping for vocals.
+- **Session view** (Ableton-style clip launcher) with launch modes, quantization,
+  follow actions and recording into the arrangement.
+- **Hum to play**: sing a note and the selected instrument plays it in real time,
+  snapped to your scale, and writes it into the piano roll.
+- **Groove pool**, key detection, MIDI capture (Ctrl+Shift+C keeps what you just
+  played even if you weren't recording).
+
+### Sounds
+
+- **23 native instruments**, including physically modeled **Grand Piano** (hammers,
+  strings, soundboard, sympathetic resonance, real pedals), **Guitar** (steel, nylon,
+  electric with amp, bass), **Strings**, **Brass**, **Winds**, **Tine Piano**
+  (Rhodes-style), **Reed Piano** (Wurlitzer-style), **Tonewheel Organ** with rotary
+  speaker, **Mallets**, plus synths (Pulse, FM, Wavetable, Acid 303, Granular, Pluck),
+  drums (Kick, DrumSynth, Drum Machine, **Drum Pads**), Sampler, Slicer and External
+  MIDI for hardware synths.
+- **31 native effects**: EQ with spectrum, compressors, bus compressor, OTT-style
+  multiband, limiters with true peak, gate, transient shaper, pump, ducking, reverbs,
+  shimmer, delays, chorus, phaser, rotary speaker, saturators, **Amp & Cab**,
+  bitcrusher, noise & texture, stutter, pitch shifter, stereo imager, utility,
+  **Rack** (parallel chains with 8 macros) and **Mix Assistant** (listens to a track
+  and suggests a chain — it imposes nothing).
+- **Note effects** before any instrument: arpeggiator, chord, scale, random, repeat.
+- **Modulators** (LFO, envelope follower, step sequencer, random) you drag onto any knob.
+- **Sound library** generated by Ponzik itself on first run: kicks, snares, hats,
+  808s, plucks, pads, FX and loops at common tempos.
+
+### Sampling and audio
+
+- **Sample Lab**: drop a loop, cut it automatically (or on the beat, or by hand),
+  then play the pieces on pads or rebuild the loop as a pattern to flip it.
+- **Warp**: audio clips follow the project tempo (Beats, Tones and Re-Pitch modes),
+  with warp markers and independent transpose.
+- **Drag files from your file manager**: WAV, FLAC, MP3 and Ogg Vorbis.
+- Browser with preview (synced to the tempo), favorites, tags and search.
+
+### Record
+
+- **Vocal recording with zero perceptible delay**, no ASIO4ALL needed: input and
+  output processed in the same audio cycle, low-latency monitoring, takes aligned
+  automatically, loopback latency calibration, punch-in, loop recording with comping.
+- MIDI controllers, computer keyboard as a piano, MIDI learn for any control,
+  live automation recording (Touch, Latch, Write), count-in, tap tempo.
+
+### Mix and master
+
+- Mixer with up to 999 tracks, buses and VCAs, 8 inserts and 4 sends per track,
+  sidechain on every dynamics insert, plugin delay compensation, multi-core
+  processing, per-track and per-device CPU meters, A/B on every device.
+- Freeze, bounce in place, consolidate, render selection.
+- Master LUFS meter and spectrum; export to WAV (16/24/32-bit float) or FLAC, stems,
+  one file per section, peak or LUFS normalization.
+
+### Work with others' projects
+
+- **Import FL Studio projects** (`.flp`, up to FL 25): channels, patterns, playlist,
+  audio clips, mixer. Missing samples stay in the project and can be relinked in one
+  click; FL's factory samples are replaced by library sounds.
+- Standard MIDI files in and out; CLAP and VST3 plugins with their own windows and
+  saved state.
+
+The full inventory compared with FL Studio and Ableton Live is in
+[docs/FEATURES.md](docs/FEATURES.md); what's next is in [docs/BACKLOG.md](docs/BACKLOG.md).
+
+## Download
+
+Ready-to-run builds are published on the
+[Releases page](https://github.com/nokogoat/ponzik/releases):
+
+- **Linux**: `Ponzik-x86_64.AppImage` — make it executable and run it.
+- **Windows**: `Ponzik.exe` or the portable zip.
+
+Ponzik checks for updates at startup and can install them for you (Settings).
+See [docs/INSTALL.md](docs/INSTALL.md) for details.
+
+## Build from source
+
+You need a Rust toolchain (1.85 or newer, edition 2024). On Linux you also need the
+ALSA library (`alsa-lib`, or `libasound2-dev` on Debian and Ubuntu). There is nothing
+else to install.
 
 ```sh
-cargo run --release                                  # open the UI on the house demo
-cargo run --release -- breakcore                     # open the UI on the breakcore demo
-cargo run --release -- zalgo                         # open the UI on the rage × techno demo
-cargo run --release -- play [seconds]                # play the demo in the terminal
-cargo run --release -- render demo.wav [morceau|pattern] [breakcore|zalgo]   # render a demo (song or first pattern) to WAV
-cargo run --release -- screenshot ui.png mixer       # off-screen UI capture
-cargo test
+git clone https://github.com/nokogoat/ponzik
+cd ponzik
+cargo run --release              # opens Ponzik on the house demo
 ```
 
-Once installed, the same commands are available as `ponzik`, `ponzik breakcore`,
-`ponzik zalgo`, `ponzik render <out.wav>` and `ponzik screenshot <out.png> [view] [width height]`
-(views: `rack`, `piano`, `playlist`, `mixer`; `bc-` and `zg-` prefixes pick the
-breakcore and Zalgo Rave demos, e.g. `zg-mixer`).
+Other commands:
 
-Environment variables:
+```sh
+cargo run --release -- breakcore                     # the "Amen rave" demo (180 BPM)
+cargo run --release -- zalgo                         # the "Zalgo Rave" demo (160 BPM)
+cargo run --release -- render out.wav [morceau|pattern] [breakcore|zalgo]
+cargo run --release -- library [dir]                 # generate the sound library
+cargo run --release -- screenshot ui.png mixer       # off-screen capture of a view
+cargo test                                           # the test suite
+```
 
-| Variable | Effect |
+| Environment variable | Effect |
 |---|---|
-| `PONZIK_LATENCY_MS` | Audio output latency in milliseconds (2 to 100, default 10) |
-| `CLAP_PATH` | Extra folders to scan for CLAP plugins |
-| `VST3_PATH` | Extra folders to scan for VST3 plugins |
+| `PONZIK_LATENCY_MS` | Audio buffer in milliseconds (2–100, default 10; also in Settings) |
+| `PONZIK_LANG` | Interface language (`en`, `fr`), otherwise the one chosen in Settings |
+| `CLAP_PATH`, `VST3_PATH` | Extra folders to scan for plugins |
+
+## Your first beat
+
+1. Press **Space**: the demo plays. Press **Ctrl+N** for a new project from a template.
+2. In the **Channel Rack** (F6), click steps to light them. Hold the right mouse
+   button and sweep to erase.
+3. Drag a sound from the browser (left) onto the rack — or drop a WAV/MP3 from your
+   file manager.
+4. Press **F7** for the piano roll: click to draw notes, drag their end to make them
+   longer. Pick a scale in the top bar to stay in key.
+5. Press **F5** for the playlist: paint your patterns, drag a loop in and stretch its
+   right edge to repeat it.
+6. Press **F9** for the mixer, then **Ctrl+R** to export.
+
+The tour on first launch walks through this, and **Ctrl+K** finds any action by name.
+
+## Shortcuts
+
+The same as FL Studio, and every one of them can be remapped in Settings.
+
+| Key | Action |
+|---|---|
+| Ctrl+K | Command palette: every action in a few keystrokes |
+| Space | Play / stop (back to the start marker) |
+| F5 · F6 · F7 · F8 · F9 | Playlist · Channel Rack · Piano roll · Sample Lab · Mixer |
+| Tab | Next view |
+| L | Pattern / song mode |
+| R | Arm recording |
+| T | Tap tempo |
+| F4 | New pattern |
+| + / − | Next / previous pattern |
+| Alt+F8 · Ctrl+F | Browser · search |
+| Ctrl+T | Computer keyboard as a piano |
+| Ctrl+M | Metronome |
+| Ctrl+Z · Ctrl+Y | Undo · redo |
+| Ctrl+N · Ctrl+S · Ctrl+Shift+S · Ctrl+O | New · save · save as · open |
+| Ctrl+R | Export |
+| Ctrl+C · Ctrl+V · Ctrl+B | Copy · paste · duplicate (notes, clips, time selection) |
+| Ctrl+Q | Quantize |
+| Ctrl+G | Group mixer tracks into a bus |
+| Ctrl+Shift+C | Capture the last phrase you played |
+| Ctrl+= · Ctrl+− · Ctrl+0 | Interface size |
+| Hold right-click | Erase what you sweep over (steps, notes, clips) |
+| Right-click a control | Automate, link to a MIDI controller, reset |
 
 ## Plugins
 
-Ponzik hosts **CLAP** and **VST3** plugins (not VST2). It looks for them in the
-standard folders, subfolders included:
+Ponzik hosts **CLAP** and **VST3** plugins (not VST2), with their own interface in a
+window, their full state saved in your project, and their latency compensated. It
+looks for them in the standard folders:
 
 | Platform | CLAP | VST3 |
 |---|---|---|
 | Linux | `~/.clap`, `/usr/lib/clap`, `/usr/local/lib/clap` | `~/.vst3`, `/usr/lib/vst3`, `/usr/local/lib/vst3` |
 | Windows | `%COMMONPROGRAMFILES%\CLAP`, `%LOCALAPPDATA%\Programs\Common\CLAP` | `%COMMONPROGRAMFILES%\VST3`, `%LOCALAPPDATA%\Programs\Common\VST3` |
 
-Each plugin file is loaded once by a child process (`ponzik scan-plugin <path>`)
-with a timeout; the results are cached in `~/.config/ponzik/plugins.cache`, so
-only new or updated plugins are loaded again. Plugins that crash or hang while
-loading are listed at the bottom of the browser's plugin tab, with the reason
-in the tooltip. After installing or fixing a plugin, run **Rescan plugins**
-(command palette, Ctrl+K, or the button under the plugin list).
+Each plugin is loaded once in a separate process, so a broken plugin can't take
+Ponzik down; failures are listed at the bottom of the plugin browser. Run
+**Rescan plugins** (Ctrl+K) after installing new ones. Native Linux plugins such as
+[Surge XT](https://surge-synthesizer.github.io/) and [Vital](https://vital.audio/)
+work out of the box.
 
-Click the window button next to a plugin's name in the device panel (or
-double-click the name) to open its own interface. Native Linux plugins such as
-[Surge XT](https://surge-synthesizer.github.io/) (`pacman -S surge-xt`,
-`apt install surge-xt`) or [Vital](https://vital.audio/) work out of the box.
+### Windows plugins on Linux (Serum, ZENOLOGY…)
 
-### Windows plugins on Linux (Serum, ZENOLOGY…) with Wine and yabridge
+Windows-only plugins run on Linux through [Wine](https://www.winehq.org/) and
+[yabridge](https://github.com/robbert-vdh/yabridge):
 
-Plugins that only exist for Windows can run on Linux through
-[Wine](https://www.winehq.org/) and [yabridge](https://github.com/robbert-vdh/yabridge),
-which makes them look like native Linux plugins:
-
-1. Install Wine (yabridge recommends Wine Staging) and yabridge, for example
-   `sudo pacman -S wine-staging yabridge yabridgectl` on CachyOS, or the
-   packages listed in the yabridge README for other distributions.
-2. Install the plugin with its Windows installer through Wine:
-   `wine <installer>.exe`. Pick the **VST3** (or CLAP) format; VST3 plugins
-   usually land in `~/.wine/drive_c/Program Files/Common Files/VST3`.
-   Plugins that need an online account (Roland Cloud for ZENOLOGY, for instance)
-   also need their manager app installed and logged in through Wine.
-3. Tell yabridge where they are and create the Linux bridges:
+1. Install Wine (Wine Staging recommended) and yabridge, e.g.
+   `sudo pacman -S wine-staging yabridge yabridgectl`.
+2. Install the plugin with its Windows installer: `wine <installer>.exe`, choosing
+   the VST3 (or CLAP) format.
+3. Bridge it:
    ```sh
    yabridgectl add "$HOME/.wine/drive_c/Program Files/Common Files/VST3"
    yabridgectl sync
    ```
-   yabridge writes the bridged plugins to `~/.vst3/yabridge` and
-   `~/.clap/yabridge`, which Ponzik scans already.
-4. Start Ponzik (or run **Rescan plugins**): the plugins appear in the browser
-   with a VST3 or CLAP badge. The first load of a bridged plugin starts Wine and
-   can take a few seconds.
+4. Start Ponzik or run **Rescan plugins**: the plugin appears with a VST3 or CLAP badge.
 
-Run `yabridgectl sync` again after installing, updating or removing a Windows
-plugin, then rescan. `yabridgectl status` shows what is bridged; if a plugin
-fails to load, its reason shows in the browser and in yabridge's own logs
-(`YABRIDGE_DEBUG_LEVEL=1`).
+Run `yabridgectl sync` again after installing or updating a Windows plugin.
 
 ## Platform support
 
 | Platform | Window | Audio | MIDI |
 |---|---|---|---|
-| Linux | X11 protocol spoken directly, with MIT-SHM (Wayland through XWayland) | ALSA (works with PipeWire and PulseAudio) | ALSA rawmidi |
-| Windows | Win32 | WASAPI | WinMM |
-| macOS (experimental) | Cocoa through the Objective-C runtime | CoreAudio (AUHAL) | CoreMIDI |
+| Linux | X11 protocol spoken directly, MIT-SHM, HiDPI (Wayland through XWayland) | ALSA (works with PipeWire and PulseAudio) | ALSA rawmidi, in and out |
+| Windows | Win32, per-monitor DPI | WASAPI (low-latency shared mode) | WinMM, in and out |
+| macOS (experimental) | Cocoa through the Objective-C runtime | CoreAudio | CoreMIDI |
+
+The interface is in English and French; adding a language is one translation file
+(`crates/ponzik-i18n/lang/`).
 
 ## Architecture
 
 | Crate | Role |
 |---|---|
-| `crates/ponzik-dsp` | Allocation-free DSP building blocks: oscillators, envelopes, filters, biquads, delays, dynamics, oversampling, FFT, spectrum, BS.1770 loudness, YIN tuner |
-| `crates/ponzik-engine` | Real-time engine: sequencing, mixer with PDC and sidechain, automation, audio clips, Session view, native instruments, effects and note effects, registry |
-| `crates/ponzik-project` | Project model, JSON files, offline rendering, undo history, scales and chords, templates, autosave, MIDI files, demos |
-| `crates/ponzik-audio` | In-house audio drivers: ALSA (Linux), WASAPI (Windows), playback and capture |
-| `crates/ponzik-midi` | In-house MIDI input: ALSA rawmidi (Linux), WinMM (Windows) |
-| `crates/ponzik-window` | In-house windowing: direct X11 protocol with MIT-SHM (Linux), Win32 (Windows), Cocoa (macOS); plugin host windows |
-| `crates/ponzik-ui` | In-house 2D rendering: anti-aliased rasterizer, TrueType reader (glyf, cmap, GPOS), animations, PNG |
-| `crates/ponzik-clap` | CLAP plugin host (audio, parameters, notes, latency, `clap.gui` with timer and fd support) |
-| `crates/ponzik-vst3` | VST3 plugin host (hand-written COM ABI, bundle loading, instruments and effects, latency, `IPlugView` with the Linux run loop) |
-| `crates/ponzik-clap-test-plugin`, `crates/ponzik-vst3-test-plugin` | Minimal plugins used by the host integration tests |
-| `apps/ponzik` | The application |
+| `crates/ponzik-dsp` | Allocation-free DSP: oscillators, filters, delays, dynamics, oversampling, FFT, spectrum, loudness, pitch tracking, time-stretching, onset and tempo detection |
+| `crates/ponzik-engine` | Real-time engine: sequencing, mixer with PDC and sidechain, automation, clips, Session, multi-core graph, instruments, effects, note effects, codecs (WAV, FLAC, MP3, Ogg Vorbis) |
+| `crates/ponzik-project` | Project model and files, sync to the engine, offline rendering, undo, scales and harmony, generators, FL Studio import, sound library, presets |
+| `crates/ponzik-audio` | Audio drivers: ALSA, WASAPI, CoreAudio — full-duplex |
+| `crates/ponzik-midi` | MIDI drivers: ALSA rawmidi, WinMM, CoreMIDI — input and output |
+| `crates/ponzik-window` | Windowing: X11 protocol with MIT-SHM, Win32, Cocoa; plugin windows, file drops, cursors |
+| `crates/ponzik-ui` | 2D rendering: anti-aliased rasterizer, TrueType reader, animations, PNG |
+| `crates/ponzik-i18n` | Translations (gettext-style catalogs embedded at build time) |
+| `crates/ponzik-clap`, `crates/ponzik-vst3` | Plugin hosts, with test plugins in `*-test-plugin` |
+| `apps/ponzik` | The application and its immediate-mode interface (`src/gui/`) |
 
 The golden rule of the audio thread: **no allocations, no locks, no blocking**. The
-UI edits the project; the difference is sent to the engine as commands, and the
-objects it replaces travel back to the UI thread to be freed there.
+interface edits the project; the difference is sent to the engine as commands, and
+replaced objects travel back to the interface thread to be freed there.
 
-## Shortcuts (the FL Studio ones)
+## Contributing
 
-| Key | Action |
-|---|---|
-| Ctrl+K | Do-anything command palette: every action in a few keystrokes |
-| Space | Play / stop (returns to the start marker) |
-| F5 F6 F7 F9 | Playlist, Channel Rack, Piano roll, Mixer |
-| Tab | Next view |
-| L | Pattern / song mode |
-| R | Arm recording |
-| T | Tap tempo |
-| F4 | New pattern |
-| + / - | Next / previous pattern |
-| Alt+F8 / Ctrl+F | Browser / search |
-| Ctrl+T | Computer keyboard as a piano |
-| Ctrl+M | Metronome |
-| Ctrl+Z / Ctrl+Y | Undo / redo |
-| Ctrl+N | New project from a template |
-| Ctrl+S / Ctrl+Shift+S / Ctrl+O | Save / save as / open |
-| Ctrl+R | Export to WAV |
-| Ctrl+C / Ctrl+V / Ctrl+B | Copy / paste / duplicate (notes, clips, time selection) |
-| Ctrl+Q | Quantize |
-| Hold right-click | Erase whatever you sweep over (steps, notes, clips) |
-| Ruler: click / drag | Start marker / looping time selection |
-| Right-click on a knob | Automate, reset to default |
+Contributions are welcome — features, instruments, effects, translations, bug
+reports. Read [AGENTS.md](AGENTS.md) first: it describes the architecture, the rules
+(zero dependencies, real-time safety, translations, tests) and how to verify your
+changes. It is written so that AI coding assistants (Claude Code, Codex, Cursor…)
+can work on Ponzik effectively too; [CLAUDE.md](CLAUDE.md) points to it.
 
 ## License
 
 GPL-3.0-or-later. Ponzik is free software and always will be.
-IBM Plex Sans and IBM Plex Mono fonts: SIL Open Font License (`crates/ponzik-ui/fonts/OFL.txt`).
+IBM Plex Sans and IBM Plex Mono fonts: SIL Open Font License
+(`crates/ponzik-ui/fonts/OFL.txt`).
