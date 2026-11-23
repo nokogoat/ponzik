@@ -4,7 +4,7 @@
 
 # Ponzik
 
-**The free DAW. FL Studio's breadth, Ableton Live's clarity. No more gatekeeping.**
+**The free DAW. No more gatekeeping.**
 
 <p>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-15803d?style=for-the-badge&labelColor=26302f" alt="License: GPL-3.0"></a>
