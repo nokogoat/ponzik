@@ -992,21 +992,18 @@ impl App {
 
         c.fill_rect(Rect::new(g.x, (g.y + g.h * 0.5).round(), g.w, 1.0), t.hairline.alpha(1.2));
         c.fill_rect(Rect::new((g.x + g.w * 0.5).round(), g.y, 1.0, g.h), t.hairline.alpha(1.2));
-        let curve = |ch: usize, full: bool| -> Vec<(f32, f32)> {
-            (0..=64)
-                .map(|i| {
-                    let x = -1.0 + 2.0 * i as f32 / 64.0;
-                    let s = saturation_shape(ch, x * drive);
-                    let y = if full { (mix * s * out + (1.0 - mix) * x).clamp(-1.2, 1.2) } else { s };
-                    (g.x + (x + 1.0) * 0.5 * g.w, g.y + (1.0 - (y + 1.0) * 0.5) * g.h)
-                })
-                .collect()
-        };
+        // Diagonale de référence : là où le son passerait intact.
+        c.stroke_polyline(&[(g.x, g.bottom()), (g.right(), g.y)], 1.0, t.hairline.alpha(2.0));
+        let pts: Vec<(f32, f32)> = (0..=64)
+            .map(|i| {
+                let x = -1.0 + 2.0 * i as f32 / 64.0;
+                let s = saturation_shape(character, x * drive);
+                let y = (mix * s * out + (1.0 - mix) * x).clamp(-1.2, 1.2);
+                (g.x + (x + 1.0) * 0.5 * g.w, g.y + (1.0 - (y + 1.0) * 0.5) * g.h)
+            })
+            .collect();
         let prev = c.push_clip(sq.inset(2.0));
-        for ch in (0..4).filter(|&ch| ch != character) {
-            c.stroke_polyline(&curve(ch, false), 1.0, t.text2.alpha(0.18));
-        }
-        c.stroke_polyline(&curve(character, true), 2.2, t.accent);
+        c.stroke_polyline(&pts, 2.2, t.accent);
         c.set_clip(Some(prev));
 
         // Bandes : graves, médiums, aigus sur un axe logarithmique.
@@ -1023,8 +1020,6 @@ impl App {
             let (top, h) = if d >= 0.0 { (y, mid - y) } else { (mid, y - mid) };
             if multiband {
                 c.fill_rrect(Rect::new(x0, top, (x1 - x0).max(1.0), h.max(2.0)), 3.0, t.accent.alpha(0.55));
-            } else {
-                c.stroke_rrect(Rect::new(x0, mid - 8.0, (x1 - x0).max(1.0), 16.0), 3.0, 1.0, t.hairline.alpha(1.6));
             }
         }
         for &x in &xs[1..3] {
