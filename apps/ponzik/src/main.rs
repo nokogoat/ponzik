@@ -25,7 +25,7 @@ fn help() -> &'static str {
 Ponzik — the free DAW. No more gatekeeping.
 
 Usage:
-  ponzik                                   opens the interface (house demo)
+  ponzik                                   opens the last project or the start screen
   ponzik breakcore                         opens the interface on the breakcore demo
   ponzik zalgo                             opens the interface on the rage × techno demo
   ponzik new                               opens the interface on an empty project
