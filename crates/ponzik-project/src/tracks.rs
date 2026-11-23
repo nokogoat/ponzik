@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use ponzik_engine::AutoTarget;
-use ponzik_engine::mixer::{MASTER, MAX_TRACKS};
+use ponzik_engine::mixer::{INSERT_SLOTS, MASTER, MAX_TRACKS};
 
 use crate::midi_map::ControlTarget;
 use crate::{Project, TrackDef, default_track_name, is_default_track_name};
@@ -273,6 +273,78 @@ impl Project {
         }
         Some(from)
     }
+
+    /// Puts the inserts of `track` in a new order: slot `i` gets what slot
+    /// `order[i]` had. Automation lanes, MIDI links and the track's
+    /// modulators follow their effect. False for no change or not a
+    /// permutation.
+    pub fn permute_inserts(&mut self, track: usize, order: &[usize; INSERT_SLOTS]) -> bool {
+        let mut seen = [false; INSERT_SLOTS];
+        for &o in order {
+            if o >= INSERT_SLOTS || std::mem::replace(&mut seen[o], true) {
+                return false;
+            }
+        }
+        if track >= self.tracks.len() || order.iter().enumerate().all(|(i, &o)| i == o) {
+            return false;
+        }
+        let old = self.tracks[track].inserts.clone();
+        let mut new_of = [0; INSERT_SLOTS];
+        for (i, &o) in order.iter().enumerate() {
+            self.tracks[track].inserts[i] = old[o].clone();
+            new_of[o] = i;
+        }
+        let fix = |t: AutoTarget| match t {
+            AutoTarget::EffectParam { track: tt, slot, id } if tt == track && slot < INSERT_SLOTS => AutoTarget::EffectParam { track: tt, slot: new_of[slot], id },
+            other => other,
+        };
+        for a in &mut self.automation {
+            a.target = fix(a.target);
+        }
+        for m in &mut self.midi_map {
+            if let ControlTarget::Param(p) = &mut m.target {
+                *p = fix(*p);
+            }
+        }
+        for m in &mut self.tracks[track].modulators {
+            for tg in m.targets.iter_mut().filter(|tg| tg.slot < INSERT_SLOTS) {
+                tg.slot = new_of[tg.slot];
+            }
+        }
+        true
+    }
+
+    /// Moves the insert of slot `from` to slot `to`, those between shifting
+    /// by one (see [`permute_inserts`](Self::permute_inserts)).
+    pub fn move_insert(&mut self, track: usize, from: usize, to: usize) -> bool {
+        if from >= INSERT_SLOTS || to >= INSERT_SLOTS {
+            return false;
+        }
+        let mut v: Vec<usize> = (0..INSERT_SLOTS).collect();
+        let x = v.remove(from);
+        v.insert(to, x);
+        let order: [usize; INSERT_SLOTS] = std::array::from_fn(|i| v[i]);
+        self.permute_inserts(track, &order)
+    }
+
+    /// Room for a new effect at `slot`: the inserts from there shift right
+    /// into the next free slot (or left, when none is free after). Returns
+    /// the free slot where the new effect goes, `None` when the track is full.
+    pub fn open_insert(&mut self, track: usize, slot: usize) -> Option<usize> {
+        let inserts = &self.tracks.get(track)?.inserts;
+        let slot = slot.min(INSERT_SLOTS - 1);
+        if inserts[slot].is_none() {
+            return Some(slot);
+        }
+        if let Some(free) = (slot + 1..INSERT_SLOTS).find(|&s| inserts[s].is_none()) {
+            self.move_insert(track, free, slot);
+            return Some(slot);
+        }
+        let free = (0..slot).rev().find(|&s| inserts[s].is_none())?;
+        // Room before: the effects up to slot - 1 shift left.
+        self.move_insert(track, free, slot - 1);
+        Some(slot - 1)
+    }
 }
 
 #[cfg(test)]
@@ -445,5 +517,30 @@ mod tests {
         assert_eq!(p.insert_track(5), None);
         assert!(p.delete_track(5) && p.insert_track(5) == Some(5));
         assert_eq!(p.tracks[MAX_TRACKS - 1].name, format!("Track {}", MAX_TRACKS - 1));
+    }
+
+    #[test]
+    fn moving_an_insert_takes_its_lanes_links_and_modulators_along() {
+        let mut p = wired();
+        // Track 5: compressor in slot 1; an EQ in 0, a delay in 3.
+        p.tracks[5].inserts[0] = Some(EffectDef::new("eq"));
+        p.tracks[5].inserts[3] = Some(EffectDef::new("delay"));
+        let comp = AutoTarget::EffectParam { track: 5, slot: 1, id: 0 };
+        p.midi_map.push(MidiMapping::new(CtlSource::Cc { channel: 0, cc: 7 }, ControlTarget::Param(comp), CtlMode::Absolute));
+        let mut m = crate::ModulatorDef::new(ponzik_engine::ModKind::ALL[0]);
+        m.targets.push(crate::ModTarget { slot: 1, param: 0, depth: 0.5 });
+        p.tracks[5].modulators.push(m);
+        assert!(p.move_insert(5, 1, 3));
+        let kinds: Vec<_> = p.tracks[5].inserts.iter().map(|i| i.as_ref().map(|d| d.kind.as_str())).collect();
+        assert_eq!(&kinds[..4], [Some("eq"), None, Some("delay"), Some("compressor")]);
+        let moved = AutoTarget::EffectParam { track: 5, slot: 3, id: 0 };
+        assert!(lane_targets(&p).contains(&moved));
+        assert!(p.midi_map.iter().any(|m| m.target == ControlTarget::Param(moved)));
+        assert_eq!(p.tracks[5].modulators[0].targets[0].slot, 3);
+        // Room at slot 0: everything shifts right into the free slot 1.
+        assert_eq!(p.open_insert(5, 0), Some(0));
+        let kinds: Vec<_> = p.tracks[5].inserts.iter().map(|i| i.as_ref().map(|d| d.kind.as_str())).collect();
+        assert_eq!(&kinds[..4], [None, Some("eq"), Some("delay"), Some("compressor")]);
+        assert!(!p.move_insert(5, 2, 2));
     }
 }
