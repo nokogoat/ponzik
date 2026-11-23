@@ -279,6 +279,51 @@ pub(crate) mod testing {
         (l, r)
     }
 
+    /// Temps de réverbération (RT60, s) d'une réponse impulsionnelle : intégrale
+    /// de Schroeder, droite ajustée entre −5 et −25 dB (T20), prolongée à −60 dB.
+    /// `band` : mesure dans l'octave centrée sur cette fréquence (Hz), sinon large bande.
+    pub fn rt60(x: &[f32], band: Option<f32>) -> f32 {
+        use ponzik_dsp::biquad::{Biquad, BiquadCoefs};
+        let y: Vec<f64> = match band {
+            Some(hz) => {
+                // Deux passe-bande en série : une octave, pentes assez raides.
+                let mut a = Biquad::new(BiquadCoefs::bandpass(hz, 1.41, SR));
+                let mut b = Biquad::new(BiquadCoefs::bandpass(hz, 1.41, SR));
+                x.iter().map(|&v| b.process(a.process(v)) as f64).collect()
+            }
+            None => x.iter().map(|&v| v as f64).collect(),
+        };
+        let mut edc = vec![0.0f64; y.len()];
+        let mut acc = 0.0;
+        for i in (0..y.len()).rev() {
+            acc += y[i] * y[i];
+            edc[i] = acc;
+        }
+        let total = edc[0].max(1e-30);
+        let (mut n, mut sx, mut sy, mut sxx, mut sxy) = (0.0, 0.0, 0.0, 0.0, 0.0);
+        for (i, &e) in edc.iter().enumerate() {
+            let d = 10.0 * (e / total).max(1e-30).log10();
+            if (-25.0..=-5.0).contains(&d) {
+                let t = i as f64 / SR as f64;
+                n += 1.0;
+                sx += t;
+                sy += d;
+                sxx += t * t;
+                sxy += t * d;
+            }
+        }
+        let slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+        (-60.0 / slope) as f32
+    }
+
+    /// RT60 mesuré dans l'octave de 500 Hz (la référence du réglage « Déclin ») de
+    /// la réponse impulsionnelle d'une réverbe réglée sur `decay` secondes.
+    pub fn reverb_rt60(fx: &mut dyn Effect, decay: f32) -> f32 {
+        let (l, r) = run_mono(fx, &impulse(((decay + 0.3) * SR) as usize));
+        let mid: Vec<f32> = l.iter().zip(&r).map(|(a, b)| 0.5 * (a + b)).collect();
+        rt60(&mid, Some(500.0))
+    }
+
     /// Toutes les combinaisons extrêmes des paramètres restent finies et bornées.
     pub fn assert_stable_at_extremes(make: fn() -> Box<dyn Effect>, bound: f32) {
         let probe = make();

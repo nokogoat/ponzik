@@ -13,6 +13,7 @@ use ponzik_dsp::lfo::{Lfo, LfoShape};
 use ponzik_dsp::smooth::Smoother;
 use ponzik_dsp::util::flush_denormal;
 
+use super::reverb::{DECAY_REF_HZ, loop_decay};
 use super::{DEFAULT_SR, OFF_ON, Values};
 use crate::Effect;
 use crate::param::{ParamInfo, Params, Unit};
@@ -93,7 +94,10 @@ pub struct VintageVerb {
     loop_diffusers: [Allpass; LINES],
     lfos: [Lfo; LINES],
     damping: [OnePole; LINES],
+    /// Étagère grave de chaque ligne (coupure des graves dans la boucle).
     low_cut: [OnePole; LINES],
+    /// Coupe-bas de l'entrée, gauche et droite.
+    input_cut: [OnePole; 2],
     predelay_samples: Smoother,
     size: Smoother,
     freeze: Smoother,
@@ -113,6 +117,7 @@ impl Default for VintageVerb {
             lfos: std::array::from_fn(|_| Lfo::new(LfoShape::Sine)),
             damping: Default::default(),
             low_cut: Default::default(),
+            input_cut: Default::default(),
             predelay_samples: Smoother::new(0.0),
             size: Smoother::new(1.0),
             freeze: Smoother::new(0.0),
@@ -140,12 +145,10 @@ impl VintageVerb {
         } * diffusion;
         self.diffusers.iter_mut().flatten().for_each(|a| a.gain = input_gain);
         self.loop_diffusers.iter_mut().for_each(|a| a.gain = 0.6 * diffusion);
-        // La plaque est plus brillante que la salle pour un même réglage.
-        let bright = if self.mode == Mode::Plate { 1.5 } else { 1.0 };
-        let (damp, cut) = (v.get(P_DAMPING) * bright, v.get(P_LOW_CUT));
+        let cut = v.get(P_LOW_CUT);
         let rate = v.get(P_MOD_RATE);
-        for (i, ((d, c), lfo)) in self.damping.iter_mut().zip(&mut self.low_cut).zip(&mut self.lfos).enumerate() {
-            d.set_cutoff(damp, sr);
+        self.input_cut.iter_mut().for_each(|c| c.set_cutoff(cut, sr));
+        for (i, (c, lfo)) in self.low_cut.iter_mut().zip(&mut self.lfos).enumerate() {
             c.set_cutoff(cut, sr);
             // Vitesses légèrement différentes : les modulations ne se resynchronisent jamais.
             lfo.set_rate(rate * (1.0 + 0.071 * i as f32), sr);
@@ -206,7 +209,7 @@ impl Effect for VintageVerb {
         for (i, lfo) in self.lfos.iter_mut().enumerate() {
             lfo.reset(i as f32 / LINES as f32);
         }
-        self.damping.iter_mut().chain(&mut self.low_cut).for_each(OnePole::reset);
+        self.damping.iter_mut().chain(&mut self.low_cut).chain(&mut self.input_cut).for_each(OnePole::reset);
         for s in [&mut self.predelay_samples, &mut self.size, &mut self.freeze, &mut self.mix] {
             s.snap();
         }
@@ -221,16 +224,51 @@ impl Effect for VintageVerb {
         let decay = self.values.get(P_DECAY) * sr;
         let depth = self.values.get(P_MOD_DEPTH) * MOD_MS[mode_index] * 0.001 * sr;
         let width = self.values.get(P_WIDTH);
-        // Gains de boucle (−60 dB après « déclin ») calculés pour la taille en début de bloc.
+        // La plaque est plus brillante que la salle pour un même réglage.
+        let bright = if self.mode == Mode::Plate { 1.5 } else { 1.0 };
+        let half = self.values.get(P_DAMPING) * bright;
+        let cut = self.values.get(P_LOW_CUT);
+        // Réponse de l'étagère grave à la référence, pour une atténuation `k` du continu.
+        let w = std::f32::consts::TAU * DECAY_REF_HZ / sr;
+        let c = (-std::f32::consts::TAU * cut.min(0.49 * sr) / sr).exp();
+        let (re, im) = (1.0 - c * w.cos(), c * w.sin());
+        let norm = (1.0 - c) / (re * re + im * im);
+        let lp = (re * norm, im * norm);
+        let shelf_db = |k: f32| {
+            let (hr, hi) = (1.0 - (1.0 - k) * lp.0, -(1.0 - k) * lp.1);
+            10.0 * (hr * hr + hi * hi).max(1e-12).log10()
+        };
+        // Gains de boucle (−60 dB après « déclin » à 500 Hz) calculés pour la taille en début de bloc ;
+        // la boucle dure la ligne, la modulation moyenne, la lecture et le passe-tout du « Nuage ».
         let factor = self.size.value();
-        let gains = lengths.map(|len| 10f32.powf(-3.0 * len * factor / decay));
+        let mut gains = [0.0; LINES];
+        let mut shelves = [0.0; LINES];
+        for i in 0..LINES {
+            let mut len = lengths[i] * factor + depth + 2.0;
+            if cloud {
+                len += (LOOP_DIFFUSER_MS[i] * 0.001 * sr).round();
+            }
+            let loss = -60.0 * len / decay;
+            // Graves : un déclin quatre fois plus court au continu, sans prendre plus
+            // d'un tiers de la perte aux médiums quand la coupure monte vers eux.
+            let mut k = 10f32.powf(3.0 * loss / 20.0);
+            let at_ref = shelf_db(k);
+            if at_ref < loss / 3.0 {
+                k = 10f32.powf(loss * loss / at_ref / 20.0);
+            }
+            let (g, pole) = loop_decay(loss, Some(half), shelf_db(k), sr);
+            gains[i] = g;
+            shelves[i] = 1.0 - k;
+            self.damping[i].set_coef(1.0 - pole);
+        }
         for (l, r) in left.iter_mut().zip(right.iter_mut()) {
             let pd = self.predelay_samples.next_value();
             let factor = self.size.next_value();
             let frozen = self.freeze.next_value();
             let mix = self.mix.next_value();
             let [pl, pr] = &mut self.predelay;
-            let (mut il, mut ir) = (pl.read_frac(pd), pr.read_frac(pd));
+            let [cl, cr] = &mut self.input_cut;
+            let (mut il, mut ir) = (cl.highpass(pl.read_frac(pd)), cr.highpass(pr.read_frac(pd)));
             pl.write(*l);
             pr.write(*r);
             let [dl, dr] = &mut self.diffusers;
@@ -250,7 +288,8 @@ impl Effect for VintageVerb {
                 let raw = self.lines[i].read_frac(lengths[i] * factor + wobble + 2.0);
                 wl += OUT_L[i] * raw;
                 wr += OUT_R[i] * raw;
-                let colored = self.low_cut[i].highpass(self.damping[i].lowpass(raw));
+                let damped = self.damping[i].lowpass(raw);
+                let colored = damped - shelves[i] * self.low_cut[i].lowpass(damped);
                 let g = gains[i] + (FREEZE_GAIN - gains[i]) * frozen;
                 y[i] = (colored + (raw - colored) * frozen) * g;
                 if cloud {
@@ -312,15 +351,31 @@ mod tests {
     }
 
     #[test]
-    fn tail_decays_at_the_set_rate() {
+    fn decay_is_the_rt60() {
+        // Le « Nuage » diffuse longuement l'entrée : ses queues très courtes s'étalent un peu.
+        for (mode, decays) in [(0.0, [0.5, 2.0, 8.0, 20.0]), (1.0, [0.5, 2.0, 8.0, 20.0]), (2.0, [1.5, 3.0, 8.0, 20.0])] {
+            for (damping, low_cut, depth) in [(8_000.0, 80.0, 0.4), (20_000.0, 20.0, 0.0), (1_000.0, 300.0, 1.0)] {
+                for decay in decays {
+                    let mut r = wet(mode);
+                    r.set_param(P_DAMPING, damping);
+                    r.set_param(P_LOW_CUT, low_cut);
+                    r.set_param(P_MOD_DEPTH, depth);
+                    r.set_param(P_DECAY, decay);
+                    r.reset();
+                    let rt = reverb_rt60(&mut r, decay);
+                    assert!(
+                        (rt / decay - 1.0).abs() < 0.1,
+                        "mode {mode}, amortissement {damping}, coupe {low_cut} : {decay} s → {rt} s"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn stereo_tail() {
         let mut r = wet(0.0);
-        r.set_param(P_DAMPING, 20_000.0);
-        r.set_param(P_LOW_CUT, 20.0);
-        r.set_param(P_MOD_DEPTH, 0.0);
-        r.reset();
         let (l, rr) = run_mono(&mut r, &impulse(SR as usize));
-        let drop = 20.0 * (window(&l, 0.6, 0.65) / window(&l, 0.1, 0.15)).log10();
-        assert!((-40.0..-20.0).contains(&drop), "{drop}");
         assert!(l.iter().zip(&rr).any(|(a, b)| (a - b).abs() > 1e-4), "pas de stéréo");
     }
 

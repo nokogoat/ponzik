@@ -36,6 +36,59 @@ fn size_factor(size: f32) -> f32 {
     0.2 + 0.8 * size
 }
 
+/// Fréquence où le déclin vaut exactement le réglage « Déclin » (RT60 des médiums).
+pub(super) const DECAY_REF_HZ: f32 = 500.0;
+
+/// Fréquence où l'amortissement divise le déclin par deux, pour un réglage 0 à 1.
+pub(super) fn damping_hz(damping: f32) -> f32 {
+    1_200.0 * (20_000.0f32 / 1_200.0).powf(1.0 - damping)
+}
+
+/// Pertes (dB, positives) du passe-bas à un pôle `y += (1 − b)(x − y)` à la pulsation `w`.
+fn lowpass_loss(b: f32, w: f32) -> f32 {
+    let s = (0.5 * w).sin();
+    10.0 * (1.0 + 4.0 * b * s * s / ((1.0 - b) * (1.0 - b))).log10()
+}
+
+/// Pôle du passe-bas à un pôle qui perd `loss` dB à la pulsation `w`.
+fn lowpass_pole(loss: f32, w: f32) -> f32 {
+    let s = (0.5 * w).sin();
+    let m = (10f32.powf(0.1 * loss.max(0.0)) - 1.0) / (4.0 * s * s).max(1e-9);
+    if m < 1e-7 {
+        return m;
+    }
+    ((2.0 * m + 1.0 - (4.0 * m + 1.0).sqrt()) / (2.0 * m)).clamp(0.0, 0.999)
+}
+
+/// Gain et pôle d'amortissement d'une ligne rebouclée (méthode de Jot).
+///
+/// `loop_db` : perte voulue par passage (dB, négative) pour un RT60 égal au
+/// réglage à [`DECAY_REF_HZ`] ; `half_hz` : fréquence où le déclin est moitié
+/// moindre (aigus amortis), `None` sans amortissement ; `other_db` : réponse
+/// (dB) des autres filtres de la boucle à la fréquence de référence. Les
+/// pertes de l'amortissement à la référence sont rendues par le gain, toujours
+/// inférieur à 1 : le déclin des médiums ne dépend ni de l'amortissement ni de
+/// la longueur des lignes, et les aigus s'éteignent dans le même rapport quel
+/// que soit le déclin. À appeler hors de la boucle par échantillon.
+pub(super) fn loop_decay(loop_db: f32, half_hz: Option<f32>, other_db: f32, sample_rate: f32) -> (f32, f32) {
+    let w_ref = std::f32::consts::TAU * DECAY_REF_HZ / sample_rate;
+    let mut g = loop_db - other_db;
+    let mut pole = 0.0;
+    if let Some(hz) = half_hz.filter(|&hz| hz < 0.45 * sample_rate) {
+        let w_half = std::f32::consts::TAU * hz.max(2.0 * DECAY_REF_HZ) / sample_rate;
+        // À `half_hz`, la perte totale vaut le double de la perte voulue.
+        // Queues très courtes et lignes longues : l'amortissement prendrait plus de la
+        // moitié de la perte aux médiums ; on le borne plutôt que de fausser le déclin.
+        let max_pole = lowpass_pole(-0.5 * (loop_db - other_db), w_ref);
+        for _ in 0..4 {
+            pole = lowpass_pole(g - 2.0 * loop_db, w_half).min(max_pole);
+            g = loop_db - other_db + lowpass_loss(pole, w_ref);
+        }
+    }
+    // Toujours une perte : la boucle reste stable même si les filtres rognent les médiums.
+    (10f32.powf(g.min(0.1 * loop_db) / 20.0), pole)
+}
+
 /// Réverbération algorithmique : réseau de 8 lignes rebouclées par une matrice
 /// de Householder (orthogonale, donc stable pour tout réglage).
 pub struct Reverb {
@@ -76,8 +129,6 @@ impl Reverb {
         self.predelay_samples.set_target(v.get(P_PREDELAY) * self.sample_rate);
         self.size.set_target(size_factor(v.get(P_SIZE)));
         self.mix.set_target(v.get(P_MIX));
-        let a = 1.0 - 0.9 * v.get(P_DAMPING);
-        self.damping.iter_mut().for_each(|d| d.set_coef(a));
     }
 }
 
@@ -134,9 +185,16 @@ impl Effect for Reverb {
     fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
         let decay = self.values.get(P_DECAY) * self.sample_rate;
         let width = self.values.get(P_WIDTH);
-        // Gains de boucle (−60 dB après « déclin ») calculés pour la taille en début de bloc.
+        let damping = self.values.get(P_DAMPING);
+        let half = (damping > 0.0).then(|| damping_hz(damping));
+        // Gains de boucle (−60 dB à 500 Hz après « déclin ») calculés pour la taille en début de bloc.
         let factor = self.size.value();
-        let gains = self.lengths.map(|len| 10f32.powf(-3.0 * len * factor / decay));
+        let mut gains = [0.0; LINES];
+        for ((gain, filter), len) in gains.iter_mut().zip(&mut self.damping).zip(self.lengths) {
+            let (g, pole) = loop_decay(-60.0 * len * factor / decay, half, 0.0, self.sample_rate);
+            *gain = g;
+            filter.set_coef(1.0 - pole);
+        }
         for (l, r) in left.iter_mut().zip(right.iter_mut()) {
             let pd = self.predelay_samples.next_value();
             let factor = self.size.next_value();
@@ -198,15 +256,41 @@ mod tests {
     }
 
     #[test]
-    fn tail_decays_at_the_set_rate() {
+    fn decay_is_the_rt60() {
+        for damping in [0.0, 0.5, 1.0] {
+            for size in [0.0, 0.6, 1.0] {
+                for decay in [0.3, 1.0, 2.0, 5.0, 20.0] {
+                    let mut r = wet();
+                    r.set_param(P_DAMPING, damping);
+                    r.set_param(P_SIZE, size);
+                    r.set_param(P_DECAY, decay);
+                    r.reset();
+                    let rt = reverb_rt60(&mut r, decay);
+                    assert!((rt / decay - 1.0).abs() < 0.1, "amortissement {damping}, taille {size} : {decay} s → {rt} s");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn damping_shortens_the_highs_only() {
+        let measure = |damping: f32, band: f32| {
+            let mut r = wet();
+            r.set_param(P_DAMPING, damping);
+            r.set_param(P_DECAY, 3.0);
+            r.reset();
+            let (l, _) = run_mono(&mut r, &impulse((3.3 * SR) as usize));
+            rt60(&l, Some(band))
+        };
+        let (open, damped) = (measure(0.0, 4_000.0), measure(1.0, 4_000.0));
+        assert!(damped < 0.4 * open, "{open} → {damped}");
+        assert!((measure(1.0, 500.0) / 3.0 - 1.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn stereo_tail() {
         let mut r = wet();
-        r.set_param(P_DECAY, 1.0);
-        r.set_param(P_DAMPING, 0.0);
-        r.reset();
         let (l, rr) = run_mono(&mut r, &impulse(SR as usize));
-        let window = |t: f32| rms(&l[(t * SR) as usize..((t + 0.05) * SR) as usize]);
-        let drop = 20.0 * (window(0.6) / window(0.1)).log10();
-        assert!((-40.0..-20.0).contains(&drop), "{drop}");
         assert!(l.iter().zip(&rr).any(|(a, b)| (a - b).abs() > 1e-4), "pas de stéréo");
     }
 

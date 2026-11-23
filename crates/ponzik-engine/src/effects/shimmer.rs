@@ -5,6 +5,7 @@ use ponzik_dsp::smooth::Smoother;
 use ponzik_dsp::util::flush_denormal;
 
 use super::pitch::GrainShifter;
+use super::reverb::{damping_hz, loop_decay};
 use super::{DEFAULT_SR, Values};
 use crate::Effect;
 use crate::param::{ParamInfo, Params, Unit};
@@ -33,6 +34,8 @@ const LFO_HZ: [f32; LINES] = [0.13, 0.21, 0.29, 0.37, 0.43, 0.53, 0.61, 0.71];
 /// Excursion maximale de la modulation des lignes.
 const MOD_DEPTH: f32 = 0.002;
 const SHIFT_WINDOW: f32 = 0.1;
+/// Raccourcissement de la boucle au scintillement maximal, qui compense l'octave réinjectée.
+const SHIMMER_TRIM: f32 = 0.25;
 const OUT_L: [f32; LINES] = [1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0];
 const OUT_R: [f32; LINES] = [1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, -1.0];
 
@@ -95,8 +98,6 @@ impl Shimmer {
         self.shimmer.set_target(v.get(P_SHIMMER));
         self.modulation.set_target(v.get(P_MODULATION) * MOD_DEPTH * self.sample_rate);
         self.mix.set_target(v.get(P_MIX));
-        let a = 1.0 - 0.9 * v.get(P_DAMPING);
-        self.damping.iter_mut().for_each(|d| d.set_coef(a));
     }
 
     fn smoothers(&mut self) -> [&mut Smoother; 4] {
@@ -157,9 +158,21 @@ impl Effect for Shimmer {
     fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
         let decay = self.values.get(P_DECAY) * self.sample_rate;
         let factor = self.size.value();
-        // L'octave réinjectée ajoute de l'énergie : on raccourcit un peu la boucle en compensation.
-        let trim = 1.0 - 0.1 * self.shimmer.value();
-        let gains = self.lengths.map(|len| 10f32.powf(-3.0 * len * factor / decay) * trim);
+        let damping = self.values.get(P_DAMPING);
+        let half = (damping > 0.0).then(|| damping_hz(damping));
+        // Longueur moyenne de la boucle : la modulation allonge les lignes de `depth` en moyenne.
+        let depth = self.modulation.value();
+        // L'octave réinjectée nourrit chaque bande depuis l'octave du dessous et
+        // allonge la queue : la boucle décroît d'autant plus vite (réglé à la mesure).
+        let shimmer = self.shimmer.value();
+        let feedback = 1.0 + SHIMMER_TRIM * shimmer * shimmer;
+        let mut gains = [0.0; LINES];
+        for ((gain, filter), len) in gains.iter_mut().zip(&mut self.damping).zip(self.lengths) {
+            let len = len * factor + depth;
+            let (g, pole) = loop_decay(-60.0 * feedback * len / decay, half, 0.0, self.sample_rate);
+            *gain = g;
+            filter.set_coef(1.0 - pole);
+        }
         let window = SHIFT_WINDOW * self.sample_rate;
         for (l, r) in left.iter_mut().zip(right.iter_mut()) {
             let factor = self.size.next_value();
@@ -209,6 +222,34 @@ mod tests {
         s.set_param(P_MIX, 1.0);
         s.reset();
         s
+    }
+
+    #[test]
+    fn decay_is_the_rt60() {
+        // L'octave réinjectée n'est compensée qu'en moyenne : marge plus large quand
+        // elle domine ; les queues très courtes s'allongent (latence de la transposition).
+        let cases = [(0.0, 0.0, 0.0), (0.5, 0.4, 0.3), (0.5, 1.0, 1.0), (1.0, 0.4, 0.3), (1.0, 1.0, 1.0), (1.0, 0.0, 0.0)];
+        for (shimmer, damping, modulation) in cases {
+            for decay in [0.5, 1.0, 2.0, 5.0, 20.0] {
+                let mut s = wet();
+                s.set_param(P_SHIMMER, shimmer);
+                s.set_param(P_DAMPING, damping);
+                s.set_param(P_MODULATION, modulation);
+                s.set_param(P_DECAY, decay);
+                s.reset();
+                let rt = reverb_rt60(&mut s, decay);
+                let margin = match (shimmer, decay) {
+                    (0.0, _) => 0.1,
+                    (_, 0.5) => 0.4,
+                    (0.5, _) => 0.1,
+                    _ => 0.2,
+                };
+                assert!(
+                    (rt / decay - 1.0).abs() < margin,
+                    "scintillement {shimmer}, amortissement {damping} : {decay} s → {rt} s"
+                );
+            }
+        }
     }
 
     #[test]
