@@ -48,9 +48,9 @@ fn drawbar_color(i: usize) -> Color {
 }
 
 impl App {
-    /// Tine piano (tine, tone bar, magnetic pickup) or reed piano (reed
-    /// between the pickup plates), and one cycle of the pickup's output for a
-    /// soft and a hard strike. Drag: offset or gap; wheel: distance or grit.
+    /// Tine piano or reed piano: two cycles of the pickup's output for a soft
+    /// and a hard strike, as the sound comes out of it. Drag: offset or gap;
+    /// wheel: distance or grit.
     pub(super) fn ep_graph(&mut self, c: &mut Canvas, input: &Input, r: Rect, device: Device, params: &'static [ParamInfo]) {
         let t = self.theme;
         let model = if params.iter().any(|p| p.name == "Pickup Offset") { EpModel::Tine } else { EpModel::Reed };
@@ -59,65 +59,28 @@ impl App {
         let id = wid("ep-pickup", device_key(device), 0);
         let range = if model == EpModel::Tine { 2.0 } else { 1.0 };
         let hot = self.graph_gestures(input, id, r, device, params, (4, range), Some((5, 0.05, false)));
-        let time = if self.playing { self.time } else { 0.0 };
 
-        // Mechanism, left half.
-        let m = Rect::new(r.x + 10.0, r.y + 12.0, r.w * 0.46, r.h - 24.0);
-        let mid = m.y + m.h * 0.5;
-        let wobble = 3.0 * (time * TAU * 2.2).sin();
-        c.fill_rrect(Rect::new(m.x, mid - 14.0, 10.0, 28.0), 2.0, t.raised);
-        match model {
-            EpModel::Tine => {
-                // Tone bar above, tine below it, pickup at the tine's tip.
-                c.fill_rrect(Rect::new(m.x + 8.0, mid - 16.0, m.w * 0.62, 6.0), 3.0, t.text2.alpha(0.5));
-                let tip = m.x + m.w * 0.72;
-                c.stroke_polyline(&[(m.x + 10.0, mid), (m.x + m.w * 0.4, mid + wobble * 0.3), (tip, mid + wobble)], 2.0, t.text);
-                // The pickup's pole sits off the tine's axis by the offset.
-                let pole_y = mid - a * 14.0;
-                let gap = 4.0 + b * 16.0;
-                let coil = Rect::new(tip + gap, pole_y - 12.0, 16.0, 24.0);
-                c.fill_rrect(coil, 4.0, t.accent.alpha(0.35));
-                c.stroke_rrect(coil, 4.0, 1.2, t.accent);
-                c.fill_rect(Rect::new(coil.x - 3.0, pole_y - 1.5, 3.0, 3.0), t.accent);
-                // The field's curve, swept by the tine.
-                let pts: Vec<(f32, f32)> = (0..=24)
-                    .map(|i| {
-                        let u = -2.0 + 4.0 * i as f32 / 24.0;
-                        let f = ponzik_engine::instruments::tine_field(u);
-                        (coil.right() + 4.0 + f * 14.0, pole_y + u * 10.0)
-                    })
-                    .collect();
-                c.stroke_polyline(&pts, 1.0, t.accent.alpha(0.6));
-            }
-            EpModel::Reed => {
-                // Reed between the comb plates; the narrower the gap, the growlier.
-                let tip = m.x + m.w * 0.7;
-                c.stroke_polyline(&[(m.x + 10.0, mid), (tip, mid + wobble)], 3.0, t.text);
-                let gap = 6.0 + a * 14.0;
-                for side in [-1.0, 1.0] {
-                    let y = mid + side * gap;
-                    c.fill_rrect(Rect::new(tip - 26.0, y - 3.0, 40.0, 6.0), 2.0, t.accent.alpha(0.5));
-                }
-                // Grit: the preamp's glow.
-                c.fill_circle(m.right() - 10.0, mid, 6.0 + 4.0 * b, t.accent_hot.alpha(0.2 + 0.6 * b));
-            }
-        }
-
-        // Output, right half: soft strike faint, hard strike bright.
-        let g = Rect::new(r.x + r.w * 0.52, r.y + 14.0, r.w * 0.46 - 8.0, r.h - 28.0);
-        let gm = g.y + g.h * 0.5;
-        c.fill_rect(Rect::new(g.x, gm.round(), g.w, 1.0), t.hairline.alpha(1.2));
-        // Both on the hard strike's scale: the soft one is smaller and rounder.
-        let mut cycle = [0.0f32; 96];
-        pickup_cycle(model, a, b, 1.0, &mut cycle);
-        let peak = cycle.iter().fold(0.0f32, |m, s| m.max(s.abs())).max(1e-3);
-        for (vel, color, width) in [(0.3, t.text2.alpha(0.6), 1.2), (1.0, t.accent, 2.0)] {
+        let g = r.inset_xy(12.0, 14.0);
+        let mid = (g.y + g.h * 0.5).round();
+        c.fill_rect(Rect::new(g.x, mid, g.w, 1.0), t.hairline.alpha(1.4));
+        c.fill_rect(Rect::new((g.x + g.w * 0.5).round(), g.y, 1.0, g.h), t.hairline.alpha(0.8));
+        // Both on the hard strike's scale, without their offset (the amp
+        // blocks it): the soft one is smaller and rounder.
+        let cycle_of = |vel: f32| {
+            let mut cycle = [0.0f32; 96];
             pickup_cycle(model, a, b, vel, &mut cycle);
+            let mean = cycle.iter().sum::<f32>() / cycle.len() as f32;
+            cycle.iter_mut().for_each(|s| *s -= mean);
+            cycle
+        };
+        let hard = cycle_of(1.0);
+        let peak = hard.iter().fold(0.0f32, |m, s| m.max(s.abs())).max(1e-3);
+        for (cycle, color, width) in [(cycle_of(0.3), t.text2.alpha(0.6), 1.2), (hard, t.accent, 2.0)] {
             let pts: Vec<(f32, f32)> = cycle
                 .iter()
                 .chain(cycle.iter())
                 .enumerate()
-                .map(|(i, &s)| (g.x + i as f32 / 191.0 * g.w, gm - s / peak * g.h * 0.45))
+                .map(|(i, &s)| (g.x + i as f32 / 191.0 * g.w, mid - s / peak * g.h * 0.5))
                 .collect();
             c.stroke_polyline(&pts, width, color);
         }
