@@ -590,11 +590,10 @@ pub enum Probe {
 /// et la durée (0 : une ou deux mesures au tempo du projet).
 pub fn response_kind(kind: &str) -> Option<(Probe, f32)> {
     match kind {
-        "reverb" | "shimmer" => Some((Probe::Impulse, 4.0)),
         "delay" => Some((Probe::Impulse, 2.5)),
         "pompe" | "tranche" => Some((Probe::Constant, 0.0)),
         "char_delay" => Some((Probe::Echoes, 0.0)),
-        "vintage_verb" => Some((Probe::Tail, 5.0)),
+        "reverb" | "shimmer" | "vintage_verb" => Some((Probe::Tail, 5.0)),
         "bus_comp" | "master_limiter" | "char_saturation" | "lofi" => Some((Probe::Drawn, 0.0)),
         "rhodes" | "wurli" | "organ" | "mallets" => Some((Probe::Drawn, 0.0)),
         _ => None,
@@ -1191,9 +1190,11 @@ impl App {
             }
         }
         filled_curve(c, &pts, g.bottom(), col.alpha(0.14), col);
-        // Pré-délai.
-        let px = x_of(predelay).round();
-        c.fill_rect(Rect::new(px, g.y, 1.0, g.h), t.select.alpha(0.6));
+        // Pré-délai, pour les réverbes qui en ont un.
+        if find("Pre-delay").is_some() {
+            let px = x_of(predelay).round();
+            c.fill_rect(Rect::new(px, g.y, 1.0, g.h), t.select.alpha(0.6));
+        }
         // Déclin (−60 dB), s'il tient dans la fenêtre.
         if !frozen && decay < secs {
             let dx = x_of(predelay + decay).round();
