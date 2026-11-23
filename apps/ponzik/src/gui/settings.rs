@@ -499,6 +499,7 @@ impl App {
     pub fn load_settings(&mut self) {
         let path = settings_path();
         self.load_browser_prefs();
+        self.recent_files = super::filedialog::load_recent();
         let Ok(text) = std::fs::read_to_string(&path) else { return };
         let j = match json::parse(&text) {
             Ok(j) => j,
@@ -794,10 +795,7 @@ impl App {
             Shortcut::History => Action::Popup(Popup::History),
             Shortcut::Save => Action::Save,
             Shortcut::SaveAs => Action::SaveAs,
-            Shortcut::Open => {
-                self.open_popup(Popup::OpenProject(compat::list_projects()), Rect::new(12.0, TOP_BAR, 0.0, 0.0));
-                return;
-            }
+            Shortcut::Open => Action::OpenMenu,
             Shortcut::NewProject => Action::NewProject,
             Shortcut::Export => Action::Export,
             Shortcut::Palette => {

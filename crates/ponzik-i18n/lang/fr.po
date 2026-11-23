@@ -799,12 +799,6 @@ msgstr "Supprimer"
 msgid "Also removes its clips"
 msgstr "Retire aussi ses clips"
 
-msgid "No projects"
-msgstr "Aucun projet"
-
-msgid "Projects"
-msgstr "Projets"
-
 msgid "Replace"
 msgstr "Remplacer"
 
@@ -7268,9 +7262,6 @@ msgstr "« {} » : échantillon d'usine FL Studio {} remplacé par le son de la 
 msgid "Approximated ({})"
 msgstr "Approchés ({})"
 
-msgid "FL Studio import: {} mapped, {} approximated, {} offline, {} skipped"
-msgstr "Import FL Studio : {} repris, {} approchés, {} hors ligne, {} ignorés"
-
 msgid "Mapped ({})"
 msgstr "Repris ({})"
 
@@ -9519,3 +9510,206 @@ msgstr "Longueur auto\nLe pattern s'arrête à sa dernière note : on entend ce 
 
 msgid "Lane\n{} other curves are drawn in this pattern and keep playing: open the menu to see them"
 msgstr "Couloir\n{} autres courbes sont dessinées dans ce pattern et jouent toujours : ouvrez le menu pour les voir"
+msgid "Auto length\nThe pattern grows to its last note: you hear what you see"
+msgstr "Longueur auto\nLe pattern s'allonge jusqu'à sa dernière note : on entend ce qu'on voit"
+
+msgid "\"{}\" has unsaved changes: they are lost if Ponzik closes now."
+msgstr "« {} » a des modifications non enregistrées : elles sont perdues si Ponzik se ferme maintenant."
+
+msgid "\"{}\" has unsaved changes: they are lost if another project replaces it."
+msgstr "« {} » a des modifications non enregistrées : elles sont perdues si un autre projet le remplace."
+
+msgid "A copy for Ableton Live: tempo, one MIDI track per channel with its notes in the arrangement, markers. Instruments, effects, audio clips and automation are not kept."
+msgstr "Une copie pour Ableton Live : tempo, une piste MIDI par canal avec ses notes dans l'arrangement, repères. Instruments, effets, clips audio et automation ne sont pas gardés."
+
+msgid "A copy for FL Studio: patterns, notes, channels, samples, playlist and mixer levels. Ponzik devices, effects and automation are not kept."
+msgstr "Une copie pour FL Studio : patterns, notes, canaux, échantillons, playlist et niveaux du mixer. Les appareils, effets et automations de Ponzik ne sont pas gardés."
+
+msgid "Ableton Live set"
+msgstr "Set Ableton Live"
+
+msgid "An .als copy: MIDI tracks with their notes, tempo, markers"
+msgstr "Une copie .als : pistes MIDI avec leurs notes, tempo, repères"
+
+msgid "An .flp copy: patterns, notes, playlist, mixer levels"
+msgstr "Une copie .flp : patterns, notes, playlist, niveaux du mixer"
+
+msgid "Arrows to move · Enter to open · Backspace for the parent folder"
+msgstr "Flèches pour se déplacer · Entrée pour ouvrir · Retour arrière pour le dossier parent"
+
+msgid "Audio file"
+msgstr "Fichier audio"
+
+msgid "Browse"
+msgstr "Parcourir"
+
+msgid "Choose a place, a name and a format"
+msgstr "Choisissez un emplacement, un nom et un format"
+
+msgid "Clear the filter"
+msgstr "Effacer le filtre"
+
+msgid "Computer"
+msgstr "Ordinateur"
+
+msgid "Damaged XML: an attribute is not closed"
+msgstr "XML abîmé : un attribut n'est pas fermé"
+
+msgid "Damaged XML: an attribute without quotes"
+msgstr "XML abîmé : un attribut sans guillemets"
+
+msgid "Desktop"
+msgstr "Bureau"
+
+msgid "Documents"
+msgstr "Documents"
+
+msgid "Don't save"
+msgstr "Ne pas enregistrer"
+
+msgid "Downloads"
+msgstr "Téléchargements"
+
+msgid "Drives"
+msgstr "Disques"
+
+msgid "Empty XML document"
+msgstr "Document XML vide"
+
+msgid "Everything is kept: devices, automation, takes, the Session view. Ctrl+S saves here next time."
+msgstr "Tout est gardé : appareils, automation, prises, vue Session. Ctrl+S enregistre ici la prochaine fois."
+
+msgid "Export copy"
+msgstr "Exporter la copie"
+
+msgid "Export for Ableton Live"
+msgstr "Exporter pour Ableton Live"
+
+msgid "Export for Ableton Live (.als)"
+msgstr "Exporter pour Ableton Live (.als)"
+
+msgid "Export for FL Studio"
+msgstr "Exporter pour FL Studio"
+
+msgid "Export for FL Studio (.flp)"
+msgstr "Exporter pour FL Studio (.flp)"
+
+msgid "Filter by name"
+msgstr "Filtrer par nom"
+
+msgid "Folders and files"
+msgstr "Dossiers et fichiers"
+
+msgid "Group and return tracks: {}"
+msgstr "Pistes de groupe et de retour : {}"
+
+msgid "Home folder"
+msgstr "Dossier personnel"
+
+msgid "Live devices, their settings, automation and routing are not converted"
+msgstr "Les appareils de Live, leurs réglages, l'automation et le routage ne sont pas convertis"
+
+msgid "MIDI file"
+msgstr "Fichier MIDI"
+
+msgid "Modified"
+msgstr "Modifié"
+
+msgid "Music"
+msgstr "Musique"
+
+msgid "Name"
+msgstr "Nom"
+
+msgid "New folder"
+msgstr "Nouveau dossier"
+
+msgid "New folder name, then Enter"
+msgstr "Nom du nouveau dossier, puis Entrée"
+
+msgid "No folder at {}"
+msgstr "Aucun dossier à {}"
+
+msgid "No projects or folders here"
+msgstr "Aucun projet ni dossier ici"
+
+msgid "Not a readable Ableton Live set: {}"
+msgstr "Set Ableton Live illisible : {}"
+
+msgid "Not an Ableton Live set"
+msgstr "Ce n'est pas un set Ableton Live"
+
+msgid "Nothing matches \"{}\""
+msgstr "Rien ne correspond à « {} »"
+
+msgid "Places"
+msgstr "Emplacements"
+
+msgid "Ponzik projects"
+msgstr "Projets Ponzik"
+
+msgid "Ponzik, FL Studio and Ableton Live projects, MIDI files"
+msgstr "Projets Ponzik, FL Studio et Ableton Live, fichiers MIDI"
+
+msgid "Projects opened or saved lately"
+msgstr "Projets ouverts ou enregistrés récemment"
+
+msgid "Projects you open or save will show here"
+msgstr "Les projets que vous ouvrez ou enregistrez apparaîtront ici"
+
+msgid "Recent folders"
+msgstr "Dossiers récents"
+
+msgid "Save the project"
+msgstr "Enregistrer le projet"
+
+msgid "Save your changes?"
+msgstr "Enregistrer les modifications ?"
+
+msgid "Set saved by {}"
+msgstr "Set enregistré par {}"
+
+msgid "The projects you opened or saved lately"
+msgstr "Les projets ouverts ou enregistrés récemment"
+
+msgid "Time signature {}/{}"
+msgstr "Signature rythmique {}/{}"
+
+msgid "Type a path"
+msgstr "Taper un chemin"
+
+msgid "Type to filter"
+msgstr "Tapez pour filtrer"
+
+msgid "{:.1} MB"
+msgstr "{:.1} Mo"
+
+msgid "{} B"
+msgstr "{} o"
+
+msgid "{} KB"
+msgstr "{} Ko"
+
+msgid "{} MIDI tracks: name, colour, volume, pan (instruments guessed from their devices)"
+msgstr "{} pistes MIDI : nom, couleur, volume, panoramique (instruments devinés d'après leurs appareils)"
+
+msgid "{} Session view clips became patterns, not placed in the playlist"
+msgstr "{} clips de la vue Session devenus des patterns, non placés dans la playlist"
+
+msgid "{} already exists. Replace it?"
+msgstr "{} existe déjà. Le remplacer ?"
+
+msgid "{} audio clips: file, place and length (warping and the start in the file are not imported)"
+msgstr "{} clips audio : fichier, position et longueur (le warp et le début dans le fichier ne sont pas importés)"
+
+msgid "{} copy written: {}"
+msgstr "Copie {} écrite : {}"
+
+msgid "{} import: {} mapped, {} approximated, {} offline, {} skipped"
+msgstr "Import {} : {} repris, {} approchés, {} hors ligne, {} ignorés"
+
+msgid "{} locators as arrangement markers"
+msgstr "{} locators devenus des repères d'arrangement"
+
+msgid "{} patterns from {} MIDI clips, {} notes"
+msgstr "{} patterns depuis {} clips MIDI, {} notes"

@@ -402,7 +402,7 @@ impl App {
 
     /// The program should end now (restart into the update).
     pub fn quit_requested(&self) -> bool {
-        self.updates.relaunch.is_some() || self.install.quit
+        self.updates.relaunch.is_some() || self.install.quit || self.quit_now
     }
 
     /// Fake states for the screenshots (`PONZIK_UPDATE=available|downloading|installed|uptodate|error|offline`).

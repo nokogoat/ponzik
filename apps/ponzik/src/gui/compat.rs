@@ -76,10 +76,6 @@ pub(super) fn file_name(name: &str) -> String {
     if clean.is_empty() { tr("Untitled").into() } else { clean.to_string() }
 }
 
-pub fn default_project_path(name: &str) -> PathBuf {
-    projects_dir().join(format!("{}.ponzik", file_name(name)))
-}
-
 /// `Exports/<project>.<ext>` (`ext`: "wav" or "flac").
 pub fn default_export_path(name: &str, ext: &str) -> PathBuf {
     projects_dir().join("Exports").join(format!("{}.{ext}", file_name(name)))
@@ -296,6 +292,42 @@ pub fn import_flp(path: &Path) -> Result<(Project, ponzik_project::ImportReport)
     let name = path.file_stem().map_or("FL Studio".to_string(), |s| s.to_string_lossy().into_owned());
     let dir = path.parent();
     ponzik_project::import_flp(&bytes, &name, &|raw| ponzik_project::resolve_sample(raw, dir))
+}
+
+/// Opens an Ableton Live set; audio files are looked up next to it too.
+pub fn import_als(path: &Path) -> Result<(Project, ponzik_project::ImportReport), String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("{} : {e}", path.display()))?;
+    let name = path.file_stem().map_or("Ableton Live".to_string(), |s| s.to_string_lossy().into_owned());
+    let dir = path.parent();
+    ponzik_project::als::import_als(&bytes, &name, &|raw| ponzik_project::resolve_sample(raw, dir))
+}
+
+/// A sample path of the project as a path on disk (library sounds are
+/// relative to the library), for the files other programs read.
+fn media_on_disk(raw: &str) -> Option<String> {
+    let p = Path::new(raw);
+    if p.is_absolute() {
+        return Some(raw.to_string());
+    }
+    let lib = library_dir().join(p);
+    lib.is_file().then(|| lib.display().to_string())
+}
+
+fn write_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    std::fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// An FL Studio copy of the project.
+pub fn export_flp(project: &Project, path: &Path) -> Result<(), String> {
+    write_file(path, &ponzik_project::export_flp(project, &media_on_disk))
+}
+
+/// An Ableton Live copy of the project.
+pub fn export_als(project: &Project, path: &Path) -> Result<(), String> {
+    write_file(path, &ponzik_project::als::export_als(project))
 }
 
 pub fn export_midi(project: &Project, pattern: usize) -> Result<PathBuf, String> {
