@@ -7731,14 +7731,11 @@ msgstr "Technique"
 msgid "Treble"
 msgstr "Aigus"
 
-msgid "Drag sideways: pluck position\nNear the bridge is brighter"
-msgstr "Glisser de côté : point d'attaque\nPrès du chevalet, c'est plus brillant"
+msgid "Harmonics the pluck point lets ring\nDrag sideways: pluck position, brighter near the bridge"
+msgstr "Harmoniques que laisse sonner le point d'attaque\nGlisser de côté : point d'attaque, plus brillant près du chevalet"
 
-msgid "Drag sideways: bow position\nNear the bridge (sul ponticello) is brighter"
-msgstr "Glisser de côté : position de l'archet\nPrès du chevalet (sul ponticello), c'est plus brillant"
-
-msgid "Drag sideways: brightness"
-msgstr "Glisser de côté : brillance"
+msgid "Harmonics the bow point lets ring\nDrag sideways: bow position, brighter near the bridge"
+msgstr "Harmoniques que laisse sonner le point d'archet\nGlisser de côté : position de l'archet, plus brillant près du chevalet"
 
 msgid "Articulation"
 msgstr "Articulation"
