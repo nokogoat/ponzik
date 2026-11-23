@@ -174,7 +174,7 @@ impl App {
 
         // Header: the mark, the title, the date and build.
         let mark = Rect::new(r.x + 26.0, r.y + 24.0, 56.0, 56.0);
-        ponzik_ui::brand::draw_mark(c, mark, true);
+        ponzik_ui::brand::draw_mark(c, mark);
         let tx = mark.right() + 18.0;
         let title = if full { tr("Changelog").to_string() } else { tr_fmt!("What's new in Ponzik {}", latest.version.as_str()) };
         self.text_fit(c, self.f.sans_med, 20.0, tx, r.y + 44.0, &title, r.right() - tx - 64.0, t.text);

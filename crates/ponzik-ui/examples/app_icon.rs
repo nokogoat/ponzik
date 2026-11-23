@@ -14,7 +14,7 @@ fn render(size: usize) -> Vec<u32> {
     let draw = |bg: u32| {
         let mut c = Canvas::new(size, size);
         c.clear(Color::hex(bg));
-        brand::draw_mark(&mut c, Rect::new(0.0, 0.0, size as f32, size as f32), true);
+        brand::draw_mark(&mut c, Rect::new(0.0, 0.0, size as f32, size as f32));
         c.pixels().to_vec()
     };
     let (black, white) = (draw(0x000000), draw(0xffffff));

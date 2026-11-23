@@ -15,6 +15,12 @@ beginners and pros alike. It is written from scratch in **100% Rust with zero
 dependencies**, from the audio drivers to every instrument, and runs on Linux and
 Windows.
 
+> [!IMPORTANT]
+> **This is only the beginning.** Ponzik is young and moving fast: expect missing
+> pieces, rough edges and the occasional bug. Your projects and feedback help a lot,
+> please [open an issue](https://github.com/nokogoat/ponzik/issues) when something
+> breaks.
+
 > [!NOTE]
 > Ponzik is **free for real**: no editions, no paid upgrades, no account, no
 > internet required. Every feature is in the one version you download.
@@ -31,9 +37,8 @@ Windows.
 
 ## Project status
 
-**Early but usable.** Most of FL Studio and Ableton Live's features are in
-([comparison](docs/FEATURES.md)), and the [roadmap](docs/BACKLOG.md) lists what's
-next. Expect rough edges and please [report them](https://github.com/nokogoat/ponzik/issues).
+Most of FL Studio and Ableton Live's features are in ([comparison](docs/FEATURES.md)),
+and the [roadmap](docs/BACKLOG.md) lists what's next.
 
 ## License
 

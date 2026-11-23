@@ -450,7 +450,7 @@ impl App {
         // Identity: the mark, the name, the build.
         let mark = Rect::new(left.x, left.y + 4.0, 96.0, 96.0);
         c.fill_rrect(mark.translate(0.0, 6.0).inset(-2.0), 26.0, ponzik_ui::Color::rgba(0, 0, 0, 70));
-        ponzik_ui::brand::draw_mark(c, mark, true);
+        ponzik_ui::brand::draw_mark(c, mark);
         let tx = mark.right() + 20.0;
         self.text(c, self.f.sans_med, 26.0, tx, mark.y + 28.0, "Ponzik", t.text);
         self.text_fit(c, self.f.sans, 13.0, tx, mark.y + 56.0, tr("The free DAW. No more gatekeeping."), left.right() - tx, t.text2);
