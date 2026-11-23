@@ -412,6 +412,10 @@ pub enum Action {
     AudioToNotes(usize),
     /// Check, install, restart, update settings.
     Update(super::updates::UpdateOp),
+    /// Loop, repeat or duplicate a playlist clip.
+    Loop(super::clip::ClipSel, super::loops::LoopOp),
+    /// Paint brush of the playlist on or off.
+    TogglePaint,
 }
 
 /// Ligne de menu : une icône (ou la couleur d'un pattern), un nom court, une
@@ -582,6 +586,8 @@ pub struct PlaylistState {
     pub zoom: f32,
     pub brush: usize,
     pub selected: Option<usize>,
+    /// Paint brush: a press on an empty lane lays copies along the drag.
+    pub paint: bool,
 }
 
 pub struct App {
@@ -748,6 +754,8 @@ pub struct App {
     /// Sauvegarde d'une session interrompue, proposée au démarrage : fichier, ligne de détail.
     pub recovery: Option<(PathBuf, String)>,
     pub tour: super::tour::Tour,
+    /// First-time hint bubbles.
+    pub hints: super::hints::Hints,
     /// Place de la pastille de gamme, où s'ouvre son menu.
     scale_anchor: Rect,
     /// Tailles des zones et fenêtres d'appareil flottantes (non enregistrées).
@@ -824,7 +832,7 @@ impl App {
                 line_tool: false,
                 lane_anchor: None,
             },
-            playlist: PlaylistState { scroll_x: 0.0, scroll_y: 0.0, zoom: 44.0, brush: 0, selected: None },
+            playlist: PlaylistState { scroll_x: 0.0, scroll_y: 0.0, zoom: 44.0, brush: 0, selected: None, paint: false },
             sidebar_scroll: 0.0,
             sidebar_query: String::new(),
             sidebar_focus: false,
@@ -909,6 +917,7 @@ impl App {
             autosaver: None,
             recovery: None,
             tour: Default::default(),
+            hints: Default::default(),
             scale_anchor: Rect::new(0.0, 0.0, 0.0, 0.0),
             layout: Default::default(),
             cursor: Default::default(),
@@ -1452,8 +1461,9 @@ impl App {
         let secs = sample.duration() as f64;
         let ticks = (secs * self.project.bpm as f64 / 60.0 * ponzik_engine::PPQ as f64).round().max(24.0) as u32;
         // Its tempo, for warping; a loop (whole bars) is warped right away.
-        let bpm = ponzik_project::warp::detect_tempo(&sample);
-        let warp = bpm.is_some_and(|b| ponzik_project::warp::is_loop(&sample, b));
+        let heard = ponzik_project::warp::detect_tempo(&sample);
+        let looped = heard.and_then(|h| ponzik_project::warp::loop_bpm(&sample, h, self.project.bpm));
+        let (bpm, warp) = (looped.or(heard), looped.is_some());
         let name = std::path::Path::new(path).file_stem().map_or(tr("Audio").to_string(), |s| s.to_string_lossy().into_owned());
         let track = self.project.free_or_new_track().unwrap_or(1);
         self.project.tracks[track].name = name.clone();
@@ -1468,6 +1478,8 @@ impl App {
             len: ticks,
             bpm: bpm.unwrap_or(0.0),
             warp,
+            // A loop repeats when its edge is dragged further.
+            looped: warp,
             ..Default::default()
         };
         if warp {
@@ -2071,7 +2083,7 @@ impl App {
         let over_card = self.recovery_rect(w).is_some_and(|r| r.contains(input.x, input.y))
             || self.learn_rect(w).is_some_and(|r| r.contains(input.x, input.y))
             || self.toast_hits.iter().any(|r| r.contains(input.x, input.y))
-            || (self.popup.is_none() && self.over_tour(input));
+            || (self.popup.is_none() && (self.over_tour(input) || self.over_hint(input)));
         let ui = if self.popup.is_some() || over_card {
             masked = Input {
                 inside: false,
@@ -2119,8 +2131,10 @@ impl App {
         self.popup_layer(c, input, Rect::new(0.0, 0.0, w, h));
         if self.popup.is_none() {
             self.tour_layer(c, input, Rect::new(0.0, 0.0, w, h));
+            self.hint_layer(c, input, Rect::new(0.0, 0.0, w, h));
         } else {
             self.tour.anchors = Default::default();
+            self.hints = Default::default();
         }
         self.toast_layer(c, input, dt, Rect::new(sb, TOP_BAR, w - sb, h - TOP_BAR - pn));
         self.dnd_layer(c, input);
@@ -3664,6 +3678,7 @@ impl App {
                     color,
                     MenuItem::new(Icon::Rack, tr("Edit"), Action::EditPattern(pat)).detail(tr("double-click").into()),
                 ];
+                v.extend(self.loop_menu_items(super::clip::ClipSel::Pattern(*i)));
                 v.extend(self.clip_bounce_items(super::clip::ClipSel::Pattern(*i)));
                 v.push(MenuItem::new(Icon::Trash, tr("Delete the clip"), Action::DeleteClip(*i)).tip(tr("Hold right-click: sweep to erase")).sep());
                 (p.patterns[pat].name.clone(), v)
@@ -3764,6 +3779,8 @@ impl App {
             Action::AddNoteFx(channel, slot, kind) => self.add_note_fx(channel, slot, kind),
             Action::SelectPattern(i) => self.select_pattern(i),
             Action::MakeUnique(clip) => self.make_unique(clip),
+            Action::Loop(sel, op) => self.loop_clip(sel, op),
+            Action::TogglePaint => self.toggle_paint(),
             Action::SetPatternColor(pat, color) => {
                 if let Some(p) = self.project.patterns.get_mut(pat) {
                     p.color = color;

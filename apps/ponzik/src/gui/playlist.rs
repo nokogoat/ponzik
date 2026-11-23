@@ -19,9 +19,9 @@ const RULER: f32 = 30.0;
 pub(super) const LANE_H: f32 = 52.0;
 const EDGE: f32 = 8.0;
 const PLAYLIST_HELP: &str = tr_noop("Playlist
-Click: place the chosen pattern · edge: length
-Right-click: erase · on the title: clip menu
-Double-click: edit · Ctrl+B: duplicate
+Click: place the chosen pattern · edge: length, a loop repeats
+Right-click: erase · on the title: clip menu (loop to the end, ×4…)
+Double-click: edit · Ctrl+B: duplicate · B: paint brush
 Ruler: start, loop and time selection
 Top lane: sections · under the ruler: tempo and meter
 Wheel: scroll · Ctrl: zoom · middle: pan");
@@ -35,6 +35,8 @@ pub enum ClipDrag {
     /// Clip audio : (indice, début, ligne ou durée d'origine, point de départ).
     AudioMove { clip: usize, start: u32, lane: usize, tick0: f32, lane0: f32 },
     AudioResize { clip: usize, len: u32, tick0: f32 },
+    /// Paint brush: copies of `src` every `period` ticks from `start`.
+    Paint { src: ClipSel, start: u32, period: u32, count: usize },
 }
 
 /// Couleur d'un pattern : une famille vert-sarcelle, une teinte par pattern.
@@ -130,6 +132,13 @@ impl App {
         };
         let help = Rect::new(snap_box.x - 74.0, header.y, 36.0, header.h);
         self.icon_button(c, input, wid("pl-help", 0, 0), help, Icon::Info, false, (tr(PLAYLIST_HELP), ""));
+        // Paint brush: drag along a lane to lay copies of the clip.
+        let paint = Rect::new(help.x - 44.0, header.y, 36.0, header.h);
+        let tip = (tr("Paint brush\nDrag along a lane: copies of the pattern, or of the audio clip selected"), "B");
+        if self.icon_button(c, input, wid("pl-paint", 0, 0), paint, Icon::Brush, self.playlist.paint, tip) {
+            self.toggle_paint();
+        }
+        let help = paint;
         // Hors mode morceau, la playlist ne joue pas : un bouton pour y passer.
         if self.project.mode != PlayMode::Song {
             let song = Rect::new(help.x - 44.0, header.y, 36.0, header.h);
@@ -415,9 +424,24 @@ impl App {
                     }
                 }
                 Some(ClipDrag::AudioResize { clip, len, tick0 }) if clip < self.project.audio_clips.len() => {
-                    let dt = ((tick_at(input.x) - tick0) / 24.0).round() * 24.0;
-                    let new_len = (len as f32 + dt).max(24.0) as u32;
-                    if self.project.audio_clips[clip].len != new_len {
+                    let cl = &self.project.audio_clips[clip];
+                    let new_len = if cl.looped {
+                        // Repetitions land on the grid, like pattern clips.
+                        let end = snap_round((cl.start + len) as f32 + tick_at(input.x) - tick0);
+                        (end - cl.start as f32).max(unit(cl.start as f32)) as u32
+                    } else {
+                        let dt = ((tick_at(input.x) - tick0) / 24.0).round() * 24.0;
+                        (len as f32 + dt).max(24.0) as u32
+                    };
+                    // Past the end of the file: the clip loops instead of going silent.
+                    let duration = self.samples.get(&cl.path).map_or(0.0, |s| s.duration() as f64);
+                    let past_end = !cl.looped && duration > 0.0 && new_len > cl.natural_len(duration, &map) + 12;
+                    if past_end {
+                        self.project.audio_clips[clip].looped = true;
+                        self.toast(tr("Loop on: the clip repeats as you drag"));
+                    }
+                    if self.project.audio_clips[clip].len != new_len || past_end {
+                        self.hint_seen(super::hints::Hint::DragToRepeat);
                         self.project.audio_clips[clip].len = new_len;
                         self.commit(tr("Audio clip length"));
                     }
@@ -448,6 +472,9 @@ impl App {
                         self.playlist.brush = orig.pattern;
                         self.clip_drag = Some(ClipDrag::Move { clip: i, orig, tick0: tick, lane0: lane });
                     }
+                }
+                None if self.playlist.paint => {
+                    self.clip_drag = self.paint_begin(lane as usize, snap_floor(tick) as u32);
                 }
                 None => {
                     let p = self.playlist.brush.min(self.project.patterns.len() - 1);
@@ -495,10 +522,15 @@ impl App {
                         self.commit(tr("Move clip"));
                     }
                 }
+                Some(ClipDrag::Paint { src, start, period, count }) => {
+                    let count = self.paint_to(src, start, period, count, tick_at(input.x));
+                    self.clip_drag = Some(ClipDrag::Paint { src, start, period, count });
+                }
                 Some(ClipDrag::Resize { clip, orig, tick0 }) if clip < self.project.clips.len() => {
                     let end = snap_round((orig.start + orig.len) as f32 + tick_at(input.x) - tick0);
                     let len = (end - orig.start as f32).max(unit(orig.start as f32)) as u32;
                     if self.project.clips[clip].len != len {
+                        self.hint_seen(super::hints::Hint::DragToRepeat);
                         self.project.clips[clip].len = len;
                         self.commit(tr("Clip length"));
                     }
@@ -513,8 +545,10 @@ impl App {
         let gesture = if input.down && (self.is_dragging(grid_id) || self.is_dragging(audio_id)) { self.clip_drag } else { None };
         match (gesture, hover_audio.or(hover_clip)) {
             (Some(ClipDrag::Resize { .. } | ClipDrag::AudioResize { .. }), _) | (None, Some((_, true))) => self.set_cursor(Cursor::ResizeH),
+            (Some(ClipDrag::Paint { .. }), _) => self.set_cursor(Cursor::Crosshair),
             (Some(_), _) => self.set_cursor(Cursor::Grab),
             (None, Some(_)) => self.set_cursor(Cursor::Move),
+            _ if over && self.playlist.paint => self.set_cursor(Cursor::Crosshair),
             _ => {}
         }
         if self.popup.is_none() && !self.sidebar_focus {
@@ -556,14 +590,13 @@ impl App {
                         self.duplicate_time();
                     }
                     Key::Char('b') if mods.ctrl => {
-                        if let Some(i) = sel {
-                            let mut clip = self.project.clips[i];
-                            clip.start += clip.len;
-                            self.project.clips.push(clip);
-                            self.playlist.selected = Some(self.project.clips.len() - 1);
-                            self.commit(tr("Duplicate clip"));
+                        if let Some(i) = audio_sel {
+                            self.duplicate_clip(ClipSel::Audio(i));
+                        } else if let Some(i) = sel {
+                            self.duplicate_clip(ClipSel::Pattern(i));
                         }
                     }
+                    Key::Char('b') if !mods.ctrl && !mods.alt && !mods.shift && !self.typing_keyboard => self.toggle_paint(),
                     Key::Char('d') if mods.ctrl => self.playlist.selected = None,
                     // 1–9: jump to that marker.
                     Key::Char(d @ '1'..='9') if !mods.ctrl && !mods.alt && !mods.shift && !self.typing_keyboard => {
@@ -621,6 +654,19 @@ impl App {
                         }
                         rep += 1;
                     }
+                }
+            }
+            // Repeat marks: where the pattern starts over.
+            if let Some(p) = self.project.patterns.get(cl.pattern) {
+                let plen = p.len.max(1);
+                let mut k = cl.offset / plen + 1;
+                while k * plen < cl.offset + cl.len && k < cl.offset / plen + 512 {
+                    let x = (r.x - 1.0 + (k * plen - cl.offset) as f32 * ppt).round();
+                    if x > area.right() {
+                        break;
+                    }
+                    repeat_mark(c, x, r, col, dim * 0.6, &t, false);
+                    k += 1;
                 }
             }
             // Chevron du menu, au survol de la barre de titre.
@@ -694,6 +740,11 @@ impl App {
                     self.set_tip(tip, "");
                 }
             }
+            // Looped: a loop badge; the edge repeats it.
+            if cl.looped {
+                draw_icon(c, Icon::Loop, name_x + 6.0, r.y + 10.0, 11.0, t.text.alpha(0.9 * dim));
+                name_x += 14.0;
+            }
             let name = std::path::Path::new(&cl.path).file_stem().map_or(String::new(), |n| n.to_string_lossy().into_owned());
             let name = if cl.muted { tr_fmt!("{} · muted", name) } else { name };
             self.text_fit(c, self.f.sans_med, 11.0, name_x, r.y + 10.0, &name, r.right() - name_x - 4.0, t.text.alpha(dim));
@@ -727,7 +778,20 @@ impl App {
                     }
                 }
             }
+            // Repeat marks: where the file starts over.
+            for tick in cl.loop_starts(duration, &map, 512) {
+                let x = x_of(tick as f32).round();
+                if x > area.right() {
+                    break;
+                }
+                repeat_mark(c, x, r, col, dim, &t, true);
+            }
             c.set_clip(Some(prev_clip));
+            // A loop on screen: the first time, how to make it last.
+            if cl.looped && r.w > 24.0 && r.right() > area.x + 40.0 && r.right() < area.right() - 8.0 {
+                let edge = Rect::new(r.right() - EDGE, r.y, EDGE + 2.0, r.h);
+                self.want_hint(super::hints::Hint::DragToRepeat, edge);
+            }
             if hover_audio.is_some_and(|(h, e)| h == i && e) {
                 c.fill_rrect(Rect::new(r.right() - 5.0, r.y + 8.0, 2.0, r.h - 16.0), 1.0, t.text.alpha(0.7));
             }
@@ -757,4 +821,20 @@ impl App {
         }
         c.set_clip(Some(prev));
     }
+}
+
+/// A repeat mark at `x` in clip `r`: a notch in the title bar, a faint line
+/// through the body, and for loops a small arrow under the notch.
+fn repeat_mark(c: &mut Canvas, x: f32, r: Rect, col: Color, dim: f32, t: &Theme, arrow: bool) {
+    if x <= r.x + 2.0 || x >= r.right() - 1.0 {
+        return;
+    }
+    c.fill_rect(Rect::new(x, r.y + 19.0, 1.0, r.h - 20.0), t.text.alpha(0.22 * dim));
+    c.fill_rect(Rect::new(x - 1.0, r.y + 1.0, 2.0, 18.0), col.mix(t.text, 0.5).alpha(0.9 * dim));
+    if !arrow {
+        return;
+    }
+    let mut tri = ponzik_ui::Path::new();
+    tri.polygon(&[(x - 4.0, r.y + 19.0), (x + 4.0, r.y + 19.0), (x, r.y + 24.0)]);
+    c.fill_path(&tri, col.mix(t.text, 0.5).alpha(0.8 * dim));
 }

@@ -191,6 +191,12 @@ pub enum Icon {
     Detect,
     /// A microphone and a note: voice to notes.
     Voice,
+    /// A paint brush over a row of blocks: paint copies of a clip.
+    Brush,
+    /// Two chevrons pointing inward: collapse.
+    Collapse,
+    /// Two chevrons pointing outward: expand.
+    Expand,
 }
 
 /// Diagonal stripes over `r` (clipped to it): offline clips and samples.
@@ -459,6 +465,23 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
                 pts.push(p(-2.5 + 5.0 * t, 4.6 - 9.2 * e));
             }
             c.stroke_polyline(&pts, stroke * 0.85, col.alpha(0.8));
+        }
+        Icon::Brush => {
+            // Handle, ferrule and the bristles, painting three blocks.
+            c.stroke_polyline(&[p(6.5, -7.0), p(1.5, -2.0)], stroke, col);
+            c.fill_rrect(rr(-1.5, -2.5, 4.0, 4.0), 1.0 * s, col);
+            c.stroke_polyline(&[p(-0.5, 1.5), p(-3.5, 4.0)], stroke * 1.3, col);
+            for i in 0..3 {
+                c.fill_rrect(rr(-7.5 + i as f32 * 4.6, 5.0, 3.6, 2.6), 0.8 * s, col.alpha(1.0 - i as f32 * 0.25));
+            }
+        }
+        Icon::Collapse => {
+            c.stroke_polyline(&[p(-6.0, -6.5), p(-1.5, -2.0), p(-6.0, 2.5)], stroke, col);
+            c.stroke_polyline(&[p(6.0, -2.5), p(1.5, 2.0), p(6.0, 6.5)], stroke, col);
+        }
+        Icon::Expand => {
+            c.stroke_polyline(&[p(-2.0, -6.5), p(-6.5, -2.0), p(-2.0, 2.5)], stroke, col);
+            c.stroke_polyline(&[p(2.0, -2.5), p(6.5, 2.0), p(2.0, 6.5)], stroke, col);
         }
         Icon::Line => {
             c.stroke_polyline(&[p(-5.5, 5.0), p(5.5, -5.0)], stroke, col);

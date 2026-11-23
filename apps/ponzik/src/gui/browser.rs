@@ -485,7 +485,7 @@ pub fn prepare(source: &Source, tempo: Option<f32>) -> Option<Prepared> {
         Source::Sample(path) => {
             let sample = super::compat::load_sample(&path.to_string_lossy()).ok()?;
             let bpm = ponzik_project::warp::detect_tempo(&sample);
-            let loop_bpm = bpm.filter(|&b| ponzik_project::warp::is_loop(&sample, b));
+            let loop_bpm = bpm.and_then(|b| ponzik_project::warp::loop_bpm(&sample, b, tempo.unwrap_or(120.0)));
             let (sample, synced) = match (loop_bpm, tempo) {
                 (Some(from), Some(to)) if from > 0.0 && to > 0.0 => (stretched(&sample, from / to), true),
                 _ => (sample, false),

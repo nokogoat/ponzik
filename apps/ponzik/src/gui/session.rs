@@ -211,8 +211,9 @@ impl App {
         }
         let sample = self.samples[path].clone();
         let secs = sample.duration() as f64;
-        let bpm = ponzik_project::warp::detect_tempo(&sample);
-        let warp = bpm.is_some_and(|b| ponzik_project::warp::is_loop(&sample, b));
+        let heard = ponzik_project::warp::detect_tempo(&sample);
+        let looped = heard.and_then(|h| ponzik_project::warp::loop_bpm(&sample, h, self.project.bpm));
+        let (bpm, warp) = (looped.or(heard), looped.is_some());
         // The column's other audio clips set its track; else a free one.
         let used: Vec<usize> = self.project.channels.iter().map(|c| c.track).collect();
         let track = (0..SESSION_SCENES)

@@ -23,11 +23,13 @@ mod float;
 mod freeze;
 mod grand;
 mod groove;
+mod hints;
 mod keymap;
 mod keys;
 mod lanes;
 mod learn;
 mod library;
+mod loops;
 mod midiout;
 mod mixer;
 mod modulators;
@@ -765,6 +767,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // PONZIK_CLIP=audio[,markers|tones|off]|pattern: a clip and its clip panel.
     if let Ok(spec) = std::env::var("PONZIK_CLIP") {
         app.screenshot_clip(&spec);
+    }
+    // PONZIK_LOOPS=place:<file>,extend:8,pattern:4,menu,paint,seen: loops
+    // placed, stretched and painted in the playlist.
+    if let Ok(spec) = std::env::var("PONZIK_LOOPS") {
+        app.screenshot_loops(&spec);
     }
     // PONZIK_VARY=lane: chances, conditions and repeats on the pattern's notes,
     // the piano roll showing lane 0 (chance), 1 (condition) or 2 (repeats).

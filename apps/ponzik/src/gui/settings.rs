@@ -290,6 +290,8 @@ pub struct Prefs {
     pub lang: Option<Lang>,
     /// The first-run tour was finished or skipped.
     pub tour_done: bool,
+    /// First-time hints already seen (one bit per hint).
+    pub hints_seen: u32,
     /// Tampon audio en millisecondes (0 : celui par défaut, 10 ms).
     pub buffer_ms: u32,
     /// Tampon choisi à la main : jamais relevé automatiquement.
@@ -419,6 +421,7 @@ impl App {
         self.prefs.keymap = keymap;
         self.prefs.ui_scale = UiScale::from_json(&j);
         self.prefs.tour_done = j.get("tour_done").and_then(Json::as_bool).unwrap_or(false);
+        self.prefs.hints_seen = j.get("hints_seen").and_then(Json::as_f64).map_or(0, |v| if v.is_finite() { v.clamp(0.0, u32::MAX as f64) as u32 } else { 0 });
         (self.prefs.buffer_ms, self.prefs.buffer_manual) = buffer_from_json(&j);
         self.ctl.global = ponzik_project::midi_map::load_mappings(j.get("midi_map"), usize::MAX);
         self.updates.load(&j);
@@ -431,6 +434,9 @@ impl App {
         if let Json::Obj(fields) = &mut j {
             fields.push(("ui_scale".into(), (self.prefs.ui_scale.percent() as f64 / 100.0).into()));
             fields.push(("tour_done".into(), self.prefs.tour_done.into()));
+            if self.prefs.hints_seen != 0 {
+                fields.push(("hints_seen".into(), (self.prefs.hints_seen as f64).into()));
+            }
             if !self.ctl.global.is_empty() {
                 fields.push(("midi_map".into(), ponzik_project::midi_map::mappings_json(&self.ctl.global)));
             }

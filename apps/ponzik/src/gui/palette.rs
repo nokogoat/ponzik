@@ -141,6 +141,19 @@ impl App {
         if let Some(clip) = self.playlist.selected.filter(|&i| i < self.project.clips.len()) {
             add(tr("Make the selected clip unique").into(), tr("Playlist"), none(), Action::MakeUnique(clip));
         }
+        let paint = if self.playlist.paint { tr("Paint brush off") } else { tr("Paint brush: drag along a lane to lay copies of a clip") };
+        add(paint.into(), tr("Playlist"), "B".into(), Action::TogglePaint);
+        // Loops of the clip shown in the clip panel (or the selected pattern clip).
+        let sel = self.clip_panel_shown().or_else(|| self.playlist.selected.filter(|&i| i < self.project.clips.len()).map(super::clip::ClipSel::Pattern));
+        if let Some(sel) = sel {
+            use super::loops::LoopOp;
+            add(tr("Loop the selected clip to the end of the song").into(), tr("Playlist"), none(), Action::Loop(sel, LoopOp::SongEnd));
+            add(tr("Loop the selected clip over the time selection").into(), tr("Playlist"), none(), Action::Loop(sel, LoopOp::Selection));
+            for n in [2, 4, 8] {
+                add(tr_fmt!("Repeat the selected clip ×{}", n), tr("Playlist"), none(), Action::Loop(sel, LoopOp::Repeat(n)));
+            }
+            add(tr("Duplicate the selected clip").into(), tr("Playlist"), "Ctrl B".into(), Action::Loop(sel, LoopOp::Duplicate));
+        }
         // Freeze, bounce, consolidate, render selection.
         {
             use super::clip::ClipSel;

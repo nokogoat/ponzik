@@ -342,7 +342,16 @@ impl App {
             ];
             return (ponzik_project::flp::file_name_of(&c.path).to_string(), v);
         }
-        let mut v = self.clip_bounce_items(ClipSel::Audio(i));
+        // Loops first: making a loop last is what this menu is most used for.
+        let mut v = self.loop_menu_items(ClipSel::Audio(i));
+        if let Some(first) = v.first_mut() {
+            first.sep = false;
+        }
+        let mut bounce = self.clip_bounce_items(ClipSel::Audio(i));
+        if let Some(first) = bounce.first_mut() {
+            first.sep = true;
+        }
+        v.extend(bounce);
         v.push(
             MenuItem::new(Icon::Detect, tr("Detect the key"), Action::DetectKey(super::groove::KeySource::Audio(i)))
                 .tip(tr("From the clip's pitches (chromagram), then apply it to the project"))
