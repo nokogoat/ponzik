@@ -20,9 +20,9 @@ Legend: **FL** = FL Studio · **AB** = Ableton Live · ✅ done in Ponzik · �
 | Arrangement view: linear timeline, tracks, recording the Session into the Arrangement | AB | 🟡 playlist |
 | Clip View / Device View (clip and effect chain details at the bottom of the screen) | AB | ✅ resizable bottom device panel with a strip of device chips (jump, drag to reorder, bypass, detach, presets), collapsible cards, an effect inserted between two cards, Ctrl+arrows from device to device, keyboard focus (Tab, arrows, Enter); clip panel for the selected clip |
 | Performance mode: launch Playlist clips live | FL | ⬜ |
-| Browser: samples, presets, plugins, projects, favorites, tags, collections | FL · AB | 🟡 instruments, effects, CLAP and VST3 plugins, WAV and FLAC files in a collapsible folder tree, search, favorites, recent items, drag and drop; no presets or collections |
+| Browser: samples, presets, plugins, projects, favorites, tags, collections | FL · AB | 🟡 instruments, effects, CLAP, VST3, LV2 and LADSPA plugins (format badge, a folder per format), WAV and FLAC files in a collapsible folder tree, search, favorites, recent items, drag and drop; no presets or collections |
 | Similar-sound search in the browser | AB | ⬜ |
-| Plugin picker, plugin database | FL | 🟡 CLAP and VST3 plugins listed in the browser |
+| Plugin picker, plugin database | FL | 🟡 CLAP, VST3, LV2 and LADSPA plugins listed in the browser, scanned in child processes with a cache |
 | Detachable windows, multiple monitors | FL · AB | 🟡 devices in stacked floating windows inside the main window; no multi-monitor |
 | Contextual help bar (hint bar / Info View) | FL · AB | 🟡 tooltips everywhere; no permanent help bar |
 | Built-in lessons (Live's Lessons) | AB | ✅ Learn panel: 12 optional hands-on lessons in two series (using Ponzik, first productions), bubbles on the real widgets, steps that end when you do the action, saved progress |
@@ -153,7 +153,7 @@ Proprietary instruments cannot be copied, so Ponzik builds its own equivalents.
 | Free routing from any track to any other | FL | ✅ with loop rejection |
 | Track groups, buses and VCAs | FL · AB | ✅ one-gesture buses (Ctrl+G), return buses with an effect ready, foldable groups, VCA faders |
 | Sidechain | FL · AB | ✅ key track per insert (compressor, gate, Ducking) |
-| Plugin delay compensation (PDC), track delay | FL · AB | 🟡 PDC on tracks, sends and sidechain keys, for native, CLAP and VST3 effects; no manual track delay |
+| Plugin delay compensation (PDC), track delay | FL · AB | 🟡 PDC on tracks, sends and sidechain keys, for native, CLAP, VST3, LV2 and LADSPA effects; no manual track delay |
 | Multiple inputs and outputs, multi-output plugins | FL · AB | ⬜ |
 | Crossfader, cue (pre-listen) | AB | ⬜ |
 | Track and chain presets | FL · AB | ⬜ |
@@ -186,7 +186,7 @@ Proprietary instruments cannot be copied, so Ponzik builds its own equivalents.
 | Feature | Where | Ponzik |
 |---|---|---|
 | VST2, VST3, AU hosting | FL · AB | 🟡 VST3 instruments and effects; no VST2 or AU |
-| CLAP, LV2 hosting | – (planned in Ponzik) | 🟡 CLAP instruments and effects; no LV2 |
+| CLAP, LV2, LADSPA hosting | – (planned in Ponzik) | ✅ CLAP instruments and effects; LV2 instruments, effects and MIDI effects (atoms, worker, state, presets, embedded X11 and Windows interfaces); LADSPA effects |
 | 32/64-bit bridging, plugins sandboxed in a separate process | FL · AB | ⬜ |
 | WAV export | FL · AB | ✅ 16-bit, 24-bit, 32-bit float |
 | MP3, FLAC, OGG export, dithering, normalization | FL · AB | 🟡 FLAC (16 or 24 bits, songs, stems, sections), peak or LUFS normalization, TPDF dither at 16 bits; no MP3 or OGG |
@@ -238,7 +238,7 @@ compressor, bus compressor, limiter, mastering limiter, gate, OTT-style multiban
 ducking, transients, reverb, algorithmic reverb, shimmer, delay,
 character delay, chorus, phaser, saturator, character saturation, bitcrusher,
 noise and texture, autofilter, slice, pitch shifter, stereo imager, utility) and
-5 note effects (arpeggiator, chord, scale, random, repeat). CLAP and VST3 hosting.
+5 note effects (arpeggiator, chord, scale, random, repeat). CLAP, VST3, LV2 and LADSPA hosting.
 JSON projects with templates, autosave and crash recovery, undo with a history
 panel, MIDI file import and export, audio recording, count-in and tap tempo, WAV
 export (16/24/32-bit float) and FLAC export (16/24-bit) with normalization and
