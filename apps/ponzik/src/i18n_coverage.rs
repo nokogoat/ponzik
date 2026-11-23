@@ -1,6 +1,7 @@
 //! Couverture des catalogues : chaque texte traduisible du code (appels `tr…`
 //! trouvés dans les sources, noms et paramètres des appareils natifs, gammes et
-//! accords) doit avoir son entrée dans chaque langue livrée.
+//! accords) doit avoir son entrée en français ; les autres langues livrées
+//! peuvent être partielles, mais aucun catalogue ne garde de texte disparu.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -71,11 +72,16 @@ fn shipped() -> impl Iterator<Item = Lang> {
     Lang::all().filter(|l| *l != Lang::EN && l.info().is_some_and(|i| i.embedded))
 }
 
+/// Languages kept complete with every change of the code. Other shipped
+/// catalogs may be partial (contributed translations): what they lack shows
+/// in English.
+const COMPLETE: [&str; 1] = ["fr"];
+
 #[test]
 fn every_string_has_a_translation_in_every_language() {
     let keys = translatable_keys();
     assert!(keys.len() > 500, "scanner found only {} keys", keys.len());
-    for lang in shipped() {
+    for lang in shipped().filter(|l| COMPLETE.contains(&l.code())) {
         let cat = lang.catalog().expect("catalog");
         let missing: Vec<_> = keys.iter().filter(|k| !cat.contains(k)).collect();
         assert!(
@@ -92,7 +98,8 @@ fn catalogs_have_no_stale_entries() {
     let keys = all_keys();
     for lang in shipped() {
         let cat = lang.catalog().expect("catalog");
-        let stale: Vec<_> = cat.entries().map(|(k, _)| k).filter(|k| !keys.contains(*k)).collect();
+        // Untranslated entries too: they would end up in translation templates.
+        let stale: Vec<_> = cat.ids().filter(|k| !keys.contains(*k)).collect();
         assert!(stale.is_empty(), "entries of {}.po no longer used by the code: {stale:#?}", lang.code());
     }
 }
