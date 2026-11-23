@@ -63,6 +63,7 @@ mod warping;
 mod wavetable;
 mod theme;
 mod themecss;
+mod textedit;
 mod themes;
 mod tools;
 mod tree;
@@ -314,6 +315,7 @@ pub fn run(project: ponzik_project::Project, open: Option<std::path::PathBuf>, l
         .unwrap_or((1600, 960));
     let mut window = Window::open("Ponzik", ww, wh).map_err(|e| e.to_string())?;
     let mut app = App::new(handle, project, config.sample_rate);
+    app.clipboard = ponzik_window::Clipboard::open();
     app.editors = editors;
     app.editors.set_owner(window.native_handle());
     app.samples = samples;
@@ -964,7 +966,13 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     let bench = std::env::var_os("PONZIK_BENCH").is_some();
     let (mut drawing, mut ui, mut raster, mut dirty) = (Duration::ZERO, Duration::ZERO, Duration::ZERO, 0.0);
     let mut allocs = 0;
+    // PONZIK_TEXT_EDIT=anchor,caret[,x,y]: a selection (byte offsets) in the
+    // field being edited, and its right-click menu opened at x,y.
+    let text_edit = std::env::var("PONZIK_TEXT_EDIT").ok();
     for i in 0..96 {
+        if let Some(spec) = text_edit.as_deref().filter(|_| i >= 4) {
+            app.screenshot_text_edit(spec, i == 4);
+        }
         if let Some(paths) = file_drop.as_ref().filter(|_| i == 8) {
             input.dropped = Some(paths.clone());
             input.file_hover = false;

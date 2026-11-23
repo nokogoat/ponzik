@@ -4,7 +4,7 @@
 
 use ponzik_i18n::{tr, tr_fmt};
 use ponzik_ui::{Canvas, Color, Rect};
-use ponzik_window::{Cursor, Key};
+use ponzik_window::Cursor;
 
 use super::Input;
 use super::app::App;
@@ -591,35 +591,28 @@ impl App {
         c.fill_rrect(chip, 6.0, col);
         c.stroke_rrect(chip, 6.0, 1.0, t.hairline);
         let fid = wid("th-hex", 0, 0);
-        let editing = self.themes.editor.hex.is_some();
+        let was_editing = self.themes.editor.hex.is_some();
         let hov = self.hovered(input, fid, field);
         if hov {
             self.set_cursor(Cursor::Text);
             *hint = Some(tr("Type a color: #22c55e, rgb(34 197 94), hsl(142 71% 45%)…").to_string());
-            if input.pressed && !editing {
-                self.themes.editor.hex = Some(hex_string(col));
+            if (input.pressed || input.right_pressed) && !was_editing {
+                let text = hex_string(col);
+                // The whole color selected: typing replaces it.
+                self.edit = super::textedit::EditState { id: fid, caret: text.len(), anchor: 0, ..Default::default() };
+                self.themes.editor.hex = Some(text);
             }
-        } else if input.pressed && editing {
+        } else if input.pressed && was_editing {
             self.commit_hex(&mut out);
         }
         if let Some(mut text) = self.themes.editor.hex.clone() {
-            text.push_str(&input.text);
-            let mut done = false;
-            for &(key, _) in &input.keys {
-                match key {
-                    Key::Backspace => {
-                        text.pop();
-                    }
-                    Key::Enter => done = true,
-                    Key::Escape => {
-                        self.themes.editor.hex = None;
-                        return out;
-                    }
-                    _ => {}
-                }
+            let ed = self.edit_keys(fid, &mut text, input, Default::default());
+            if ed.escape {
+                self.themes.editor.hex = None;
+                return out;
             }
             self.themes.editor.hex = Some(text);
-            if done {
+            if ed.enter {
                 self.commit_hex(&mut out);
             }
         }
@@ -627,13 +620,23 @@ impl App {
         let valid = self.themes.editor.hex.as_deref().is_none_or(|s| super::themecss::parse_color(s).is_ok());
         c.fill_rrect(field, 8.0, if editing { t.bg_deep } else { t.raised });
         c.stroke_rrect(field, 8.0, 1.0, if !valid { t.negative } else if editing { t.accent.alpha(0.7) } else { t.hairline });
-        let shown = self.themes.editor.hex.clone().unwrap_or_else(|| hex_string(col));
-        let w = self.text(c, self.f.mono_med, 13.0, field.x + 10.0, field.y + 14.0, &shown, t.text);
-        if editing && (self.time * 2.0).fract() < 0.5 {
-            c.fill_rect(Rect::new(field.x + 11.0 + w, field.y + 7.0, 1.5, 14.0), t.accent);
-        }
-        if editing {
-            self.anim.set(wid("caret", 1, 0), self.time);
+        if let Some(text) = self.themes.editor.hex.clone() {
+            let f = super::textedit::Field {
+                id: fid,
+                text: &text,
+                area: Rect::new(field.x + 6.0, field.y, field.w - 12.0, field.h),
+                x: field.x + 10.0,
+                cy: field.y + 14.0,
+                font: self.f.mono_med,
+                size: 13.0,
+                ink: t.text,
+                caret: t.accent,
+            };
+            // The click that started the edit keeps the color selected.
+            let first = if input.pressed && !was_editing { Input { pressed: false, ..input.clone() } } else { input.clone() };
+            self.edit_field(c, &first, &f);
+        } else {
+            self.text(c, self.f.mono_med, 13.0, field.x + 10.0, field.y + 14.0, &hex_string(col), t.text);
         }
         out
     }
