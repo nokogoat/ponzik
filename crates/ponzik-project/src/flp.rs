@@ -38,6 +38,9 @@ use ponzik_engine::{Note, PPQ, PlayMode, TICKS_PER_BAR, TICKS_PER_STEP};
 
 use crate::{AudioClipDef, ChannelDef, ClipDef, EffectDef, InstrumentDef, PatternDef, Project};
 
+mod export;
+pub use export::export_flp;
+
 // --- Event ids (PyFLP `_events.py`: BYTE = 0, WORD = 64, DWORD = 128, TEXT = 192, DATA = 208) ---
 
 const WORD: u8 = 64;
