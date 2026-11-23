@@ -135,7 +135,9 @@ cargo test --workspace
 cargo clippy --workspace --all-targets
 ```
 
-`PONZIK_PROFILE=1` prints per-frame timing and allocations; `PONZIK_DEBUG_INPUT=1`
+`ponzik bench <demo|file>` measures audio block times, the heaviest devices,
+interface images and memory (see [docs/PERFORMANCE.md](docs/PERFORMANCE.md)).
+`PONZIK_PROFILE=1` prints the startup time, per-frame timing and allocations; `PONZIK_DEBUG_INPUT=1`
 logs input events.
 
 ## Commits
