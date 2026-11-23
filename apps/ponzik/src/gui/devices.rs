@@ -157,6 +157,9 @@ pub(super) fn card_width(kind: &str, params: &'static [ParamInfo]) -> f32 {
     if kind == "mix_assistant" {
         return super::assistant::WIDTH;
     }
+    if kind == "autotune" {
+        return super::autotune::WIDTH;
+    }
     let g = groups(params);
     if g.is_empty() {
         return 280.0;
@@ -625,6 +628,9 @@ impl App {
         }
         if kind == "mix_assistant" {
             return self.mix_assistant_device(c, input, body, device);
+        }
+        if kind == "autotune" && matches!(device, Device::Effect { .. }) {
+            return self.autotune_device(c, input, body, device);
         }
         if kind == "drum_pads" {
             return self.pads_device(c, input, body, device, params);
