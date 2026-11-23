@@ -21,6 +21,7 @@ use ponzik_window::{Cursor, Key};
 use super::Input;
 use super::app::{App, Popup};
 use super::compat;
+use super::textedit::{EditOpts, Field};
 use super::theme::*;
 use super::widgets::{Icon, draw_icon, wid};
 
@@ -668,6 +669,23 @@ impl FileDialog {
         self.activate(i)
     }
 
+    /// The filter or the name changed: the list starts over.
+    pub fn typed(&mut self) {
+        self.confirm = None;
+        if self.mode == Mode::Open {
+            self.selected = None;
+            self.scroll = 0.0;
+        }
+    }
+
+    /// The filter (opening) or the name (saving) being typed.
+    pub fn typing_mut(&mut self) -> &mut String {
+        match self.mode {
+            Mode::Open => &mut self.filter,
+            Mode::Save => &mut self.name,
+        }
+    }
+
     /// Keys while no text field takes them: arrows, Enter, Backspace,
     /// Escape, and typed text (the filter when opening, the name when saving).
     pub fn keys(&mut self, keys: &[(Key, ponzik_window::Modifiers)], text: &str) -> Option<Outcome> {
@@ -678,11 +696,7 @@ impl FileDialog {
         let changed = !text.is_empty();
         typing.push_str(text);
         if changed {
-            self.confirm = None;
-            if self.mode == Mode::Open {
-                self.selected = None;
-                self.scroll = 0.0;
-            }
+            self.typed();
         }
         let mut out = None;
         for &(key, mods) in keys {
@@ -779,6 +793,14 @@ pub(super) fn age_label(t: Option<SystemTime>) -> String {
 }
 
 const ROW_H: f32 = 40.0;
+
+/// Id of the typing field: the filter when opening, the name when saving.
+fn typing_id(mode: Mode) -> u64 {
+    match mode {
+        Mode::Open => wid("files-search", 1, 0),
+        Mode::Save => wid("files-name", 1, 0),
+    }
+}
 
 impl App {
     /// `path` becomes the most recent project.
@@ -975,24 +997,30 @@ impl App {
         match &mut d.edit {
             Edit::None => {
                 if d.tab == Tab::Browse {
-                    out = d.keys(&input.keys, &input.text);
+                    // The filter or the name has the caret; the list keeps the
+                    // arrows (and Home / End while filtering).
+                    let open = d.mode == Mode::Open;
+                    let mut typing = std::mem::take(d.typing_mut());
+                    let opts = EditOpts { keep_home_end: open };
+                    let ed = self.edit_keys(typing_id(d.mode), &mut typing, input, opts);
+                    *d.typing_mut() = typing;
+                    if ed.changed {
+                        d.typed();
+                    }
+                    out = d.keys(&ed.rest, "");
                 } else if input.keys.iter().any(|(k, _)| *k == Key::Escape) {
                     out = Some(Outcome::Cancel);
                 }
             }
             Edit::Path(text) | Edit::NewFolder(text) => {
-                text.push_str(&input.text);
-                let mut done = None;
-                for &(key, _) in &input.keys {
-                    match key {
-                        Key::Backspace => {
-                            text.pop();
-                        }
-                        Key::Enter => done = Some(true),
-                        Key::Escape => done = Some(false),
-                        _ => {}
-                    }
-                }
+                let ed = self.edit_keys(wid("files-edit", 0, 0), text, input, EditOpts::default());
+                let done = if ed.enter {
+                    Some(true)
+                } else if ed.escape {
+                    Some(false)
+                } else {
+                    None
+                };
                 if let Some(ok) = done {
                     let edit = std::mem::replace(&mut d.edit, Edit::None);
                     if ok {
@@ -1240,10 +1268,21 @@ impl App {
             c.fill_rrect(row, 10.0, t.well);
             c.stroke_rrect(row, 10.0, 1.5, t.accent.alpha(0.8));
             self.kind_badge(c, Kind::Folder, row.x + 24.0, row.y + row.h * 0.5, 1.0);
-            let shown_name = if name.is_empty() { tr("New folder name, then Enter") } else { name.as_str() };
-            let tw = self.text(c, self.f.sans_med, 13.5, row.x + 52.0, row.y + row.h * 0.5, shown_name, if name.is_empty() { t.muted } else { t.text });
-            if !name.is_empty() && (self.time * 2.0).fract() < 0.6 {
-                c.fill_rect(Rect::new(row.x + 53.0 + tw, row.y + 10.0, 1.5, row.h - 20.0), t.accent);
+            if name.is_empty() {
+                self.text(c, self.f.sans_med, 13.5, row.x + 52.0, row.y + row.h * 0.5, tr("New folder name, then Enter"), t.muted);
+            } else {
+                let f = Field {
+                    id: wid("files-edit", 0, 0),
+                    text: name,
+                    area: Rect::new(row.x + 48.0, row.y, row.w - 56.0, row.h),
+                    x: row.x + 52.0,
+                    cy: row.y + row.h * 0.5,
+                    font: self.f.sans_med,
+                    size: 13.5,
+                    ink: t.text,
+                    caret: t.accent,
+                };
+                self.edit_field(c, input, &f);
             }
             y += ROW_H;
         }
@@ -1360,15 +1399,19 @@ impl App {
         c.stroke_rrect(r, 10.0, if editing { 1.5 } else { 1.0 }, if editing { t.accent.alpha(0.9) } else { t.hairline });
         let cy = r.y + r.h * 0.5;
         if let Edit::Path(text) = &d.edit {
-            let shown = self.fit(self.f.mono, 12.5, text, r.w - 90.0);
-            let tw = self.text(c, self.f.mono, 12.5, r.x + 12.0, cy, &shown, t.text);
-            if (self.time * 2.0).fract() < 0.6 {
-                c.fill_rect(Rect::new(r.x + 13.0 + tw, r.y + 10.0, 1.5, r.h - 20.0), t.accent);
-            }
-            self.keycap(c, r.right() - 8.0, cy, tr("Enter"), 0.8);
-            if hov {
-                self.set_cursor(Cursor::Text);
-            }
+            let ok_x = self.keycap(c, r.right() - 8.0, cy, tr("Enter"), 0.8);
+            let f = Field {
+                id: wid("files-edit", 0, 0),
+                text,
+                area: Rect::new(r.x + 6.0, r.y, ok_x - r.x - 12.0, r.h),
+                x: r.x + 12.0,
+                cy,
+                font: self.f.mono,
+                size: 12.5,
+                ink: t.text,
+                caret: t.accent,
+            };
+            self.edit_field(c, input, &f);
             return;
         }
         let crumbs = crumbs(&d.dir, &compat::home());
@@ -1446,10 +1489,22 @@ impl App {
             let hint = if active { tr("Type to filter") } else { tr("Filter") };
             self.text_fit(c, self.f.sans, 12.5, r.x + 34.0, cy, hint, r.w - 44.0, t.muted);
         } else {
-            let shown = self.fit(self.f.sans_med, 12.5, &d.filter, r.w - 70.0);
-            let tw = self.text(c, self.f.sans_med, 12.5, r.x + 34.0, cy, &shown, t.text);
-            if active && (self.time * 2.0).fract() < 0.6 {
-                c.fill_rect(Rect::new(r.x + 35.0 + tw, r.y + 10.0, 1.5, r.h - 20.0), t.accent);
+            if active {
+                let f = Field {
+                    id: typing_id(Mode::Open),
+                    text: &d.filter,
+                    area: Rect::new(r.x + 30.0, r.y, r.w - 66.0, r.h),
+                    x: r.x + 34.0,
+                    cy,
+                    font: self.f.sans_med,
+                    size: 12.5,
+                    ink: t.text,
+                    caret: t.accent,
+                };
+                self.edit_field(c, input, &f);
+            } else {
+                let shown = self.fit(self.f.sans_med, 12.5, &d.filter, r.w - 70.0);
+                self.text(c, self.f.sans_med, 12.5, r.x + 34.0, cy, &shown, t.text);
             }
             let x_r = Rect::new(r.right() - 32.0, r.y + 5.0, 28.0, 28.0);
             if self.icon_button(c, input, wid("files-search-x", 0, 0), x_r, Icon::Close, false, (tr("Clear the filter"), tr("Esc"))) {
@@ -1526,11 +1581,25 @@ impl App {
             let cy = field.y + field.h * 0.5;
             let ext = format!(".{}", d.format.ext());
             let ew = self.fonts.measure(self.f.mono, 12.0, &ext);
-            let shown = self.fit(self.f.sans_med, 14.0, &d.name, field.w - ew - 40.0);
-            let tw = self.text(c, self.f.sans_med, 14.0, field.x + 14.0, cy, &shown, t.text);
-            if typing && (self.time * 2.0).fract() < 0.6 {
-                c.fill_rect(Rect::new(field.x + 15.0 + tw, field.y + 10.0, 1.5, field.h - 20.0), t.accent);
-            }
+            let room = field.w - ew - 40.0;
+            let tw = if typing {
+                let f = Field {
+                    id: typing_id(Mode::Save),
+                    text: &d.name,
+                    area: Rect::new(field.x + 10.0, field.y, room + 6.0, field.h),
+                    x: field.x + 14.0,
+                    cy,
+                    font: self.f.sans_med,
+                    size: 14.0,
+                    ink: t.text,
+                    caret: t.accent,
+                };
+                self.edit_field(c, input, &f);
+                self.fonts.measure(self.f.sans_med, 14.0, &d.name).min(room)
+            } else {
+                let shown = self.fit(self.f.sans_med, 14.0, &d.name, room);
+                self.text(c, self.f.sans_med, 14.0, field.x + 14.0, cy, &shown, t.text)
+            };
             self.text(c, self.f.mono, 12.0, field.x + 20.0 + tw, cy, &ext, t.muted);
             if self.hovered(input, wid("files-name", 0, 0), field) {
                 self.set_cursor(Cursor::Text);

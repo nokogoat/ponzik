@@ -369,7 +369,8 @@ impl App {
     pub(super) fn palette(&mut self, c: &mut Canvas, input: &Input, screen: Rect, mut query: String, mut selected: usize) -> (Option<Action>, Option<Popup>) {
         let t = self.theme;
         let open = self.anim.to(wid("popup", 0, 0), 1.0, T_HOVER);
-        query.push_str(&input.text);
+        let fid = wid("pal-field", 0, 0);
+        let ed = self.edit_keys(fid, &mut query, input, Default::default());
 
         let all = self.palette_items();
         let mut found: Vec<(i32, usize)> = all
@@ -384,13 +385,9 @@ impl App {
 
         let mut run = None;
         let mut close = false;
-        for &(key, _) in &input.keys {
+        for &(key, _) in &ed.rest {
             match key {
                 Key::Escape => close = true,
-                Key::Backspace => {
-                    query.pop();
-                    selected = 0;
-                }
                 Key::Down => selected = (selected + 1).min(count.saturating_sub(1)),
                 Key::Up => selected = selected.saturating_sub(1),
                 Key::PageDown => selected = (selected + VISIBLE).min(count.saturating_sub(1)),
@@ -403,7 +400,7 @@ impl App {
                 _ => {}
             }
         }
-        if !input.text.is_empty() {
+        if ed.changed {
             selected = 0;
         }
         selected = selected.min(count.saturating_sub(1));
@@ -422,15 +419,23 @@ impl App {
         // Loupe.
         c.stroke_circle(field.x + 22.0, field.y + 20.0, 6.5, 1.6, t.muted);
         c.stroke_polyline(&[(field.x + 27.0, field.y + 25.0), (field.x + 31.0, field.y + 29.0)], 1.6, t.muted);
-        let shown = if query.is_empty() { tr("Search for an action, an instrument, an effect…").to_string() } else { query.clone() };
-        let ink = if query.is_empty() { t.muted } else { t.text };
-        let tw = self.text(c, self.f.sans, 15.0, field.x + 42.0, field.y + 22.0, &shown, ink);
-        if (self.time * 2.0).fract() < 0.6 {
-            let cx = if query.is_empty() { field.x + 42.0 } else { field.x + 43.0 + tw };
-            c.fill_rect(Rect::new(cx, field.y + 12.0, 1.5, 20.0), t.select);
+        if query.is_empty() {
+            let hint = tr("Search for an action, an instrument, an effect…");
+            self.text(c, self.f.sans, 15.0, field.x + 42.0, field.y + 22.0, hint, t.muted);
         }
-        self.anim.set(wid("caret", 0, 0), self.time);
-        self.text_right(c, self.f.mono, 11.0, field.right() - 12.0, field.y + 22.0, &format!("{count}"), t.muted);
+        let count_x = self.text_right(c, self.f.mono, 11.0, field.right() - 12.0, field.y + 22.0, &format!("{count}"), t.muted);
+        let f = super::textedit::Field {
+            id: fid,
+            text: &query,
+            area: Rect::new(field.x + 38.0, field.y, count_x - field.x - 46.0, field.h),
+            x: field.x + 42.0,
+            cy: field.y + 22.0,
+            font: self.f.sans,
+            size: 15.0,
+            ink: t.text,
+            caret: t.select,
+        };
+        self.edit_field(c, input, &f);
 
         // Résultats, avec défilement qui suit la sélection.
         let first = selected.saturating_sub(VISIBLE - 1).min(count.saturating_sub(VISIBLE));

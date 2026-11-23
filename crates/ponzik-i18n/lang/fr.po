@@ -10174,3 +10174,18 @@ msgstr "Rap / Trap"
 
 msgid "Choir / Wide"
 msgstr "Chœur large"
+
+msgctxt "text"
+msgid "Cut"
+msgstr "Couper"
+
+msgctxt "text"
+msgid "Copy"
+msgstr "Copier"
+
+msgctxt "text"
+msgid "Paste"
+msgstr "Coller"
+
+msgid "Select all"
+msgstr "Tout sélectionner"

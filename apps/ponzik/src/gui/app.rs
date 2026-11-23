@@ -733,6 +733,16 @@ pub struct App {
     /// Recherche du navigateur et son champ actif.
     pub sidebar_query: String,
     pub sidebar_focus: bool,
+    /// Caret and selection of the text field being edited, its right-click
+    /// menu (drawn this frame: `edit_drawn`), when it was last typed in.
+    pub edit: super::textedit::EditState,
+    pub edit_menu: Option<super::textedit::EditMenu>,
+    pub edit_drawn: bool,
+    pub edit_typed_at: f32,
+    /// The system clipboard (none in tests and captures), and the text copied
+    /// last, used when there is no system clipboard.
+    pub clipboard: Option<ponzik_window::Clipboard>,
+    pub clip_text: String,
     pub chain_scroll: f32,
     pub mixer_scroll: f32,
     /// Tranches du mixer choisies par Ctrl+clic (à grouper dans un bus ou un VCA).
@@ -985,6 +995,12 @@ impl App {
             sidebar_scroll: 0.0,
             sidebar_query: String::new(),
             sidebar_focus: false,
+            edit: Default::default(),
+            edit_menu: None,
+            edit_drawn: false,
+            edit_typed_at: 0.0,
+            clipboard: None,
+            clip_text: String::new(),
             chain_scroll: 0.0,
             mixer_scroll: 0.0,
             mixer_sel: Vec::new(),
@@ -2341,6 +2357,15 @@ impl App {
         self.pointer = (input.x, input.y);
         self.cursor = ponzik_window::Cursor::Arrow;
         self.wheel_hot = std::mem::take(&mut self.wheel_hot_now);
+        // A text field's right-click menu takes its clicks first.
+        let menu_input;
+        let input = match self.edit_menu_begin(input) {
+            Some(i) => {
+                menu_input = i;
+                &menu_input
+            }
+            None => input,
+        };
         // The keys of the focused control do not reach the shortcuts.
         let kb_input;
         let input = match self.kb_begin(input) {
@@ -2447,6 +2472,7 @@ impl App {
             self.learn_banner(c, input, w);
         }
         self.popup_layer(c, input, Rect::new(0.0, 0.0, w, h));
+        self.edit_menu_layer(c, Rect::new(0.0, 0.0, w, h));
         if self.popup.is_none() && self.start.is_none() {
             self.tour_layer(c, input, Rect::new(0.0, 0.0, w, h));
             self.lesson_layer(c, input, Rect::new(0.0, 0.0, w, h));
@@ -2766,7 +2792,7 @@ impl App {
         if fhov {
             self.set_cursor(ponzik_window::Cursor::Text);
         }
-        if fhov && input.pressed {
+        if fhov && (input.pressed || input.right_pressed) {
             self.sidebar_focus = true;
             self.browser.list_focus = false;
         } else if input.pressed && !field.contains(input.x, input.y) {
@@ -2775,12 +2801,27 @@ impl App {
         // Keys for the list: from the search field, or the list itself once clicked.
         let mut keys: Vec<NavKey> = std::mem::take(&mut self.browser.keys);
         if self.sidebar_focus {
-            self.sidebar_query.push_str(&input.text);
-            for &(key, _) in &input.keys {
-                match key {
-                    Key::Backspace => {
-                        self.sidebar_query.pop();
+            // Left and Right fold the folders while there is no text to move in.
+            let mut tree_keys = Vec::new();
+            let mut field_input;
+            let field_in = if self.sidebar_query.is_empty() {
+                field_input = input.clone();
+                field_input.keys.retain(|&(k, m)| {
+                    let tree = matches!(k, Key::Left | Key::Right) && !m.shift && !m.ctrl;
+                    if tree {
+                        tree_keys.push((k, m));
                     }
+                    !tree
+                });
+                &field_input
+            } else {
+                input
+            };
+            let mut query = std::mem::take(&mut self.sidebar_query);
+            let ed = self.edit_keys(fid, &mut query, field_in, Default::default());
+            self.sidebar_query = query;
+            for &(key, _) in ed.rest.iter().chain(&tree_keys) {
+                match key {
                     Key::Escape => {
                         self.sidebar_query.clear();
                         self.sidebar_focus = false;
@@ -2794,7 +2835,7 @@ impl App {
                     _ => {}
                 }
             }
-            if !input.text.is_empty() || input.keys.iter().any(|k| matches!(k.0, Key::Backspace | Key::Escape)) {
+            if ed.changed || ed.escape {
                 self.sidebar_scroll = 0.0;
                 self.browser.sel = None;
             }
@@ -2814,13 +2855,22 @@ impl App {
                 }
             }
         }
-        let shown = self.fit(self.f.sans, 13.0, &query, field.w - 44.0);
-        let tw = self.text(c, self.f.sans, 13.0, field.x + 34.0, field.y + 18.0, &shown, t.text);
         if self.sidebar_focus {
-            if (self.time * 2.0).fract() < 0.6 {
-                c.fill_rect(Rect::new(field.x + 35.0 + if query.is_empty() { 0.0 } else { tw }, field.y + 9.0, 1.5, 18.0), t.select);
-            }
-            self.anim.set(wid("caret", 0, 0), self.time);
+            let f = super::textedit::Field {
+                id: fid,
+                text: &query,
+                area: Rect::new(field.x + 30.0, field.y, field.w - 36.0, field.h),
+                x: field.x + 34.0,
+                cy: field.y + 18.0,
+                font: self.f.sans,
+                size: 13.0,
+                ink: t.text,
+                caret: t.select,
+            };
+            self.edit_field(c, input, &f);
+        } else {
+            let shown = self.fit(self.f.sans, 13.0, &query, field.w - 44.0);
+            self.text(c, self.f.sans, 13.0, field.x + 34.0, field.y + 18.0, &shown, t.text);
         }
         for (i, (filter, icon, tip)) in
             [(Filter::Favorites, Icon::StarFilled, tr("Favorites")), (Filter::Recent, Icon::History, tr("Recent"))].into_iter().enumerate()
@@ -4181,18 +4231,15 @@ impl App {
 
         // Renommage : un champ texte posé sur le nom (ou au centre, sans ancre).
         if let Popup::Rename { target, text } = &mut state.kind {
-            text.push_str(&input.text);
-            let mut done = None;
-            for &(key, _) in &input.keys {
-                match key {
-                    Key::Backspace => {
-                        text.pop();
-                    }
-                    Key::Enter => done = Some(true),
-                    Key::Escape => done = Some(false),
-                    _ => {}
-                }
-            }
+            let fid = wid("rename-field", 0, 0);
+            let ed = self.edit_keys(fid, text, input, Default::default());
+            let mut done = if ed.enter {
+                Some(true)
+            } else if ed.escape {
+                Some(false)
+            } else {
+                None
+            };
             let a = state.anchor;
             let inline = a.w > 1.0 && a.h > 1.0 && !matches!(target, Rename::Preset(_) | Rename::Translation);
             let field = if inline {
@@ -4218,7 +4265,6 @@ impl App {
             c.fill_rrect(field, 10.0, t.well);
             c.stroke_rrect(field, 10.0, 1.5, t.select.alpha(0.9 * open));
             let ok_x = self.keycap(c, field.right() - 8.0, field.y + field.h * 0.5, tr("Enter"), 0.8);
-            let shown = self.fit(self.f.sans_med, 14.0, text, ok_x - field.x - 24.0);
             // A typed value: the current one shows through while the field is empty.
             if let Rename::Value(tg) = target
                 && text.is_empty()
@@ -4228,15 +4274,19 @@ impl App {
                 let ghost = self.fit(self.f.sans, 13.0, &format!("{now} · {label}"), ok_x - field.x - 30.0);
                 self.text(c, self.f.sans, 13.0, field.x + 16.0, field.y + field.h * 0.5, &ghost, t.muted);
             }
-            let tw = self.text(c, self.f.sans_med, 14.0, field.x + 12.0, field.y + field.h * 0.5, &shown, t.text);
-            if (self.time * 2.0).fract() < 0.6 {
-                c.fill_rect(Rect::new(field.x + 13.0 + tw, field.y + 9.0, 1.5, field.h - 18.0), t.select);
-            }
-            // Tient l'animation éveillée pour faire clignoter le curseur.
-            self.anim.set(wid("caret", 0, 0), self.time);
-            if input.inside && field.contains(input.x, input.y) {
-                self.set_cursor(ponzik_window::Cursor::Text);
-            }
+            let area = Rect::new(field.x + 6.0, field.y, ok_x - field.x - 12.0, field.h);
+            let f = super::textedit::Field {
+                id: fid,
+                text,
+                area,
+                x: field.x + 12.0,
+                cy: field.y + field.h * 0.5,
+                font: self.f.sans_med,
+                size: 14.0,
+                ink: t.text,
+                caret: t.select,
+            };
+            self.edit_field(c, input, &f);
             if input.pressed && !field.inset(-16.0).contains(input.x, input.y) {
                 // Un clic ailleurs valide, comme dans un champ en place.
                 done = Some(inline);
