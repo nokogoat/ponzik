@@ -110,11 +110,11 @@ fn main() -> ExitCode {
 }
 
 /// A project file given on the command line (a double-click in the file
-/// manager): an existing `.ponzik` or `.flp`.
+/// manager): an existing `.ponzik`, `.flp` or `.als`.
 fn project_arg(arg: &str) -> Option<std::path::PathBuf> {
     let path = std::path::Path::new(arg);
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
-    (matches!(ext.as_str(), "ponzik" | "flp") && path.is_file()).then(|| path.to_path_buf())
+    (matches!(ext.as_str(), "ponzik" | "flp" | "als") && path.is_file()).then(|| path.to_path_buf())
 }
 
 /// `ponzik install [--desktop]`: installs (Windows) or adds to the menu (Linux), without a window.

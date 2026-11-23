@@ -209,6 +209,18 @@ pub enum Icon {
     Leaf,
     /// A snare drum with its sticks: drum sounds.
     Drum,
+    /// A house: the home folder.
+    Home,
+    /// A screen on its foot: the desktop folder.
+    Monitor,
+    /// A drive with its light: a disk or a mounted volume.
+    Drive,
+    /// An arrow going up: the parent folder.
+    Up,
+    /// A folder with a plus: a new folder.
+    NewFolder,
+    /// A sheet with a folded corner: a document.
+    Document,
 }
 
 /// Diagonal stripes over `r` (clipped to it): offline clips and samples.
@@ -851,6 +863,39 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
             path.close();
             c.fill_path(&path, col.alpha(0.35));
             c.stroke_polyline(&[p(-7.0, 7.0), p(-3.0, 3.0), p(3.5, -3.5)], stroke, col);
+        }
+        Icon::Home => {
+            c.stroke_polyline(&[p(-7.5, -0.5), p(0.0, -7.0), p(7.5, -0.5)], stroke, col);
+            c.stroke_polyline(&[p(-5.5, -2.0), p(-5.5, 6.5), p(5.5, 6.5), p(5.5, -2.0)], stroke, col);
+            c.fill_rrect(rr(-1.6, 2.0, 3.2, 4.5), 0.8 * s, col);
+        }
+        Icon::Monitor => {
+            c.stroke_rrect(rr(-7.5, -6.5, 15.0, 10.0), 1.8 * s, stroke, col);
+            c.stroke_polyline(&[p(0.0, 3.5), p(0.0, 6.5)], stroke, col);
+            c.stroke_polyline(&[p(-4.0, 6.8), p(4.0, 6.8)], stroke, col);
+        }
+        Icon::Drive => {
+            c.stroke_rrect(rr(-7.5, -4.5, 15.0, 9.0), 2.0 * s, stroke, col);
+            c.fill_circle(cx + 4.2 * s, cy, 1.2 * s.max(0.9), col);
+            c.stroke_polyline(&[p(-4.5, 0.0), p(0.5, 0.0)], stroke * 0.9, col.alpha(0.6));
+        }
+        Icon::Up => {
+            c.stroke_polyline(&[p(0.0, 6.5), p(0.0, -6.0)], stroke, col);
+            c.stroke_polyline(&[p(-5.0, -1.0), p(0.0, -6.0), p(5.0, -1.0)], stroke, col);
+        }
+        Icon::NewFolder => {
+            c.stroke_polyline(
+                &[p(1.0, 6.0), p(-7.0, 6.0), p(-7.0, -5.0), p(-2.0, -5.0), p(0.0, -3.0), p(7.0, -3.0), p(7.0, -0.5)],
+                stroke,
+                col,
+            );
+            c.stroke_polyline(&[p(5.0, 1.5), p(5.0, 7.5)], stroke, col);
+            c.stroke_polyline(&[p(2.0, 4.5), p(8.0, 4.5)], stroke, col);
+        }
+        Icon::Document => {
+            c.stroke_polyline(&[p(2.0, -7.0), p(-5.5, -7.0), p(-5.5, 7.0), p(5.5, 7.0), p(5.5, -3.5), p(2.0, -7.0), p(2.0, -3.5), p(5.5, -3.5)], stroke, col);
+            c.stroke_polyline(&[p(-3.0, 0.5), p(3.0, 0.5)], stroke * 0.85, col.alpha(0.7));
+            c.stroke_polyline(&[p(-3.0, 3.5), p(1.5, 3.5)], stroke * 0.85, col.alpha(0.7));
         }
         Icon::Drum => {
             // A shell seen from the side, its head as a flat ellipse, two sticks.

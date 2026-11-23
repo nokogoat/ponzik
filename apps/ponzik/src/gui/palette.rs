@@ -276,7 +276,8 @@ impl App {
         }
         add(tr("Save").into(), tr("File"), k(S::Save), Action::Save);
         add(tr("Open a project").into(), tr("File"), k(S::Open), Action::OpenMenu);
-        for path in super::compat::list_projects().into_iter().take(6) {
+        let recent = if self.recent_files.is_empty() { super::compat::list_projects() } else { self.recent_files.clone() };
+        for path in recent.into_iter().filter(|p| p.exists()).take(6) {
             let name = path.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
             add(tr_fmt!("Open: {}", name), tr("Recent"), none(), Action::Open(path));
         }
@@ -322,6 +323,9 @@ impl App {
         );
         add(tr("Import a MIDI file").into(), tr("File"), none(), Action::ImportMidiMenu);
         add(tr("Import an FL Studio project (.flp)").into(), tr("File"), none(), Action::ImportFlpMenu);
+        add(tr("Save as").into(), tr("File"), k(S::SaveAs), Action::SaveAs);
+        add(tr("Export for FL Studio (.flp)").into(), tr("File"), none(), Action::SaveCopy(super::filedialog::Format::Flp));
+        add(tr("Export for Ableton Live (.als)").into(), tr("File"), none(), Action::SaveCopy(super::filedialog::Format::Als));
         add(tr("Show the FL Studio import report").into(), tr("File"), none(), Action::Popup(Popup::ImportReport));
         add(
             tr("Locate missing files (relink offline samples and audio)").into(),

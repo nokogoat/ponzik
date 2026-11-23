@@ -121,7 +121,10 @@ pub enum Popup {
     /// Choix d'un effet de notes pour un emplacement d'un canal.
     AddNoteFx { channel: usize, slot: usize },
     Patterns,
-    OpenProject(Vec<PathBuf>),
+    /// The file dialog (Save as, Open): its state is `App::files`.
+    Files,
+    /// "Save the changes?" before quitting or replacing the project.
+    Unsaved,
     ChannelMenu(usize),
     TrackMenu(usize),
     /// Destination de la sortie d'une piste.
@@ -233,8 +236,6 @@ pub enum Rename {
     /// Nom d'un nouveau preset de l'appareil.
     Preset(super::devices::Device),
     Project,
-    /// Nouveau nom puis enregistrement dans un nouveau fichier.
-    SaveAs,
     Channel(usize),
     Pattern(usize),
     Track(usize),
@@ -342,6 +343,8 @@ pub enum Action {
     SetTheme(usize),
     Automate(ponzik_engine::AutoTarget, f32),
     SaveAs,
+    /// The Save dialog on an FL Studio or Ableton Live copy.
+    SaveCopy(super::filedialog::Format),
     /// One file per mixer track, WAV or FLAC.
     ExportStems(ponzik_project::FileFormat),
     /// One file per arrangement section.
@@ -635,6 +638,14 @@ pub struct App {
     pub import_report: Option<ponzik_project::ImportReport>,
     pub report_open: Vec<ponzik_project::ReportKind>,
     pub import_dir: Option<PathBuf>,
+    /// The file dialog while it is open.
+    pub files: Option<super::filedialog::FileDialog>,
+    /// Projects opened or saved lately, newest first (saved in the settings).
+    pub recent_files: Vec<PathBuf>,
+    /// What waits for the answer to "Save the changes?".
+    pub pending: Option<super::filedialog::Then>,
+    /// The user chose to quit (after the unsaved changes were dealt with).
+    pub quit_now: bool,
 
     pub view: View,
     pub focus: Focus,
@@ -861,6 +872,10 @@ impl App {
             import_report: None,
             report_open: Vec::new(),
             import_dir: None,
+            files: None,
+            recent_files: Vec::new(),
+            pending: None,
+            quit_now: false,
             view: View::Rack,
             focus: Focus::Channel(0),
             sidebar: true,
@@ -1249,7 +1264,7 @@ impl App {
         }
     }
 
-    fn mark_saved(&mut self) {
+    pub(super) fn mark_saved(&mut self) {
         if let Some(a) = &mut self.autosaver {
             a.mark_saved(&self.project);
         }
@@ -1949,27 +1964,16 @@ impl App {
 
     // --- Fichiers ---
 
-    pub fn save(&mut self) {
-        self.capture_plugin_states();
-        let path = self.project_path.clone().unwrap_or_else(|| compat::default_project_path(&self.project.name));
-        match compat::save_project(&self.project, &path) {
-            Ok(()) => {
-                self.project_path = Some(path.clone());
-                self.modified = false;
-                self.mark_saved();
-                self.toast(&tr_fmt!("Saved to {}", path.display().to_string()));
-            }
-            Err(e) => self.toast(&e),
-        }
-    }
-
     pub fn open_file(&mut self, path: PathBuf) {
-        if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("flp")) {
+        let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+        if ext == "flp" || ext == "als" {
+            self.remember(&path);
             return self.import_flp(&path);
         }
         match compat::load_project(&path) {
             Ok(p) => {
                 let name = p.name.clone();
+                self.remember(&path);
                 self.replace_project(p, Some(path));
                 self.toast(&tr_fmt!("{} opened", name));
             }
@@ -1977,9 +1981,33 @@ impl App {
         }
     }
 
-    /// Opens an FL Studio project as a new, unsaved Ponzik project.
+    /// A new project from template `i`.
+    pub fn new_from_template(&mut self, i: usize) {
+        if let Some((name, make)) = ponzik_project::templates().get(i).copied() {
+            self.replace_project(make(), None);
+            self.set_view(View::Rack);
+            self.toast(&tr_fmt!("New project · {}", tr(name)));
+        }
+    }
+
+    /// Demo `i` (0 house, 1 breakcore, 2 Zalgo) in place of the project.
+    pub fn load_demo(&mut self, i: usize) {
+        let p = match i {
+            1 => ponzik_project::demo_breakcore(),
+            2 => ponzik_project::demo_zalgo(),
+            _ => ponzik_project::demo_project(),
+        };
+        let name = p.name.clone();
+        self.replace_project(p, None);
+        self.toast(&tr_fmt!("Demo loaded: {}", name));
+    }
+
+    /// Opens an FL Studio project or an Ableton Live set as a new, unsaved
+    /// Ponzik project, its report shown.
     pub fn import_flp(&mut self, path: &std::path::Path) {
-        match compat::import_flp(path) {
+        let als = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("als"));
+        let result = if als { compat::import_als(path) } else { compat::import_flp(path) };
+        match result {
             Ok((p, report)) => {
                 self.import_dir = path.parent().map(std::path::Path::to_path_buf);
                 self.replace_project(p, None);
@@ -2201,7 +2229,7 @@ impl App {
             self.shortcuts(input);
             self.session_keys(input);
             self.musical_keyboard(input);
-        } else if self.popup.is_some() && !self.settings_open() && input.keys.iter().any(|(k, _)| *k == Key::Escape) {
+        } else if self.popup.is_some() && !self.settings_open() && !self.file_dialog_open() && input.keys.iter().any(|(k, _)| *k == Key::Escape) {
             self.popup = None;
         }
         if input.focus_lost {
@@ -3080,21 +3108,6 @@ impl App {
                 }
                 (tr("Patterns").into(), v)
             }
-            Popup::OpenProject(files) => {
-                let items = if files.is_empty() {
-                    vec![MenuItem::new(Icon::Folder, tr("No projects"), Action::None).tip(&compat::projects_dir().display().to_string())]
-                } else {
-                    files
-                        .iter()
-                        .map(|f| {
-                            let name = f.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
-                            let dir = f.parent().map_or(String::new(), |d| d.display().to_string());
-                            MenuItem::plain(&name, Action::Open(f.clone())).tip(&dir)
-                        })
-                        .collect()
-                };
-                (tr("Projects").into(), items)
-            }
             Popup::ChannelMenu(ch) => {
                 let ch = *ch;
                 let c = &p.channels[ch];
@@ -3424,6 +3437,10 @@ impl App {
                             .tip(tr("One WAV per arrangement section: \"<project> - <section>.wav\"")),
                         MenuItem::new(Icon::Piano, tr("Import MIDI"), Action::ImportMidiMenu).sep(),
                         MenuItem::new(Icon::Folder, tr("Import an FL Studio project"), Action::ImportFlpMenu),
+                        MenuItem::new(Icon::Rack, tr("Export for FL Studio"), Action::SaveCopy(super::filedialog::Format::Flp))
+                            .tip(tr("An .flp copy: patterns, notes, playlist, mixer levels")),
+                        MenuItem::new(Icon::Session, tr("Export for Ableton Live"), Action::SaveCopy(super::filedialog::Format::Als))
+                            .tip(tr("An .als copy: MIDI tracks with their notes, tempo, markers")),
                         MenuItem::new(Icon::Piano, tr("Export as MIDI"), Action::ExportMidi).tip(tr("The current pattern")),
                         MenuItem::new(Icon::Theme, tr("Theme"), Action::Popup(Popup::Themes)).detail(theme).sep(),
                         MenuItem::new(Icon::Layout, tr("Settings"), Action::Popup(Popup::Settings { tab: 0 }))
@@ -3523,6 +3540,8 @@ impl App {
             | Popup::Settings { .. }
             | Popup::WhatsNew
             | Popup::Learn
+            | Popup::Files
+            | Popup::Unsaved
             | Popup::Install => (String::new(), Vec::new()),
         }
     }
@@ -3629,7 +3648,7 @@ impl App {
                 self.select_pattern(p);
             }
             Action::DeletePattern => self.delete_pattern(self.project.current_pattern),
-            Action::Open(path) => self.open_file(path),
+            Action::Open(path) => self.request_open(path),
             // The report and the locate dialog stay in place from one folder to the next.
             Action::Popup(kind @ (Popup::ImportReport | Popup::LocateMissing(_))) => self.open_popup(kind, REPORT_ANCHOR),
             Action::Popup(kind) => self.open_popup(kind, anchor),
@@ -3726,13 +3745,13 @@ impl App {
             }
             Action::Save => self.save(),
             Action::Update(op) => self.update_op(op),
-            Action::OpenMenu => self.open_popup(Popup::OpenProject(compat::list_projects()), anchor),
+            Action::OpenMenu => self.open_open_dialog(),
             Action::NewProject => self.open_popup(Popup::Templates, anchor),
             Action::NewFromTemplate(i) => {
-                if let Some((name, make)) = ponzik_project::templates().get(i).copied() {
-                    self.replace_project(make(), None);
-                    self.set_view(View::Rack);
-                    self.toast(&tr_fmt!("New project · {}", tr(name)));
+                if self.modified {
+                    self.ask_unsaved(super::filedialog::Then::NewFromTemplate(i));
+                } else {
+                    self.new_from_template(i);
                 }
             }
             Action::Export => {
@@ -3746,14 +3765,11 @@ impl App {
             Action::Undo => self.undo(),
             Action::Redo => self.redo(),
             Action::LoadDemo(i) => {
-                let p = match i {
-                    1 => ponzik_project::demo_breakcore(),
-                    2 => ponzik_project::demo_zalgo(),
-                    _ => ponzik_project::demo_project(),
-                };
-                let name = p.name.clone();
-                self.replace_project(p, None);
-                self.toast(&tr_fmt!("Demo loaded: {}", name));
+                if self.modified {
+                    self.ask_unsaved(super::filedialog::Then::LoadDemo(i));
+                } else {
+                    self.load_demo(i);
+                }
             }
             Action::SetTheme(i) => self.set_theme(i),
             Action::ApplyPreset(i) => self.apply_profile(i),
@@ -3769,9 +3785,12 @@ impl App {
             Action::SetAutoMode(m) => self.set_auto_mode(m),
             Action::CaptureMidi => self.capture_midi(),
             Action::Unlink(target) => self.unlink(target),
-            Action::SaveAs => {
-                let text = self.project.name.clone();
-                self.open_popup(Popup::Rename { target: Rename::SaveAs, text }, anchor);
+            Action::SaveAs => self.open_save_dialog(super::filedialog::Then::Nothing),
+            Action::SaveCopy(format) => {
+                self.open_save_dialog(super::filedialog::Then::Nothing);
+                if let Some(d) = self.files.as_mut() {
+                    d.format = format;
+                }
             }
             Action::ExportStems(format) => self.export_stems(format),
             Action::ExportSections(options) => self.export_sections(options),
@@ -3796,7 +3815,7 @@ impl App {
             }
             Action::ImportMidiMenu => self.open_popup(Popup::ImportMidi(compat::scan_midi()), anchor),
             Action::ImportFlpMenu => self.open_popup(Popup::ImportFlp(compat::scan_flp()), anchor),
-            Action::ImportFlp(path) => self.import_flp(&path),
+            Action::ImportFlp(path) => self.request_open(path),
             Action::ToggleReportGroup(kind) => {
                 if let Some(i) = self.report_open.iter().position(|&k| k == kind) {
                     self.report_open.remove(i);
@@ -3913,13 +3932,6 @@ impl App {
                 return;
             }
             Rename::Project => self.project.name = text.into(),
-            Rename::SaveAs => {
-                self.project.name = text.into();
-                self.project_path = None;
-                self.commit(tr("Rename"));
-                self.save();
-                return;
-            }
             Rename::Channel(c) => {
                 let old = std::mem::replace(&mut self.project.channels[c].name, text.into());
                 let t = self.project.channels[c].track;
@@ -4003,6 +4015,18 @@ impl App {
             }
             return;
         }
+        if matches!(state.kind, Popup::Files) {
+            if self.file_dialog_popup(c, input, screen) && self.popup.is_none() {
+                self.popup = Some(state);
+            }
+            return;
+        }
+        if matches!(state.kind, Popup::Unsaved) {
+            if self.unsaved_popup(c, input, screen) && self.popup.is_none() {
+                self.popup = Some(state);
+            }
+            return;
+        }
         if matches!(state.kind, Popup::WhatsNew) {
             if self.whats_new_popup(c, input, screen) {
                 self.popup = Some(state);
@@ -4046,7 +4070,7 @@ impl App {
                 }
             }
             let a = state.anchor;
-            let inline = a.w > 1.0 && a.h > 1.0 && !matches!(target, Rename::SaveAs | Rename::Preset(_) | Rename::Translation);
+            let inline = a.w > 1.0 && a.h > 1.0 && !matches!(target, Rename::Preset(_) | Rename::Translation);
             let field = if inline {
                 let w = a.w.max(200.0);
                 let x = a.x.min(screen.right() - w - 8.0).max(8.0);
@@ -4058,7 +4082,6 @@ impl App {
                 c.fill_rrect(r, 16.0, t.panel);
                 c.stroke_rrect(r, 16.0, 1.0, t.hairline.alpha(1.6));
                 let title = match target {
-                    Rename::SaveAs => tr("Save as"),
                     Rename::Preset(_) => tr("Preset name"),
                     Rename::Translation => tr("New translation · language code or name (es, pt_BR, Deutsch…)"),
                     Rename::Value(_) => tr("Type a value"),

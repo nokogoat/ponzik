@@ -20,6 +20,7 @@ mod devices;
 mod devstrip;
 mod dnd;
 mod editors;
+mod filedialog;
 mod dropouts;
 mod float;
 mod freeze;
@@ -513,8 +514,13 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
             }
         }
         for ev in events.drain(..) {
+            // Unsaved changes: the question first (a second close quits).
             if ev == Event::CloseRequested {
-                return Ok(());
+                if app.close_requested() {
+                    return Ok(());
+                }
+                dirty = true;
+                continue;
             }
             if !matches!(ev, Event::Redraw) {
                 last_input = Instant::now();
@@ -865,6 +871,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // PONZIK_WORKSPACE=simple|full|beatmaker|sampling|live|minimal[,nopanel]: a profile.
     if let Ok(spec) = std::env::var("PONZIK_WORKSPACE") {
         app.screenshot_workspace(&spec);
+    }
+    // PONZIK_FILEDIALOG=save|open|recent|unsaved[:folder][,flp|als][,sel:n][,q:text][,confirm][,newdir][,path]:
+    // the file dialog (see filedialog.rs).
+    if let Ok(spec) = std::env::var("PONZIK_FILEDIALOG") {
+        app.screenshot_file_dialog(&spec);
     }
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {
