@@ -28,6 +28,24 @@ const TRANSFER: f32 = 168.0;
 const EQ_W: f32 = 640.0;
 /// A and B letters and the copy button, in a device's header.
 const AB_W: f32 = 66.0;
+/// Left edge of a device's name in its header (after the color mark or fold button).
+const TITLE_X: f32 = 22.0;
+/// The plugin window button, after a plugin's name.
+const PLUGIN_BUTTON_W: f32 = 32.0;
+/// Folding moves the header right by this much.
+const FOLD_SHIFT: f32 = 10.0;
+/// Most a card widens to show its whole name (a plugin's can be very long).
+const TITLE_MAX_W: f32 = 240.0;
+
+/// Width taken by a header's buttons, from its right edge, with a gap before them:
+/// A/B, detach and presets, plus power and remove for an effect.
+fn header_controls_w(device: Device) -> f32 {
+    match device {
+        Device::Effect { .. } => 120.0 + AB_W + 4.0 + 8.0,
+        Device::Instrument(_) => 60.0 + AB_W + 4.0 + 8.0,
+        Device::RackUnit { .. } => 60.0 + 8.0,
+    }
+}
 
 /// Ce que montre une carte d'appareil.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -196,8 +214,18 @@ impl App {
         let (kind, inst) = self.device_kind(d);
         match d {
             Device::Effect { track, slot } if kind == ponzik_project::rack::RACK => self.rack_width(track, slot),
-            _ => card_width(&kind, params_of(&kind, inst)),
+            _ => card_width(&kind, params_of(&kind, inst)).max(self.title_width(d)),
         }
+    }
+
+    /// Width a card needs for its whole name before the header's buttons (a
+    /// very long plugin name still ends in an ellipsis, its tooltip shows it).
+    fn title_width(&self, d: Device) -> f32 {
+        let name = self.fonts.measure(self.f.sans_med, 13.0, &self.device_name(d));
+        let (kind, _) = self.device_kind(d);
+        let plugin = super::app::plugin_badge(&kind).is_some() && self.editors.editor(d).is_some_and(|e| e.has_gui());
+        let plugin = if plugin { PLUGIN_BUTTON_W } else { 0.0 };
+        FOLD_SHIFT + TITLE_X + name.min(TITLE_MAX_W) + plugin + header_controls_w(d)
     }
 
     pub(super) fn device_panel(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
@@ -488,7 +516,7 @@ impl App {
                 }
             }
         }
-        let head = if folds { Rect::new(head.x + 10.0, head.y, head.w - 10.0, head.h) } else { head };
+        let head = if folds { Rect::new(head.x + FOLD_SHIFT, head.y, head.w - FOLD_SHIFT, head.h) } else { head };
         if !folds {
             c.fill_rrect(Rect::new(head.x + 12.0, head.y + 12.0, 3.0, 12.0), 1.5, mark);
         }
@@ -498,17 +526,21 @@ impl App {
             Device::Effect { track, slot } | Device::RackUnit { track, slot, .. } => self.engine.insert_cpu(track, slot),
         };
         let cpu = (cpu >= 0.0005).then(|| ponzik_i18n::tr_fmt!("{:.1}%", cpu * 100.0));
-        let title_w = if matches!(device, Device::Effect { .. }) { head.w - 158.0 } else { head.w - 98.0 };
-        let title_w = title_w - if cpu.is_some() { 36.0 } else { 0.0 };
         let has_ab = !matches!(device, Device::RackUnit { .. });
-        let title_w = title_w - if has_ab { AB_W + 4.0 } else { 0.0 };
         // CLAP or VST 3 plugin: a button right after its name (visible even on
         // a very wide card) opens its own interface in a window.
         let plugin = super::app::plugin_badge(&kind).is_some() && self.editors.editor(device).is_some_and(|e| e.has_gui());
-        let title_w = title_w - if plugin { 32.0 } else { 0.0 };
-        self.text_fit(c, self.f.sans_med, 13.0, head.x + 22.0, head.y + 18.0, &name, title_w, if bypass { t.muted } else { t.text });
-        let name_w = self.fonts.measure(self.f.sans_med, 13.0, &name).min(title_w);
-        let editor = Rect::new(head.x + 22.0 + name_w + 6.0, head.y + 5.0, 26.0, 26.0);
+        // The name takes the room up to the header's buttons; the CPU load only
+        // shows where it leaves the name whole.
+        let title_w = head.w - TITLE_X - header_controls_w(device) - if plugin { PLUGIN_BUTTON_W } else { 0.0 };
+        let full_w = self.fonts.measure(self.f.sans_med, 13.0, &name);
+        let cpu = cpu.filter(|s| full_w + 8.0 + self.fonts.measure(self.f.mono, 9.0, s) <= title_w);
+        self.text_fit(c, self.f.sans_med, 13.0, head.x + TITLE_X, head.y + 18.0, &name, title_w, if bypass { t.muted } else { t.text });
+        let name_w = full_w.min(title_w);
+        if full_w > title_w && input.inside && Rect::new(head.x + TITLE_X, head.y, name_w, head.h).contains(input.x, input.y) {
+            self.set_tip(&name, "");
+        }
+        let editor = Rect::new(head.x + TITLE_X + name_w + 6.0, head.y + 5.0, 26.0, 26.0);
         if plugin {
             let open = self.editors.is_open(device);
             let tip = if open { tr("Close the plugin window") } else { tr("Open the plugin window") };
@@ -905,6 +937,28 @@ impl App {
         if let Some(p) = params_of(&kind, inst).first() {
             let v = self.param_value(device, p);
             self.set_param_value(device, p, v + (p.max - p.min) * 0.3);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every native device's name fits whole in its card's header, in every
+    /// shipped language: the card widens up to `TITLE_MAX_W` for it.
+    #[test]
+    fn device_names_fit_their_header() {
+        let project = ponzik_project::demo_project();
+        let none = |_: &str| None;
+        let (_engine, handle) = project.build_engine(48_000.0, &none);
+        let app = App::new(handle, project, 48_000);
+        let names = registry::effects().iter().map(|k| k.name).chain(registry::instruments().iter().map(|k| k.name));
+        for name in names {
+            for lang in ponzik_i18n::Lang::all() {
+                let w = ponzik_i18n::with_lang(lang, || app.fonts.measure(app.f.sans_med, 13.0, tr(name)));
+                assert!(w <= TITLE_MAX_W, "{name} ({}) : {w}", lang.code());
+            }
         }
     }
 }
