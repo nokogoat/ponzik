@@ -655,9 +655,18 @@ impl Canvas {
             let (nx, ny) = (-dy / len * hw, dx / len * hw);
             path.polygon(&[(a.0 + nx, a.1 + ny), (b.0 + nx, b.1 + ny), (b.0 - nx, b.1 - ny), (a.0 - nx, a.1 - ny)]);
         }
+        // Round joins only where the line turns: on a straight or gently bent run,
+        // the segments already meet and a disc would add coverage on the edge
+        // pixels, beading the line.
         if width > 1.5 {
-            for &p in pts.iter().skip(1).take(pts.len().saturating_sub(2)) {
-                path.polygon(&disc::<10>(p, hw));
+            for w in pts.windows(3) {
+                let (a, p, b) = (w[0], w[1], w[2]);
+                let (d1, d2) = ((p.0 - a.0, p.1 - a.1), (b.0 - p.0, b.1 - p.1));
+                let (l1, l2) = ((d1.0 * d1.0 + d1.1 * d1.1).sqrt(), (d2.0 * d2.0 + d2.1 * d2.1).sqrt());
+                // Turn angle above ~0.1 rad (the gap it leaves stays under a tenth of a pixel below).
+                if l1 * l2 < 1e-8 || (d1.0 * d2.0 + d1.1 * d2.1) < 0.995 * l1 * l2 {
+                    path.polygon(&disc::<10>(p, hw));
+                }
             }
         }
         self.fill_path(&path, c);
