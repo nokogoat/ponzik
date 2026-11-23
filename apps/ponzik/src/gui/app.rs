@@ -1968,12 +1968,16 @@ impl App {
 
     // --- Fichiers ---
 
-    /// Opens a project file (FL Studio and Ableton Live ones are imported);
-    /// false if it could not be read.
+    /// Opens a project file (those of other programs are imported); false
+    /// if it could not be read.
     pub fn open_file(&mut self, path: PathBuf) -> bool {
-        let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-        if ext == "flp" || ext == "als" {
-            let ok = self.import_flp(&path);
+        let format = ponzik_project::foreign::Format::of(&path);
+        if let Some(why) = ponzik_project::foreign::unsupported(&path).filter(|_| format.is_none()) {
+            self.toast(&why);
+            return false;
+        }
+        if format.is_some_and(|f| f != ponzik_project::foreign::Format::Ponzik) {
+            let ok = self.import_project(&path);
             if ok {
                 self.remember(&path);
             }
@@ -2015,12 +2019,11 @@ impl App {
         self.toast(&tr_fmt!("Demo loaded: {}", name));
     }
 
-    /// Opens an FL Studio project or an Ableton Live set as a new, unsaved
-    /// Ponzik project, its report shown.
-    pub fn import_flp(&mut self, path: &std::path::Path) -> bool {
-        let als = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("als"));
-        let result = if als { compat::import_als(path) } else { compat::import_flp(path) };
-        match result {
+    /// Opens the project of another program (FL Studio, Ableton Live,
+    /// REAPER, LMMS, Ardour, MusicXML) as a new, unsaved Ponzik project, its
+    /// report shown.
+    pub fn import_project(&mut self, path: &std::path::Path) -> bool {
+        match compat::import_project(path) {
             Ok((p, report)) => {
                 self.import_dir = path.parent().map(std::path::Path::to_path_buf);
                 self.replace_project(p, None);
@@ -3363,7 +3366,10 @@ impl App {
                 };
                 (tr("Import an FL Studio project").into(), items)
             }
-            Popup::ImportReport => (tr("FL Studio import report").into(), self.report_items()),
+            Popup::ImportReport => {
+                let source = self.import_report.as_ref().map_or("FL Studio", |r| r.source_name()).to_string();
+                (tr_fmt!("{} import report", source), self.report_items())
+            }
             Popup::LocateMissing(dir) => (tr("Locate missing files").into(), self.locate_items(dir)),
             Popup::Presets { device, kind } => {
                 let save = Popup::Rename { target: Rename::Preset(*device), text: String::new() };
@@ -3459,6 +3465,8 @@ impl App {
                             .tip(tr("An .flp copy: patterns, notes, playlist, mixer levels")),
                         MenuItem::new(Icon::Session, tr("Export for Ableton Live"), Action::SaveCopy(super::filedialog::Format::Als))
                             .tip(tr("An .als copy: MIDI tracks with their notes, tempo, markers")),
+                        MenuItem::new(Icon::Columns, tr("Export for REAPER"), Action::SaveCopy(super::filedialog::Format::Rpp))
+                            .tip(tr("An .rpp copy: MIDI and audio items, tempo changes, markers")),
                         MenuItem::new(Icon::Piano, tr("Export as MIDI"), Action::ExportMidi).tip(tr("The current pattern")),
                         MenuItem::new(Icon::Theme, tr("Theme"), Action::Popup(Popup::Themes)).detail(theme).sep(),
                         MenuItem::new(Icon::Layout, tr("Settings"), Action::Popup(Popup::Settings { tab: 0 }))

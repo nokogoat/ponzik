@@ -1,4 +1,5 @@
-//! The file dialog: Save as (Ponzik, FL Studio or Ableton Live) and Open.
+//! The file dialog: Save as (Ponzik, FL Studio, Ableton Live or REAPER) and
+//! Open (those, LMMS, Ardour, MusicXML and MIDI).
 //!
 //! One sheet for both: places on the left (home, desktop, documents, music,
 //! downloads, the Ponzik projects folder, recent folders, drives), a path
@@ -23,6 +24,9 @@ use super::compat;
 use super::theme::*;
 use super::widgets::{Icon, draw_icon, wid};
 
+/// Width of a format chip of the Save dialog.
+const CHIP_W: f32 = 136.0;
+
 /// Recent projects kept in the settings.
 pub const RECENT_MAX: usize = 12;
 
@@ -41,16 +45,19 @@ pub enum Format {
     Flp,
     /// An Ableton Live copy.
     Als,
+    /// A REAPER copy.
+    Rpp,
 }
 
 impl Format {
-    pub const ALL: [Format; 3] = [Format::Ponzik, Format::Flp, Format::Als];
+    pub const ALL: [Format; 4] = [Format::Ponzik, Format::Flp, Format::Als, Format::Rpp];
 
     pub fn ext(self) -> &'static str {
         match self {
             Format::Ponzik => "ponzik",
             Format::Flp => "flp",
             Format::Als => "als",
+            Format::Rpp => "rpp",
         }
     }
 
@@ -59,6 +66,7 @@ impl Format {
             Format::Ponzik => "Ponzik",
             Format::Flp => "FL Studio",
             Format::Als => "Ableton Live",
+            Format::Rpp => "REAPER",
         }
     }
 
@@ -67,6 +75,7 @@ impl Format {
             Format::Ponzik => Kind::Ponzik,
             Format::Flp => Kind::Flp,
             Format::Als => Kind::Als,
+            Format::Rpp => Kind::Rpp,
         }
     }
 
@@ -80,6 +89,9 @@ impl Format {
             Format::Als => tr(
                 "A copy for Ableton Live: tempo, one MIDI track per channel with its notes in the arrangement, markers. Instruments, effects, audio clips and automation are not kept.",
             ),
+            Format::Rpp => tr(
+                "A copy for REAPER: tempo changes, time signatures, markers, one track per channel with MIDI items, audio items with their fades. Instruments, effects and automation are not kept.",
+            ),
         }
     }
 }
@@ -91,6 +103,10 @@ pub enum Kind {
     Ponzik,
     Flp,
     Als,
+    Rpp,
+    Lmms,
+    Ardour,
+    MusicXml,
     Midi,
     Audio,
     Other,
@@ -106,6 +122,10 @@ impl Kind {
             "ponzik" => Kind::Ponzik,
             "flp" => Kind::Flp,
             "als" => Kind::Als,
+            "rpp" => Kind::Rpp,
+            "mmp" | "mmpz" => Kind::Lmms,
+            "ardour" => Kind::Ardour,
+            "musicxml" | "mxl" => Kind::MusicXml,
             "mid" | "midi" => Kind::Midi,
             _ if ponzik_engine::wav::is_audio_file(path) => Kind::Audio,
             _ => Kind::Other,
@@ -118,6 +138,10 @@ impl Kind {
             Kind::Ponzik => tr("Ponzik project"),
             Kind::Flp => tr("FL Studio project"),
             Kind::Als => tr("Ableton Live set"),
+            Kind::Rpp => tr("REAPER project"),
+            Kind::Lmms => tr("LMMS project"),
+            Kind::Ardour => tr("Ardour session"),
+            Kind::MusicXml => tr("MusicXML score"),
             Kind::Midi => tr("MIDI file"),
             Kind::Audio => tr("Audio file"),
             Kind::Other => tr("File"),
@@ -130,6 +154,10 @@ impl Kind {
             Kind::Ponzik => Icon::Playlist,
             Kind::Flp => Icon::Rack,
             Kind::Als => Icon::Session,
+            Kind::Rpp => Icon::Columns,
+            Kind::Lmms => Icon::Leaf,
+            Kind::Ardour => Icon::Mixer,
+            Kind::MusicXml => Icon::Melody,
             Kind::Midi => Icon::Midi,
             Kind::Audio => Icon::Sample,
             Kind::Other => Icon::Document,
@@ -142,6 +170,10 @@ impl Kind {
             Kind::Ponzik => t.accent,
             Kind::Flp => t.warning,
             Kind::Als => t.frost,
+            Kind::Rpp => t.accent_hot,
+            Kind::Lmms => t.note,
+            Kind::Ardour => t.highlight,
+            Kind::MusicXml => t.meter_hot,
             Kind::Midi => t.select,
             Kind::Audio => t.wave,
             Kind::Other => t.muted,
@@ -151,8 +183,8 @@ impl Kind {
     /// Files the dialog offers to open or shows next to a save.
     fn shown_in(self, mode: Mode) -> bool {
         match mode {
-            Mode::Open => matches!(self, Kind::Folder | Kind::Ponzik | Kind::Flp | Kind::Als | Kind::Midi),
-            Mode::Save => matches!(self, Kind::Folder | Kind::Ponzik | Kind::Flp | Kind::Als),
+            Mode::Open => !matches!(self, Kind::Audio | Kind::Other),
+            Mode::Save => matches!(self, Kind::Folder | Kind::Ponzik | Kind::Flp | Kind::Als | Kind::Rpp),
         }
     }
 }
@@ -821,12 +853,13 @@ impl App {
         }
     }
 
-    /// Writes an FL Studio or Ableton Live copy; the project keeps its own file.
+    /// Writes a copy for another program; the project keeps its own file.
     fn export_copy(&mut self, path: &Path, format: Format) -> bool {
         self.capture_plugin_states();
         let result = match format {
             Format::Flp => compat::export_flp(&self.project, path),
             Format::Als => compat::export_als(&self.project, path),
+            Format::Rpp => compat::export_rpp(&self.project, path),
             Format::Ponzik => return self.save_to(path),
         };
         match result {
@@ -979,7 +1012,7 @@ impl App {
         self.text(c, self.f.sans_med, 19.0, tx, r.y + 32.0, title, t.text);
         let sub = match (d.mode, d.tab) {
             (Mode::Save, _) => tr("Choose a place, a name and a format"),
-            (Mode::Open, Tab::Browse) => tr("Ponzik, FL Studio and Ableton Live projects, MIDI files"),
+            (Mode::Open, Tab::Browse) => tr("Ponzik and other DAWs' projects, MusicXML scores, MIDI files"),
             (Mode::Open, Tab::Recent) => tr("The projects you opened or saved lately"),
         };
         self.text_fit(c, self.f.sans, 12.5, tx, r.y + 52.0, sub, 420.0, t.text2);
@@ -1474,7 +1507,8 @@ impl App {
         if d.mode == Mode::Save {
             // Name and format on the first row.
             let row_y = r.y + 16.0;
-            let chips_w = 3.0 * 150.0 + 2.0 * 8.0;
+            let n = Format::ALL.len() as f32;
+            let chips_w = n * CHIP_W + (n - 1.0) * 8.0;
             let field = Rect::new(r.x + pad, row_y, r.w - 2.0 * pad - chips_w - 16.0, 40.0);
             c.fill_rrect(field, 11.0, t.well);
             let typing = d.edit == Edit::None;
@@ -1496,7 +1530,7 @@ impl App {
             }
             let mut x = field.right() + 16.0;
             for (k, f) in Format::ALL.into_iter().enumerate() {
-                let chip = Rect::new(x, row_y, 150.0, 40.0);
+                let chip = Rect::new(x, row_y, CHIP_W, 40.0);
                 let id = wid("files-format", k, 0);
                 let hov = self.hovered(input, id, chip);
                 let hv = self.hover_anim(id, hov);
@@ -1515,7 +1549,7 @@ impl App {
                         d.confirm = None;
                     }
                 }
-                x += 158.0;
+                x += CHIP_W + 8.0;
             }
         }
         // The info line (or the overwrite question) left of the buttons.
@@ -1552,7 +1586,7 @@ impl App {
             }
         } else {
             let mut x = r.x + pad;
-            for kind in [Kind::Ponzik, Kind::Flp, Kind::Als, Kind::Midi] {
+            for kind in [Kind::Ponzik, Kind::Flp, Kind::Als, Kind::Rpp, Kind::Lmms, Kind::Ardour, Kind::MusicXml, Kind::Midi] {
                 self.kind_badge(c, kind, x + 15.0, cy, 0.9);
                 x += 36.0;
             }
@@ -1641,7 +1675,7 @@ impl App {
         keep
     }
 
-    /// Captures: `PONZIK_FILEDIALOG=save|open|recent|unsaved[:folder][,flp|als][,sel:n][,q:text][,confirm][,newdir][,path]`.
+    /// Captures: `PONZIK_FILEDIALOG=save|open|recent|unsaved[:folder][,flp|als|rpp][,sel:n][,q:text][,confirm][,newdir][,path]`.
     pub fn screenshot_file_dialog(&mut self, spec: &str) {
         let mut parts = spec.split(',').map(str::trim);
         let head = parts.next().unwrap_or("save");
@@ -1677,6 +1711,7 @@ impl App {
             match p {
                 "flp" => d.format = Format::Flp,
                 "als" => d.format = Format::Als,
+                "rpp" => d.format = Format::Rpp,
                 "confirm" => {
                     if let Some(i) = d.shown().into_iter().find(|&i| d.entries[i].kind == Kind::Ponzik) {
                         d.pick(i);

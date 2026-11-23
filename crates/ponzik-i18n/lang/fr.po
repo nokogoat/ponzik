@@ -5152,8 +5152,6 @@ msgstr "Importer un projet FL Studio"
 msgid "Import an FL Studio project (.flp)"
 msgstr "Importer un projet FL Studio (.flp)"
 
-msgid "Show the FL Studio import report"
-msgstr "Afficher le rapport d'import FL Studio"
 
 # --- Drum Pads ---
 
@@ -5267,8 +5265,6 @@ msgstr "Déclin : glisse à gauche pour raccourcir la frappe, tout à droite pou
 msgid "Drop a WAV on a pad"
 msgstr "Dépose un WAV sur un pad"
 
-msgid "FL Studio import report"
-msgstr "Rapport d'import FL Studio"
 
 msgid "FL Studio {}.{}.{} project, {} PPQ converted to {}"
 msgstr "Projet FL Studio {}.{}.{}, {} PPQ convertis en {}"
@@ -9649,8 +9645,8 @@ msgstr "Emplacements"
 msgid "Ponzik projects"
 msgstr "Projets Ponzik"
 
-msgid "Ponzik, FL Studio and Ableton Live projects, MIDI files"
-msgstr "Projets Ponzik, FL Studio et Ableton Live, fichiers MIDI"
+msgid "Ponzik and other DAWs' projects, MusicXML scores, MIDI files"
+msgstr "Projets Ponzik et d'autres DAW, partitions MusicXML, fichiers MIDI"
 
 msgid "Projects opened or saved lately"
 msgstr "Projets ouverts ou enregistrés récemment"
@@ -9742,8 +9738,6 @@ msgstr "Ouvrir un projet…"
 msgid "Otherwise this screen opens at every launch · also in Settings › Workspace"
 msgstr "Sinon cet écran s'ouvre à chaque lancement · aussi dans Réglages › Espace de travail"
 
-msgid "Ponzik, FL Studio, Ableton Live or MIDI"
-msgstr "Ponzik, FL Studio, Ableton Live ou MIDI"
 
 msgid "Recent projects"
 msgstr "Projets récents"
@@ -9765,3 +9759,179 @@ msgstr "Modèles"
 
 msgid "The project you had open comes back as you left it"
 msgstr "Le projet ouvert revient tel que vous l'avez laissé"
+
+# --- Projects of other programs (REAPER, LMMS, Ardour, MusicXML) ---
+
+msgid "'{}': {} replaced by {} (settings not imported)"
+msgstr "'{}' : {} remplacé par {} (réglages non importés)"
+
+msgid "A copy for REAPER: tempo changes, time signatures, markers, one track per channel with MIDI items, audio items with their fades. Instruments, effects and automation are not kept."
+msgstr "Une copie pour REAPER : changements de tempo, signatures rythmiques, marqueurs, une piste par canal avec ses items MIDI, les items audio avec leurs fondus. Instruments, effets et automation ne sont pas gardés."
+
+msgid "An .rpp copy: MIDI and audio items, tempo changes, markers"
+msgstr "Une copie .rpp : items MIDI et audio, changements de tempo, marqueurs"
+
+msgid "Ardour session"
+msgstr "Session Ardour"
+
+msgid "Articulations, dynamics marks and the layout of the score"
+msgstr "Articulations, nuances écrites et mise en page de la partition"
+
+msgid "Export for REAPER"
+msgstr "Exporter pour REAPER"
+
+msgid "Export for REAPER (.rpp)"
+msgstr "Exporter pour REAPER (.rpp)"
+
+msgid "FX mixer: {} channels with their name, volume, mute and routing"
+msgstr "Mixer FX : {} canaux avec leur nom, volume, muet et routage"
+
+msgid "FX {}"
+msgstr "FX {}"
+
+msgid "Folders: {} tracks routed into their folder track"
+msgstr "Dossiers : {} pistes routées dans leur piste dossier"
+
+msgid "Instrument settings, envelopes, arpeggios and chords are not converted"
+msgstr "Les réglages des instruments, enveloppes, arpèges et accords ne sont pas convertis"
+
+msgid "LMMS project"
+msgstr "Projet LMMS"
+
+msgid "Loop range"
+msgstr "Plage de boucle"
+
+msgid "MusicXML score"
+msgstr "Partition MusicXML"
+
+msgid "No score in this MusicXML archive"
+msgstr "Aucune partition dans cette archive MusicXML"
+
+msgid "Not a MusicXML score"
+msgstr "Ce n'est pas une partition MusicXML"
+
+msgid "Not a REAPER project"
+msgstr "Ce n'est pas un projet REAPER"
+
+msgid "Not a readable LMMS project: {}"
+msgstr "Projet LMMS illisible : {}"
+
+msgid "Not a readable MusicXML archive: {}"
+msgstr "Archive MusicXML illisible : {}"
+
+msgid "Not an Ardour session"
+msgstr "Ce n'est pas une session Ardour"
+
+msgid "Not an LMMS project"
+msgstr "Ce n'est pas un projet LMMS"
+
+msgid "Part {}"
+msgstr "Partie {}"
+
+msgid "Ponzik, FL Studio, Ableton Live, REAPER, LMMS, Ardour, MusicXML or MIDI"
+msgstr "Ponzik, FL Studio, Ableton Live, REAPER, LMMS, Ardour, MusicXML ou MIDI"
+
+msgid "REAPER project"
+msgstr "Projet REAPER"
+
+msgid "Repeats and endings are played once (not unrolled)"
+msgstr "Reprises et fins alternatives jouées une fois (non déroulées)"
+
+msgid "Saved by {}"
+msgstr "Enregistré par {}"
+
+msgid "Show the import report"
+msgstr "Afficher le rapport d'import"
+
+msgid "Time signatures: {}"
+msgstr "Signatures rythmiques : {}"
+
+msgid "Timewise MusicXML scores are not supported yet (only partwise ones)"
+msgstr "Les partitions MusicXML « timewise » ne sont pas encore prises en charge (seulement « partwise »)"
+
+msgid "its project format is closed and binary"
+msgstr "son format de projet est fermé et binaire"
+
+msgid "its song format is not documented"
+msgstr "son format de morceau n'est pas documenté"
+
+msgid "{} Beat/Bassline patterns with their playlist clips"
+msgstr "{} patterns Beat/Bassline avec leurs clips de playlist"
+
+msgid "{} MIDI regions whose file is missing"
+msgstr "{} régions MIDI dont le fichier manque"
+
+msgid "{} VCAs"
+msgstr "{} VCA"
+
+msgid "{} audio clips: file, place, length, start in the file, gain, fades"
+msgstr "{} clips audio : fichier, position, longueur, début dans le fichier, gain, fondus"
+
+msgid "{} automation envelopes"
+msgstr "{} enveloppes d'automation"
+
+msgid "{} automation tracks"
+msgstr "{} pistes d'automation"
+
+msgid "{} cue markers became plain markers"
+msgstr "{} marqueurs de cue devenus des marqueurs simples"
+
+msgid "{} effect plugins (not converted)"
+msgstr "{} plugins d'effet (non convertis)"
+
+msgid "{} factory sample {} replaced by library sound {}"
+msgstr "Sample d'usine {} {} remplacé par le son de bibliothèque {}"
+
+msgid "{} grace and cue notes"
+msgstr "{} appoggiatures et notes de repère"
+
+msgid "{} import report"
+msgstr "Rapport d'import {}"
+
+msgid "{} instrument channels, each with the closest Ponzik instrument ({})"
+msgstr "{} canaux d'instrument, chacun avec l'instrument Ponzik le plus proche ({})"
+
+msgid "{} items with another play rate play at normal speed"
+msgstr "{} items à une autre vitesse de lecture jouent à vitesse normale"
+
+msgid "{} lyrics"
+msgstr "{} paroles"
+
+msgid "{} markers"
+msgstr "{} marqueurs"
+
+msgid "{} parts, each a track with its notes in one pattern"
+msgstr "{} parties, chacune une piste avec ses notes dans un pattern"
+
+msgid "{} projects can't be opened yet ({}): export MIDI files and audio stems from {} instead"
+msgstr "Les projets {} ne s'ouvrent pas encore ({}) : exportez plutôt des fichiers MIDI et des stems audio depuis {}"
+
+msgid "{} ranges became markers at their start"
+msgstr "{} plages devenues des marqueurs à leur début"
+
+msgid "{} regions became markers at their start"
+msgstr "{} régions devenues des marqueurs à leur début"
+
+msgid "{} regions of two mono files play their first channel only"
+msgstr "{} régions de deux fichiers mono ne jouent que leur premier canal"
+
+msgid "{} sends"
+msgstr "{} envois"
+
+msgid "{} tempo changes"
+msgstr "{} changements de tempo"
+
+msgid "{} tracks of an unknown kind"
+msgstr "{} pistes d'un type inconnu"
+
+msgid "{} tracks routed into a bus"
+msgstr "{} pistes routées dans un bus"
+
+msgid "{} tracks: name, colour, volume, pan, mute"
+msgstr "{} pistes : nom, couleur, volume, panoramique, muet"
+
+msgid "{} video items"
+msgstr "{} items vidéo"
+
+msgid "{}: not a project Ponzik can open"
+msgstr "{} : pas un projet que Ponzik sait ouvrir"

@@ -92,7 +92,8 @@ pub enum FileKind {
     OtherAudio,
     Midi,
     Project,
-    FlStudio,
+    /// The project of another program (imported), or one Ponzik can't open yet.
+    Foreign,
     Unknown,
 }
 
@@ -103,7 +104,8 @@ pub fn file_kind(path: &std::path::Path) -> FileKind {
         "aif" | "aiff" | "opus" | "m4a" => FileKind::OtherAudio,
         "mid" | "midi" | "smf" => FileKind::Midi,
         "ponzik" => FileKind::Project,
-        "flp" => FileKind::FlStudio,
+        "flp" | "als" | "rpp" | "mmp" | "mmpz" | "ardour" | "musicxml" | "mxl" => FileKind::Foreign,
+        "bwproject" | "song" | "cpr" | "logicx" | "ptx" | "reason" => FileKind::Foreign,
         _ => FileKind::Unknown,
     }
 }
@@ -313,7 +315,7 @@ impl App {
     pub fn drop_files(&mut self, paths: Vec<PathBuf>, target: Option<DropTarget>) {
         let of = |kind: FileKind| paths.iter().filter(|p| file_kind(p) == kind).cloned().collect::<Vec<_>>();
         // A project replaces everything: it goes first and alone.
-        if let Some(p) = paths.iter().find(|p| matches!(file_kind(p), FileKind::Project | FileKind::FlStudio)) {
+        if let Some(p) = paths.iter().find(|p| matches!(file_kind(p), FileKind::Project | FileKind::Foreign)) {
             self.open_file(p.clone());
             return;
         }
@@ -416,7 +418,9 @@ mod tests {
         assert_eq!(file_kind(Path::new("/a/voice note.opus")), FileKind::OtherAudio);
         assert_eq!(file_kind(Path::new("/a/riff.MID")), FileKind::Midi);
         assert_eq!(file_kind(Path::new("/a/song.ponzik")), FileKind::Project);
-        assert_eq!(file_kind(Path::new("/a/song.flp")), FileKind::FlStudio);
+        assert_eq!(file_kind(Path::new("/a/song.flp")), FileKind::Foreign);
+        assert_eq!(file_kind(Path::new("/a/song.RPP")), FileKind::Foreign);
+        assert_eq!(file_kind(Path::new("/a/song.mmpz")), FileKind::Foreign);
         assert_eq!(file_kind(Path::new("/a/notes.txt")), FileKind::Unknown);
         assert_eq!(file_kind(Path::new("/a/no-extension")), FileKind::Unknown);
     }

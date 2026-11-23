@@ -193,7 +193,7 @@ impl App {
 
         // Open.
         let open_r = Rect::new(left.x, new_r.bottom() + 12.0, left.w, 72.0);
-        if self.start_card(c, input, wid("start-open", 0, 0), open_r, sel == Some(Item::Open), Icon::Folder, tr("Open a project…"), tr("Ponzik, FL Studio, Ableton Live or MIDI"), "Ctrl+O") {
+        if self.start_card(c, input, wid("start-open", 0, 0), open_r, sel == Some(Item::Open), Icon::Folder, tr("Open a project…"), tr("Ponzik, FL Studio, Ableton Live, REAPER, LMMS, Ardour, MusicXML or MIDI"), "Ctrl+O") {
             picked = Some(Some(Item::Open));
         }
 
@@ -379,7 +379,7 @@ impl App {
             let mut found: Vec<super::filedialog::Entry> = super::filedialog::list_dir(std::path::Path::new(head))
                 .unwrap_or_default()
                 .into_iter()
-                .filter(|e| matches!(e.kind, Kind::Ponzik | Kind::Flp | Kind::Als))
+                .filter(|e| !matches!(e.kind, Kind::Folder | Kind::Midi | Kind::Audio | Kind::Other))
                 .collect();
             found.sort_by_key(|e| std::cmp::Reverse(e.modified));
             found.into_iter().map(|e| e.path).collect()
