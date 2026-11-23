@@ -8,6 +8,7 @@ use ponzik_window::{Cursor, Key};
 
 use super::Input;
 use super::app::{App, Focus, Popup, Rename, View};
+use super::lessons::Spot;
 use super::rack::note_name;
 use super::theme::*;
 use super::widgets::{Icon, draw_icon, wid};
@@ -351,6 +352,7 @@ impl App {
             self.focus = Focus::Channel((ch + 1) % n);
             self.piano.selected.clear();
         }
+        self.spot(Spot::PianoChannel, chan_box);
         let name = self.project.channels[ch].name.clone();
         let (bx, by) = chan_box.center();
         let label = self.fit(self.f.sans_med, 13.0, &name, chan_box.w - 70.0);
@@ -367,11 +369,13 @@ impl App {
         let scaled = self.project.scale != ScaleKind::Chromatic;
         let mut hx = chan_box.right() + 12.0;
         let tip = if scaled { (tr("Snap to scale"), "") } else { (tr("Snap to scale\nPick a scale first, at the top"), "") };
+        self.spot(Spot::PianoSnap, Rect::new(hx, header.y, 36.0, header.h));
         if self.icon_button(c, input, wid("pr-scale", 0, 0), Rect::new(hx, header.y, 36.0, header.h), Icon::Scale, self.piano.scale_snap, tip) {
             self.piano.scale_snap = !self.piano.scale_snap;
         }
         hx += 40.0;
         let stamp = self.piano.chord_stamp;
+        self.spot(Spot::PianoChord, Rect::new(hx, header.y, 36.0, header.h));
         if self.icon_button(c, input, wid("pr-chord", 0, 0), Rect::new(hx, header.y, 36.0, header.h), Icon::Chord, stamp, (tr("Stamp chords\nOne click: a whole chord"), "")) {
             self.piano.chord_stamp = !stamp;
         }
@@ -439,6 +443,7 @@ impl App {
         let ruler = Rect::new(grid.x, inner.y, grid.w, RULER);
         let chords = Rect::new(grid.x, inner.y + RULER, grid.w, CHORDS);
         self.tour_anchor(1, grid);
+        self.spot(Spot::PianoGrid, grid);
         let vel_lane = Rect::new(grid.x, grid.bottom() + 8.0, grid.w, VELOCITY);
         let note_lane = Rect::new(grid.x, vel_lane.bottom() + 8.0, grid.w, LANE);
         let pat_len = self.project.patterns[pat].len.max(TICKS_PER_BAR) as f32;

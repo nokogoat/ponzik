@@ -31,6 +31,7 @@ mod keymap;
 mod keys;
 mod lanes;
 mod learn;
+mod lessons;
 mod library;
 mod loops;
 mod midiout;
@@ -304,6 +305,7 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     app.load_settings();
     app.theme_from_env();
     app.ctl.persist = true;
+    app.lessons.persist = true;
     app.start_tour_if_new();
     app.show_whats_new_if_updated();
     app.start_update_check_at_launch();
@@ -817,6 +819,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // PONZIK_TOUR=n : la bulle n de la visite guidée.
     if let Some(step) = std::env::var("PONZIK_TOUR").ok().and_then(|v| v.trim().parse().ok()) {
         app.screenshot_tour(step);
+    }
+    // PONZIK_LESSON=list[:1]|<lesson>:<step>|<lesson>:done : le panneau des leçons,
+    // une étape ou la fin d'une leçon ; PONZIK_LESSONS_DONE=rack,piano:2 : progression.
+    if let Ok(spec) = std::env::var("PONZIK_LESSON") {
+        app.screenshot_lesson(&spec, std::env::var("PONZIK_LESSONS_DONE").ok().as_deref());
     }
     // PONZIK_FLOAT=n : détache les n premiers appareils du panneau dans des fenêtres.
     if let Some(n) = std::env::var("PONZIK_FLOAT").ok().and_then(|v| v.parse().ok()) {

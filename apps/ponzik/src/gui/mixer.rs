@@ -14,6 +14,7 @@ use ponzik_ui::{Canvas, Color, Rect};
 
 use super::Input;
 use super::app::{App, Focus, Meter, Popup};
+use super::lessons::Spot;
 use super::dnd::DropTarget;
 use super::theme::*;
 use super::widgets::{Icon, draw_icon, wid};
@@ -416,6 +417,11 @@ impl App {
             spans.push((x, x + w));
             if vis > 0.01 {
                 let r = Rect::new(x - sw * (1.0 - vis), inner.y, sw, strip_h);
+                if slot.tr == MASTER {
+                    self.spot(Spot::MasterStrip, r);
+                } else if slot.tr == 1 {
+                    self.spot(Spot::MixerStrip, r);
+                }
                 // L'écart compris : un bus replié y montre ses tranches empilées.
                 let clip = Rect::new(x, inner.y, w + STRIP_GAP * vis, strip_h);
                 if clip.right() > inner.x && clip.x < inner.right() {
@@ -695,6 +701,9 @@ impl App {
         // Armement de l'enregistrement audio.
         if tr != MASTER && kind != TrackKind::Vca {
             let arm = Rect::new(inner.right() - 18.0, inner.y + 2.0, 18.0, 18.0);
+            if tr == 1 {
+                self.spot(Spot::MixerArm, arm.inset(-3.0));
+            }
             let aid = wid("mx-arm", tr, 0);
             let ahov = self.hovered(input, aid, arm);
             let armed = self.rec.is_armed(tr);
@@ -767,6 +776,12 @@ impl App {
 
         // Inserts.
         let mut y = inner.y + 38.0;
+        let slots = Rect::new(inner.x, y, inner.w, INSERT_SLOTS as f32 * 22.0 - 2.0);
+        if tr == MASTER {
+            self.spot(Spot::MasterInserts, slots);
+        } else if tr == 1 {
+            self.spot(Spot::MixerInserts, slots);
+        }
         for slot in 0..INSERT_SLOTS {
             let row = Rect::new(inner.x, y, inner.w, 20.0);
             let id = wid("mx-slot", tr, slot);

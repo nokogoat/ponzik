@@ -77,6 +77,10 @@ impl App {
         let none = String::new;
         add(tr("Play / stop").into(), tr("Transport"), k(S::PlayStop), Action::PlayStop);
         add(tr("Take the tour: a beat, a bass, an export").into(), tr("Help"), none(), Action::StartTour);
+        add(tr("Learn: short hands-on lessons").into(), tr("Help"), none(), Action::Lessons(None));
+        for (i, l) in super::lessons::LESSONS.iter().enumerate() {
+            add(tr_fmt!("Lesson: {}", tr(l.title)), tr("Help"), none(), Action::Lessons(Some(i)));
+        }
         add(tr("Switch pattern / song").into(), tr("Transport"), k(S::ToggleMode), Action::ToggleMode);
         add(tr("Metronome").into(), tr("Transport"), k(S::Metronome), Action::ToggleMetronome);
         add(tr("Arm recording").into(), tr("Transport"), k(S::Record), Action::ToggleRecord);

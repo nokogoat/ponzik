@@ -17,6 +17,7 @@ use ponzik_window::Key;
 
 use super::Input;
 use super::compat;
+use super::lessons::Spot;
 use super::offline::REPORT_ANCHOR;
 use super::browser::{BrowserUi, Filter, Tag, TagSet, item_key};
 use super::dnd::Payload;
@@ -220,6 +221,8 @@ pub enum Popup {
     RackDevice { track: usize, slot: usize, unit: usize },
     /// "What's new in Ponzik": the latest changelog section, or all of it.
     WhatsNew,
+    /// The Learn panel: short lessons.
+    Learn,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -269,6 +272,8 @@ pub fn display_kind(kind: &str) -> String {
 pub enum Action {
     None,
     StartTour,
+    /// The Learn panel (`None`) or a lesson.
+    Lessons(Option<usize>),
     /// Edit of an effect rack.
     Rack(super::rackfx::RackAction),
     /// Edit of the modulators.
@@ -790,6 +795,8 @@ pub struct App {
     /// Sauvegarde d'une session interrompue, proposée au démarrage : fichier, ligne de détail.
     pub recovery: Option<(PathBuf, String)>,
     pub tour: super::tour::Tour,
+    /// Lessons: progress, the one followed, the Learn panel.
+    pub lessons: super::lessons::Lessons,
     /// First-time hint bubbles.
     pub hints: super::hints::Hints,
     /// Place de la pastille de gamme, où s'ouvre son menu.
@@ -954,6 +961,7 @@ impl App {
             autosaver: None,
             recovery: None,
             tour: Default::default(),
+            lessons: Default::default(),
             hints: Default::default(),
             loop_bpms: HashMap::new(),
             kb: Default::default(),
@@ -2037,6 +2045,7 @@ impl App {
             || self.channel_meters.iter().any(Meter::active)
             || self.rec.needs_redraw()
             || self.voice.needs_redraw()
+            || self.lessons.active()
     }
 
     /// Vrai si l'image doit suivre à 60 images/s : animation, glisser, défilement.
@@ -2128,6 +2137,7 @@ impl App {
             None => input,
         };
         self.poll_engine(dt);
+        self.lesson_tick();
         self.learn_tick();
         self.autorec_tick();
         if self.ctl.learn.is_active() && input.keys.iter().any(|(k, _)| *k == Key::Escape) {
@@ -2156,7 +2166,7 @@ impl App {
         let over_card = self.recovery_rect(w).is_some_and(|r| r.contains(input.x, input.y))
             || self.learn_rect(w).is_some_and(|r| r.contains(input.x, input.y))
             || self.toast_hits.iter().any(|r| r.contains(input.x, input.y))
-            || (self.popup.is_none() && (self.over_tour(input) || self.over_hint(input)));
+            || (self.popup.is_none() && (self.over_tour(input) || self.over_hint(input) || self.over_lesson(input)));
         let ui = if self.popup.is_some() || over_card {
             masked = Input {
                 inside: false,
@@ -2206,9 +2216,11 @@ impl App {
         self.popup_layer(c, input, Rect::new(0.0, 0.0, w, h));
         if self.popup.is_none() {
             self.tour_layer(c, input, Rect::new(0.0, 0.0, w, h));
+            self.lesson_layer(c, input, Rect::new(0.0, 0.0, w, h));
             self.hint_layer(c, input, Rect::new(0.0, 0.0, w, h));
         } else {
             self.tour.anchors = Default::default();
+            self.lesson_hidden();
             self.hints = Default::default();
         }
         self.toast_layer(c, input, dt, Rect::new(sb, TOP_BAR, w - sb, h - TOP_BAR - pn));
@@ -2246,6 +2258,7 @@ impl App {
         let k_browser = key(S::ToggleBrowser);
         let (k_pal, k_save, k_redo, k_undo, k_panel, k_hist) =
             (key(S::Palette), key(S::Save), key(S::Redo), key(S::Undo), key(S::TogglePanel), key(S::History));
+        self.spot(Spot::Browser, Rect::new(12.0, cy - 16.0, 32.0, 32.0));
         if self.icon_button(c, input, wid("tb-sidebar", 0, 0), Rect::new(12.0, cy - 16.0, 32.0, 32.0), Icon::Sidebar, self.sidebar, (tr("Browser"), &k_browser)) {
             self.sidebar = !self.sidebar;
         }
@@ -2260,6 +2273,7 @@ impl App {
         let start = x;
 
         let play = Rect::new(x, cy - 18.0, 40.0, 36.0);
+        self.spot(Spot::Play, play);
         let hov = self.hovered(input, wid("tb-play", 0, 0), play);
         let kb = self.kb_control(c, input, wid("tb-play", 0, 0), play) && self.kb_enter(wid("tb-play", 0, 0));
         if (hov && input.pressed) || kb {
@@ -2293,6 +2307,7 @@ impl App {
         let icons = [Icon::Rack, Icon::Playlist, Icon::Session];
         let tips = [(tr("Play the pattern"), k_mode.as_str()), (tr("Play the song"), k_mode.as_str()), (tr("Play the session"), "")];
         if self.bar_shown(Bar::Mode) {
+            self.spot(Spot::Mode, Rect::new(x, cy - 18.0, 132.0, 36.0));
             if let Some(m) = self.icon_segmented(c, input, wid("tb-mode", 0, 0), Rect::new(x, cy - 18.0, 132.0, 36.0), &icons, &tips, mode) {
                 let cur = self.project.current_pattern;
                 self.set_mode(match m {
@@ -2319,6 +2334,7 @@ impl App {
         };
         let bpm_text = ponzik_i18n::num(heard, 1);
         let bpm_r = Rect::new(x, cy - 18.0, 116.0, 36.0);
+        self.spot(Spot::Tempo, bpm_r);
         if let Some(bpm) = self.drag_field(c, input, wid("tb-bpm", 0, 0), bpm_r, self.tempo_here(), 0.25, 1.0, &bpm_text, "BPM") {
             let bpm = ((bpm * 10.0).round() / 10.0).clamp(40.0, 300.0);
             if self.set_tempo_here(bpm) {
@@ -2348,6 +2364,7 @@ impl App {
             x += 138.0;
         }
         if self.bar_shown(Bar::Scale) {
+            self.spot(Spot::Scale, Rect::new(x, cy - 18.0, 128.0, 36.0));
             self.scale_chip(c, input, Rect::new(x, cy - 18.0, 128.0, 36.0));
             x += 134.0;
         }
@@ -2362,9 +2379,11 @@ impl App {
             x += 40.0;
         }
         if self.bar_shown(Bar::Record) {
+            self.spot(Spot::Record, Rect::new(x, cy - 18.0, 36.0, 36.0));
             self.record_button(c, input, Rect::new(x, cy - 18.0, 36.0, 36.0), &k_rec);
             x += 40.0;
             let mic = Rect::new(x, cy - 18.0, 36.0, 36.0);
+            self.spot(Spot::Mic, mic);
             if self.icon_button(c, input, wid("tb-input", 0, 0), mic, Icon::Mic, self.rec.panel, (tr("Recording panel: input, level, monitoring, latency"), "")) {
                 self.toggle_record_panel((mic.x + mic.w * 0.5, mic.bottom() + 6.0));
             }
@@ -2393,6 +2412,7 @@ impl App {
         let buttons = [
             (Icon::Menu, "tb-menu", (tr("Menu"), "")),
             (Icon::Search, "tb-search", (tr("Find anything"), k_pal.as_str())),
+            (Icon::Learn, "tb-learn", (tr("Learn: short hands-on lessons"), "")),
             (Icon::Panel, "tb-panel", (tr("Devices"), k_panel.as_str())),
             (Icon::Save, "tb-save", (tr("Save"), k_save.as_str())),
             (Icon::Redo, "tb-redo", (tr("Redo"), k_redo.as_str())),
@@ -2411,15 +2431,21 @@ impl App {
             if hidden {
                 continue;
             }
-            let on = icon == Icon::Panel && self.panel;
+            let on = (icon == Icon::Panel && self.panel) || (icon == Icon::Learn && self.lessons.active());
             if icon == Icon::Menu {
                 self.tour_anchor(2, Rect::new(rx, cy - 16.0, 32.0, 32.0));
+                self.spot(Spot::Menu, Rect::new(rx, cy - 16.0, 32.0, 32.0));
+            }
+            if icon == Icon::Learn && self.lessons.unfinished() {
+                // A lesson left halfway: a small dot, nothing more insistent.
+                c.fill_circle(rx + 26.0, cy - 10.0, 3.5, self.theme.accent);
             }
             if self.icon_button(c, input, wid(name, 0, 0), Rect::new(rx, cy - 16.0, 32.0, 32.0), icon, on, tip) {
                 let anchor = Rect::new(rx, cy - 16.0, 32.0, 32.0);
                 match icon {
                     Icon::Menu => self.open_popup(Popup::MainMenu, anchor),
                     Icon::Search => self.open_palette(),
+                    Icon::Learn => self.open_learn(),
                     Icon::Panel => self.panel = !self.panel,
                     Icon::Save => self.save(),
                     Icon::Redo => self.redo(),
@@ -2756,6 +2782,17 @@ impl App {
         let keys: Vec<String> = views.iter().map(|&v| self.key_label(super::keymap::Shortcut::for_view(v))).collect();
         let tips: Vec<(&str, &str)> = views.iter().zip(&keys).map(|(v, k)| (v.label(), k.as_str())).collect();
         let sel = views.iter().position(|v| *v == self.view).unwrap_or(0);
+        let seg_w = (tabs.w - 6.0) / views.len().max(1) as f32;
+        for (i, v) in views.iter().enumerate() {
+            let spot = match v {
+                View::Rack => Spot::TabRack,
+                View::Piano => Spot::TabPiano,
+                View::Playlist => Spot::TabPlaylist,
+                View::Mixer => Spot::TabMixer,
+                _ => continue,
+            };
+            self.spot(spot, Rect::new(tabs.x + 3.0 + i as f32 * seg_w, tabs.y, seg_w, tabs.h));
+        }
         if let Some(i) = self.icon_segmented(c, input, wid("tabs", 0, 0), tabs, &icons, &tips, sel) {
             self.set_view(views[i]);
         }
@@ -2943,6 +2980,7 @@ impl App {
             self.sidebar_scroll = 0.0;
             self.browser.sel = None;
         }
+        self.spot(Spot::BrowserTabs, cats);
         if let Some(i) = self.icon_segmented(c, input, wid("sb-cats", 0, 0), cats, &icons, &tips, self.sidebar_tab) {
             self.sidebar_tab = i;
             self.sidebar_scroll = 0.0;
@@ -3003,6 +3041,7 @@ impl App {
         // Pré-écoute : bascule automatique et volume, en bas.
         let footer = Rect::new(inner_x, r.bottom() - 46.0, w, 46.0);
         let list = Rect::new(r.x, cy + 30.0, r.w, footer.y - cy - 32.0);
+        self.spot(Spot::BrowserList, list);
         let hov_list = input.inside && list.contains(input.x, input.y);
         if hov_list && input.wheel != 0.0 {
             self.sidebar_scroll = (self.sidebar_scroll - input.wheel * 60.0).max(0.0);
@@ -3723,6 +3762,8 @@ impl App {
                 use super::keymap::Shortcut as S;
                 let key = |s: S| self.key_label(s);
                 let theme = self.theme_label(self.themes.active);
+                let (done, total) = self.lessons.count();
+                let learned = format!("{}/{}", done, total);
                 (
                     "Ponzik".into(),
                     vec![
@@ -3743,6 +3784,9 @@ impl App {
                         MenuItem::new(Icon::Layout, tr("Settings"), Action::Popup(Popup::Settings { tab: 0 }))
                             .detail(key(S::Settings))
                             .tip(tr("Views, panels and shortcuts")),
+                        MenuItem::new(Icon::Learn, tr("Learn"), Action::Lessons(None))
+                            .detail(learned)
+                            .tip(tr("Short hands-on lessons: the basics, then your first tracks")),
                         MenuItem::new(Icon::Info, tr("What's new"), Action::Update(super::updates::UpdateOp::ShowNews)).tip(tr("The changes of this version")),
                         MenuItem::new(Icon::Reset, tr("About and updates"), Action::Popup(Popup::Settings { tab: 4 }))
                             .detail(self.updates_badge())
@@ -3832,7 +3876,8 @@ impl App {
             | Popup::Tool(_)
             | Popup::StepEdit { .. }
             | Popup::Settings { .. }
-            | Popup::WhatsNew => (String::new(), Vec::new()),
+            | Popup::WhatsNew
+            | Popup::Learn => (String::new(), Vec::new()),
         }
     }
 
@@ -4019,6 +4064,8 @@ impl App {
             Action::ToggleMidiClock(port) => self.toggle_midi_clock(port),
             Action::TapTempo => self.tap_tempo(),
             Action::StartTour => self.start_tour(),
+            Action::Lessons(None) => self.open_learn(),
+            Action::Lessons(Some(i)) => self.start_lesson(i),
             Action::ToggleTyping => self.toggle_typing_keyboard(),
             Action::SetView(v) => self.set_view(v),
             Action::ToggleSidebar => self.sidebar = !self.sidebar,
@@ -4038,8 +4085,14 @@ impl App {
                     self.toast(&tr_fmt!("New project · {}", tr(name)));
                 }
             }
-            Action::Export => self.export(),
-            Action::ExportWith(options) => self.export_with(options),
+            Action::Export => {
+                self.lesson_exported();
+                self.export();
+            }
+            Action::ExportWith(options) => {
+                self.lesson_exported();
+                self.export_with(options);
+            }
             Action::Undo => self.undo(),
             Action::Redo => self.redo(),
             Action::LoadDemo(i) => {
@@ -4296,6 +4349,12 @@ impl App {
         }
         if matches!(state.kind, Popup::WhatsNew) {
             if self.whats_new_popup(c, input, screen) {
+                self.popup = Some(state);
+            }
+            return;
+        }
+        if matches!(state.kind, Popup::Learn) {
+            if self.learn_popup(c, input, screen) && self.popup.is_none() {
                 self.popup = Some(state);
             }
             return;

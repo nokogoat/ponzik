@@ -57,9 +57,9 @@ impl App {
         self.prefs.hints_seen |= h.bit();
     }
 
-    /// Not seen yet (and no tour in progress).
+    /// Not seen yet (and no tour or lesson in progress).
     pub fn hint_pending(&self, h: Hint) -> bool {
-        self.prefs.hints_seen & h.bit() == 0 && self.tour.step.is_none()
+        self.prefs.hints_seen & h.bit() == 0 && self.tour.step.is_none() && !self.lessons.active()
     }
 
     /// Asks for the bubble of `h` next to `anchor` (the first asked wins).

@@ -9,6 +9,7 @@ use ponzik_window::{Cursor, Key};
 use super::Input;
 use super::arrange::{ARRANGE_H, TEMPO_H};
 use super::app::{App, Popup, Rename, View};
+use super::lessons::Spot;
 use super::clip::ClipSel;
 use super::dnd::DropTarget;
 use super::theme::*;
@@ -195,6 +196,7 @@ impl App {
             y += 44.0;
         }
         let add = Rect::new(palette.x, (y + 4.0).min(palette.bottom() - 40.0), palette.w, 40.0);
+        self.spot(Spot::PlaylistPatterns, Rect::new(palette.x, palette.y, palette.w, (y - 4.0).min(palette.bottom()) - palette.y));
         let id = wid("pl-add-pat", 0, 0);
         let hov = self.hovered(input, id, add);
         let hv = self.hover_anim(id, hov);
@@ -220,6 +222,8 @@ impl App {
         let tempo_r = Rect::new(area.x, ruler.bottom(), area.w, TEMPO_H);
         let top = ARRANGE_H + RULER + TEMPO_H + 4.0;
         let lanes_r = Rect::new(area.x, area.y + top, area.w, area.h - top);
+        self.spot(Spot::Arrange, arrange_r);
+        self.spot(Spot::PlaylistGrid, lanes_r);
         c.fill_rrect(Rect::new(area.x - 1.0, area.y, area.w + 1.0, area.h), 12.0, t.lane_bg);
         let lanes_used = self
             .project

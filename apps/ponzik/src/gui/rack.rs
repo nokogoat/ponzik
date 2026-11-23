@@ -7,6 +7,7 @@ use ponzik_window::Cursor;
 
 use super::Input;
 use super::app::{App, Focus, Popup, Rename, View};
+use super::lessons::Spot;
 use super::dnd::DropTarget;
 use super::theme::*;
 use super::widgets::{Icon, draw_icon, wid};
@@ -86,6 +87,7 @@ impl App {
             self.commit(tr("Swing"));
         }
         self.tip_zone(input, swing_box, tr("Swing\nDrag or scroll · double-click: 0%"), "");
+        self.spot(Spot::RackSwing, swing_box);
 
         c.fill_rrect(body, 16.0, t.panel);
         c.stroke_rrect(body, 16.0, 1.0, t.hairline);
@@ -165,6 +167,7 @@ impl App {
             let top = rows.y - scroll;
             let bottom = (y - row_gap).min(rows.bottom());
             self.tour_anchor(0, Rect::new(pads.x, top.max(rows.y), pads.w, bottom - top.max(rows.y)));
+            self.spot(Spot::RackSteps, Rect::new(pads.x, top.max(rows.y), pads.w, bottom - top.max(rows.y)));
         }
         let add = Rect::new(rows.x, y + 2.0, LEFT - 12.0, 44.0);
         let id = wid("rack-add", 0, 0);

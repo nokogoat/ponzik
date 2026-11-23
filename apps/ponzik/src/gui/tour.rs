@@ -43,6 +43,7 @@ impl App {
     /// Starts the tour from its first step.
     pub fn start_tour(&mut self) {
         self.popup = None;
+        self.stop_lesson();
         self.go_to_tour_step(0);
     }
 

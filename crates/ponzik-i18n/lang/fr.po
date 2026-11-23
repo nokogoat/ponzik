@@ -8795,3 +8795,299 @@ msgstr "{}() attend 3 composantes et une opacité facultative, dans « {} »"
 
 msgid "{}() needs hue, saturation and lightness, in \"{}\""
 msgstr "{}() attend teinte, saturation et luminosité, dans « {} »"
+
+# --- Learn: lessons ---
+
+msgid "A bassline in the scale"
+msgstr "Une basse dans la gamme"
+
+msgid "A beat in 5 minutes"
+msgstr "Un beat en 5 minutes"
+
+msgid "A file to share"
+msgstr "Un fichier à partager"
+
+msgid "A little swing loosens it up."
+msgstr "Un peu de swing, et ça respire."
+
+msgid "Add a limiter on the master."
+msgstr "Ajoutez un limiteur sur le master."
+
+msgid "Add three more, one per bar."
+msgstr "Encore trois, un par mesure."
+
+msgid "All lessons"
+msgstr "Toutes les leçons"
+
+msgid "Arm a track with its record dot."
+msgstr "Armez une piste avec son point d'enregistrement."
+
+msgid "Arrange a drop"
+msgstr "Construire un drop"
+
+msgid "Balance, space, loudness"
+msgstr "Équilibre, espace, volume"
+
+msgid "Build the song from your loops"
+msgstr "Montez le morceau avec vos boucles"
+
+msgid "Chords and melody"
+msgstr "Accords et mélodie"
+
+msgid "Clap or snare on 5 and 13."
+msgstr "Clap ou caisse claire sur 5 et 13."
+
+msgid "Click a few squares to switch steps on."
+msgstr "Cliquez quelques cases pour allumer des pas."
+
+msgid "Click a sample to hear it."
+msgstr "Cliquez sur un échantillon pour l'écouter."
+
+msgid "Click an empty slot to add an effect."
+msgstr "Cliquez sur un emplacement vide pour ajouter un effet."
+
+msgid "Click in a lane to place it."
+msgstr "Cliquez dans une piste pour le poser."
+
+msgid "Click in the grid to draw a note."
+msgstr "Cliquez dans la grille pour dessiner une note."
+
+msgid "Click this lane to mark the sections."
+msgstr "Cliquez sur cette bande pour marquer les sections."
+
+msgid "Drag a fader to set the volume."
+msgstr "Glissez un fader pour régler le volume."
+
+msgid "Drag a few up or down for movement."
+msgstr "Déplacez-en quelques-unes pour donner du mouvement."
+
+msgid "Drag it onto the Channel Rack or the playlist."
+msgstr "Glissez-le dans le Channel Rack ou la playlist."
+
+msgid "Drag the end of a note to make it longer."
+msgstr "Tirez le bout d'une note pour l'allonger."
+
+msgid "Drag the swing to make it groove."
+msgstr "Glissez le swing pour faire groover."
+
+msgid "Drag the tempo until it feels right."
+msgstr "Glissez le tempo jusqu'à ce que ça sonne bien."
+
+msgid "Draw a short melody above the chords."
+msgstr "Dessinez une petite mélodie au-dessus des accords."
+
+msgid "Draw low notes on the root, one per beat."
+msgstr "Des notes graves sur la tonique, une par temps."
+
+msgid "Draw, stretch and erase notes"
+msgstr "Dessiner, allonger, effacer des notes"
+
+msgid "Drop a sample, make it play"
+msgstr "Déposer un échantillon, le faire jouer"
+
+msgid "Export a track"
+msgstr "Exporter un morceau"
+
+msgid "Everything ends in the master, on the left."
+msgstr "Tout arrive dans le master, à gauche."
+
+msgid "Finish"
+msgstr "Terminer"
+
+msgid "First productions"
+msgstr "Premières productions"
+
+msgid "Harmony in a few clicks"
+msgstr "L'harmonie en quelques clics"
+
+msgid "Hats on every other step."
+msgstr "Charleston un pas sur deux."
+
+msgid "In progress"
+msgstr "En cours"
+
+msgid "Input, arm, take"
+msgstr "Entrée, armement, prise"
+
+msgid "Intro, build-up, drop"
+msgstr "Intro, montée, drop"
+
+msgid "Keep the master meter out of the red."
+msgstr "Gardez le vumètre du master hors du rouge."
+
+msgid "Kick on steps 1, 5, 9 and 13."
+msgstr "Kick sur les pas 1, 5, 9 et 13."
+
+msgid "Kick, clap, hats, groove"
+msgstr "Kick, clap, charleston, groove"
+
+msgid "Learn"
+msgstr "Apprendre"
+
+msgid "Learn: short hands-on lessons"
+msgstr "Apprendre : courtes leçons pratiques"
+
+msgid "Leave one empty bar before the drop."
+msgstr "Laissez une mesure vide avant le drop."
+
+msgid "Lesson complete"
+msgstr "Leçon terminée"
+
+msgid "Lesson: {}"
+msgstr "Leçon : {}"
+
+msgid "Lessons completed"
+msgstr "Leçons terminées"
+
+msgid "Lessons work on the open project: {} undoes any change."
+msgstr "Les leçons modifient le projet ouvert : {} annule chaque changement."
+
+msgid "Levels, effects, the master"
+msgstr "Niveaux, effets, le master"
+
+msgid "Low notes that always fit"
+msgstr "Des graves qui tombent toujours juste"
+
+msgid "Mix basics"
+msgstr "Bases du mixage"
+
+msgid "Mixer and effects"
+msgstr "Mixer et effets"
+
+msgid "Next lesson"
+msgstr "Leçon suivante"
+
+msgid "One click: a whole chord in the scale."
+msgstr "Un clic : un accord entier, dans la gamme."
+
+msgid "Open the browser."
+msgstr "Ouvrez le navigateur."
+
+msgid "Open the menu."
+msgstr "Ouvrez le menu."
+
+msgid "Open the playlist."
+msgstr "Ouvrez la playlist."
+
+msgid "Open the recording panel: input and level."
+msgstr "Ouvrez le panneau d'enregistrement : entrée et niveau."
+
+msgid "Pan hats and chords a little apart."
+msgstr "Écartez un peu charleston et accords dans l'espace."
+
+msgid "Piano roll basics"
+msgstr "Bases du piano roll"
+
+msgid "Pick Export as WAV, or FLAC for a smaller file."
+msgstr "Choisissez Exporter en WAV, ou FLAC pour un fichier plus léger."
+
+msgid "Pick a key and a scale here."
+msgstr "Choisissez une tonalité et une gamme ici."
+
+msgid "Pick a pattern in this list."
+msgstr "Choisissez un pattern dans cette liste."
+
+msgid "Pick the samples tab."
+msgstr "Ouvrez l'onglet des échantillons."
+
+msgid "Place your patterns over eight bars."
+msgstr "Posez vos patterns sur huit mesures."
+
+msgid "Play it and let it loop."
+msgstr "Lancez-le et laissez tourner."
+
+msgid "Play it with the beat."
+msgstr "Écoutez-la avec le beat."
+
+msgid "Playlist and patterns"
+msgstr "Playlist et patterns"
+
+msgid "Press Play and listen."
+msgstr "Lancez la lecture et écoutez."
+
+msgid "Press Space or Play to hear the loop."
+msgstr "Espace ou Lecture pour entendre la boucle."
+
+msgid "Record your voice"
+msgstr "Enregistrer votre voix"
+
+msgid "Replay"
+msgstr "Refaire"
+
+msgid "Resume"
+msgstr "Reprendre"
+
+msgid "Right-click a note to erase it."
+msgstr "Clic droit sur une note pour l'effacer."
+
+msgid "Sampler and loops"
+msgstr "Sampler et boucles"
+
+msgid "Set kick and bass first, then the rest around them."
+msgstr "Réglez d'abord kick et basse, puis le reste autour."
+
+msgid "Short hands-on lessons, in your project. Stop whenever you like."
+msgstr "De courtes leçons pratiques, dans votre projet. Arrêtez quand vous voulez."
+
+msgid "Short hands-on lessons: the basics, then your first tracks"
+msgstr "Courtes leçons pratiques : les bases, puis vos premiers morceaux"
+
+msgid "Skip this step"
+msgstr "Passer cette étape"
+
+msgid "Song mode, then play it from the top."
+msgstr "Mode morceau, puis écoutez depuis le début."
+
+msgid "Steps, rows, your first loop"
+msgstr "Pas, rangées, votre première boucle"
+
+msgid "Stop the lesson"
+msgstr "Arrêter la leçon"
+
+msgid "Stop when you are done: the take lands in the playlist."
+msgstr "Arrêtez quand c'est fini : la prise arrive dans la playlist."
+
+msgid "Switch recording on, then press Play."
+msgstr "Activez l'enregistrement, puis lancez la lecture."
+
+msgid "Switch to song mode to hear the whole song."
+msgstr "Passez en mode morceau pour tout entendre."
+
+msgid "The Channel Rack"
+msgstr "Le Channel Rack"
+
+msgid "The Channel Rack: one row per sound."
+msgstr "Le Channel Rack : une rangée par son."
+
+msgid "The export plays your playlist, start to end."
+msgstr "L'export joue votre playlist du début à la fin."
+
+msgid "The mixer: one strip per track."
+msgstr "Le mixer : une tranche par piste."
+
+msgid "The piano roll: the notes of one channel."
+msgstr "Le piano roll : les notes d'un canal."
+
+msgid "The playlist: your song, from left to right."
+msgstr "La playlist : votre morceau, de gauche à droite."
+
+msgid "These arrows pick the channel you edit."
+msgstr "Ces flèches choisissent le canal à éditer."
+
+msgid "Turn on chord stamping."
+msgstr "Activez la pose d'accords."
+
+msgid "Turn on scale snap: every note fits."
+msgstr "Collez à la gamme : chaque note tombe juste."
+
+msgid "Turn stamping off for single notes."
+msgstr "Coupez la pose d'accords pour des notes seules."
+
+msgid "Use Ponzik"
+msgstr "Utiliser Ponzik"
+
+msgid "Your progress is kept"
+msgstr "Votre progression est gardée"
+
+msgid "{} min"
+msgstr "{} min"
