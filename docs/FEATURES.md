@@ -196,13 +196,13 @@ Proprietary instruments cannot be copied, so Ponzik builds its own equivalents.
 | Dedicated hardware integration (Push, Move / FL Key, FLkey) | FL · AB | ⬜ |
 | Max for Live (device-building environment) | AB | ⬜ |
 | Mobile version and mobile project import (FL Studio Mobile, Ableton Note) | FL · AB | ⬜ |
-| `.als`, `.flp`, DAWproject import | – (planned in Ponzik) | ⬜ |
+| `.als`, `.flp`, DAWproject import | – (planned in Ponzik) | 🟡 `.flp` and `.als` import and export (interchange copies: notes, patterns, clips, mixer levels; devices not converted); no DAWproject |
 
 ## 10. Projects and files
 
 | Feature | Where | Ponzik |
 |---|---|---|
-| Saving and loading projects | FL · AB | ✅ JSON, recent projects |
+| Saving and loading projects | FL · AB | ✅ JSON, recent projects, a file dialog (places, path bar, filter, sorting), save as `.flp` or `.als`, unsaved-changes prompt, reopen the last project or a start screen at launch |
 | Autosave, backups | FL · AB | ✅ autosave every two minutes, crash recovery |
 | Project templates | FL · AB | ✅ built-in templates (Ctrl+N) |
 | "Collect all and save" (copy samples into the project) | FL · AB | ⬜ |

@@ -70,6 +70,30 @@
 - **Import FL Studio projects** (`.flp`, up to FL 25): channels, patterns, playlist,
   audio clips, mixer. Missing samples stay in the project and can be relinked in one
   click; FL's factory samples are replaced by library sounds.
+- **Import Ableton Live sets** (`.als`): MIDI tracks with their arrangement and
+  Session clips, audio clips, tempo, time signature, locators; the device of each
+  track picks the closest Ponzik instrument.
+- **Save a copy for FL Studio or Ableton Live** from the Save dialog (or the main
+  menu). These are interchange copies: the `.ponzik` file stays your project.
+  - `.flp`: tempo, channels (samplers keep their sample, other instruments become
+    a 3x Osc), patterns and notes, playlist clips, mixer names, levels and routing.
+    Ponzik's devices, effects, automation and the Session view are not kept.
+  - `.als`: tempo, one MIDI track per channel with its notes as arrangement clips,
+    markers as locators. Instruments, effects, audio clips, automation and
+    routing are not kept.
+  Both are read back by Ponzik's own importers in the tests; they follow the
+  published reverse-engineered layouts and have not been checked in FL Studio or
+  Live themselves yet.
+
+## Save and open
+
+- One file dialog for saving and opening: places (home, desktop, documents, music,
+  downloads, the Ponzik projects folder, recent folders, drives), a path bar you can
+  click or type into, an icon per file kind, sorting by name, date or size, a
+  filter, a new folder button, and the keyboard throughout (arrows, Enter,
+  Backspace for the parent folder, typing to filter or to name the file).
+- Replacing a file is asked once; quitting, opening or starting another project
+  with unsaved changes asks first.
 - Standard MIDI files in and out; CLAP and VST3 plugins with their own windows and
   saved state.
 
