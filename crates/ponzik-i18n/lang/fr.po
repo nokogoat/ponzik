@@ -9756,9 +9756,6 @@ msgstr "Session Ardour"
 msgid "Articulations, dynamics marks and the layout of the score"
 msgstr "Articulations, nuances écrites et mise en page de la partition"
 
-msgid "Export for REAPER"
-msgstr "Exporter pour REAPER"
-
 msgid "Export for REAPER (.rpp)"
 msgstr "Exporter pour REAPER (.rpp)"
 
