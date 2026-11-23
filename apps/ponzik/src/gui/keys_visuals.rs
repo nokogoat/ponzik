@@ -38,12 +38,13 @@ thread_local! {
     static SPINS: RefCell<HashMap<usize, Spin>> = RefCell::new(HashMap::new());
 }
 
-/// Hammond drawbar colours: brown subharmonics, white octaves, black others.
-fn drawbar_color(i: usize) -> Color {
+/// Drawbar colours in the theme, grouped as on a Hammond: the two
+/// subharmonics, the octaves and fifths of the fundamental, the others.
+fn drawbar_color(t: &super::theme::Theme, i: usize) -> Color {
     match i {
-        0 | 1 => Color::hex(0x8a_5a_3c),
-        2 | 3 | 5 | 8 => Color::hex(0xe8_e4_da),
-        _ => Color::hex(0x2a_2a_2a),
+        0 | 1 => t.accent_deep,
+        2 | 3 | 5 | 8 => t.text2,
+        _ => t.muted,
     }
 }
 
@@ -122,8 +123,8 @@ impl App {
             c.fill_rrect(Rect::new(x - 2.0, bars.y, 4.0, slot_h), 2.0, t.bg_deep);
             let len = 6.0 + value / 8.0 * (slot_h - 6.0);
             let body = Rect::new(x - w * 0.32, bars.y, w * 0.64, len);
-            c.fill_rrect(body, 3.0, drawbar_color(i).alpha(0.9));
-            c.fill_rrect(Rect::new(body.x, body.bottom() - 10.0, body.w, 10.0), 3.0, drawbar_color(i));
+            c.fill_rrect(body, 3.0, drawbar_color(&t, i).alpha(0.9));
+            c.fill_rrect(Rect::new(body.x, body.bottom() - 10.0, body.w, 10.0), 3.0, drawbar_color(&t, i));
             self.text_right(c, self.f.mono, 9.0, x + 3.0, bars.bottom() - 4.0, &format!("{}", value.round() as i32), t.muted);
         }
         if let Some(i) = hovered_bar {
@@ -157,21 +158,16 @@ impl App {
             st.drum = (st.drum + st.drum_speed * dt).fract();
             *st
         });
-        let radius = (r.h * 0.5 - 14.0).min(r.right() - bars.right() - 28.0) * 0.5 + 10.0;
+        let radius = ((r.right() - bars.right() - 14.0) * 0.5 - 10.0).min(r.h * 0.5 - 16.0);
         let (cx, cy) = (bars.right() + 14.0 + (r.right() - bars.right() - 14.0) * 0.5, r.y + r.h * 0.5);
         let dim = 0.35 + 0.65 * mix;
-        c.fill_circle(cx, cy, radius * 1.15, t.bg_deep);
-        c.stroke_circle(cx, cy, radius * 1.15, 1.0, t.hairline.alpha(2.0));
-        // Drum: a rotating baffle.
-        let da = spin.drum * TAU;
-        c.stroke_arc(cx, cy, radius * 0.7, da, da + std::f32::consts::PI, radius * 0.25, t.text2.alpha(0.25 * dim));
-        // Horn: two mouths on one rotor (one is a dummy).
-        let ha = spin.horn * TAU;
-        let (dx, dy) = (ha.cos() * radius, ha.sin() * radius);
-        c.stroke_polyline(&[(cx - dx * 0.8, cy - dy * 0.8), (cx + dx, cy + dy)], 3.0, t.text2.alpha(0.7 * dim));
-        let mouth = Rect::new(cx + dx - 5.0, cy + dy - 5.0, 10.0, 10.0);
-        c.fill_rrect(mouth, 5.0, t.accent.alpha(dim));
-        c.fill_circle(cx, cy, 3.0, t.text);
+        // Seen from above: the horn on the outer ring, the drum on the inner
+        // one, each dot where its rotor points now.
+        let (ha, da) = (spin.horn * TAU, spin.drum * TAU);
+        c.stroke_circle(cx, cy, radius, 1.0, t.hairline.alpha(2.0));
+        c.stroke_circle(cx, cy, radius * 0.55, 1.0, t.hairline.alpha(2.0));
+        c.fill_circle(cx + ha.cos() * radius, cy + ha.sin() * radius, 4.0, t.accent.alpha(dim));
+        c.fill_circle(cx + da.cos() * radius * 0.55, cy + da.sin() * radius * 0.55, 3.5, t.text2.alpha(dim));
         let rpm = spin.horn_speed * 60.0;
         self.text_right(c, self.f.mono, 9.0, r.right() - 6.0, r.bottom() - 8.0, &format!("{rpm:.0} rpm"), t.muted);
         if input.inside && Rect::new(bars.right(), r.y, r.right() - bars.right(), r.h).contains(input.x, input.y) {
