@@ -840,7 +840,7 @@ impl App {
     }
 
     pub(super) fn begin_drag(&mut self, id: u64, input: &Input, v0: f32) {
-        self.drag = Some(Drag { id, y0: input.y, v0, fine: input.mods.shift });
+        self.drag = Some(Drag { id, x0: input.x, y0: input.y, v0, fine: input.mods.shift });
     }
 
     /// Forme du curseur pour cette image (le dernier qui la demande gagne).
@@ -1173,13 +1173,14 @@ impl App {
         let mut changed = None;
         if let Some(d) = self.drag.as_ref().filter(|d| d.id == id) {
             let k = if d.fine { 0.1 } else { 1.0 };
-            changed = Some(d.v0 + (d.y0 - input.y) * per_px * k);
+            // Comme un curseur : vers la droite on monte, vers la gauche on descend.
+            changed = Some(d.v0 + (input.x - d.x0) * per_px * k);
         }
         if hov && input.wheel != 0.0 {
             changed = Some(value + input.wheel * wheel_step * if input.mods.shift { 0.1 } else { 1.0 });
         }
         if hov || self.is_dragging(id) {
-            self.set_cursor(Cursor::ResizeV);
+            self.set_cursor(Cursor::ResizeH);
         }
         let hv = self.hover_anim(id, hov || self.is_dragging(id));
         c.fill_rrect(r, 10.0, t.raised.mix(t.raised_hi, hv));

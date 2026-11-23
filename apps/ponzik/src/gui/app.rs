@@ -472,6 +472,7 @@ pub struct PopupState {
 #[derive(Clone, Copy, Debug)]
 pub struct Drag {
     pub id: u64,
+    pub x0: f32,
     pub y0: f32,
     pub v0: f32,
     pub fine: bool,
@@ -2111,16 +2112,14 @@ impl App {
         if self.icon_button(c, input, wid("tb-sidebar", 0, 0), Rect::new(12.0, cy - 16.0, 32.0, 32.0), Icon::Sidebar, self.sidebar, (tr("Browser"), &k_browser)) {
             self.sidebar = !self.sidebar;
         }
-        // Marque : le nom et sa LED, qui s'allume quand ça joue.
-        let led = self.anim.to(wid("brand-led", 0, 0), self.playing as u8 as f32, T_HEAD);
-        c.fill_circle(58.0, cy, 4.0, t.raised_hi.mix(t.accent, led.max(0.35)));
-        let wordmark = self.text(c, self.f.sans_med, 18.0, 70.0, cy, "Ponzik", t.text);
+        // Pas de logo ni de nom du logiciel : le nom du projet suit le bouton du navigateur.
+        let name_x = 58.0;
 
         // Transport, centré ; l'espace de travail choisit ses éléments.
         let on = |b: Bar| self.bar_shown(b);
         let widths = [(Bar::Mode, 142.0), (Bar::Pattern, 198.0), (Bar::Tap, 50.0), (Bar::Position, 138.0), (Bar::Scale, 134.0), (Bar::Metronome, 40.0), (Bar::Record, 120.0), (Bar::Keyboard, 40.0)];
         let cluster = 46.0 + 54.0 + 120.0 - 4.0 + widths.iter().filter(|(b, _)| on(*b)).map(|(_, w)| w).sum::<f32>();
-        let mut x = ((r.w - cluster) * 0.5).round().max(70.0 + wordmark + 24.0);
+        let mut x = ((r.w - cluster) * 0.5).round().max(name_x + 24.0);
         let start = x;
 
         let play = Rect::new(x, cy - 18.0, 40.0, 36.0);
@@ -2296,8 +2295,7 @@ impl App {
             self.tip_zone(input, gauge.inset(-8.0), &tip, "");
         }
 
-        // Nom du projet entre la marque et le transport.
-        let name_x = 70.0 + wordmark + 20.0;
+        // Nom du projet entre le bouton du navigateur et le transport.
         let room = start - name_x - 20.0;
         if room > 80.0 {
             let name = self.project.name.clone();
