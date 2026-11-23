@@ -67,23 +67,18 @@
 
 ## Work with others' projects
 
-- **Import FL Studio projects** (`.flp`, up to FL 25): channels, patterns, playlist,
-  audio clips, mixer. Missing samples stay in the project and can be relinked in one
-  click; FL's factory samples are replaced by library sounds.
-- **Import Ableton Live sets** (`.als`): MIDI tracks with their arrangement and
-  Session clips, audio clips, tempo, time signature, locators; the device of each
-  track picks the closest Ponzik instrument.
-- **Save a copy for FL Studio or Ableton Live** from the Save dialog (or the main
-  menu). These are interchange copies: the `.ponzik` file stays your project.
-  - `.flp`: tempo, channels (samplers keep their sample, other instruments become
-    a 3x Osc), patterns and notes, playlist clips, mixer names, levels and routing.
-    Ponzik's devices, effects, automation and the Session view are not kept.
-  - `.als`: tempo, one MIDI track per channel with its notes as arrangement clips,
-    markers as locators. Instruments, effects, audio clips, automation and
-    routing are not kept.
-  Both are read back by Ponzik's own importers in the tests; they follow the
-  published reverse-engineered layouts and have not been checked in FL Studio or
-  Live themselves yet.
+- **Open other programs' projects**: FL Studio (`.flp`, up to FL 25), Ableton Live
+  (`.als`), REAPER (`.rpp`), LMMS (`.mmp`, `.mmpz`), Ardour (`.ardour`, 5 to 8) and
+  MusicXML scores (`.musicxml`, `.mxl`): tempo and its changes, time signatures,
+  tracks with their name, colour, volume, pan and mute, MIDI clips as patterns in
+  the playlist, audio clips with their place, start in the file, gain and fades,
+  markers, the loop, simple mixer routing; each track gets the closest Ponzik
+  instrument. A report lists what was kept, approximated, left out and which files
+  are missing; missing files stay in the project and can be relinked in one click.
+- **Save a copy for FL Studio, Ableton Live or REAPER** from the Save dialog (or
+  the main menu). These are interchange copies: the `.ponzik` file stays your project.
+- Format by format, what is kept and what is lost:
+  [Opening and saving other programs' projects](IMPORT_EXPORT.md).
 
 ## Save and open
 

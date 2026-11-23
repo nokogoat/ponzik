@@ -46,7 +46,7 @@ beginners and professionals.
 |---|---|
 | `crates/ponzik-dsp` | Pure DSP blocks, no allocation after construction (filters, delays, FFT, loudness, pitch tracking, stretch, onsets, tempo) |
 | `crates/ponzik-engine` | Real-time engine: `engine.rs` (block processing, commands), `sequence.rs`, `mixer.rs`, `pool.rs` (worker threads), `instruments/`, `effects/`, `note_fx/`, `registry.rs`, `codecs/`, `param.rs` |
-| `crates/ponzik-project` | `Project` model, `io.rs` (JSON files), `render.rs` (offline), `history.rs`, `scale.rs`, `harmony.rs`, `transform.rs`, `generate.rs`, `flp.rs` (FL Studio import), `library.rs` (sound library), `presets.rs`, demos |
+| `crates/ponzik-project` | `Project` model, `io.rs` (JSON files), `render.rs` (offline), `history.rs`, `scale.rs`, `harmony.rs`, `transform.rs`, `generate.rs`, `flp.rs` (FL Studio import), `als.rs`, `rpp.rs`, `lmms.rs`, `ardour.rs`, `musicxml.rs` and `foreign.rs` (other programs' projects, see [docs/IMPORT_EXPORT.md](docs/IMPORT_EXPORT.md)), `library.rs` (sound library), `presets.rs`, demos |
 | `crates/ponzik-audio`, `crates/ponzik-midi`, `crates/ponzik-window` | Platform backends, one file per OS (`alsa.rs`/`wasapi.rs`/`coreaudio.rs`, `x11.rs`/`win32.rs`/`cocoa.rs`…) selected with `#[cfg]` |
 | `crates/ponzik-ui` | Canvas, rasterizer, text, PNG, animations |
 | `crates/ponzik-i18n` | `tr`, `tr_fmt!`, catalogs in `lang/*.po` |
