@@ -143,7 +143,7 @@ const fn note(i: u32, name: &'static str) -> ParamInfo {
     ParamInfo::choice(P_NOTE + i, name, NOTE_STATES, 0).group(G_SCALE)
 }
 
-static PARAMS: [ParamInfo; PARAM_COUNT] = [
+pub static PARAMS: [ParamInfo; PARAM_COUNT] = [
     ParamInfo::new(P_RETUNE, "Retune speed", 0.0, 0.4, 0.02, Unit::Seconds).group(G_CORRECT),
     ParamInfo::new(P_HUMANIZE, "Humanize", 0.0, 1.0, 0.0, Unit::Percent).group(G_CORRECT),
     ParamInfo::new(P_FLEX, "Flex-Tune", 0.0, 1.0, 0.0, Unit::Percent).group(G_CORRECT),
