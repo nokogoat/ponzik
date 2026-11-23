@@ -260,7 +260,7 @@ pub fn presets_of(kind: &str) -> Vec<(String, Vec<(u32, f32)>)> {
                 .filter_map(|(sym, v)| {
                     let port = m.desc.port(sym)?.index;
                     let k = m.param(port)?;
-                    Some((port, m.convs[k].1.to_host(*v, 48_000.0)))
+                    Some((port, m.convs[k].1.to_host(*v)))
                 })
                 .collect();
             (p.name, values)
