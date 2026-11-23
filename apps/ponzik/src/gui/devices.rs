@@ -304,10 +304,16 @@ impl App {
         if self.icon_button(c, input, wid("dev-expand-all", 0, 0), expand_r, Icon::Expand, false, (tr("Expand all the devices"), "")) {
             self.collapse_all(false);
         }
+        // Hide the panel; a tab at the bottom of the screen brings it back.
+        let hide_r = Rect::new(collapse_r.x - 34.0, header.y, 28.0, 28.0);
+        let k_panel = self.key_label(super::keymap::Shortcut::TogglePanel);
+        if self.icon_button(c, input, wid("dev-hide", 0, 0), hide_r, Icon::ChevronDown, false, (tr("Hide the devices"), &k_panel)) {
+            self.panel = false;
+        }
 
         // The switch between the instrument and the track's effects, then the strip.
         let sx_end = self.panel_switch(c, input, hx, header.y + 14.0, &lay);
-        let strip = Rect::new(sx_end + 10.0, header.y, collapse_r.x - 10.0 - sx_end - 10.0, header.h);
+        let strip = Rect::new(sx_end + 10.0, header.y, hide_r.x - 10.0 - sx_end - 10.0, header.h);
         self.device_strip(c, input, strip, &lay, chain.w);
         if devices.len() >= 4 && strip.w > 120.0 {
             self.want_hint(super::hints::Hint::DeviceStrip, strip);

@@ -2233,6 +2233,9 @@ impl App {
 
         let main = Rect::new(sb, TOP_BAR, w - sb, h - TOP_BAR - pn);
         self.main_area(c, under, main);
+        if pn <= 1.0 {
+            self.panel_tab(c, under, main);
+        }
         if pn > 1.0 {
             self.with_area(Area::Devices, |s| s.panel_area(c, under, Rect::new(sb, h - pn, w - sb, pn)));
         }
