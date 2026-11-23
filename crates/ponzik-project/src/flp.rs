@@ -603,6 +603,8 @@ fn read_project(bytes: &[u8]) -> Result<FlProject, String> {
 /// What an import kept, approximated and left out, to show to the user.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ImportReport {
+    /// The program the project comes from; empty for FL Studio.
+    pub source: String,
     pub mapped: Vec<String>,
     pub approximated: Vec<String>,
     /// Files the project keeps but cannot play yet (missing on this computer,
@@ -632,12 +634,18 @@ impl ImportReport {
     /// One line for a toast.
     pub fn summary(&self) -> String {
         tr_fmt!(
-            "FL Studio import: {} mapped, {} approximated, {} offline, {} skipped",
+            "{} import: {} mapped, {} approximated, {} offline, {} skipped",
+            self.source_name(),
             self.mapped.len(),
             self.approximated.len(),
             self.offline.len(),
             self.skipped.len()
         )
+    }
+
+    /// "FL Studio", "Ableton Live"…
+    pub fn source_name(&self) -> &str {
+        if self.source.is_empty() { "FL Studio" } else { &self.source }
     }
 
     fn offline_title(&self) -> String {
@@ -703,7 +711,7 @@ pub fn wrap(line: &str, width: usize) -> Vec<String> {
 
 /// Closest native instrument for an FL Studio generator (internal name, or
 /// plugin name for wrapped VSTs). Settings are never converted.
-fn instrument_for(name: &str) -> &'static str {
+pub(crate) fn instrument_for(name: &str) -> &'static str {
     let n = name.to_lowercase();
     let has = |keys: &[&str]| keys.iter().any(|k| n.contains(k));
     if has(&["boobass", "transistor", "ts404", "303"]) {
@@ -1836,6 +1844,7 @@ mod tests {
     #[test]
     fn report_groups() {
         let report = ImportReport {
+            source: String::new(),
             mapped: vec!["a".into(), "b".into()],
             approximated: Vec::new(),
             offline: vec!["x.wav".into(); 3],
