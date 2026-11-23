@@ -143,6 +143,9 @@ impl App {
         }
         let paint = if self.playlist.paint { tr("Paint brush off") } else { tr("Paint brush: drag along a lane to lay copies of a clip") };
         add(paint.into(), tr("Playlist"), "B".into(), Action::TogglePaint);
+        if let Some(ch) = self.selected_channel().filter(|&c| self.project.channels[c].instrument.kind == "sampler" && self.project.channels[c].instrument.sample.is_some()) {
+            add(tr_fmt!("Fit loop to pattern: {}", self.project.channels[ch].name.as_str()), tr("Pattern"), none(), Action::FitLoop(ch));
+        }
         // Loops of the clip shown in the clip panel (or the selected pattern clip).
         let sel = self.clip_panel_shown().or_else(|| self.playlist.selected.filter(|&i| i < self.project.clips.len()).map(super::clip::ClipSel::Pattern));
         if let Some(sel) = sel {

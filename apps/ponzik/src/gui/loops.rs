@@ -280,8 +280,102 @@ impl App {
                     }
                 }
                 "seen" => self.hint_seen(Hint::DragToRepeat),
+                "fit" => {
+                    if let Some(ch) = self.selected_channel() {
+                        self.fit_loop_to_pattern(ch);
+                    }
+                }
                 _ => {}
             }
         }
+    }
+}
+
+/// A sampler channel's loop: its tempo and length in beats.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ChannelLoop {
+    pub bpm: f32,
+    pub beats: f32,
+    /// Already played once per pattern, in tempo sync.
+    pub fitted: bool,
+}
+
+impl App {
+    /// Loop tempo of a file (`None`: not a loop), detected once.
+    fn file_loop_bpm(&mut self, path: &str) -> Option<f32> {
+        if let Some(v) = self.loop_bpms.get(path) {
+            return *v;
+        }
+        let s = self.samples.get(path)?.clone();
+        let bpm = ponzik_project::warp::detect_tempo(&s).and_then(|h| ponzik_project::warp::loop_bpm(&s, h, self.project.bpm));
+        self.loop_bpms.insert(path.to_string(), bpm);
+        bpm
+    }
+
+    /// The loop a sampler channel plays, if its sample is one (detected the
+    /// first time; `cached_only` never analyses, for menus).
+    pub fn channel_loop(&mut self, ch: usize, cached_only: bool) -> Option<ChannelLoop> {
+        use ponzik_engine::instruments::{SAMPLER_BEATS, SAMPLER_MODE, SAMPLER_SYNC};
+        let def = &self.project.channels.get(ch)?.instrument;
+        if def.kind != "sampler" {
+            return None;
+        }
+        let path = def.sample.clone()?;
+        let duration = self.samples.get(&path)?.duration();
+        let bpm = if cached_only { (*self.loop_bpms.get(&path)?)? } else { self.file_loop_bpm(&path)? };
+        let beats = (duration * bpm / 60.0).round().max(1.0);
+        let def = &self.project.channels[ch].instrument;
+        let synced = def.get(SAMPLER_SYNC).unwrap_or(0.0) > 0.5 && def.get(SAMPLER_BEATS) == Some(beats);
+        let one_shot = def.get(SAMPLER_MODE).unwrap_or(1.0) < 0.5;
+        let pat = &self.project.patterns[self.project.current_pattern];
+        let first = pat.notes.get(ch).and_then(|n| n.first()).is_some_and(|n| n.start == 0);
+        Some(ChannelLoop { bpm, beats, fitted: synced && one_shot && first })
+    }
+
+    /// « Fit loop to pattern »: the sampler plays the whole loop (one-shot)
+    /// from step 1, once per loop length, stretched to the project tempo;
+    /// the pattern grows to hold the loop.
+    pub fn fit_loop_to_pattern(&mut self, ch: usize) {
+        use ponzik_engine::instruments::{SAMPLER_BEATS, SAMPLER_MODE, SAMPLER_SYNC};
+        let Some(lp) = self.channel_loop(ch, false) else {
+            self.toast(tr("This channel plays no loop: drop a loop on it first"));
+            return;
+        };
+        let def = &mut self.project.channels[ch].instrument;
+        def.set(SAMPLER_MODE, 0.0);
+        def.set(SAMPLER_SYNC, 1.0);
+        def.set(SAMPLER_BEATS, lp.beats);
+        let pat = self.project.current_pattern;
+        let loop_ticks = (lp.beats as u32 * ponzik_engine::PPQ).max(ponzik_engine::TICKS_PER_STEP);
+        let p = &mut self.project.patterns[pat];
+        if p.len < loop_ticks {
+            // The pattern grows to hold the loop; the other channels repeat
+            // what they played, so the beat goes on over the new bars.
+            let old = p.len.max(1);
+            p.len = loop_ticks.div_ceil(TICKS_PER_BAR) * TICKS_PER_BAR;
+            for notes in p.notes.iter_mut().enumerate().filter(|(c, _)| *c != ch).map(|(_, n)| n) {
+                let first: Vec<_> = notes.iter().filter(|n| n.start < old).copied().collect();
+                let mut k = 1;
+                while k * old < p.len {
+                    notes.extend(first.iter().map(|n| ponzik_engine::Note { start: n.start + k * old, ..*n }).filter(|n| n.start < p.len));
+                    k += 1;
+                }
+                notes.sort_by_key(|n| n.start);
+            }
+        }
+        let len = p.len;
+        if let Some(notes) = p.notes.get_mut(ch) {
+            notes.clear();
+        }
+        let steps = loop_ticks / ponzik_engine::TICKS_PER_STEP;
+        let mut at = 0;
+        while at * ponzik_engine::TICKS_PER_STEP < len {
+            self.project.set_step(pat, ch, at, true);
+            at += steps;
+        }
+        self.hint_seen(Hint::FitLoop);
+        self.commit(tr("Fit loop to pattern"));
+        let bpm = ponzik_i18n::num(self.project.bpm as f64, 1);
+        self.toast(&tr_fmt!("Loop fitted: {} beats from step 1, in time at {} BPM", lp.beats, bpm));
     }
 }

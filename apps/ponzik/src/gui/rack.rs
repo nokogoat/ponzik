@@ -257,7 +257,8 @@ impl App {
         let name_col = if muted { t.text2 } else { t.text.mix(WHITE, nh * 0.3) };
         let lock = self.channel_lock(ch);
         let missing = self.channel_missing_sample(ch);
-        let badge_w = lock.map_or(0.0, |_| 24.0) + missing.as_ref().map_or(0.0, |_| 24.0);
+        let looped = if missing.is_none() { self.channel_loop(ch, false) } else { None };
+        let badge_w = lock.map_or(0.0, |_| 24.0) + missing.as_ref().map_or(0.0, |_| 24.0) + looped.map_or(0.0, |_| 24.0);
         self.text_fit(c, self.f.sans_med, 15.0, name_r.x, cy, &name, name_r.w - badge_w, name_col);
         let mut badge_x = name_r.x + self.fonts.measure(self.f.sans_med, 15.0, &name).min(name_r.w - badge_w) + 14.0;
         if let Some(path) = missing {
@@ -278,6 +279,37 @@ impl App {
                 }
             }
             badge_x += 24.0;
+        }
+        if let Some(lp) = looped {
+            // A loop: a badge that fits it to the pattern in one click.
+            let r = Rect::new(badge_x - 12.0, cy - 12.0, 24.0, 24.0);
+            let id = wid("ch-loop", ch, 0);
+            let hov = self.hovered(input, id, r);
+            let hv = self.hover_anim(id, hov);
+            let col = if lp.fitted { t.text2 } else { t.accent };
+            c.fill_rrect(r, 6.0, col.alpha(0.12 + 0.2 * hv));
+            if !lp.fitted {
+                c.stroke_rrect(r, 6.0, 1.0, col.alpha(0.5));
+            }
+            draw_icon(c, Icon::Loop, badge_x, cy, 14.0, col);
+            let bpm = ponzik_i18n::num(lp.bpm as f64, 1);
+            if hov {
+                let tip = if lp.fitted {
+                    tr_fmt!("Loop · {} beats at {} BPM\nFitted: once per pattern, in time with the project\nClick: fit it again", lp.beats, bpm)
+                } else {
+                    let steps = (lp.beats * 4.0) as u32;
+                    tr_fmt!("Loop · {} beats at {} BPM: longer than its step, it plays on over {} steps\nClick: fit it to the pattern (once per pattern, in time)", lp.beats, bpm, steps)
+                };
+                self.set_tip(&tip, "");
+                self.set_cursor(Cursor::Hand);
+                if input.pressed {
+                    self.fit_loop_to_pattern(ch);
+                }
+            }
+            if !lp.fitted {
+                self.want_hint(super::hints::Hint::FitLoop, r);
+            }
+            badge_x += 26.0;
         }
         if let Some(target) = lock {
             // Frozen (by itself or with its track): a frost badge right after the name.

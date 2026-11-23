@@ -416,6 +416,8 @@ pub enum Action {
     Loop(super::clip::ClipSel, super::loops::LoopOp),
     /// Paint brush of the playlist on or off.
     TogglePaint,
+    /// The channel's loop plays once per pattern, in time.
+    FitLoop(usize),
 }
 
 /// Ligne de menu : une icône (ou la couleur d'un pattern), un nom court, une
@@ -633,6 +635,8 @@ pub struct App {
     pub samples: HashMap<String, Arc<Sample>>,
     /// Background renders of the warped audio clips.
     pub warping: super::warping::Warping,
+    /// Loop tempo of the files played by samplers (`None`: not a loop).
+    pub loop_bpms: HashMap<String, Option<f32>>,
     /// Transients of the files (seconds), for the warp markers.
     pub onsets: HashMap<String, Arc<Vec<f64>>>,
     /// Clip shown in the clip panel, and the focus it was chosen with (the
@@ -918,6 +922,7 @@ impl App {
             recovery: None,
             tour: Default::default(),
             hints: Default::default(),
+            loop_bpms: HashMap::new(),
             scale_anchor: Rect::new(0.0, 0.0, 0.0, 0.0),
             layout: Default::default(),
             cursor: Default::default(),
@@ -3324,6 +3329,12 @@ impl App {
                     MenuItem::new(Icon::Swap, tr("Replace"), Action::Popup(Popup::AddInstrument { replace: Some(ch) })),
                     MenuItem::new(Icon::Duplicate, tr("Duplicate"), Action::DuplicateChannel(ch)).tip(tr("Same settings, without the notes")),
                 ];
+                if c.instrument.kind == "sampler" && c.instrument.sample.is_some() {
+                    v.push(
+                        MenuItem::new(Icon::Loop, tr("Fit loop to pattern"), Action::FitLoop(ch))
+                            .tip(tr("Plays the whole loop once per pattern from step 1, stretched to the project tempo")),
+                    );
+                }
                 v.extend(self.channel_freeze_items(ch));
                 v.push(
                     MenuItem::new(Icon::Route, tr("Route to new track"), Action::RouteToNewTrack(ch))
@@ -3781,6 +3792,7 @@ impl App {
             Action::MakeUnique(clip) => self.make_unique(clip),
             Action::Loop(sel, op) => self.loop_clip(sel, op),
             Action::TogglePaint => self.toggle_paint(),
+            Action::FitLoop(ch) => self.fit_loop_to_pattern(ch),
             Action::SetPatternColor(pat, color) => {
                 if let Some(p) = self.project.patterns.get_mut(pat) {
                     p.color = color;
