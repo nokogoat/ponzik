@@ -1,0 +1,59 @@
+/* Unable Live: flat greys, square corners, a single orange for what matters.
+   For everyone coming from a certain Berlin DAW. The Suite features are already
+   unlocked, there is no Lite edition, and nobody will ask you to upgrade. */
+:root {
+  --name: "Unable Live";
+  --base: ponzik;
+  --author: "Ponzik";
+  --description: "Session view vibes, no Intro, no Standard, no Suite. Just everything, for free.";
+
+  /* Neutral greys */
+  --bg-deep: #121212;
+  --bg: #1a1a1a;
+  --panel: #232323;
+  --strip: #282828;
+  --raised: #2e2e2e;
+  --raised-hi: #393939;
+  --well: #141414;
+
+  /* Text */
+  --text: #e8e8e8;
+  --text-2: #b4b4b4;
+  --muted: #a0a0a0;
+
+  /* One orange, one blue */
+  --live-orange: #ffa31a;
+  --accent: var(--live-orange);
+  --accent-deep: #e08a00;
+  --accent-hot: #ffd699;
+  --on-accent: #241400;
+  --select: #7fc4ff;
+  --meter: #d6d6d6;
+
+  /* Step sequencer pads */
+  --pad-a: #2a2a2a;
+  --pad-b: #323232;
+  --pad-head: #444444;
+
+  --knob-cap-hover: #444444;
+  --button-hover: #474747;
+
+  /* Clip colors: the pastel box of crayons */
+  --pattern-1: #ff9f6b;
+  --pattern-2: #ffd36b;
+  --pattern-3: #b6e36b;
+  --pattern-4: #6be3c4;
+  --pattern-5: #6bc4ff;
+  --pattern-6: #a98bff;
+  --pattern-7: #ff8bd0;
+  --pattern-8: #d0d0d0;
+
+  /* Square, flat, no nonsense */
+  --radius-sm: 1px;
+  --radius-md: 2px;
+  --radius-lg: 4px;
+}
+
+.mixer {
+  --meter-hot: #ffa31a;
+}

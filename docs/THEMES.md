@@ -20,7 +20,8 @@ You can change a theme in two ways:
   file from applying.
 
 Built-in themes (Ponzik, Ice, Amber) and the examples (Midnight, Paper Light,
-Synthwave, High Contrast) are read-only: changing one of their colors makes an
+Synthwave, High Contrast, and Carrot Studio and Unable Live for those who
+come from elsewhere) are read-only: changing one of their colors makes an
 editable copy in your themes folder. The chosen theme is saved in the settings.
 
 ## Where theme files live

@@ -1,0 +1,58 @@
+/* Carrot Studio: slate grey panels, orange everywhere, step buttons that glow.
+   For everyone coming from a certain fruity DAW. Lifetime free updates included,
+   and this time the software is free too. No carrots were harmed. */
+:root {
+  --name: "Carrot Studio";
+  --base: ponzik;
+  --author: "Ponzik";
+  --description: "Feels like home if your old DAW had a fruit in its logo. Lifetime free updates, and the price is free too.";
+
+  /* Slate surfaces */
+  --bg-deep: #1b2125;
+  --bg: #222a2f;
+  --panel: #2a3338;
+  --strip: #2f393f;
+  --raised: #364248;
+  --raised-hi: #415058;
+  --well: #161b1e;
+
+  /* Text */
+  --text: #e3e9ec;
+  --text-2: #b0bcc2;
+  --muted: #9aa8af;
+
+  /* The orange, and the lime of the step LEDs */
+  --carrot: #ff9a1f;
+  --accent: var(--carrot);
+  --accent-deep: #e07c0a;
+  --accent-hot: #ffd49a;
+  --on-accent: #2a1600;
+  --select: #a8e05f;
+  --meter: #d7e0e4;
+
+  /* Step sequencer pads: the grey and red-ish beat groups */
+  --pad-a: #3a454c;
+  --pad-b: #4a3c3a;
+  --pad-head: #56646c;
+
+  --knob-cap-hover: #4b5961;
+  --button-hover: #4f5e66;
+
+  /* Pattern colors */
+  --pattern-1: #6f8faf;
+  --pattern-2: var(--carrot);
+  --pattern-3: #a8e05f;
+  --pattern-4: #d8608c;
+  --pattern-5: #e8c547;
+  --pattern-6: #5fc7c0;
+  --pattern-7: #9b7fd8;
+  --pattern-8: #e3795b;
+
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+}
+
+.mixer {
+  --meter-hot: #ffd43b;
+}

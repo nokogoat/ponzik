@@ -14,11 +14,13 @@ use super::theme::{BUILTINS, TOKENS, Theme, Val, set_pattern_palette};
 use super::themecss::{self, Area, Base, CssError};
 
 /// Example themes shipped with Ponzik, read-only like the built-ins.
-const EXAMPLES: [(&str, &str); 4] = [
+const EXAMPLES: [(&str, &str); 6] = [
     ("midnight", include_str!("../../../../assets/themes/midnight.ponzik-theme")),
     ("paper-light", include_str!("../../../../assets/themes/paper-light.ponzik-theme")),
     ("synthwave", include_str!("../../../../assets/themes/synthwave.ponzik-theme")),
     ("high-contrast", include_str!("../../../../assets/themes/high-contrast.ponzik-theme")),
+    ("carrot-studio", include_str!("../../../../assets/themes/carrot-studio.ponzik-theme")),
+    ("unable-live", include_str!("../../../../assets/themes/unable-live.ponzik-theme")),
 ];
 
 pub const EXTENSIONS: [&str; 2] = ["ponzik-theme", "css"];
