@@ -177,6 +177,8 @@ pub(super) fn card_width(kind: &str, params: &'static [ParamInfo]) -> f32 {
         RESPONSE_W + GROUP_GAP
     } else if super::acoustic::acoustic_kind(kind) {
         super::acoustic::ACOUSTIC_W + GROUP_GAP
+    } else if kind == "wavetable" {
+        super::wavetable::WAVE_W + GROUP_GAP
     } else {
         0.0
     };
@@ -653,6 +655,10 @@ impl App {
         } else if super::acoustic::acoustic_kind(&kind) {
             let w = super::acoustic::ACOUSTIC_W;
             self.acoustic_visual(c, input, Rect::new(x, body.y + 4.0, w, body.h - 10.0), device, &kind, params);
+            x += w + GROUP_GAP;
+        } else if kind == "wavetable" {
+            let w = super::wavetable::WAVE_W;
+            self.wavetable_visual(c, input, Rect::new(x, body.y + 4.0, w, body.h - 10.0), device, params);
             x += w + GROUP_GAP;
         }
         let key = device_key(device);

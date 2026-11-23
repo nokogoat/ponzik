@@ -7728,6 +7728,9 @@ msgstr "Harmoniques que laisse sonner le point d'attaque\nGlisser de côté : po
 msgid "Harmonics the bow point lets ring\nDrag sideways: bow position, brighter near the bridge"
 msgstr "Harmoniques que laisse sonner le point d'archet\nGlisser de côté : position de l'archet, plus brillant près du chevalet"
 
+msgid "The table's frames, front to back, and in front the wave played\nDrag sideways: position"
+msgstr "Les images de la table, de l'avant vers l'arrière, et devant, l'onde jouée\nGlisser de côté : position"
+
 msgid "Articulation"
 msgstr "Articulation"
 
