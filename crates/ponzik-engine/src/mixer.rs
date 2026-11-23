@@ -24,7 +24,7 @@ use ponzik_dsp::util::balance_gains;
 
 use std::time::Instant;
 
-use crate::effect::Effect;
+use crate::effect::{ChannelNotes, Effect};
 use crate::freeze::{FreezeClock, Frozen};
 use crate::input::InputSource;
 use crate::meter::{PeakMeter, peak};
@@ -299,6 +299,7 @@ struct Ctx<'a> {
     meters: &'a [PeakMeter],
     clock: ModClock,
     sleep: Sleep,
+    notes: &'a [ChannelNotes],
 }
 
 /// Pistes partagées entre les threads du bloc : chaque tâche n'emprunte en
@@ -374,6 +375,9 @@ pub struct Mixer {
     /// Transport of the block, for the frozen tracks.
     pub(crate) freeze_clock: FreezeClock,
     sleep: Sleep,
+    /// Notes held on each channel of the rack this block, for the inserts
+    /// that follow a channel ([`Effect::channel_notes`]).
+    pub(crate) notes: Vec<ChannelNotes>,
 }
 
 /// Ordre par défaut de `count` pistes : toutes vont directement au master.
@@ -530,6 +534,7 @@ unsafe fn run_insert_range(tracks: Tracks, idx: usize, cx: &Ctx, ready: &impl Fn
             };
             fx.sidechain(kl, kr);
         }
+        fx.channel_notes(cx.notes);
         fx.process(&mut l[a..b], &mut r[a..b]);
         insert_ns[slot] += started.elapsed().as_nanos() as u64;
         if sleepy {
@@ -695,6 +700,7 @@ impl Mixer {
             clock: ModClock::default(),
             freeze_clock: FreezeClock::default(),
             sleep: Sleep::default(),
+            notes: vec![ChannelNotes::EMPTY; crate::engine::MAX_CHANNELS],
         }
     }
 
@@ -887,10 +893,10 @@ impl Mixer {
         self.plan_latency();
         self.delay_inputs(n);
         self.plan_vca();
-        let Self { tracks, order, silence, lat, reduced, clock, vca, ready, sleep, .. } = self;
+        let Self { tracks, order, silence, lat, reduced, clock, vca, ready, sleep, notes, .. } = self;
         let count = tracks.len();
         let tracks = Tracks(tracks.as_mut_ptr());
-        let cx = Ctx { n, count, lat, reduced, silence, meters, clock: *clock, sleep: *sleep };
+        let cx = Ctx { n, count, lat, reduced, silence, meters, clock: *clock, sleep: *sleep, notes };
         ready.fill(false);
         for &idx in order.iter() {
             if idx == MASTER || idx >= count || ready[idx] {
@@ -996,10 +1002,10 @@ impl Mixer {
         self.sync_frozen();
         self.plan_latency();
         self.delay_inputs(n);
-        let Self { tracks, silence, lat, reduced, plan, clock, vca, sleep, .. } = self;
+        let Self { tracks, silence, lat, reduced, plan, clock, vca, sleep, notes, .. } = self;
         let count = tracks.len();
         let tracks = Tracks(tracks.as_mut_ptr());
-        let cx = Ctx { n, count, lat, reduced, silence, meters, clock: *clock, sleep: *sleep };
+        let cx = Ctx { n, count, lat, reduced, silence, meters, clock: *clock, sleep: *sleep, notes };
         let plan = &**plan;
         let vca = &**vca;
         let gather = |dst: usize| {

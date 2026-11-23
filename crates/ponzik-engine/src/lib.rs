@@ -37,7 +37,7 @@ pub mod wav;
 
 pub use editor::{Editor, EditorEvent, EditorSize, ParentWindow, PluginEditor, RunLoop, StateContext};
 pub use denormal::FlushDenormals;
-pub use effect::Effect;
+pub use effect::{ChannelNotes, Effect};
 pub use freeze::{FreezeClock, Frozen, Tap};
 pub use effects::fx_rack::{MacroMap, RackLayout};
 pub use modulation::{ModClock, ModKind, ModLink, ModMeters, ModParam, ModSet, Modulator};
