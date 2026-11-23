@@ -61,15 +61,24 @@ impl App {
         // En-tête : longueur du pattern et swing.
         let pat = self.project.current_pattern;
         let bars = (self.project.patterns[pat].len / TICKS_PER_BAR).clamp(1, 4) as usize;
-        let len_box = Rect::new(header.right() - 150.0, header.y, 150.0, header.h);
-        let sel = match bars {
-            1 => 0,
-            2 => 1,
-            _ => 2,
+        let len_box = Rect::new(header.right() - 200.0, header.y, 200.0, header.h);
+        let sel = match (self.prefs.fixed_pattern_len, bars) {
+            (false, _) => 0,
+            (true, 1) => 1,
+            (true, 2) => 2,
+            _ => 3,
         };
-        let tips = [(tr("1 bar"), ""), (tr("2 bars"), ""), (tr("4 bars"), "")];
-        if let Some(i) = self.segmented_tips(c, input, wid("rack-len", 0, 0), len_box, &["1", "2", "4"], &tips, sel) {
-            self.project.patterns[pat].len = [1, 2, 4][i] * TICKS_PER_BAR;
+        let tips = [
+            (tr("Auto length\nThe pattern grows to its last note: you hear what you see"), ""),
+            (tr("1 bar"), ""),
+            (tr("2 bars"), ""),
+            (tr("4 bars"), ""),
+        ];
+        if let Some(i) = self.segmented_tips(c, input, wid("rack-len", 0, 0), len_box, &[tr("Auto"), "1", "2", "4"], &tips, sel) {
+            self.prefs.fixed_pattern_len = i > 0;
+            let p = &mut self.project.patterns[pat];
+            p.len = if i == 0 { p.len.max(super::app::fitted_len(p)) } else { [1, 2, 4][i - 1] * TICKS_PER_BAR };
+            self.save_settings();
             self.commit(tr("Pattern length"));
         }
         let swing_box = Rect::new(len_box.x - 12.0 - 132.0, header.y, 132.0, header.h);
