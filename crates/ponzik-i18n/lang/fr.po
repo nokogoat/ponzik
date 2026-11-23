@@ -10090,3 +10090,87 @@ msgstr "Montée du vibrato"
 
 msgid "Vibrato rate"
 msgstr "Vitesse du vibrato"
+
+msgid "Channel whose notes are the target (MIDI target: Notes or Melody)\nClick: next channel · right-click: none · wheel"
+msgstr "Canal dont les notes sont la cible (cible MIDI : Notes ou Mélodie)\nClic : canal suivant · clic droit : aucun · molette"
+
+msgid "Choir / Wide\nSoft retune, created vibrato, a wide stereo voice"
+msgstr "Chœur / Large\nCorrection douce, vibrato créé, une voix large en stéréo"
+
+msgid "Correction\nHow hard and how fast the voice is tuned, to which notes"
+msgstr "Correction\nÀ quel point et à quelle vitesse la voix est corrigée, vers quelles notes"
+
+msgid "Default\nA quick, clean correction"
+msgstr "Par défaut\nUne correction rapide et propre"
+
+msgid "Hard Tune\nInstant retune: the robotic effect"
+msgstr "Hard Tune\nCorrection instantanée : l'effet robotique"
+
+msgid "Input\nLatency, tracking, A4 reference and MIDI target notes"
+msgstr "Entrée\nLatence, suivi, La 4 de référence et notes cibles MIDI"
+
+msgid "Natural\nSlow, humanized retune that keeps the expression"
+msgstr "Naturel\nCorrection lente et humanisée qui garde l'expression"
+
+msgid "Note sung and its offset in cents\nBar: the voice · dot: the corrected pitch"
+msgstr "Note chantée et son écart en cents\nBarre : la voix · point : la hauteur corrigée"
+
+msgid "Pitch correction mode"
+msgstr "Mode de correction de hauteur"
+
+msgid "Pitch of the last five seconds\nGray: the voice · green: the corrected pitch · bands: the notes of the scale"
+msgstr "Hauteur des cinq dernières secondes\nGris : la voix · vert : la hauteur corrigée · bandes : les notes de la gamme"
+
+msgid "Pop\nTight but smooth, for polished leads"
+msgstr "Pop\nSerrée mais douce, pour des voix lead léchées"
+
+msgid "Rap / Trap\nClassic mode hard tune with quick note jumps"
+msgstr "Rap / Trap\nHard tune en mode classique, sauts de notes rapides"
+
+msgid "Retune speed\n0 ms: instant, robotic hard tune · higher: slower and more natural\nDrag or wheel · double-click: default"
+msgstr "Vitesse de correction\n0 ms : hard tune instantané, robotique · plus haut : plus lent et plus naturel\nGlisser ou molette · double-clic : défaut"
+
+msgid "Sing or play: the pitch shows here"
+msgstr "Chantez ou jouez : la hauteur s'affiche ici"
+
+msgid "Vocals"
+msgstr "Voix"
+
+msgid "Voice\nFormants, throat, created vibrato, width and mix"
+msgstr "Voix\nFormants, gorge, vibrato créé, largeur et mélange"
+
+msgid "added to the scale"
+msgstr "ajoutée à la gamme"
+
+msgid "bypassed: sung freely"
+msgstr "contournée : chantée librement"
+
+msgid "in the scale"
+msgstr "dans la gamme"
+
+msgid "not in the scale"
+msgstr "hors de la gamme"
+
+msgid "removed: never a target"
+msgstr "retirée : jamais une cible"
+
+msgid "{}: {}\nClick: next state (on, off, bypass) · right-click: back to the scale"
+msgstr "{} : {}\nClic : état suivant (active, retirée, contournée) · clic droit : retour à la gamme"
+
+msgid "Default"
+msgstr "Par défaut"
+
+msgid "Hard Tune"
+msgstr "Hard Tune"
+
+msgid "Natural"
+msgstr "Naturel"
+
+msgid "Pop"
+msgstr "Pop"
+
+msgid "Rap / Trap"
+msgstr "Rap / Trap"
+
+msgid "Choir / Wide"
+msgstr "Chœur large"

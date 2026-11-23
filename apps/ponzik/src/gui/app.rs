@@ -1454,6 +1454,7 @@ impl App {
         };
         for cmd in cmds {
             super::assistant::capture(&cmd);
+            super::autotune::capture(&cmd);
             self.editors.capture(&cmd);
             self.send(cmd);
         }

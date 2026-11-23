@@ -9,6 +9,7 @@ mod app;
 mod appearance;
 mod arrange;
 mod assistant;
+mod autotune;
 mod automation;
 mod capture;
 mod autorec;
@@ -803,6 +804,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
         if let Ok(secs) = secs.trim().parse::<f32>() {
             app.screenshot_listen(&mut engine, secs, apply);
         }
+    }
+    // PONZIK_AUTOTUNE=hard|natural|pop|classic|choir[,float][,tab:n]: a pitch
+    // corrector on track 1, fed a synthetic singer.
+    if let Ok(spec) = std::env::var("PONZIK_AUTOTUNE") {
+        app.screenshot_autotune(&spec);
     }
     // PONZIK_MIXER=bus:1,2,3,4;fold;vca:2,5;sel:4,5;return:delay@3 : bus, repli du
     // dernier bus, VCA, sélection et retours d'effet créés pour la capture.
