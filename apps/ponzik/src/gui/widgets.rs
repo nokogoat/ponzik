@@ -771,13 +771,21 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
             c.stroke_polyline(&[p(-4.0, -3.0), p(0.0, -7.0), p(4.0, -3.0)], stroke, col);
             c.stroke_polyline(&[p(-6.0, 1.0), p(-6.0, 6.5), p(6.0, 6.5), p(6.0, 1.0)], stroke, col);
         }
-        Icon::Sidebar | Icon::Panel => {
-            c.stroke_rrect(Rect::new(cx - 7.0 * s, cy - 6.0 * s, 14.0 * s, 12.0 * s), 2.0 * s, stroke, col);
-            if icon == Icon::Sidebar {
-                c.fill_rect(Rect::new(cx - 2.5 * s, cy - 6.0 * s, stroke, 12.0 * s), col);
-            } else {
-                c.fill_rect(Rect::new(cx - 7.0 * s, cy + 1.5 * s, 14.0 * s, stroke), col);
+        // The browser: an open folder of sounds, a waveform peeking out.
+        Icon::Sidebar => {
+            c.stroke_polyline(
+                &[p(-7.5, -1.0), p(-7.5, -6.0), p(-2.5, -6.0), p(-0.5, -4.0), p(7.5, -4.0), p(7.5, 6.5), p(-7.5, 6.5), p(-7.5, -1.0)],
+                stroke,
+                col,
+            );
+            for (i, h) in [1.2f32, 2.8, 1.8, 3.2, 1.4].into_iter().enumerate() {
+                let x = -4.0 + i as f32 * 2.0;
+                c.stroke_polyline(&[p(x, 1.5 - h), p(x, 1.5 + h)], stroke * 0.85, col);
             }
+        }
+        Icon::Panel => {
+            c.stroke_rrect(Rect::new(cx - 7.0 * s, cy - 6.0 * s, 14.0 * s, 12.0 * s), 2.0 * s, stroke, col);
+            c.fill_rect(Rect::new(cx - 7.0 * s, cy + 1.5 * s, 14.0 * s, stroke), col);
         }
         Icon::Layout => {
             c.stroke_rrect(rr(-7.5, -6.5, 15.0, 13.0), 2.0 * s, stroke, col);
