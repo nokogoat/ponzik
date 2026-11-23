@@ -90,6 +90,10 @@ impl App {
         add(tr("Computer typing keyboard").into(), tr("Transport"), k(S::TypingKeyboard), Action::ToggleTyping);
         add(tr("Capture MIDI: the last phrase played becomes a pattern").into(), tr("Transport"), k(S::Capture), Action::CaptureMidi);
         add(tr("Record automation: Touch, Latch, Write").into(), tr("Transport"), none(), Action::Popup(Popup::AutoMode));
+        // What the calm top bar keeps in the record menu, reachable by name too.
+        add(tr("Recording panel: input, level, monitoring, latency").into(), tr("Transport"), none(), Action::ToggleRecordPanel);
+        add(tr("Voice to notes: sing or hum to play an instrument").into(), tr("Transport"), none(), Action::ToggleVoice);
+        add(tr("Project scale").into(), tr("Pattern"), none(), Action::Popup(Popup::Scale));
         for (title, port) in self.midi_out_palette() {
             add(title, "MIDI", none(), Action::ToggleMidiClock(port));
         }

@@ -83,7 +83,7 @@ struct TrailPoint {
 pub struct VoiceState {
     pub enabled: bool,
     pub panel: bool,
-    panel_anchor: (f32, f32),
+    pub panel_anchor: (f32, f32),
     panel_rect: Option<Rect>,
     pub prefs: VoicePrefs,
     /// Last settings sent to the engine.

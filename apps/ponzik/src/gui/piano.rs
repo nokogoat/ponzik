@@ -340,7 +340,11 @@ impl App {
         let pat = self.project.current_pattern;
 
         // En-tête : canal édité et grille.
-        let chan_box = Rect::new(header.x, header.y, if header.w < 1_200.0 { 180.0 } else { 220.0 }, header.h);
+        // Le pattern édité devant le canal, quand la barre du haut ne l'affiche pas.
+        let tag_w = self.piano_pattern_tag(c, input, header);
+        let chan_x = if tag_w > 0.0 { header.x + tag_w + 6.0 } else { header.x };
+        let chan_w = if header.w < 1_200.0 { if tag_w > 0.0 { 156.0 } else { 180.0 } } else { 220.0 };
+        let chan_box = Rect::new(chan_x, header.y, chan_w, header.h);
         c.fill_rrect(chan_box, 10.0, t.raised);
         c.stroke_rrect(chan_box, 10.0, 1.0, t.hairline);
         let n = self.project.channels.len();
@@ -366,14 +370,9 @@ impl App {
         }
 
         // Gamme et accords : coller à la gamme, tampon d'accord et son type.
-        let scaled = self.project.scale != ScaleKind::Chromatic;
+        // Sans la gamme dans la barre du haut, son nom suit le bouton.
         let mut hx = chan_box.right() + 12.0;
-        let tip = if scaled { (tr("Snap to scale"), "") } else { (tr("Snap to scale\nPick a scale first, at the top"), "") };
-        self.spot(Spot::PianoSnap, Rect::new(hx, header.y, 36.0, header.h));
-        if self.icon_button(c, input, wid("pr-scale", 0, 0), Rect::new(hx, header.y, 36.0, header.h), Icon::Scale, self.piano.scale_snap, tip) {
-            self.piano.scale_snap = !self.piano.scale_snap;
-        }
-        hx += 40.0;
+        hx += self.piano_scale_button(c, input, Rect::new(hx, header.y, 0.0, header.h)) + 4.0;
         let stamp = self.piano.chord_stamp;
         self.spot(Spot::PianoChord, Rect::new(hx, header.y, 36.0, header.h));
         if self.icon_button(c, input, wid("pr-chord", 0, 0), Rect::new(hx, header.y, 36.0, header.h), Icon::Chord, stamp, (tr("Stamp chords\nOne click: a whole chord"), "")) {
@@ -425,7 +424,8 @@ impl App {
         }
         self.piano_expression_header(c, input, ch, Rect::new(tools.right() + 10.0, header.y, 0.0, header.h));
 
-        let snap_box = Rect::new(header.right() - 236.0, header.y, 236.0, header.h);
+        let snap_w = if header.w < 1_100.0 { 196.0 } else { 236.0 };
+        let snap_box = Rect::new(header.right() - snap_w, header.y, snap_w, header.h);
         let snap_sel = SNAPS.iter().position(|&s| s == self.piano.snap).unwrap_or(2);
         let tips = [(tr("Snap to 1/4"), ""), (tr("Snap to 1/8"), ""), (tr("Snap to 1/16"), ""), (tr("Snap to 1/32"), "")];
         if let Some(i) = self.segmented_tips(c, input, wid("pr-snap", 0, 0), snap_box, &["1/4", "1/8", "1/16", "1/32"], &tips, snap_sel) {

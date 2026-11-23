@@ -89,6 +89,8 @@ impl Spot {
     pub fn view(self) -> Option<View> {
         match self {
             Spot::RackSteps | Spot::RackSwing => Some(View::Rack),
+            // In the piano roll's toolbar (and the Channel Rack's), or the top bar if kept there.
+            Spot::Scale => Some(View::Piano),
             Spot::PianoChannel | Spot::PianoGrid | Spot::PianoSnap | Spot::PianoChord => Some(View::Piano),
             Spot::PlaylistPatterns | Spot::PlaylistGrid | Spot::Arrange => Some(View::Playlist),
             Spot::MixerStrip | Spot::MixerInserts | Spot::MixerArm | Spot::MasterStrip | Spot::MasterInserts => {
@@ -297,7 +299,7 @@ pub const LESSONS: &[Lesson] = &[
         minutes: 3,
         focus: &[],
         steps: &[
-            step(Spot::Mic, tr_noop("Open the recording panel: input and level."), Goal::RecordPanel),
+            step(Spot::Mic, tr_noop("Open the recording options, then the recording panel."), Goal::RecordPanel),
             step(Spot::MixerArm, tr_noop("Arm a track with its record dot."), Goal::Armed),
             step(Spot::Record, tr_noop("Switch recording on, then press Play."), Goal::Recording),
             step(Spot::Play, tr_noop("Stop when you are done: the take lands in the playlist."), Goal::Take),

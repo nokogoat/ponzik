@@ -182,6 +182,12 @@ pub enum Popup {
     History,
     /// Menu principal : fichier, export, démos, thème.
     MainMenu,
+    /// Under the record button: count-in, metronome, input, voice, automation.
+    RecordMenu,
+    /// Under the project name: rename, save, open, export.
+    ProjectMenu,
+    /// Right-click on the mode pill: pattern, song, session.
+    ModeMenu,
     /// Choix du thème.
     Themes,
     /// Clic droit sur un clip de pattern de la playlist.
@@ -311,6 +317,13 @@ pub enum Action {
     /// Un appui de tap tempo.
     TapTempo,
     ToggleTyping,
+    /// The recording panel: input, level, monitoring.
+    ToggleRecordPanel,
+    /// Voice to notes.
+    ToggleVoice,
+    /// Arms automation recording (or back to read).
+    ToggleAutoArm,
+    SetPlayMode(PlayMode),
     SetView(View),
     ToggleSidebar,
     TogglePanel,
@@ -752,7 +765,7 @@ pub struct App {
     /// Pré-compte restant, en ticks, lu dans le moteur (0 hors pré-compte).
     pub counting: f64,
     /// Instants (s) des derniers appuis de tap tempo.
-    taps: Vec<f32>,
+    pub(super) taps: Vec<f32>,
     /// Enregistrement audio : entrée, pistes armées, prises, panneau.
     pub rec: super::record::RecordState,
     /// Voice to notes: the toggle, its panel and the notes sung.
@@ -799,7 +812,7 @@ pub struct App {
     /// First-time hint bubbles.
     pub hints: super::hints::Hints,
     /// Place de la pastille de gamme, où s'ouvre son menu.
-    scale_anchor: Rect,
+    pub(super) scale_anchor: Rect,
     /// Tailles des zones et fenêtres d'appareil flottantes (non enregistrées).
     pub layout: super::float::Layout,
     /// Forme du curseur voulue par l'image en cours (flèche par défaut) ;
@@ -1158,6 +1171,14 @@ impl App {
             }
             "conflict" => {
                 self.screenshot_conflict();
+                return;
+            }
+            "record" => {
+                self.open_popup(Popup::RecordMenu, Rect::new(704.0, 50.0, 52.0, 0.0));
+                return;
+            }
+            "project" => {
+                self.open_popup(Popup::ProjectMenu, Rect::new(52.0, 48.0, 180.0, 0.0));
                 return;
             }
             "menu" | "themes" => {
@@ -2260,337 +2281,6 @@ impl App {
         self.kb_end(input);
     }
 
-    // --- Barre du haut ---
-
-    fn top_bar(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
-        let t = self.theme;
-        c.fill_rect(r, t.bg_deep);
-        c.fill_rect(Rect::new(r.x, r.bottom() - 1.0, r.w, 1.0), t.hairline);
-        let cy = r.y + r.h * 0.5;
-
-        use super::keymap::Shortcut as S;
-        use super::settings::Bar;
-        let key = |s: S| self.key_label(s);
-        let (k_play, k_mode, k_tap, k_metro, k_rec, k_keys) =
-            (key(S::PlayStop), key(S::ToggleMode), key(S::TapTempo), key(S::Metronome), key(S::Record), key(S::TypingKeyboard));
-        let k_browser = key(S::ToggleBrowser);
-        let (k_pal, k_save, k_redo, k_undo, k_panel, k_hist) =
-            (key(S::Palette), key(S::Save), key(S::Redo), key(S::Undo), key(S::TogglePanel), key(S::History));
-        self.spot(Spot::Browser, Rect::new(12.0, cy - 16.0, 32.0, 32.0));
-        if self.icon_button(c, input, wid("tb-sidebar", 0, 0), Rect::new(12.0, cy - 16.0, 32.0, 32.0), Icon::Sidebar, self.sidebar, (tr("Browser"), &k_browser)) {
-            self.sidebar = !self.sidebar;
-        }
-        // Pas de logo ni de nom du logiciel : le nom du projet suit le bouton du navigateur.
-        let name_x = 58.0;
-
-        // Transport, centré ; l'espace de travail choisit ses éléments.
-        let on = |b: Bar| self.bar_shown(b);
-        let widths = [(Bar::Mode, 142.0), (Bar::Pattern, 198.0), (Bar::Tap, 50.0), (Bar::Position, 138.0), (Bar::Scale, 134.0), (Bar::Metronome, 40.0), (Bar::Record, 120.0), (Bar::Keyboard, 40.0)];
-        let cluster = 46.0 + 54.0 + 120.0 - 4.0 + widths.iter().filter(|(b, _)| on(*b)).map(|(_, w)| w).sum::<f32>();
-        let mut x = ((r.w - cluster) * 0.5).round().max(name_x + 24.0);
-        let start = x;
-
-        let play = Rect::new(x, cy - 18.0, 40.0, 36.0);
-        self.spot(Spot::Play, play);
-        let hov = self.hovered(input, wid("tb-play", 0, 0), play);
-        let kb = self.kb_control(c, input, wid("tb-play", 0, 0), play) && self.kb_enter(wid("tb-play", 0, 0));
-        if (hov && input.pressed) || kb {
-            self.toggle_play();
-        }
-        if hov {
-            self.set_tip(if self.playing { tr("Pause") } else { tr("Play") }, &k_play);
-        }
-        let hv = self.hover_anim(wid("tb-play", 0, 0), hov);
-        let on = self.anim.to(wid("tb-play-on", 0, 0), self.playing as u8 as f32, T_HOVER);
-        c.fill_rrect(play, 10.0, t.text.mix(t.accent, on).mix(t.highlight, 0.12 * hv));
-        c.fill_rect(Rect::new(play.x + 8.0, play.y + 1.0, play.w - 16.0, 1.0), t.highlight.alpha(0.3));
-        let (px, py) = play.center();
-        draw_icon(c, if self.playing { Icon::Pause } else { Icon::Play }, px, py, 16.0, t.bg_deep.mix(t.on_accent, on));
-        use ponzik_project::midi_map::TransportAction as TA;
-        self.transport_menu(c, input, play, TA::Play);
-        x += 46.0;
-        let stop = Rect::new(x, cy - 18.0, 40.0, 36.0);
-        if self.icon_button(c, input, wid("tb-stop", 0, 0), stop, Icon::Stop, false, (tr("Stop"), "")) {
-            self.stop();
-        }
-        self.transport_menu(c, input, stop, TA::Stop);
-        x += 54.0;
-
-        // Mode de lecture : l'icône de la vue où l'on construit ce qui joue.
-        let mode = match self.project.mode {
-            PlayMode::Pattern(_) => 0,
-            PlayMode::Song => 1,
-            PlayMode::Session => 2,
-        };
-        let icons = [Icon::Rack, Icon::Playlist, Icon::Session];
-        let tips = [(tr("Play the pattern"), k_mode.as_str()), (tr("Play the song"), k_mode.as_str()), (tr("Play the session"), "")];
-        if self.bar_shown(Bar::Mode) {
-            self.spot(Spot::Mode, Rect::new(x, cy - 18.0, 132.0, 36.0));
-            if let Some(m) = self.icon_segmented(c, input, wid("tb-mode", 0, 0), Rect::new(x, cy - 18.0, 132.0, 36.0), &icons, &tips, mode) {
-                let cur = self.project.current_pattern;
-                self.set_mode(match m {
-                    0 => PlayMode::Pattern(cur),
-                    1 => PlayMode::Song,
-                    _ => PlayMode::Session,
-                });
-                if m == 2 && self.view_shown(View::Session) {
-                    self.set_view(View::Session);
-                }
-            }
-            x += 142.0;
-        }
-        if self.bar_shown(Bar::Pattern) {
-            self.pattern_selector(c, input, Rect::new(x, cy - 18.0, 188.0, 36.0));
-            x += 198.0;
-        }
-
-        // While the song plays, the tempo heard (ramps included); otherwise the one edited.
-        let heard = if self.playing && self.project.mode == PlayMode::Song {
-            self.project.tempo_map().bpm_at(self.position)
-        } else {
-            self.tempo_here() as f64
-        };
-        let bpm_text = ponzik_i18n::num(heard, 1);
-        let bpm_r = Rect::new(x, cy - 18.0, 116.0, 36.0);
-        self.spot(Spot::Tempo, bpm_r);
-        if let Some(bpm) = self.drag_field(c, input, wid("tb-bpm", 0, 0), bpm_r, self.tempo_here(), 0.25, 1.0, &bpm_text, "BPM") {
-            let bpm = ((bpm * 10.0).round() / 10.0).clamp(40.0, 300.0);
-            if self.set_tempo_here(bpm) {
-                self.commit(tr("Tempo"));
-            }
-        }
-        // Double-click or Enter: type the tempo; right-click: its menu (type, automate, controller).
-        let typed = (self.hovered(input, wid("tb-bpm", 0, 0), bpm_r) && input.pressed && input.double) || self.kb_enter(wid("tb-bpm", 0, 0));
-        if typed {
-            self.drag = None;
-            self.open_popup(Popup::Rename { target: Rename::Value(ponzik_engine::AutoTarget::Tempo), text: String::new() }, bpm_r);
-        }
-        if input.right_pressed && input.inside && bpm_r.contains(input.x, input.y) {
-            let value = self.tempo_here();
-            self.open_popup(Popup::Param { target: ponzik_engine::AutoTarget::Tempo, value, default: 120.0 }, Rect::new(bpm_r.x, bpm_r.bottom(), 0.0, 0.0));
-        }
-        self.tip_zone(input, bpm_r, tr("Tempo at the playhead\nDrag or scroll · Shift: fine · double-click: type it"), "");
-        x += 120.0;
-        if self.bar_shown(Bar::Tap) {
-            self.tap_button(c, input, Rect::new(x, cy - 18.0, 40.0, 36.0), &k_tap);
-            x += 50.0;
-        }
-        if self.bar_shown(Bar::Position) {
-            let pos_r = Rect::new(x, cy - 18.0, 132.0, 36.0);
-            self.position_field(c, pos_r);
-            self.tip_zone(input, pos_r, tr("Position\nbar . beat . step"), "");
-            x += 138.0;
-        }
-        if self.bar_shown(Bar::Scale) {
-            self.spot(Spot::Scale, Rect::new(x, cy - 18.0, 128.0, 36.0));
-            self.scale_chip(c, input, Rect::new(x, cy - 18.0, 128.0, 36.0));
-            x += 134.0;
-        }
-        if self.bar_shown(Bar::Metronome) {
-            let metro = Rect::new(x, cy - 18.0, 36.0, 36.0);
-            if self.icon_button(c, input, wid("tb-metro", 0, 0), metro, Icon::Metronome, self.metronome, (tr("Metronome"), &k_metro)) {
-                self.metronome = !self.metronome;
-                let m = self.metronome;
-                self.send(Command::SetMetronome(m));
-            }
-            self.transport_menu(c, input, metro, TA::Metronome);
-            x += 40.0;
-        }
-        if self.bar_shown(Bar::Record) {
-            self.spot(Spot::Record, Rect::new(x, cy - 18.0, 36.0, 36.0));
-            self.record_button(c, input, Rect::new(x, cy - 18.0, 36.0, 36.0), &k_rec);
-            x += 40.0;
-            let mic = Rect::new(x, cy - 18.0, 36.0, 36.0);
-            self.spot(Spot::Mic, mic);
-            if self.icon_button(c, input, wid("tb-input", 0, 0), mic, Icon::Mic, self.rec.panel, (tr("Recording panel: input, level, monitoring, latency"), "")) {
-                self.toggle_record_panel((mic.x + mic.w * 0.5, mic.bottom() + 6.0));
-            }
-            // Témoin de niveau d'entrée sous l'icône, quand une piste est armée.
-            if !self.rec.armed.is_empty() {
-                let lv = self.rec.input_level();
-                let col = if self.rec.clipped { self.theme.negative } else { self.theme.accent };
-                c.fill_rrect(Rect::new(mic.x + 8.0, mic.bottom() - 5.0, (mic.w - 16.0) * lv, 2.0), 1.0, col);
-            }
-            x += 40.0;
-            self.voice_button(c, input, Rect::new(x, cy - 18.0, 36.0, 36.0));
-            x += 40.0;
-            self.auto_arm_button(c, input, Rect::new(x, cy - 18.0, 36.0, 36.0));
-            x += 40.0;
-        }
-        if self.bar_shown(Bar::Keyboard) {
-            if self.icon_button(c, input, wid("tb-keys", 0, 0), Rect::new(x, cy - 18.0, 36.0, 36.0), Icon::Keyboard, self.typing_keyboard, (tr("Musical typing"), &k_keys)) {
-                self.toggle_typing_keyboard();
-            }
-            x += 40.0;
-        }
-        let cluster_end = x - 4.0;
-
-        // Droite : fichier et historique, puis la charge DSP si la place le permet.
-        let mut rx = r.w - 12.0 - 32.0;
-        let buttons = [
-            (Icon::Menu, "tb-menu", (tr("Menu"), "")),
-            (Icon::Search, "tb-search", (tr("Find anything"), k_pal.as_str())),
-            (Icon::Learn, "tb-learn", (tr("Learn: short hands-on lessons"), "")),
-            (Icon::Panel, "tb-panel", (tr("Devices"), k_panel.as_str())),
-            (Icon::Save, "tb-save", (tr("Save"), k_save.as_str())),
-            (Icon::Redo, "tb-redo", (tr("Redo"), k_redo.as_str())),
-            (Icon::Undo, "tb-undo", (tr("Undo"), k_undo.as_str())),
-            (Icon::History, "tb-history", (tr("History"), k_hist.as_str())),
-        ];
-        for (icon, name, tip) in buttons {
-            if rx < cluster_end + 8.0 {
-                break;
-            }
-            let hidden = match icon {
-                Icon::History => !self.bar_shown(Bar::History),
-                Icon::Undo | Icon::Redo => !self.bar_shown(Bar::Undo),
-                _ => false,
-            };
-            if hidden {
-                continue;
-            }
-            let on = (icon == Icon::Panel && self.panel) || (icon == Icon::Learn && self.lessons.active());
-            if icon == Icon::Menu {
-                self.tour_anchor(2, Rect::new(rx, cy - 16.0, 32.0, 32.0));
-                self.spot(Spot::Menu, Rect::new(rx, cy - 16.0, 32.0, 32.0));
-            }
-            if icon == Icon::Learn && self.lessons.unfinished() {
-                // A lesson left halfway: a small dot, nothing more insistent.
-                c.fill_circle(rx + 26.0, cy - 10.0, 3.5, self.theme.accent);
-            }
-            if self.icon_button(c, input, wid(name, 0, 0), Rect::new(rx, cy - 16.0, 32.0, 32.0), icon, on, tip) {
-                let anchor = Rect::new(rx, cy - 16.0, 32.0, 32.0);
-                match icon {
-                    Icon::Menu => self.open_popup(Popup::MainMenu, anchor),
-                    Icon::Search => self.open_palette(),
-                    Icon::Learn => self.open_learn(),
-                    Icon::Panel => self.panel = !self.panel,
-                    Icon::Save => self.save(),
-                    Icon::Redo => self.redo(),
-                    Icon::Undo => self.undo(),
-                    Icon::History => self.open_popup(Popup::History, anchor),
-                    _ => {}
-                }
-            }
-            rx -= 36.0;
-        }
-        // Charge DSP : une jauge discrète, la valeur en infobulle.
-        if self.bar_shown(Bar::Load) && rx + 32.0 - 40.0 > cluster_end + 16.0 {
-            let gauge = Rect::new(rx + 32.0 - 34.0, cy - 3.0, 26.0, 6.0);
-            let load = self.load.clamp(0.0, 1.0);
-            c.fill_rrect(gauge, 3.0, t.raised);
-            if load > 0.005 {
-                let col = if load > 0.85 { t.negative } else { t.muted.mix(t.text2, load) };
-                c.fill_rrect(Rect::new(gauge.x, gauge.y, (gauge.w * load).max(6.0), gauge.h), 3.0, col);
-            }
-            let tip = format!("{}\n{}", tr_fmt!("DSP load: {:.0}%", self.load * 100.0), self.audio_status());
-            self.tip_zone(input, gauge.inset(-8.0), &tip, tr("Click: performance settings"));
-            if input.pressed && gauge.inset(-8.0).contains(input.x, input.y) {
-                self.open_popup(Popup::Settings { tab: 4 }, gauge);
-            }
-        }
-
-        // Nom du projet entre le bouton du navigateur et le transport.
-        let room = start - name_x - 20.0;
-        if room > 80.0 {
-            let name = self.project.name.clone();
-            let label = if self.modified { format!("{name} ·") } else { name.clone() };
-            let w = self.fonts.measure(self.f.sans, 13.0, &label).min(room);
-            let area = Rect::new(name_x - 6.0, cy - 14.0, w + 12.0, 28.0);
-            let id = wid("tb-project", 0, 0);
-            let hov = self.hovered(input, id, area);
-            let hv = self.hover_anim(id, hov);
-            if hv > 0.01 {
-                c.fill_rrect(area, 8.0, t.raised.alpha(hv));
-            }
-            if hov {
-                self.set_tip(tr("Project\nDouble-click: rename"), "");
-            }
-            if hov && input.double {
-                self.open_popup(Popup::Rename { target: Rename::Project, text: name }, area);
-            }
-            self.text_fit(c, self.f.sans, 13.0, name_x, cy, &label, room, t.text2.mix(t.text, hv));
-        }
-    }
-
-    fn pattern_selector(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
-        let t = self.theme;
-        c.fill_rrect(r, 10.0, t.raised);
-        c.stroke_rrect(r, 10.0, 1.0, t.hairline);
-        let n = self.project.patterns.len();
-        let cur = self.project.current_pattern;
-        let prev = Rect::new(r.x + 2.0, r.y + 2.0, 28.0, r.h - 4.0);
-        let next = Rect::new(r.right() - 30.0, r.y + 2.0, 28.0, r.h - 4.0);
-        use super::keymap::Shortcut as S;
-        let (k_prev, k_next, k_new) = (self.key_label(S::PrevPattern), self.key_label(S::NextPattern), self.key_label(S::NewPattern));
-        if self.icon_button(c, input, wid("pat-prev", 0, 0), prev, Icon::ChevronLeft, false, (tr("Previous pattern"), &k_prev)) && cur > 0 {
-            self.select_pattern(cur - 1);
-        }
-        let next_tip = if cur + 1 < n { (tr("Next pattern"), k_next.as_str()) } else { (tr("New pattern"), k_new.as_str()) };
-        if self.icon_button(c, input, wid("pat-next", 0, 0), next, Icon::ChevronRight, false, next_tip) {
-            if cur + 1 < n {
-                self.select_pattern(cur + 1);
-            } else {
-                let p = self.project.add_pattern();
-                self.select_pattern(p);
-                self.toast(tr("New pattern"));
-            }
-        }
-        let mid = Rect::new(prev.right(), r.y, next.x - prev.right(), r.h);
-        let id = wid("pat-name", 0, 0);
-        let hov = self.hovered(input, id, mid);
-        let hv = self.hover_anim(id, hov);
-        if hov && (input.pressed || input.right_pressed) {
-            self.open_popup(Popup::Patterns, r);
-        }
-        if hov {
-            self.set_tip(tr("Patterns"), "");
-        }
-        if hov && input.wheel != 0.0 {
-            let p = (cur as i32 - input.wheel.signum() as i32).clamp(0, n as i32 - 1) as usize;
-            if p != cur {
-                self.select_pattern(p);
-            }
-        }
-        let name = self.project.patterns[cur].name.clone();
-        let (cx, cy) = mid.center();
-        c.fill_rrect(Rect::new(mid.x + 6.0, cy - 6.0, 3.0, 12.0), 1.5, self.pattern_tint(cur));
-        let label = self.fit(self.f.sans_med, 13.0, &name, mid.w - 22.0);
-        self.text_center(c, self.f.sans_med, 13.0, cx + 4.0, cy, &label, t.text2.mix(t.text, 0.6 + 0.4 * hv));
-    }
-
-    /// Pastille de la gamme du projet : clic pour la choisir, molette pour la tonalité.
-    fn scale_chip(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
-        let t = self.theme;
-        self.scale_anchor = r;
-        let id = wid("tb-scale", 0, 0);
-        let hov = self.hovered(input, id, r);
-        let hv = self.hover_anim(id, hov);
-        c.fill_rrect(r, 10.0, t.raised.mix(t.raised_hi, hv));
-        c.stroke_rrect(r, 10.0, 1.0, t.hairline);
-        let (key, scale) = (self.project.key, self.project.scale);
-        let chromatic = scale == ScaleKind::Chromatic;
-        let cy = r.y + r.h * 0.5;
-        draw_icon(c, Icon::Scale, r.x + 18.0, cy, 15.0, if chromatic { t.muted } else { t.accent });
-        let label = scale_label(key, scale);
-        self.text_fit(c, self.f.sans_med, 13.0, r.x + 34.0, cy, &label, r.w - 42.0, if chromatic { t.text2 } else { t.text });
-        if hov {
-            let tip = if chromatic {
-                tr("Project scale\nNone: every note").to_string()
-            } else {
-                tr_fmt!("Project scale\n{} {} · scroll: key", key_name(key), tr(scale.name()).to_lowercase())
-            };
-            self.set_tip(&tip, "");
-        }
-        if hov && input.pressed {
-            self.open_popup(Popup::Scale, r);
-        }
-        if hov && input.wheel != 0.0 && !chromatic {
-            self.project.key = ((key as i32 + input.wheel.signum() as i32).rem_euclid(12)) as u8;
-            self.commit(tr("Key"));
-        }
-    }
-
     /// Choix de la gamme : douze toniques (les notes de la gamme pointées), puis
     /// les modes. Renvoie faux quand il se ferme.
     fn scale_popup(&mut self, c: &mut Canvas, input: &Input, anchor: Rect, screen: Rect) -> bool {
@@ -2677,128 +2367,15 @@ impl App {
         !clicked || r.contains(input.x, input.y) || anchor.contains(input.x, input.y)
     }
 
-    fn position_field(&mut self, c: &mut Canvas, r: Rect) {
-        let t = self.theme;
-        c.fill_rrect(r, 10.0, t.raised);
-        c.stroke_rrect(r, 10.0, 1.0, t.hairline);
-        let (_, cy) = r.center();
-        // Pendant le pré-compte : la mesure « -1 », comptée en rouge comme l'enregistrement.
-        let counting = self.counting > 0.0;
-        let lit_col = if counting { t.negative } else { t.accent };
-        // Bars and beats of the signature map (song) or of the first signature.
-        let map = self.project.tempo_map();
-        let view = if self.project.mode == PlayMode::Song { map.view() } else { map.head() };
-        let at = if counting {
-            let sig = self.sig_here();
-            let pos = (self.count_bar - self.counting).max(0.0);
-            let beat = (pos / sig.beat_len() as f64).floor();
-            ponzik_engine::BarBeat { bar: 0, beat: beat as u32, tick_in_beat: pos - beat * sig.beat_len() as f64, sig }
-        } else {
-            view.bar_beat(self.cycle_position())
-        };
-        let leds = (at.sig.num as usize).min(8);
-        let gap = if leds <= 4 { 11.0 } else { 44.0 / leds as f32 * 0.98 + 1.0 };
-        for b in 0..leds {
-            let lit = self.playing && b == at.beat as usize;
-            let v = self.anim.to_ambient(wid("beat-led", b, 0), lit as u8 as f32, T_HEAD);
-            let rad = if leds <= 4 { 3.0 } else { 2.3 };
-            c.fill_circle(r.x + 14.0 + b as f32 * gap, cy, rad, t.raised_hi.mix(lit_col, v));
-        }
-        let bar = if counting { "-1".to_string() } else { (at.bar + 1).to_string() };
-        let beat = at.beat + 1;
-        let step = (at.tick_in_beat / TICKS_PER_STEP as f64).floor() as u32 + 1;
-        let text = format!("{bar}.{beat}.{step}");
-        let ink = if counting { t.negative } else if self.playing { t.text } else { t.text2 };
-        self.text_right(c, self.f.mono_med, 15.0, r.right() - 12.0, cy, &text, ink);
-    }
-
-    /// Bouton TAP : chaque appui cale le tempo sur la moyenne des 4 derniers ;
-    /// les points dessous comptent les appuis pris en compte.
-    fn tap_button(&mut self, c: &mut Canvas, input: &Input, r: Rect, key: &str) {
-        let t = self.theme;
-        let id = wid("tb-tap", 0, 0);
-        let hov = self.hovered(input, id, r);
-        let hv = self.hover_anim(id, hov);
-        let kb = self.kb_control(c, input, id, r) && self.kb_enter(id);
-        if (hov && input.pressed) || kb {
-            self.tap_tempo();
-        }
-        let flash = self.anim.to(wid("tb-tap-flash", 0, 0), 0.0, T_LAYOUT);
-        let press = self.anim.to(id ^ 0x5052, if hov && input.down { 0.92 } else { 1.0 }, T_PRESS);
-        let body = r.scale(press);
-        c.fill_rrect(body, 10.0, t.raised.mix(t.raised_hi, hv).mix(t.accent, flash * 0.35));
-        c.stroke_rrect(body, 10.0, 1.0, t.hairline.mix(t.accent, flash));
-        let (cx, cy) = r.center();
-        self.text_center(c, self.f.mono_med, 11.0, cx, cy - 3.0, tr("TAP"), t.text2.mix(t.text, hv).mix(t.accent, flash));
-        let fresh = self.taps.last().is_some_and(|&last| self.time - last <= 2.0);
-        let n = if fresh { self.taps.len() } else { 0 };
-        for k in 0..4 {
-            let on = self.anim.to(wid("tb-tap-dot", k, 0), (k < n) as u8 as f32, T_HOVER);
-            c.fill_circle(cx - 7.5 + k as f32 * 5.0, cy + 8.0, 1.3, t.raised_hi.mix(t.accent, on));
-        }
-        if hov {
-            self.set_tip(tr("Tap tempo\nTap the beat: average of the last 4 taps"), key);
-        }
-    }
-
-    /// Bouton d'enregistrement, avec l'anneau du pré-compte.
-    fn record_button(&mut self, c: &mut Canvas, input: &Input, rec: Rect, key: &str) {
-        let t = self.theme;
-        let rid = wid("tb-rec", 0, 0);
-        let rhov = self.hovered(input, rid, rec);
-        if self.kb_control(c, input, rid, rec) && self.kb_enter(rid) {
-            self.record = !self.record;
-        }
-        let rhv = self.hover_anim(rid, rhov);
-        let on = self.anim.to(wid("tb-rec-on", 0, 0), self.record as u8 as f32, T_HOVER);
-        c.fill_rrect(rec, 8.0, t.raised.alpha(rhv.max(on * 0.6)));
-        let (rx0, ry0) = rec.center();
-        let pulse = if self.record && self.playing { 0.75 + 0.25 * (self.time * 6.0).sin().abs() } else { 1.0 };
-        // Lueur : armé, elle respire ; en prise, elle bat.
-        if on > 0.01 {
-            let glow = on * if self.playing { pulse } else { 0.55 + 0.15 * (self.time * 2.0).sin() };
-            for k in 1..=3 {
-                c.fill_circle(rx0, ry0, 6.0 + 4.0 * k as f32, t.negative.alpha(0.07 * glow));
-            }
-        }
-        c.fill_circle(rx0, ry0, 6.0, t.muted.mix(t.text2, rhv).mix(t.negative, on).alpha(pulse));
-        // Anneau : pré-compte d'une mesure ; il se remplit pendant le décompte.
-        let ci = self.anim.to(wid("tb-rec-ci", 0, 0), self.count_in as u8 as f32, T_HOVER);
-        if ci > 0.01 {
-            let ring = t.muted.mix(t.negative, on).alpha(0.55 * ci);
-            c.stroke_circle(rx0, ry0, 10.5, 1.2, ring);
-            if self.counting > 0.0 {
-                let done = (1.0 - self.counting / self.count_bar.max(1.0)).clamp(0.0, 1.0) as f32;
-                let a0 = -std::f32::consts::FRAC_PI_2;
-                let pts: Vec<(f32, f32)> = (0..=32)
-                    .map(|k| a0 + done * std::f32::consts::TAU * k as f32 / 32.0)
-                    .map(|a| (rx0 + 10.5 * a.cos(), ry0 + 10.5 * a.sin()))
-                    .collect();
-                c.stroke_polyline(&pts, 2.0, t.negative);
-            }
-        }
-        if rhov {
-            let tip = if self.count_in {
-                tr("Record notes and audio\nOne-bar count-in · right-click: count-in, controller")
-            } else {
-                tr("Record notes and audio\nNo count-in · right-click: count-in, controller")
-            };
-            self.set_tip(tip, key);
-        }
-        if rhov && input.pressed {
-            self.record = !self.record;
-            self.toast(if self.record { tr("Recording armed") } else { tr("Recording disarmed") });
-        }
-        self.transport_menu(c, input, rec, ponzik_project::midi_map::TransportAction::Record);
-    }
-
     // --- Zone principale ---
 
     fn main_area(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
         let t = self.theme;
         // Onglets des seules vues proposées par l'espace de travail.
         let views = self.shown_views();
-        let tabs = Rect::new(r.x + PAD, r.y + 12.0, (54.0 * views.len() as f32).min(r.w - 2.0 * PAD), 36.0);
+        // Narrower tabs when the room is short: the toolbars need it.
+        let tab_w = if r.w < 1_400.0 { 46.0 } else { 54.0 };
+        let tabs = Rect::new(r.x + PAD, r.y + 12.0, (tab_w * views.len() as f32).min(r.w - 2.0 * PAD), 36.0);
         let icons: Vec<Icon> = views.iter().map(|v| v.icon()).collect();
         let keys: Vec<String> = views.iter().map(|&v| self.key_label(super::keymap::Shortcut::for_view(v))).collect();
         let tips: Vec<(&str, &str)> = views.iter().zip(&keys).map(|(v, k)| (v.label(), k.as_str())).collect();
@@ -3691,6 +3268,9 @@ impl App {
                 (label, v)
             }
             Popup::AutoMode => (tr("Record automation").into(), self.auto_mode_items()),
+            Popup::RecordMenu => self.record_menu(),
+            Popup::ProjectMenu => self.project_menu(),
+            Popup::ModeMenu => self.mode_menu(),
             Popup::Control(target) => {
                 let mut v = Vec::new();
                 if *target == ponzik_project::midi_map::ControlTarget::Transport(ponzik_project::midi_map::TransportAction::Record) {
@@ -4111,6 +3691,10 @@ impl App {
             Action::Lessons(None) => self.open_learn(),
             Action::Lessons(Some(i)) => self.start_lesson(i),
             Action::ToggleTyping => self.toggle_typing_keyboard(),
+            Action::ToggleRecordPanel => self.toggle_record_panel(self.rec.panel_anchor),
+            Action::ToggleVoice => self.toggle_voice(),
+            Action::ToggleAutoArm => self.toggle_auto_arm(),
+            Action::SetPlayMode(m) => self.set_mode(m),
             Action::SetView(v) => self.set_view(v),
             Action::ToggleSidebar => self.sidebar = !self.sidebar,
             Action::TogglePanel => self.panel = !self.panel,
@@ -4416,7 +4000,9 @@ impl App {
             return;
         }
         if matches!(state.kind, Popup::Scale) {
-            if self.scale_popup(c, input, self.scale_anchor, screen) {
+            // Opened from the palette before any scale chip was drawn: under the top bar, centred.
+            let anchor = if self.scale_anchor.w > 0.0 { self.scale_anchor } else { Rect::new(screen.w * 0.5 - 160.0, TOP_BAR - 8.0, 0.0, 0.0) };
+            if self.scale_popup(c, input, anchor, screen) {
                 self.popup = Some(state);
             }
             return;
