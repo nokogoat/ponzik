@@ -1,6 +1,6 @@
-//! Visuals of the modeled keyboards: the tine (or reed) over its pickup with
-//! the output it gives soft and hard, the organ's drawbars and spinning
-//! rotary speaker, the mallet instrument's bars and mode spectrum.
+//! Visuals of the modeled keyboards: the pickup's output for a soft and a
+//! hard strike, the organ's drawbars and rotary speaker rotors, the partials
+//! of a mallet strike.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -175,97 +175,44 @@ impl App {
         }
     }
 
-    /// Mallets: the instrument's bars (tines, tubes or pan) and the mode
-    /// spectrum a strike gives with the current mallet. Drag: hardness;
-    /// wheel: instrument.
+    /// Mallets: the partials a strike gives (ratio to the note on a log axis,
+    /// level in dB from the strongest), after the mallet's hardness and the
+    /// strike position, as the voice sets them. Drag: hardness; wheel:
+    /// instrument.
     pub(super) fn mallets_graph(&mut self, c: &mut Canvas, input: &Input, r: Rect, device: Device, params: &'static [ParamInfo]) {
+        const RANGE_DB: f32 = 48.0;
         let t = self.theme;
         let v = |app: &App, id| app.value_of(device, params, id);
         let model = (v(self, 0).round() as usize).min(MALLET_MODELS.len() - 1);
-        let (hard, pos) = (v(self, 1), v(self, 2));
+        let (hard, pos, resonator) = (v(self, 1), v(self, 2), v(self, 4));
         let id = wid("mallets", device_key(device), 0);
         let hot = self.graph_gestures(input, id, r, device, params, (1, 1.0), Some((0, 1.0, false)));
         let m = &MALLET_MODELS[model];
 
-        // Instrument, top.
-        let top = Rect::new(r.x + 10.0, r.y + 10.0, r.w - 20.0, r.h * 0.48);
-        let n = 8;
-        let wbar = top.w / n as f32;
-        for i in 0..n {
-            let x = top.x + i as f32 * wbar;
-            let k = 1.0 - i as f32 / n as f32 * 0.5;
-            match model {
-                // Tubular bells: hanging tubes.
-                6 => {
-                    let h = top.h * k;
-                    c.fill_rrect(Rect::new(x + wbar * 0.3, top.y, wbar * 0.4, h), wbar * 0.2, t.text2.alpha(0.55));
-                    c.fill_rect(Rect::new(x + wbar * 0.25, top.y + 2.0, wbar * 0.5, 3.0), t.text2.alpha(0.8));
-                }
-                // Kalimba: tines fanning out over a box.
-                5 => {
-                    let h = top.h * (0.5 + 0.5 * (1.0 - ((i as f32 - 3.5).abs() / 4.0)));
-                    c.fill_rrect(Rect::new(x + wbar * 0.35, top.bottom() - h, wbar * 0.3, h), 2.0, t.text2.alpha(0.7));
-                }
-                // Steel drum: notes as dimples on the pan.
-                7 => {
-                    if i == 0 {
-                        let rr = top.h * 0.5;
-                        c.fill_circle(top.x + top.w * 0.5, top.y + rr, rr, t.text2.alpha(0.2));
-                        for j in 0..8 {
-                            let a = j as f32 / 8.0 * TAU;
-                            c.fill_circle(
-                                top.x + top.w * 0.5 + a.cos() * rr * 0.65,
-                                top.y + rr + a.sin() * rr * 0.65,
-                                rr * 0.18,
-                                t.text2.alpha(0.45),
-                            );
-                        }
-                    }
-                }
-                // Bars, with tubes under them where the instrument has them.
-                _ => {
-                    let h = top.h * (if m.resonator { 0.55 } else { 0.8 }) * k;
-                    let bar = Rect::new(x + wbar * 0.12, top.y, wbar * 0.76, h);
-                    let wood = if model == 0 || model == 2 { Color::hex(0x9a_5b_3a) } else { t.text2.alpha(0.7) };
-                    c.fill_rrect(bar, 3.0, wood);
-                    // Where the mallet hits.
-                    let hy = bar.y + bar.h * (0.5 - 0.42 * pos);
-                    c.fill_circle(bar.x + bar.w * 0.5, hy, 2.0, t.accent);
-                    if m.resonator {
-                        let tube = top.h * 0.4 * k;
-                        c.fill_rrect(Rect::new(x + wbar * 0.3, bar.bottom() + 3.0, wbar * 0.4, tube), wbar * 0.2, t.bg_deep);
-                    }
-                }
-            }
+        self.text(c, self.f.sans_med, 11.0, r.x + 12.0, r.y + 14.0, tr(ponzik_engine::instruments::MALLET_NAMES[model]), t.text2);
+        let g = Rect::new(r.x + 12.0, r.y + 30.0, r.w - 24.0, r.h - 52.0);
+        // Ratios from half the note to five octaves above it.
+        let x_of = |ratio: f32| g.x + (ratio.max(0.5).log2() + 1.0) / 6.0 * g.w;
+        for (k, ratio) in [1.0f32, 2.0, 4.0, 8.0, 16.0].into_iter().enumerate() {
+            let x = x_of(ratio).round();
+            c.fill_rect(Rect::new(x, g.y, 1.0, g.h), t.hairline.alpha(if k == 0 { 1.6 } else { 0.8 }));
+            self.text(c, self.f.mono, 9.0, x + 3.0, g.bottom() + 10.0, &format!("×{ratio:.0}"), t.muted);
         }
-
-        // Mode spectrum, bottom: ratios on a log axis, amplitudes after the
-        // mallet's contact filter.
-        let g = Rect::new(r.x + 10.0, r.y + r.h * 0.6, r.w - 20.0, r.h * 0.4 - 12.0);
-        c.fill_rect(Rect::new(g.x, g.bottom().round(), g.w, 1.0), t.hairline.alpha(1.4));
-        let x_of = |ratio: f32| g.x + (ratio.max(0.1).log2() + 3.0) / 8.0 * g.w;
-        let contact = m.contact.0 * (m.contact.1 / m.contact.0).powf(hard);
-        let f0 = 440.0;
-        let reference = m.gains.iter().cloned().fold(0.0f32, f32::max).max(1e-3);
-        for k in 0..m.ratios.len() {
-            if m.gains[k] <= 0.0 {
+        c.fill_rect(Rect::new(g.x, g.bottom().round(), g.w, 1.0), t.hairline.alpha(1.6));
+        let levels = ponzik_engine::instruments::strike_levels(m, 440.0, hard, pos, resonator);
+        let reference = levels.iter().cloned().fold(0.0f32, f32::max).max(1e-6);
+        for (k, &level) in levels.iter().enumerate() {
+            if level <= 0.0 {
                 continue;
             }
-            let x = (f0 * m.ratios[k] * contact).max(1e-4);
-            let filt = if (x - 1.0).abs() < 1e-3 {
-                0.5
-            } else {
-                let s = (std::f32::consts::PI * x).sin() / (std::f32::consts::PI * x);
-                (s / (1.0 - x * x)).abs()
-            };
-            let h = (m.gains[k] / reference * filt.min(1.0)).sqrt() * g.h;
-            let xx = x_of(m.ratios[k]).round();
-            c.fill_rect(Rect::new(xx - 1.0, g.bottom() - h, 2.0, h), t.accent);
-            c.fill_circle(xx, g.bottom() - h, 2.5, t.accent);
+            let d = 20.0 * (level / reference).log10();
+            let h = ((d + RANGE_DB) / RANGE_DB).clamp(0.0, 1.0) * g.h;
+            let x = x_of(m.ratios[k]).round();
+            c.fill_rect(Rect::new(x - 1.0, g.bottom() - h, 2.0, h), t.accent);
+            c.fill_circle(x, g.bottom() - h, 3.0, t.accent);
         }
-        self.text(c, self.f.sans_med, 11.0, g.x, r.y + r.h * 0.52 + 4.0, tr(ponzik_engine::instruments::MALLET_NAMES[model]), t.text2);
         if hot {
-            self.set_tip(tr("Modes of the bar after the mallet\nDrag: hardness · wheel: instrument"), "");
+            self.set_tip(tr("Partials of a strike, after the mallet\nDrag: hardness · wheel: instrument"), "");
         }
     }
 }
