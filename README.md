@@ -7,10 +7,10 @@
 **The free DAW. FL Studio's breadth, Ableton Live's clarity. No more gatekeeping.**
 
 <p>
-<img src="https://img.shields.io/badge/price-0%20%E2%82%AC-22c55e?style=flat-square&labelColor=0e1212" alt="price: 0 €">
-<img src="https://img.shields.io/badge/100%25-Rust-22c55e?style=flat-square&labelColor=0e1212&logo=rust&logoColor=white" alt="100% Rust">
-<img src="https://img.shields.io/badge/gatekeeping-none-22c55e?style=flat-square&labelColor=0e1212" alt="gatekeeping: none">
-<a href="https://github.com/nokogoat/ponzik/releases"><img src="https://img.shields.io/github/actions/workflow/status/nokogoat/ponzik/release.yml?branch=main&style=flat-square&labelColor=0e1212&label=nightly&color=22c55e" alt="nightly build"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-22c55e?style=flat-square&labelColor=0e1212" alt="License: GPL-3.0"></a>
+<a href="https://github.com/nokogoat/ponzik/releases"><img src="https://img.shields.io/badge/Windows-download-22c55e?style=flat-square&labelColor=0e1212&logo=windows&logoColor=white" alt="Windows"></a>
+<a href="https://github.com/nokogoat/ponzik/releases"><img src="https://img.shields.io/badge/Linux-AppImage-22c55e?style=flat-square&labelColor=0e1212&logo=linux&logoColor=white" alt="Linux"></a>
+<a href="https://github.com/nokogoat/ponzik/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/nokogoat/ponzik/release.yml?branch=main&style=flat-square&labelColor=0e1212&label=build&color=22c55e" alt="Build status"></a>
 </p>
 
 [Download](https://github.com/nokogoat/ponzik/releases) | [What's inside](docs/OVERVIEW.md) | [Getting started](docs/GETTING_STARTED.md) | [Shortcuts](docs/SHORTCUTS.md) | [Plugins](docs/PLUGINS.md) | [Build](docs/BUILDING.md) | [Contributing](AGENTS.md) | [License](LICENSE)
