@@ -36,20 +36,32 @@ struct Blocks {
 impl Blocks {
     fn report(&mut self, label: &str) {
         let budget = BLOCK as f64 / SR as f64;
+        // After 3 s: tails have died, idle effects sleep.
+        let skip = 3 * SR as usize / BLOCK;
+        let settled = (self.times.len() > skip + 100).then(|| {
+            let mut rest = self.times[skip..].to_vec();
+            rest.sort_by(f64::total_cmp);
+            (rest.iter().sum::<f64>() / rest.len() as f64, rest[rest.len() / 2])
+        });
         self.times.sort_by(f64::total_cmp);
         let n = self.times.len().max(1);
         let mean = self.times.iter().sum::<f64>() / n as f64;
         let p99 = self.times[(n * 99 / 100).min(n - 1)];
         let max = self.times.last().copied().unwrap_or(0.0);
         let over = self.times.iter().filter(|&&t| t > budget).count();
+        let median = self.times[n / 2];
         println!(
-            "audio {label:<8} block {BLOCK} ({:.2} ms budget) · mean {:.3} ms ({:.1} %) · p99 {:.3} ms · max {:.3} ms · over budget {over}/{n}",
+            "audio {label:<8} block {BLOCK} ({:.2} ms budget) · mean {:.3} ms ({:.1} %) · median {:.3} ms · p99 {:.3} ms · max {:.3} ms · over budget {over}/{n}",
             budget * 1e3,
             mean * 1e3,
             mean / budget * 100.0,
+            median * 1e3,
             p99 * 1e3,
             max * 1e3,
         );
+        if let Some((mean, median)) = settled {
+            println!("audio {label:<8} after 3 s · mean {:.3} ms ({:.2} %) · median {:.3} ms", mean * 1e3, mean / budget * 100.0, median * 1e3);
+        }
     }
 }
 
@@ -90,11 +102,15 @@ pub fn bench(args: &[String]) -> Result<(), String> {
         let mut chan = vec![0.0f64; channels];
         let mut track = vec![0.0f64; tracks];
         let mut insert = vec![0.0f64; tracks * ponzik_engine::mixer::INSERT_SLOTS];
-        for _ in 0..n {
+        for k in 0..n {
             let t = Instant::now();
             engine.process(&mut out, 2);
             times.push(t.elapsed().as_secs_f64());
             handle.collect_garbage();
+            // The costs of the second half: tails have died, idle effects sleep.
+            if k < n / 2 {
+                continue;
+            }
             for (c, v) in chan.iter_mut().enumerate() {
                 *v += f64::from(handle.channel_cpu(c));
             }
@@ -111,11 +127,11 @@ pub fn bench(args: &[String]) -> Result<(), String> {
     // Stopped: what the project costs while nothing plays (tails, idle effects).
     let (mut stopped, chan, track, insert) = run(&mut engine, &mut handle, blocks / 2);
     stopped.report("stopped");
-    heaviest(&project, "stopped", blocks / 2, &chan, &track, &insert);
+    heaviest(&project, "stopped", blocks / 2 - blocks / 4, &chan, &track, &insert);
     let _ = handle.send(Command::Play);
     let (mut play, chan, track, insert) = run(&mut engine, &mut handle, blocks);
     play.report("playing");
-    heaviest(&project, "playing", blocks, &chan, &track, &insert);
+    heaviest(&project, "playing", blocks - blocks / 2, &chan, &track, &insert);
     let _ = handle.send(Command::Stop);
 
     // Offline render speed: the whole engine as fast as it goes.
@@ -157,7 +173,7 @@ fn heaviest(project: &Project, label: &str, blocks: usize, chan: &[f64], track: 
         costs.push((v / n, format!("  insert {t}:{s} {kind}")));
     }
     costs.sort_by(|a, b| b.0.total_cmp(&a.0));
-    println!("heaviest {label} (% of one core):");
+    println!("heaviest {label}, second half (% of one core):");
     for (v, name) in costs.iter().take(10).filter(|c| c.0 >= 0.0001) {
         println!("  {:6.2} %  {name}", v * 100.0);
     }
