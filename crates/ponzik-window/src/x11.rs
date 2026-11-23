@@ -47,6 +47,7 @@ const OP_PUT_IMAGE: u8 = 72;
 const OP_CREATE_GLYPH_CURSOR: u8 = 94;
 const OP_QUERY_EXTENSION: u8 = 98;
 const OP_GET_KEYBOARD_MAPPING: u8 = 101;
+const OP_GET_MODIFIER_MAPPING: u8 = 119;
 const SHM_ATTACH: u8 = 1;
 const SHM_DETACH: u8 = 2;
 const SHM_PUT_IMAGE: u8 = 3;
@@ -411,6 +412,27 @@ struct Keymap {
     min_keycode: u8,
     per_keycode: usize,
     syms: Vec<u32>,
+    /// Modifier bit of Num Lock (Mod2 on nearly every system).
+    numlock: u16,
+}
+
+/// Keysyms of the numeric keypad (`XK_KP_Space` to `XK_KP_Equal`).
+fn is_keypad(sym: u32) -> bool {
+    (0xff80..=0xffbd).contains(&sym)
+}
+
+/// Modifier bit of Num Lock (`0xff7f`) from a GetModifierMapping reply: the
+/// eight modifiers' keycodes, and the keysyms of each keycode.
+fn numlock_mask(modmap: &[u8], keymap: &Keymap) -> u16 {
+    let per = modmap.get(1).copied().unwrap_or(0) as usize;
+    let codes = modmap.get(32..32 + 8 * per).unwrap_or(&[]);
+    for (i, chunk) in codes.chunks(per.max(1)).enumerate().take(8) {
+        let hit = chunk.iter().any(|&kc| kc != 0 && (0..keymap.per_keycode).any(|col| keymap.sym(kc, col) == Some(0xff7f)));
+        if hit {
+            return 1 << i;
+        }
+    }
+    0x10
 }
 
 impl Keymap {
@@ -419,7 +441,20 @@ impl Keymap {
         self.syms.get(i).copied().filter(|&s| s != 0 && column < self.per_keycode)
     }
 
-    fn key(&self, keycode: u8) -> Option<Key> {
+    /// Keysym of a keypad key as the protocol defines it: with Num Lock on,
+    /// the second keysym (the digit) unless Shift is held, else the first one
+    /// (Home, the arrows…). `None` for the other keys.
+    fn keypad_sym(&self, keycode: u8, state: u16) -> Option<u32> {
+        let second = self.sym(keycode, 1).filter(|&s| is_keypad(s))?;
+        let numlock = state & self.numlock != 0;
+        let shift = state & 0x1 != 0;
+        Some(if numlock && !shift { second } else { self.sym(keycode, 0).unwrap_or(second) })
+    }
+
+    fn key(&self, keycode: u8, state: u16) -> Option<Key> {
+        if let Some(sym) = self.keypad_sym(keycode, state) {
+            return keysym_to_key(sym);
+        }
         // Rangée des chiffres en AZERTY : « à » seul, « 0 » avec Maj. Comme sous
         // Windows (VK_0…VK_9), la touche est rapportée par son chiffre.
         if let Some(digit @ 0x30..=0x39) = self.sym(keycode, 1) {
@@ -430,6 +465,9 @@ impl Keymap {
 
     /// Caractère produit par la touche selon Maj, Verr. Maj et AltGr (Mod5).
     fn text(&self, keycode: u8, state: u16) -> Option<char> {
+        if let Some(sym) = self.keypad_sym(keycode, state) {
+            return keypad_char(sym);
+        }
         let shift = state & 0x1 != 0;
         let caps = state & 0x2 != 0;
         let altgr = state & 0x80 != 0;
@@ -440,31 +478,48 @@ impl Keymap {
             0x20..=0x7e | 0xa0..=0xff => char::from_u32(sym)?,
             0x0100_0000..=0x0110_ffff => char::from_u32(sym - 0x0100_0000)?,
             0x20ac => '€',
+            s if is_keypad(s) => keypad_char(s)?,
             _ => return None,
         };
         Some(if caps && !shift { c.to_uppercase().next()? } else { c })
     }
 }
 
+/// Character typed by a keypad keysym (digits, operators, the decimal point).
+fn keypad_char(sym: u32) -> Option<char> {
+    Some(match sym {
+        0xffb0..=0xffb9 => char::from(b'0' + (sym - 0xffb0) as u8),
+        0xff80 => ' ',
+        0xffaa => '*',
+        0xffab => '+',
+        0xffac => ',',
+        0xffad => '-',
+        0xffae => '.',
+        0xffaf => '/',
+        0xffbd => '=',
+        _ => return None,
+    })
+}
+
 fn keysym_to_key(sym: u32) -> Option<Key> {
     Some(match sym {
-        0x20 => Key::Space,
+        0x20 | 0xff80 => Key::Space,
         0xff0d | 0xff8d => Key::Enter,
         0xff1b => Key::Escape,
         0xff08 => Key::Backspace,
-        0xff09 => Key::Tab,
-        0xffff => Key::Delete,
-        0xff51 => Key::Left,
-        0xff52 => Key::Up,
-        0xff53 => Key::Right,
-        0xff54 => Key::Down,
+        0xff09 | 0xff89 => Key::Tab,
+        0xffff | 0xff9f => Key::Delete,
+        0xff51 | 0xff96 => Key::Left,
+        0xff52 | 0xff97 => Key::Up,
+        0xff53 | 0xff98 => Key::Right,
+        0xff54 | 0xff99 => Key::Down,
         0xffbe..=0xffc9 => Key::F((sym - 0xffbe + 1) as u8),
-        0xff55 => Key::PageUp,
-        0xff56 => Key::PageDown,
-        0xff50 => Key::Home,
-        0xff57 => Key::End,
-        0xffab => Key::Char('+'),
-        0xffad => Key::Char('-'),
+        0xff55 | 0xff9a => Key::PageUp,
+        0xff56 | 0xff9b => Key::PageDown,
+        0xff50 | 0xff95 => Key::Home,
+        0xff57 | 0xff9c => Key::End,
+        // Keypad digits and operators type like the main keys.
+        s @ (0xffaa..=0xffb9 | 0xffbd) => Key::Char(keypad_char(s)?),
         0x21..=0x7e | 0xa0..=0xff => Key::Char(char::from_u32(sym)?.to_lowercase().next()?),
         _ => return None,
     })
@@ -488,8 +543,8 @@ fn parse_event(code: u8, b: &[u8; 32], ctx: &ReaderCtx) -> Option<Event> {
     let pos = || (i16_at(b, 24) as f32, i16_at(b, 26) as f32);
     let mods = || modifiers(u16_at(b, 28));
     Some(match code {
-        2 => Event::KeyDown { key: ctx.keymap.key(b[1])?, mods: mods() },
-        3 => Event::KeyUp { key: ctx.keymap.key(b[1])? },
+        2 => Event::KeyDown { key: ctx.keymap.key(b[1], u16_at(b, 28))?, mods: mods() },
+        3 => Event::KeyUp { key: ctx.keymap.key(b[1], u16_at(b, 28))? },
         4 => {
             let (x, y) = pos();
             match b[1] {
@@ -841,11 +896,15 @@ impl Window {
         let mut r = Req::new(OP_GET_KEYBOARD_MAPPING, 0);
         r.u8(setup.min_keycode).u8(count).u16(0);
         let reply = roundtrip(&mut stream, r.finish())?;
-        let keymap = Keymap {
+        let mut keymap = Keymap {
             min_keycode: setup.min_keycode,
             per_keycode: reply[1].max(1) as usize,
             syms: reply[32..].chunks_exact(4).map(|c| u32_at(c, 0)).collect(),
+            numlock: 0x10,
         };
+        // Which modifier Num Lock is: the keypad types digits only with it.
+        let modmap = roundtrip(&mut stream, Req::new(OP_GET_MODIFIER_MAPPING, 0).finish())?;
+        keymap.numlock = numlock_mask(&modmap, &keymap);
 
         let mut r = Req::new(OP_QUERY_EXTENSION, 0);
         r.u16(7).u16(0).bytes(b"MIT-SHM");
@@ -954,7 +1013,7 @@ impl Window {
         let resources = roundtrip(&mut stream, &get_property_req(setup.root, resource_manager))?;
         let scale = system_scale(property_value(&resources));
         let size = (o.width.clamp(1, 16_384), o.height.clamp(1, 16_384));
-        let keymap = Keymap { min_keycode: setup.min_keycode, per_keycode: 1, syms: Vec::new() };
+        let keymap = Keymap { min_keycode: setup.min_keycode, per_keycode: 1, syms: Vec::new(), numlock: 0x10 };
         let mut win = Window {
             rx: mpsc::channel().1,
             stream,
@@ -1573,12 +1632,87 @@ mod tests {
     #[test]
     fn digit_row_reports_digits_on_azerty() {
         // Keycodes 10, 11, 12 : AZERTY « à/0 », QWERTY « 0/) », lettre « a/A ».
-        let keymap = Keymap { min_keycode: 10, per_keycode: 2, syms: vec![0xe0, 0x30, 0x30, 0x29, 0x61, 0x41] };
-        assert_eq!(keymap.key(10), Some(Key::Char('0')));
-        assert_eq!(keymap.key(11), Some(Key::Char('0')));
-        assert_eq!(keymap.key(12), Some(Key::Char('a')));
+        let keymap = Keymap { min_keycode: 10, per_keycode: 2, syms: vec![0xe0, 0x30, 0x30, 0x29, 0x61, 0x41], numlock: 0x10 };
+        assert_eq!(keymap.key(10, 0), Some(Key::Char('0')));
+        assert_eq!(keymap.key(11, 0), Some(Key::Char('0')));
+        assert_eq!(keymap.key(12, 0), Some(Key::Char('a')));
         // Le texte saisi, lui, suit toujours la disposition.
         assert_eq!(keymap.text(10, 0), Some('à'));
+    }
+
+    /// A keypad as xkb maps it: (Num Lock off, Num Lock on) per keycode.
+    fn keypad() -> Keymap {
+        let pairs: [(u32, u32); 17] = [
+            (0xff95, 0xffb7), // 7 / Home
+            (0xff97, 0xffb8), // 8 / Up
+            (0xff9a, 0xffb9), // 9 / Prior
+            (0xff96, 0xffb4), // 4 / Left
+            (0xff9d, 0xffb5), // 5 / Begin
+            (0xff98, 0xffb6), // 6 / Right
+            (0xff9c, 0xffb1), // 1 / End
+            (0xff99, 0xffb2), // 2 / Down
+            (0xff9b, 0xffb3), // 3 / Next
+            (0xff9e, 0xffb0), // 0 / Insert
+            (0xff9f, 0xffae), // Delete / Decimal
+            (0xff8d, 0xff8d), // Enter
+            (0xffab, 0xffab), // +
+            (0xffad, 0xffad), // -
+            (0xffaa, 0xffaa), // *
+            (0xffaf, 0xffaf), // /
+            (0xff7f, 0xfef9), // Num_Lock / Pointer_EnableKeys
+        ];
+        Keymap { min_keycode: 100, per_keycode: 2, syms: pairs.iter().flat_map(|&(a, b)| [a, b]).collect(), numlock: 0x10 }
+    }
+
+    #[test]
+    fn keypad_types_digits_with_num_lock() {
+        let k = keypad();
+        const NUM: u16 = 0x10;
+        let digits: Vec<_> = (100..110).map(|kc| k.text(kc, NUM).unwrap()).collect();
+        assert_eq!(digits.iter().collect::<String>(), "7894561230");
+        assert_eq!(k.key(100, NUM), Some(Key::Char('7')));
+        assert_eq!(k.key(109, NUM), Some(Key::Char('0')));
+        assert_eq!((k.key(110, NUM), k.text(110, NUM)), (Some(Key::Char('.')), Some('.')));
+        // Enter confirms; the operators type and drive the + / - shortcuts.
+        assert_eq!((k.key(111, NUM), k.text(111, NUM)), (Some(Key::Enter), None));
+        for (kc, c) in [(112, '+'), (113, '-'), (114, '*'), (115, '/')] {
+            assert_eq!((k.key(kc, NUM), k.text(kc, NUM)), (Some(Key::Char(c)), Some(c)));
+            assert_eq!((k.key(kc, 0), k.text(kc, 0)), (Some(Key::Char(c)), Some(c)), "without Num Lock too");
+        }
+    }
+
+    #[test]
+    fn keypad_navigates_without_num_lock_or_with_shift() {
+        let k = keypad();
+        let nav = [Key::Home, Key::Up, Key::PageUp, Key::Left, Key::Right, Key::End, Key::Down, Key::PageDown, Key::Delete];
+        let codes = [100, 101, 102, 103, 105, 106, 107, 108, 110];
+        for (kc, key) in codes.into_iter().zip(nav) {
+            assert_eq!(k.key(kc, 0), Some(key));
+            assert_eq!(k.text(kc, 0), None, "no text without Num Lock");
+            // Shift with Num Lock gives the navigation keys back, as in other programs.
+            assert_eq!(k.key(kc, 0x10 | 0x1), Some(key));
+        }
+        // 5 (Begin) and 0 (Insert) do nothing without Num Lock.
+        assert_eq!(k.key(104, 0), None);
+        assert_eq!(k.key(109, 0), None);
+        // Enter works either way.
+        assert_eq!(k.key(111, 0), Some(Key::Enter));
+    }
+
+    #[test]
+    fn num_lock_modifier_is_found_in_the_modifier_map() {
+        let k = keypad();
+        // Two keycodes per modifier; Num_Lock (keycode 116) sits on Mod4 here.
+        let mut reply = vec![1, 2, 0, 0, 4, 0, 0, 0];
+        reply.resize(32, 0);
+        let mods = [[50, 62], [66, 0], [37, 105], [64, 0], [0, 0], [0, 0], [116, 0], [0, 0]];
+        reply.extend(mods.iter().flatten());
+        assert_eq!(numlock_mask(&reply, &k), 0x40);
+        let k = Keymap { numlock: numlock_mask(&reply, &k), ..k };
+        assert_eq!(k.text(100, 0x40), Some('7'));
+        assert_eq!(k.text(100, 0x10), None);
+        // No Num_Lock anywhere: Mod2, the usual place.
+        assert_eq!(numlock_mask(&[1, 0, 0, 0], &k), 0x10);
     }
 
     #[test]

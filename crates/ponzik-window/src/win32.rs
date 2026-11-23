@@ -288,8 +288,15 @@ fn vk_to_key(vk: usize) -> Option<Key> {
         0x22 => Key::PageDown,
         0x24 => Key::Home,
         0x23 => Key::End,
+        // Keypad (Num Lock on; off, Windows sends VK_HOME, VK_LEFT… instead).
+        // Its Enter is VK_RETURN with the extended flag: Enter above.
+        0x60..=0x69 => Key::Char((b'0' + (vk - 0x60) as u8) as char),
+        0x6A => Key::Char('*'),
         0x6B => Key::Char('+'),
+        0x6C => Key::Char(','),
         0x6D => Key::Char('-'),
+        0x6E => Key::Char('.'),
+        0x6F => Key::Char('/'),
         0x30..=0x39 | 0x41..=0x5A => Key::Char((vk as u8 as char).to_ascii_lowercase()),
         _ => return None,
     })
@@ -789,5 +796,27 @@ impl Drop for Window {
     fn drop(&mut self) {
         // SAFETY: fenêtre créée par ce thread.
         unsafe { DestroyWindow(self.hwnd) };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keypad_keys_type_like_the_main_ones() {
+        let digits: String = (0x60..=0x69).filter_map(|vk| match vk_to_key(vk) {
+            Some(Key::Char(c)) => Some(c),
+            _ => None,
+        }).collect();
+        assert_eq!(digits, "0123456789");
+        assert_eq!(vk_to_key(0x6E), Some(Key::Char('.')));
+        assert_eq!(vk_to_key(0x6B), Some(Key::Char('+')));
+        assert_eq!(vk_to_key(0x6D), Some(Key::Char('-')));
+        assert_eq!(vk_to_key(0x6A), Some(Key::Char('*')));
+        assert_eq!(vk_to_key(0x6F), Some(Key::Char('/')));
+        // Num Lock off: the navigation keys.
+        assert_eq!(vk_to_key(0x24), Some(Key::Home));
+        assert_eq!(vk_to_key(0x0D), Some(Key::Enter));
     }
 }
