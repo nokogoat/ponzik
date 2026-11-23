@@ -20,11 +20,24 @@ fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
 
 /// Encode des pixels `0x00RRGGBB` en PNG RGB.
 pub fn encode_png(pixels: &[u32], width: usize, height: usize) -> Vec<u8> {
-    let mut raw = Vec::with_capacity((width * 3 + 1) * height);
+    encode(pixels, width, height, false)
+}
+
+/// Encodes `0xAARRGGBB` pixels (straight alpha) as an RGBA PNG.
+pub fn encode_png_rgba(pixels: &[u32], width: usize, height: usize) -> Vec<u8> {
+    encode(pixels, width, height, true)
+}
+
+fn encode(pixels: &[u32], width: usize, height: usize, alpha: bool) -> Vec<u8> {
+    let bpp = if alpha { 4 } else { 3 };
+    let mut raw = Vec::with_capacity((width * bpp + 1) * height);
     for row in pixels.chunks_exact(width).take(height) {
         raw.push(0); // filtre « aucun »
         for &p in row {
             raw.extend_from_slice(&[(p >> 16) as u8, (p >> 8) as u8, p as u8]);
+            if alpha {
+                raw.push((p >> 24) as u8);
+            }
         }
     }
 
@@ -49,7 +62,7 @@ pub fn encode_png(pixels: &[u32], width: usize, height: usize) -> Vec<u8> {
     let mut ihdr = Vec::new();
     ihdr.extend_from_slice(&(width as u32).to_be_bytes());
     ihdr.extend_from_slice(&(height as u32).to_be_bytes());
-    ihdr.extend_from_slice(&[8, 2, 0, 0, 0]);
+    ihdr.extend_from_slice(&[8, if alpha { 6 } else { 2 }, 0, 0, 0]);
     chunk(&mut out, b"IHDR", &ihdr);
     chunk(&mut out, b"IDAT", &z);
     chunk(&mut out, b"IEND", &[]);

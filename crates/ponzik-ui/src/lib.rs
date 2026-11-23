@@ -18,11 +18,12 @@ mod png;
 mod raster;
 mod text;
 
+pub mod brand;
 pub use anim::Anim;
 pub use canvas::{Canvas, Path};
 pub use color::Color;
 pub use geom::Rect;
-pub use png::encode_png;
+pub use png::{encode_png, encode_png_rgba};
 pub use text::{FontId, Fonts};
 
 /// Polices embarquées (IBM Plex, licence OFL — voir `fonts/OFL.txt`).

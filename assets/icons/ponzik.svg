@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+<defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#14352d"/><stop offset="1" stop-color="#060e0c"/></linearGradient></defs>
+<rect width="512" height="512" rx="115.2" fill="url(#tile)"/>
+<rect x="6.144" y="6.144" width="499.712" height="499.712" rx="109.056" fill="none" stroke="#3fd45a" stroke-opacity="0.28" stroke-width="7.168"/>
+<rect x="61.440002" y="412.16" width="389.12003" height="9.216" rx="4.608" fill="#3fd45a" fill-opacity="0.35"/>
+<polygon points="256.00,97.28 256.00,97.28 274.98,207.36 189.57,207.36" fill="#b8ffc4"/>
+<polygon points="256.00,97.28 256.00,97.28 322.43,207.36 274.98,207.36" fill="#56e070"/>
+<polygon points="178.76,225.28 278.07,225.28 290.87,299.52 133.96,299.52" fill="#3fd45a"/>
+<polygon points="278.07,225.28 333.24,225.28 378.04,299.52 290.87,299.52" fill="#1c8a3f"/>
+<polygon points="123.14,317.44 293.96,317.44 307.20,394.24 76.80,394.24" fill="#3fd45a"/>
+<polygon points="293.96,317.44 388.86,317.44 435.20,394.24 307.20,394.24" fill="#1c8a3f"/>
+</svg>
