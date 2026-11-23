@@ -3059,8 +3059,8 @@ msgstr "Steel drum"
 msgid "Drag: pull the drawbar out (louder) or push it in"
 msgstr "Glisser : tirer la tirette (plus fort) ou la repousser"
 
-msgid "Modes of the bar after the mallet\nDrag: hardness · wheel: instrument"
-msgstr "Modes de la lame après la mailloche\nGlisser : dureté · molette : instrument"
+msgid "Partials of a strike, after the mallet\nDrag: hardness · wheel: instrument"
+msgstr "Partiels d'un coup, après la mailloche\nGlisser : dureté · molette : instrument"
 
 msgid "Pickup: output for a soft and a hard strike\nDrag: gap · wheel: grit"
 msgstr "Micro : sortie pour une frappe douce et une frappe forte\nGlisser : écart · molette : grain"

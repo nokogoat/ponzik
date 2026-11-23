@@ -168,6 +168,41 @@ fn pulse_gain(hz: f32, t: f32) -> f32 {
     (s / (1.0 - x * x)).abs()
 }
 
+/// Level of mode `k` before the mallet's contact filter: its gain on the
+/// model at `vel`, the strike position on a bar (0: middle, 1: edge) and
+/// what the tube takes from the fundamental.
+fn mode_gain(m: &Model, k: usize, vel: f32, pos: f32, resonator: f32) -> f32 {
+    let mut g = m.gains[k] * vel;
+    if m.bar {
+        // Middle hit: no antisymmetric modes (2nd, 4th…); edge: less fundamental.
+        if k % 2 == 1 {
+            g *= 0.12 + 0.88 * pos;
+        } else if k == 0 {
+            g *= 1.0 - 0.4 * pos;
+        }
+    }
+    // Bars with a tube give part of their fundamental to it.
+    if k == 0 && resonator > 0.0 {
+        g *= 1.0 - 0.3 * resonator;
+    }
+    g
+}
+
+/// Level of each mode of a full-velocity strike on note `hz`, after the
+/// contact filter of the mallet at `hardness`: the partials the device
+/// draws, as the voice sets them.
+pub fn strike_levels(m: &Model, hz: f32, hardness: f32, pos: f32, resonator: f32) -> [f32; MODES] {
+    let contact = (m.contact.0 * (m.contact.1 / m.contact.0).powf(hardness)) * 0.5;
+    let resonator = if m.resonator { resonator } else { 0.0 };
+    std::array::from_fn(|k| {
+        if m.gains[k] <= 0.0 {
+            0.0
+        } else {
+            mode_gain(m, k, 1.0, pos, resonator) * pulse_gain(hz * m.ratios[k], contact)
+        }
+    })
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct Voice {
     note: u8,
@@ -316,20 +351,7 @@ impl Instrument for Mallets {
             }
             count = k + 1;
             let ratio = m.ratios[k] / m.ratios[reference];
-            let mut g = m.gains[k] * vel * comp;
-            if m.bar {
-                // Middle hit: no antisymmetric modes (2nd, 4th…); edge: less fundamental.
-                if k % 2 == 1 {
-                    g *= 0.12 + 0.88 * pos;
-                } else if k == 0 {
-                    g *= 1.0 - 0.4 * pos;
-                }
-            }
-            // Bars with a tube give part of their fundamental to it.
-            if k == 0 && resonator > 0.0 {
-                g *= 1.0 - 0.3 * resonator;
-            }
-            v.gain[k] = g;
+            v.gain[k] = mode_gain(&m, k, vel, pos, resonator) * comp;
             v.t60[k] = (t60 * ratio.max(0.25).powf(-m.alpha)).max(0.04);
             v.modes[k].tune(hz * m.ratios[k], v.t60[k], sr);
         }
@@ -605,5 +627,18 @@ mod tests {
         stress(&mut m);
         m.set_param(P_MODEL, 6.0);
         stress(&mut m);
+    }
+
+    /// The drawn partials follow the mallet and where it hits.
+    #[test]
+    fn strike_levels_follow_hardness_and_position() {
+        let marimba = &MODEL_DATA[0];
+        let hz = midi_to_hz(60.0);
+        let top = |l: [f32; MODES]| l[2] / l[0];
+        let (soft, hard) = (strike_levels(marimba, hz, 0.0, 0.25, 0.0), strike_levels(marimba, hz, 1.0, 0.25, 0.0));
+        assert!(top(hard) > 2.0 * top(soft), "{soft:?} {hard:?}");
+        let (middle, edge) = (strike_levels(marimba, hz, 0.5, 0.0, 0.0), strike_levels(marimba, hz, 0.5, 1.0, 0.0));
+        assert!(middle[1] < 0.2 * edge[1] && middle[0] > edge[0], "{middle:?} {edge:?}");
+        assert!(strike_levels(marimba, hz, 0.5, 0.5, 0.0).iter().all(|l| l.is_finite() && *l >= 0.0));
     }
 }
