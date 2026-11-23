@@ -26,6 +26,7 @@ pub const SESSION_COLUMNS: usize = 8;
 pub const SESSION_SCENES: usize = 8;
 
 pub mod ab;
+pub mod als;
 mod arrange;
 pub mod base64;
 pub mod bounce;
