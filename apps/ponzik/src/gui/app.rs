@@ -1338,14 +1338,15 @@ impl App {
 
     /// À appeler après chaque modification du projet. Les gestes continus (même
     /// libellé à moins d'une seconde) forment une seule étape d'annulation.
-    /// "Auto" pattern length: a pattern whose notes changed grows to its last
-    /// note, rounded up to the bar, so everything drawn is played.
+    /// "Auto" pattern length: a pattern whose notes changed ends with its last
+    /// note, rounded up to the bar. It grows to play everything drawn, and
+    /// shrinks back when the far notes go, never looping over empty bars.
     fn fit_edited_patterns(&mut self) {
         for (i, p) in self.project.patterns.iter_mut().enumerate() {
             if self.synced.patterns.get(i).is_some_and(|old| old.notes == p.notes) {
                 continue;
             }
-            p.len = p.len.max(fitted_len(p));
+            p.len = fitted_len(p);
         }
     }
 

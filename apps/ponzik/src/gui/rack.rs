@@ -69,7 +69,7 @@ impl App {
             _ => 3,
         };
         let tips = [
-            (tr("Auto length\nThe pattern grows to its last note: you hear what you see"), ""),
+            (tr("Auto length\nThe pattern ends with its last note: you hear what you see"), ""),
             (tr("1 bar"), ""),
             (tr("2 bars"), ""),
             (tr("4 bars"), ""),
@@ -77,7 +77,7 @@ impl App {
         if let Some(i) = self.segmented_tips(c, input, wid("rack-len", 0, 0), len_box, &[tr("Auto"), "1", "2", "4"], &tips, sel) {
             self.prefs.fixed_pattern_len = i > 0;
             let p = &mut self.project.patterns[pat];
-            p.len = if i == 0 { p.len.max(super::app::fitted_len(p)) } else { [1, 2, 4][i - 1] * TICKS_PER_BAR };
+            p.len = if i == 0 { super::app::fitted_len(p) } else { [1, 2, 4][i - 1] * TICKS_PER_BAR };
             self.save_settings();
             self.commit(tr("Pattern length"));
         }
