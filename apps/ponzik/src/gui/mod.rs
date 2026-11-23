@@ -42,6 +42,7 @@ mod notefx;
 mod offline;
 mod pads;
 mod palette;
+mod performance;
 mod plugins;
 mod piano;
 mod playlist;
@@ -315,6 +316,7 @@ pub fn run(project: ponzik_project::Project, open: Option<std::path::PathBuf>) -
         eprintln!("MIDI: {}", m.name());
     }
     app.load_settings();
+    app.apply_perf();
     app.theme_from_env();
     app.ctl.persist = true;
     app.lessons.persist = true;
@@ -452,17 +454,22 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
     // PONZIK_PROFILE=1 : temps par phase de l'image, toutes les 2 s.
     let mut profile = std::env::var_os("PONZIK_PROFILE").map(|_| Profile::new());
     let mut expose = true;
+    // Last time the user touched the interface (eco mode).
+    let mut last_input = Instant::now();
 
     loop {
+        // Eco mode, nobody touching anything for a while: fewer images.
+        let eco = app.prefs.perf.eco && last_input.elapsed() >= performance::ECO_AFTER;
         // Au repos, on dort jusqu'au prochain événement ; sinon on vise 60 images/s
         // en continuant d'écouter la souris jusqu'à l'échéance.
-        if dirty || app.needs_redraw() {
-            // Seuls la lecture et les VU-mètres bougent : 30 images/s suffisent.
-            // Une souris qui bouge ou une animation repassent à 60.
+        if dirty || app.needs_redraw(eco) {
+            // Seuls la lecture et les VU-mètres bougent : 30 images/s suffisent
+            // (15 en mode éco). Une souris qui bouge ou une animation repassent à 60.
             let smooth = dirty || app.wants_smooth_frames();
             let slice = if app.midi_inputs.is_empty() { FRAME } else { Duration::from_millis(4) };
+            let slow = if eco { performance::ECO_FRAME } else { SLOW_FRAME };
             loop {
-                let interval = if smooth || dirty || !events.is_empty() { FRAME } else { SLOW_FRAME };
+                let interval = if smooth || dirty || !events.is_empty() { FRAME } else { slow };
                 let Some(left) = (last_frame + interval).checked_duration_since(Instant::now()) else { break };
                 window.wait_events(left.min(slice), &mut events);
                 dirty |= app.poll_midi();
@@ -507,6 +514,9 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
             if ev == Event::CloseRequested {
                 return Ok(());
             }
+            if !matches!(ev, Event::Redraw) {
+                last_input = Instant::now();
+            }
             // Fenêtre découverte ou redimensionnée : l'image entière est renvoyée.
             if matches!(ev, Event::Redraw | Event::Resized { .. }) {
                 expose = true;
@@ -536,7 +546,7 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
             canvas.set_scale(scale);
             dirty = true;
         }
-        if dirty || app.needs_redraw() {
+        if dirty || app.needs_redraw(eco) {
             let now = Instant::now();
             let dt = now.duration_since(last_frame).as_secs_f32();
             last_frame = now;

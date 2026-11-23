@@ -134,7 +134,7 @@ impl Bar {
 
 /// Ce qu'affiche une tuile.
 #[derive(Clone, Copy)]
-enum Glyph {
+pub(super) enum Glyph {
     Icon(Icon),
     Text(&'static str),
     Rec,
@@ -296,6 +296,8 @@ pub struct Prefs {
     pub buffer_ms: u32,
     /// Tampon choisi à la main : jamais relevé automatiquement.
     pub buffer_manual: bool,
+    /// Smart disable, eco mode, export quality.
+    pub perf: super::performance::Perf,
     /// Action that closes the sheet to open its own popup ("Create a translation").
     pending: Option<Action>,
 }
@@ -425,6 +427,7 @@ impl App {
         self.lessons.progress = super::lessons::Progress::from_json(j.get("lessons"));
         self.prefs.hints_seen = j.get("hints_seen").and_then(Json::as_f64).map_or(0, |v| if v.is_finite() { v.clamp(0.0, u32::MAX as f64) as u32 } else { 0 });
         (self.prefs.buffer_ms, self.prefs.buffer_manual) = buffer_from_json(&j);
+        self.prefs.perf.load(&j);
         self.ctl.global = ponzik_project::midi_map::load_mappings(j.get("midi_map"), usize::MAX);
         self.updates.load(&j);
         self.install.load(&j);
@@ -448,6 +451,7 @@ impl App {
             }
             self.updates.save(fields);
             self.install.save(fields);
+            self.prefs.perf.save(fields);
             if self.prefs.buffer_ms > 0 {
                 fields.push(("audio_buffer_ms".into(), (self.prefs.buffer_ms as f64).into()));
                 fields.push(("audio_buffer_manual".into(), self.prefs.buffer_manual.into()));
@@ -709,7 +713,7 @@ impl App {
     pub(super) fn settings_sheet(&mut self, c: &mut Canvas, input: &Input, screen: Rect, tab: usize) -> Option<usize> {
         let t = self.theme;
         let open = self.anim.to(wid("popup", 0, 0), 1.0, T_HOVER);
-        let mut tab = tab.min(4);
+        let mut tab = tab.min(5);
         let mut close = false;
 
         // Clavier : saisie d'une touche, conflit en attente, ou navigation.
@@ -735,7 +739,7 @@ impl App {
             } else {
                 match key {
                     Key::Escape => close = true,
-                    Key::Tab => tab = (tab + 1) % 5,
+                    Key::Tab => tab = (tab + 1) % 6,
                     _ => {}
                 }
             }
@@ -755,11 +759,11 @@ impl App {
         c.stroke_rrect(r, 18.0, 1.0, t.hairline.alpha(1.8));
 
         // En-tête : deux onglets, et la croix.
-        let tabs = Rect::new(r.x + 16.0, r.y + 14.0, 690.0, 38.0);
+        let tabs = Rect::new(r.x + 16.0, r.y + 14.0, (r.w - 32.0 - 46.0).min(820.0), 38.0);
         c.fill_rrect(tabs, 11.0, t.bg_deep);
         c.stroke_rrect(tabs, 11.0, 1.0, t.hairline);
         let pos = self.anim.to(wid("set-tabs", 0, 0), tab as f32, T_LAYOUT);
-        let seg_w = (tabs.w - 6.0) / 5.0;
+        let seg_w = (tabs.w - 6.0) / 6.0;
         let knob = Rect::new(tabs.x + 3.0 + pos * seg_w, tabs.y + 3.0, seg_w, tabs.h - 6.0);
         c.fill_rrect(knob, 8.0, t.raised_hi);
         let names = [
@@ -767,6 +771,7 @@ impl App {
             (Icon::Keyboard, tr("Shortcuts"), tr("Change the keys")),
             (Icon::Midi, tr("MIDI"), tr("Controller links: list, modes, ranges")),
             (Icon::Theme, tr("Appearance"), tr("Themes: colors, corners, text size, density, animations")),
+            (Icon::Cpu, ponzik_i18n::tr_ctx("settings tab", "Performance"), tr("Processor load, idle effects, eco mode, audio buffer")),
             (Icon::Info, tr("About"), tr("Version, build and update settings")),
         ];
         let mut hint: Option<String> = None;
@@ -815,6 +820,7 @@ impl App {
             1 => self.keys_tab(c, input, body, foot, &mut hint),
             2 => self.midi_tab(c, input, body, &mut hint),
             3 => self.appearance_tab(c, input, body, &mut hint),
+            4 => self.performance_tab(c, input, body, &mut hint),
             _ => self.about_tab(c, input, body, &mut hint),
         }
         if let Some(action) = self.prefs.pending.take() {
@@ -834,7 +840,8 @@ impl App {
                     0 => tr("Click a tile to show or hide it").into(),
                     1 => tr("Click a key, then the new combination · Esc cancels").into(),
                     3 => tr("Built-in themes are read-only: editing one makes a copy in your themes folder").into(),
-                    4 => tr("Updates come from the GitHub releases of Ponzik; nothing is sent about you").into(),
+                    4 => tr("Live costs of the audio engine; the switches act at once and are saved").into(),
+                    5 => tr("Updates come from the GitHub releases of Ponzik; nothing is sent about you").into(),
                     _ => tr("Global links follow the controller in every project; project links are saved with the song").into(),
                 }
             });
@@ -856,13 +863,13 @@ impl App {
         self.save_settings();
     }
 
-    fn section(&mut self, c: &mut Canvas, x: f32, y: f32, label: &str) {
+    pub(super) fn section(&mut self, c: &mut Canvas, x: f32, y: f32, label: &str) {
         let t = self.theme;
         self.text(c, self.f.sans_med, 11.0, x + 2.0, y + 8.0, label, t.muted);
     }
 
     /// Tuile à bascule : pictogramme, nom, petit interrupteur dans le coin.
-    fn tile(&mut self, c: &mut Canvas, input: &Input, id: u64, r: Rect, glyph: Glyph, label: &str, on: bool, key: &str) -> bool {
+    pub(super) fn tile(&mut self, c: &mut Canvas, input: &Input, id: u64, r: Rect, glyph: Glyph, label: &str, on: bool, key: &str) -> bool {
         let t = self.theme;
         let hov = self.hovered(input, id, r);
         let hv = self.hover_anim(id, hov);
@@ -1141,7 +1148,7 @@ impl App {
     }
 
     /// Tampon audio : automatique (10 ms, relevé après des craquements) ou fixé.
-    fn audio_buffer_choice(&mut self, c: &mut Canvas, input: &Input, x: f32, y: f32, w: f32, hint: &mut Option<String>) {
+    pub(super) fn audio_buffer_choice(&mut self, c: &mut Canvas, input: &Input, x: f32, y: f32, w: f32, hint: &mut Option<String>) {
         self.section(c, x, y, tr("Audio buffer"));
         let current = ponzik_audio::target_latency_ms();
         let auto = !self.prefs.buffer_manual;

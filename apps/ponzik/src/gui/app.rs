@@ -1144,7 +1144,8 @@ impl App {
                     _ => 0,
                 },
             },
-            "about" => Popup::Settings { tab: 4 },
+            "performance" => Popup::Settings { tab: 4 },
+            "about" => Popup::Settings { tab: 5 },
             "whatsnew" | "whatsnew-full" => {
                 // As at the first launch after an update: "don't show again" checked.
                 if let Some(latest) = super::whatsnew::sections().into_iter().next() {
@@ -2007,6 +2008,7 @@ impl App {
         }
         let load = self.engine.take_load();
         self.load += (load - self.load) * (1.0 - (-dt / 0.4).exp());
+        self.prefs.perf.record(self.time, self.load);
         let (scope, at, new) = (&mut self.scope, &mut self.scope_at, &mut self.scope_new);
         new.clear();
         self.engine.drain_scope(|s| {
@@ -2036,10 +2038,13 @@ impl App {
         }
     }
 
-    pub fn needs_redraw(&self) -> bool {
+    /// True while something moves and the next image must be drawn. `eco`
+    /// (eco mode, idle interface): the ambient animations (step lights, beat
+    /// lights) settle without images of their own once the transport stops.
+    pub fn needs_redraw(&self, eco: bool) -> bool {
         self.playing
             || self.anim.is_moving()
-            || self.anim.is_ambient()
+            || (self.anim.is_ambient() && !eco)
             || self.drag.is_some()
             || !self.toasts.is_empty()
             || self.tips.waiting
@@ -2475,7 +2480,10 @@ impl App {
                 c.fill_rrect(Rect::new(gauge.x, gauge.y, (gauge.w * load).max(6.0), gauge.h), 3.0, col);
             }
             let tip = format!("{}\n{}", tr_fmt!("DSP load: {:.0}%", self.load * 100.0), self.audio_status());
-            self.tip_zone(input, gauge.inset(-8.0), &tip, "");
+            self.tip_zone(input, gauge.inset(-8.0), &tip, tr("Click: performance settings"));
+            if input.pressed && gauge.inset(-8.0).contains(input.x, input.y) {
+                self.open_popup(Popup::Settings { tab: 4 }, gauge);
+            }
         }
 
         // Nom du projet entre le bouton du navigateur et le transport.
@@ -3797,7 +3805,7 @@ impl App {
                             .detail(learned)
                             .tip(tr("Short hands-on lessons: the basics, then your first tracks")),
                         MenuItem::new(Icon::Info, tr("What's new"), Action::Update(super::updates::UpdateOp::ShowNews)).tip(tr("The changes of this version")),
-                        MenuItem::new(Icon::Reset, tr("About and updates"), Action::Popup(Popup::Settings { tab: 4 }))
+                        MenuItem::new(Icon::Reset, tr("About and updates"), Action::Popup(Popup::Settings { tab: 5 }))
                             .detail(self.updates_badge())
                             .tip(tr("Version, build and update settings")),
                     ],

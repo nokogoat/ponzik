@@ -947,7 +947,7 @@ impl App {
             self.install.pretend_dest = Some(PathBuf::from(r"%LOCALAPPDATA%\Programs\Ponzik"));
         }
         if sheet == "about" {
-            self.open_popup(Popup::Settings { tab: 4 }, Rect::default());
+            self.open_popup(Popup::Settings { tab: 5 }, Rect::default());
             return;
         }
         let dest = match platform {

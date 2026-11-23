@@ -201,6 +201,12 @@ pub enum Icon {
     Learn,
     /// An arrow going down into a tray: install.
     Install,
+    /// A chip with its pins: processor load, performance settings.
+    Cpu,
+    /// A crescent moon: a device asleep (smart disable).
+    Moon,
+    /// A leaf: eco mode.
+    Leaf,
 }
 
 /// Diagonal stripes over `r` (clipped to it): offline clips and samples.
@@ -795,6 +801,46 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
         Icon::Power => {
             c.stroke_arc(cx, cy + 0.5 * s, 5.5 * s, -PI * 0.5 + 0.7, PI * 1.5 - 0.7, stroke, col);
             c.stroke_polyline(&[p(0.0, -7.0), p(0.0, -1.0)], stroke, col);
+        }
+        Icon::Cpu => {
+            c.stroke_rrect(rr(-4.5, -4.5, 9.0, 9.0), 1.5 * s, stroke, col);
+            c.fill_rrect(rr(-2.0, -2.0, 4.0, 4.0), 0.8 * s, col);
+            for k in [-2.5, 0.0, 2.5] {
+                c.stroke_polyline(&[p(k, -7.5), p(k, -5.5)], stroke, col);
+                c.stroke_polyline(&[p(k, 5.5), p(k, 7.5)], stroke, col);
+                c.stroke_polyline(&[p(-7.5, k), p(-5.5, k)], stroke, col);
+                c.stroke_polyline(&[p(5.5, k), p(7.5, k)], stroke, col);
+            }
+        }
+        Icon::Moon => {
+            // A disc minus a slightly smaller one shifted to the upper right.
+            let (big, small, d, th) = (6.5f32, 5.5f32, 3.5f32, -PI * 0.25);
+            let x = (d * d + big * big - small * small) / (2.0 * d);
+            let h = (big * big - x * x).max(0.0).sqrt();
+            let (phi, psi) = (h.atan2(x), h.atan2(x - d));
+            let (ix, iy) = (d * th.cos(), d * th.sin());
+            let mut path = Path::new();
+            let steps = 20;
+            for k in 0..=steps {
+                let a = th + phi + (2.0 * PI - 2.0 * phi) * k as f32 / steps as f32;
+                let pt = p(big * a.cos(), big * a.sin());
+                if k == 0 { path.move_to(pt) } else { path.line_to(pt) }
+            }
+            for k in 0..=steps {
+                let a = th + 2.0 * PI - psi - (2.0 * PI - 2.0 * psi) * k as f32 / steps as f32;
+                path.line_to(p(ix + small * a.cos(), iy + small * a.sin()));
+            }
+            path.close();
+            c.fill_path(&path, col);
+        }
+        Icon::Leaf => {
+            let mut path = Path::new();
+            path.move_to(p(-6.0, 6.0));
+            path.quad_to(p(-7.0, -6.0), p(6.5, -6.5));
+            path.quad_to(p(6.0, 7.0), p(-6.0, 6.0));
+            path.close();
+            c.fill_path(&path, col.alpha(0.35));
+            c.stroke_polyline(&[p(-7.0, 7.0), p(-3.0, 3.0), p(3.5, -3.5)], stroke, col);
         }
     }
 }

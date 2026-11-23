@@ -9349,3 +9349,71 @@ msgstr "{} (remarque : {})"
 
 msgid "{} · build {}"
 msgstr "{} · build {}"
+# --- Performance ---
+
+msgctxt "settings tab"
+msgid "Performance"
+msgstr "Performances"
+
+msgid "Processor load, idle effects, eco mode, audio buffer"
+msgstr "Charge du processeur, effets au repos, mode éco, tampon audio"
+
+msgid "Live costs of the audio engine; the switches act at once and are saved"
+msgstr "Coûts en direct du moteur audio ; les interrupteurs agissent tout de suite et sont enregistrés"
+
+msgid "Settings: performance"
+msgstr "Réglages : performances"
+
+msgid "Click: performance settings"
+msgstr "Clic : réglages de performances"
+
+msgid "Processor load"
+msgstr "Charge du processeur"
+
+msgid "Processor load of the audio engine over the last 24 seconds"
+msgstr "Charge du processeur par le moteur audio sur les 24 dernières secondes"
+
+msgid "Heaviest right now"
+msgstr "Les plus lourds en ce moment"
+
+msgid "{} effect asleep"
+msgstr "{} effet endormi"
+
+msgid "{} effects asleep"
+msgstr "{} effets endormis"
+
+msgid "Nothing is working hard: play the song to see the costs"
+msgstr "Rien ne travaille dur : lancez la lecture pour voir les coûts"
+
+msgid "asleep"
+msgstr "endormi"
+
+msgid "{}: asleep, silence in and out; it wakes with the next sound"
+msgstr "{} : endormi, silence en entrée et en sortie ; il se réveille au prochain son"
+
+msgid "{}: {:.1}% of one processor core"
+msgstr "{} : {:.1} % d'un cœur du processeur"
+
+msgid "Save processor and battery"
+msgstr "Économiser processeur et batterie"
+
+msgid "Smart disable"
+msgstr "Veille intelligente"
+
+msgid "Effects fed silence stop working until sound comes back, like FL Studio"
+msgstr "Les effets qui ne reçoivent que du silence s'arrêtent jusqu'au retour du son, comme dans FL Studio"
+
+msgid "Eco mode"
+msgstr "Mode éco"
+
+msgid "After 3 s without touching anything, the interface draws fewer images per second"
+msgstr "Après 3 s sans rien toucher, l'interface dessine moins d'images par seconde"
+
+msgid "Exact export"
+msgstr "Export exact"
+
+msgid "Exports run every effect all the time; off, they skip silent effects as live and finish sooner"
+msgstr "Les exports font tourner chaque effet en permanence ; désactivé, ils sautent les effets silencieux comme en direct et finissent plus vite"
+
+msgid "{} ms between a key and its sound, plus the effects' own delay"
+msgstr "{} ms entre une touche et son son, plus le retard propre des effets"
