@@ -16,6 +16,10 @@ use std::time::{Duration, Instant};
 
 use crate::{Cursor, Event, Key, Modifiers, MouseButton, NativeHandle, PluginWindowOptions, WindowError};
 
+#[path = "x11_clip.rs"]
+mod clip;
+pub(crate) use clip::Clipboard;
+
 /// A plugin window is a plain window of its own connection.
 pub(crate) type PluginWindow = Window;
 

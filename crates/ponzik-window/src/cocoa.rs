@@ -1355,3 +1355,52 @@ impl Drop for Window {
         }
     }
 }
+
+// ---------------------------------------------------------------- presse-papiers
+
+/// The general pasteboard (macOS has no primary selection).
+pub(crate) struct Clipboard;
+
+/// `NSPasteboardTypeString`.
+const PASTEBOARD_STRING: &str = "public.utf8-plain-text";
+
+impl Clipboard {
+    pub(crate) fn open() -> Result<Self, WindowError> {
+        if class(c"NSPasteboard").is_null() {
+            return Err(WindowError::UnsupportedPlatform);
+        }
+        Ok(Self)
+    }
+
+    pub(crate) fn set(&mut self, primary: bool, text: &str) {
+        if primary {
+            return;
+        }
+        let _pool = Pool::new();
+        // SAFETY: shared pasteboard; the strings are autoreleased in the pool.
+        unsafe {
+            let board: Id = msg(class(c"NSPasteboard"), c"generalPasteboard", ());
+            if board.is_null() {
+                return;
+            }
+            let _: isize = msg(board, c"clearContents", ());
+            let _: Bool = msg(board, c"setString:forType:", (ns_string(text), ns_string(PASTEBOARD_STRING)));
+        }
+    }
+
+    pub(crate) fn get(&mut self, primary: bool) -> Option<String> {
+        if primary {
+            return None;
+        }
+        let _pool = Pool::new();
+        // SAFETY: shared pasteboard; the string is read before the pool ends.
+        unsafe {
+            let board: Id = msg(class(c"NSPasteboard"), c"generalPasteboard", ());
+            if board.is_null() {
+                return None;
+            }
+            let s: Id = msg(board, c"stringForType:", (ns_string(PASTEBOARD_STRING),));
+            (!s.is_null()).then(|| rust_string(s))
+        }
+    }
+}

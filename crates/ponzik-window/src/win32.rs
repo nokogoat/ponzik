@@ -799,6 +799,123 @@ impl Drop for Window {
     }
 }
 
+// --- Clipboard ----------------------------------------------------------------
+
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn OpenClipboard(owner: HWND) -> i32;
+    fn CloseClipboard() -> i32;
+    fn EmptyClipboard() -> i32;
+    fn GetClipboardData(format: u32) -> HANDLE;
+    fn SetClipboardData(format: u32, data: HANDLE) -> HANDLE;
+}
+
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn GlobalAlloc(flags: u32, bytes: usize) -> HANDLE;
+    fn GlobalLock(mem: HANDLE) -> *mut c_void;
+    fn GlobalUnlock(mem: HANDLE) -> i32;
+    fn GlobalFree(mem: HANDLE) -> HANDLE;
+    fn GlobalSize(mem: HANDLE) -> usize;
+}
+
+const CF_UNICODETEXT: u32 = 13;
+const GMEM_MOVEABLE: u32 = 0x2;
+/// Parent of a message-only window.
+const HWND_MESSAGE: isize = -3;
+
+/// Text for the clipboard: Windows lines end with CR LF.
+fn crlf(text: &str) -> String {
+    text.replace("\r\n", "\n").replace('\n', "\r\n")
+}
+
+/// The clipboard, owned by a hidden message-only window (`SetClipboardData`
+/// needs an owner).
+pub(crate) struct Clipboard {
+    hwnd: HWND,
+}
+
+impl Clipboard {
+    pub(crate) fn open() -> Result<Self, WindowError> {
+        let class = wide("STATIC");
+        // SAFETY: built-in class, message-only window destroyed in Drop.
+        let hwnd = unsafe {
+            CreateWindowExW(0, class.as_ptr(), null(), 0, 0, 0, 0, 0, HWND_MESSAGE as HWND, null_mut(), GetModuleHandleW(null()), null_mut())
+        };
+        if hwnd.is_null() {
+            return Err(WindowError::System("clipboard window".into()));
+        }
+        Ok(Self { hwnd })
+    }
+
+    /// Opens the clipboard, retrying a moment while another program holds it.
+    fn lock(&self) -> bool {
+        for _ in 0..10 {
+            // SAFETY: our window; closed by the caller.
+            if unsafe { OpenClipboard(self.hwnd) } != 0 {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        false
+    }
+
+    pub(crate) fn set(&mut self, primary: bool, text: &str) {
+        if primary || !self.lock() {
+            return;
+        }
+        let units: Vec<u16> = crlf(text).encode_utf16().chain(std::iter::once(0)).collect();
+        // SAFETY: the clipboard is open; the memory belongs to the system once
+        // SetClipboardData succeeds, else we free it.
+        unsafe {
+            EmptyClipboard();
+            let mem = GlobalAlloc(GMEM_MOVEABLE, units.len() * 2);
+            if !mem.is_null() {
+                let p = GlobalLock(mem) as *mut u16;
+                if !p.is_null() {
+                    std::ptr::copy_nonoverlapping(units.as_ptr(), p, units.len());
+                    GlobalUnlock(mem);
+                    if SetClipboardData(CF_UNICODETEXT, mem).is_null() {
+                        GlobalFree(mem);
+                    }
+                } else {
+                    GlobalFree(mem);
+                }
+            }
+            CloseClipboard();
+        }
+    }
+
+    pub(crate) fn get(&mut self, primary: bool) -> Option<String> {
+        if primary || !self.lock() {
+            return None;
+        }
+        // SAFETY: the clipboard is open; its memory is only read while locked.
+        let text = unsafe {
+            let mem = GetClipboardData(CF_UNICODETEXT);
+            let p = if mem.is_null() { null_mut() } else { GlobalLock(mem) as *const u16 };
+            let text = (!p.is_null()).then(|| {
+                let max = GlobalSize(mem) / 2;
+                let len = (0..max).find(|&i| *p.add(i) == 0).unwrap_or(max);
+                String::from_utf16_lossy(std::slice::from_raw_parts(p, len))
+            });
+            if !p.is_null() {
+                GlobalUnlock(mem);
+            }
+            CloseClipboard();
+            text
+        };
+        text.map(|t| t.replace("\r\n", "\n"))
+    }
+}
+
+impl Drop for Clipboard {
+    fn drop(&mut self) {
+        // SAFETY: window created by `open`.
+        unsafe { DestroyWindow(self.hwnd) };
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -818,5 +935,10 @@ mod tests {
         // Num Lock off: the navigation keys.
         assert_eq!(vk_to_key(0x24), Some(Key::Home));
         assert_eq!(vk_to_key(0x0D), Some(Key::Enter));
+    }
+
+    #[test]
+    fn clipboard_lines_end_with_crlf() {
+        assert_eq!(crlf("a\nb\r\nc"), "a\r\nb\r\nc");
     }
 }
