@@ -52,6 +52,7 @@ pub mod lmms;
 pub mod media;
 pub mod midi_file;
 pub mod midi_map;
+pub mod musicxml;
 pub mod plugins;
 pub mod presets;
 pub mod rack;

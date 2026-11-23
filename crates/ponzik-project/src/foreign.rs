@@ -123,7 +123,7 @@ pub fn import_file(path: &Path) -> Result<(Project, ImportReport), String> {
         Format::Reaper => crate::rpp::import_rpp(&bytes, &name, &resolve),
         Format::Lmms => crate::lmms::import_lmms(&bytes, &name, &|raw| crate::lmms::resolve_lmms_sample(raw, dir)),
         Format::Ardour => crate::ardour::import_ardour(&bytes, &name, dir, &resolve),
-        Format::MusicXml => Err(tr_fmt!("{}: not a project Ponzik can open", path.display().to_string())),
+        Format::MusicXml => crate::musicxml::import_musicxml(&bytes, &name),
         Format::Ponzik => unreachable!("filtered out"),
     }
 }
