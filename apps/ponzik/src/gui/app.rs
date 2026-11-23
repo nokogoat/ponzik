@@ -428,6 +428,8 @@ pub enum Action {
     InsertEffect(usize, usize, &'static str),
     /// Collapse (true) or expand every device of the panel.
     CollapseAll(bool),
+    /// The keyboard focus on the first control of the panel and transport.
+    FocusControls,
 }
 
 /// Ligne de menu : une icône (ou la couleur d'un pattern), un nom court, une
@@ -2650,7 +2652,8 @@ impl App {
         let id = wid("tb-tap", 0, 0);
         let hov = self.hovered(input, id, r);
         let hv = self.hover_anim(id, hov);
-        if hov && input.pressed {
+        let kb = self.kb_control(c, input, id, r) && self.kb_enter(id);
+        if (hov && input.pressed) || kb {
             self.tap_tempo();
         }
         let flash = self.anim.to(wid("tb-tap-flash", 0, 0), 0.0, T_LAYOUT);
@@ -2676,6 +2679,9 @@ impl App {
         let t = self.theme;
         let rid = wid("tb-rec", 0, 0);
         let rhov = self.hovered(input, rid, rec);
+        if self.kb_control(c, input, rid, rec) && self.kb_enter(rid) {
+            self.record = !self.record;
+        }
         let rhv = self.hover_anim(rid, rhov);
         let on = self.anim.to(wid("tb-rec-on", 0, 0), self.record as u8 as f32, T_HOVER);
         c.fill_rrect(rec, 8.0, t.raised.alpha(rhv.max(on * 0.6)));
@@ -3865,6 +3871,10 @@ impl App {
             Action::Device(d, op) => self.device_op(d, op),
             Action::InsertEffect(track, slot, kind) => self.insert_effect_at(track, slot, kind),
             Action::CollapseAll(on) => self.collapse_all(on),
+            Action::FocusControls => {
+                self.panel = true;
+                self.kb.pending = Some(0);
+            }
             Action::SetPatternColor(pat, color) => {
                 if let Some(p) = self.project.patterns.get_mut(pat) {
                     p.color = color;

@@ -94,6 +94,7 @@ impl App {
         }
         add(tr("Show or hide the browser").into(), tr("View"), k(S::ToggleBrowser), Action::ToggleSidebar);
         add(tr("Show or hide the devices").into(), tr("View"), k(S::TogglePanel), Action::TogglePanel);
+        add(tr("Keyboard focus: devices and transport (Tab, arrows, Enter)").into(), tr("Accessibility"), "Ctrl Tab".into(), Action::FocusControls);
         add(tr("Collapse all the devices").into(), tr("Devices"), none(), Action::CollapseAll(true));
         add(tr("Expand all the devices").into(), tr("Devices"), none(), Action::CollapseAll(false));
         for d in self.panel_devices() {
