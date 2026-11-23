@@ -28,6 +28,7 @@ pub const SESSION_SCENES: usize = 8;
 pub mod ab;
 pub mod als;
 mod arrange;
+pub mod ardour;
 pub mod base64;
 pub mod bounce;
 pub mod auto_rec;
