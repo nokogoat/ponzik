@@ -7,23 +7,8 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use ponzik_i18n::Catalog;
 use ponzik_i18n::scan::keys_in_dir;
-
-fn po_quote(s: &str) -> String {
-    let mut out = String::from("\"");
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\t' => out.push_str("\\t"),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
+use ponzik_i18n::{Catalog, po_quote};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();

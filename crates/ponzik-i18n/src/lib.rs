@@ -2,9 +2,13 @@
 //!
 //! The source language is English: every user-visible string is written in
 //! English in the code and goes through [`tr`] (or [`tr_fmt!`], [`tr_n`]…).
-//! Other languages are gettext-like catalogs (`lang/<code>.po`) embedded at
-//! compile time, keyed by the English text; a missing entry falls back to
-//! English. Adding a language means adding one `.po` file.
+//! Other languages are gettext-like catalogs keyed by the English text; a
+//! missing entry falls back to English. Catalogs come from two places:
+//!
+//! - `lang/<code>.po` in this crate, embedded at compile time;
+//! - the user's translation folder (`<config>/lang/*.po`, see
+//!   [`set_user_dir`]), read at run time and reloadable with [`reload`]. A
+//!   user file completes or corrects an embedded language of the same code.
 //!
 //! ```
 //! use ponzik_i18n::{tr, tr_fmt};
@@ -15,54 +19,63 @@
 
 mod catalog;
 mod fmt;
+pub mod known;
+mod registry;
 pub mod scan;
+mod template;
 
 use std::cell::Cell;
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-pub use catalog::Catalog;
+pub use catalog::{Catalog, Plural};
 pub use fmt::{Arg, Spec, format, placeholders};
+pub use registry::{LangInfo, Registry, normalize_code, reference_keys, registry, reload, set_user_dir, user_dir, valid_code};
+pub use template::{Created, create_translation, missing_entries, parse_new_language, po_quote, template};
 
-mod embedded {
-    include!(concat!(env!("OUT_DIR"), "/catalogs.rs"));
-}
-
-/// A language: English (index 0, built in) or one of the embedded catalogs.
+/// A language: English (built in) or a catalog, embedded or from the user's
+/// folder. Identified by its code; stays valid across [`reload`]s.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Lang(usize);
+pub struct Lang(pub(crate) usize);
 
 impl Lang {
     pub const EN: Lang = Lang(0);
 
     /// Every available language, English first.
     pub fn all() -> impl Iterator<Item = Lang> {
-        (0..=embedded::CATALOGS.len()).map(Lang)
+        registry().langs.iter().map(|l| l.lang)
     }
 
-    /// Language code (`en`, `fr`…), as saved in the settings.
+    /// Language code (`en`, `fr`, `pt_BR`…), as saved in the settings.
     pub fn code(self) -> &'static str {
-        match self.0 {
-            0 => "en",
-            i => embedded::CATALOGS[i - 1].0,
-        }
+        registry::code_of(self)
+    }
+
+    /// Picker entry of the language (None if its file was removed).
+    pub fn info(self) -> Option<&'static LangInfo> {
+        registry().langs.iter().find(|l| l.lang == self)
     }
 
     /// Name of the language in that language (« English », « Français »).
     pub fn name(self) -> &'static str {
-        match self.catalog() {
-            None => "English",
-            Some(c) => c.name.unwrap_or(self.code()),
-        }
+        self.info().map_or_else(|| self.code(), |l| l.name.as_str())
     }
 
-    /// `fr`, `fr_FR.UTF-8`, `FR-ca`… → the matching language.
+    /// `fr`, `fr_FR.UTF-8`, `FR-ca`, `pt-br`… → the matching available
+    /// language: same code, else the same language without region.
     pub fn from_code(code: &str) -> Option<Lang> {
-        let base = code.split(['_', '-', '.', '@']).next().unwrap_or("").to_ascii_lowercase();
-        if base.is_empty() {
+        let code = normalize_code(code);
+        if code.is_empty() {
             return None;
         }
-        Lang::all().find(|l| l.code() == base)
+        let base = code.split('_').next().unwrap_or("");
+        let langs = &registry().langs;
+        let base_of = |l: &LangInfo| l.lang.code().split('_').next() == Some(base);
+        langs
+            .iter()
+            .find(|l| l.lang.code() == code)
+            .or_else(|| langs.iter().find(|l| l.lang.code() == base))
+            .or_else(|| langs.iter().find(|l| base_of(l)))
+            .map(|l| l.lang)
     }
 
     /// Language of the system (`LC_ALL`, `LC_MESSAGES`, `LANG`), English when
@@ -78,15 +91,9 @@ impl Lang {
         Lang::EN
     }
 
-    /// Parsed catalog (None for English).
+    /// Translations (None for English).
     pub fn catalog(self) -> Option<&'static Catalog> {
-        if self.0 == 0 {
-            return None;
-        }
-        static PARSED: OnceLock<Vec<OnceLock<Catalog>>> = OnceLock::new();
-        let slots = PARSED.get_or_init(|| embedded::CATALOGS.iter().map(|_| OnceLock::new()).collect());
-        let slot = slots.get(self.0 - 1)?;
-        Some(slot.get_or_init(|| Catalog::parse(embedded::CATALOGS[self.0 - 1].1)))
+        self.info().and_then(|l| l.catalog.as_ref())
     }
 
     /// Decimal separator of numbers (`.` in English, `,` in French).
@@ -94,11 +101,11 @@ impl Lang {
         self.catalog().map_or('.', |c| c.decimal)
     }
 
-    /// Whether `n` takes the singular form.
+    /// Whether `n` takes the same form as 1 (the singular of [`tr_n`]).
     pub fn is_singular(self, n: u64) -> bool {
         match self.catalog() {
-            Some(c) if c.zero_is_singular => n <= 1,
-            _ => n == 1,
+            Some(c) => c.plural.index(n) == c.plural.index(1),
+            None => n == 1,
         }
     }
 }
@@ -240,13 +247,49 @@ mod tests {
 
     #[test]
     fn every_catalog_is_well_formed() {
-        for lang in Lang::all().skip(1) {
-            let cat = lang.catalog().expect("catalog");
-            assert!(cat.errors.is_empty(), "{}: {:?}", lang.code(), cat.errors);
-            assert!(cat.name.is_some(), "{}: Language-Name header", lang.code());
+        for (code, cat) in registry::embedded() {
+            assert!(cat.errors.is_empty(), "{code}: {:?}", cat.errors);
+            assert!(cat.name.is_some(), "{code}: Language-Name header");
             for (en, tx) in cat.entries() {
-                assert_eq!(placeholders(en), placeholders(tx), "{}: placeholders of {en:?}", lang.code());
+                assert_eq!(placeholders(en), placeholders(tx), "{code}: placeholders of {en:?}");
             }
         }
+    }
+
+    #[test]
+    fn user_folder_loads_and_reloads() {
+        let dir = std::env::temp_dir().join(format!("ponzik-i18n-user-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let file = dir.join("qq.po");
+        let po = |save: &str| {
+            format!(
+                "msgid \"\"\nmsgstr \"\"\n\"Language-Name: Qqish\\n\"\n\"Plural-Forms: nplurals=1; plural=0;\\n\"\n\"X-Decimal-Separator: ,\\n\"\n\nmsgid \"Save\"\nmsgstr \"{save}\"\n"
+            )
+        };
+        std::fs::write(&file, po("Qsave")).expect("write");
+        set_user_dir(Some(dir.clone()));
+        let qq = Lang::from_code("qq_QQ.UTF-8").expect("user language");
+        assert_eq!(qq.code(), "qq");
+        assert_eq!(qq.name(), "Qqish");
+        with_lang(qq, || {
+            assert_eq!(tr("Save"), "Qsave");
+            assert_eq!(tr("Cancel"), "Cancel", "untranslated: English");
+            assert!(lang().is_singular(7));
+            assert_eq!(num(0.5, 1), "0,5");
+        });
+        // Edited, then reloaded without restarting.
+        std::fs::write(&file, po("Qsave2")).expect("write");
+        reload();
+        assert_eq!(Lang::from_code("qq"), Some(qq));
+        with_lang(qq, || assert_eq!(tr("Save"), "Qsave2"));
+        // Removed: the language disappears, its texts fall back to English.
+        std::fs::remove_file(&file).expect("rm");
+        reload();
+        assert_eq!(Lang::from_code("qq"), None);
+        with_lang(qq, || assert_eq!(tr("Save"), "Save"));
+        assert_eq!(qq.name(), "qq");
+        set_user_dir(None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
