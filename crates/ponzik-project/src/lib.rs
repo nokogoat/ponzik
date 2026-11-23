@@ -40,6 +40,7 @@ pub mod history;
 pub mod io;
 pub mod flp;
 pub mod generate;
+pub mod gzip;
 pub mod groove;
 pub mod harmony;
 pub mod json;
