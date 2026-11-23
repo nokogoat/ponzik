@@ -153,7 +153,19 @@ pub fn export_regions(
 
 /// A WAV file; a library sound whose file is not on disk (yet) is rendered in memory.
 pub fn load_sample(path: &str) -> Result<Sample, String> {
-    ponzik_engine::wav::load_wav(path).or_else(|e| ponzik_project::library::library_sample(path).ok_or(e))
+    ponzik_engine::wav::load_wav(path).or_else(|e| {
+        // A library sound named by its relative path (the demos): the file of
+        // the library on disk when it is current, decoded far faster than the
+        // sound is rendered again.
+        let dir = library_dir();
+        let rel = Path::new(path);
+        if rel.is_relative() && ponzik_project::library::library_is_current(&dir)
+            && let Ok(s) = ponzik_engine::wav::load_wav(dir.join(rel))
+        {
+            return Ok(s);
+        }
+        ponzik_project::library::library_sample(path).ok_or(e)
+    })
 }
 
 /// Every sample a project uses (sampler instruments and audio clips), loaded
@@ -167,13 +179,25 @@ pub fn project_samples(project: &Project) -> HashMap<String, Arc<Sample>> {
         .chain(project.audio_clips.iter().map(|c| &c.path))
         .chain(project.take_groups.iter().flat_map(|g| g.takes.iter().map(|t| &t.clip.path)))
         .chain(project.freeze_paths());
+    let mut unique: Vec<&String> = Vec::new();
     for path in paths {
-        if !samples.contains_key(path)
-            && let Ok(s) = load_sample(path)
-        {
-            samples.insert(path.clone(), Arc::new(s));
+        if !unique.contains(&path) {
+            unique.push(path);
         }
     }
+    // Decoded (or rendered, for library sounds not on disk) side by side:
+    // a demo's sounds come up in a fraction of the time.
+    let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(unique.len()).max(1);
+    let per = unique.len().div_ceil(threads).max(1);
+    std::thread::scope(|scope| {
+        let jobs: Vec<_> = unique
+            .chunks(per)
+            .map(|chunk| scope.spawn(move || chunk.iter().filter_map(|p| Some(((*p).clone(), Arc::new(load_sample(p).ok()?)))).collect::<Vec<_>>()))
+            .collect();
+        for job in jobs {
+            samples.extend(job.join().unwrap_or_default());
+        }
+    });
     samples
 }
 
