@@ -89,6 +89,7 @@ The interface is immediate mode: each frame redraws from state. Follow the UI ru
 in `docs/BACKLOG.md` §1: icons over words, a tooltip on every control (`set_tip`),
 FL gestures (hold right-click erases, wheel adjusts, double-click resets),
 progressive disclosure, no decorative gradients or glows.
+Never hard-code a color, radius or shadow: use the theme tokens of `gui/theme.rs` (see [docs/THEMES.md](docs/THEMES.md)).
 
 ## Verify your change
 
