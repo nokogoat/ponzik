@@ -157,7 +157,7 @@ mod tests {
         for k in registry::instruments().iter().filter(|k| !matches!(k.id, "midi_out" | "drum_pads")) {
             assert!(factory_preset_names(k.id).len() >= 6, "{}", k.id);
         }
-        for id in ["eq", "compressor", "reverb", "delay", "saturator", "bus_comp", "vintage_verb", "chorus", "autofilter"] {
+        for id in ["eq", "compressor", "reverb", "delay", "saturator", "bus_comp", "vintage_verb", "chorus", "autofilter", "autotune"] {
             assert!(factory_preset_names(id).len() >= 6, "{id}");
         }
         assert!(factory_preset("eq", "Vocal Presence").is_some());
