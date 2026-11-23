@@ -1,0 +1,14 @@
+[package]
+name = "ponzik-ladspa-test-plugin"
+description = "Plugins LADSPA minimaux servant de banc d'essai à ponzik-ladspa (gain stéréo, passe-bas mono)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ponzik-ladspa.workspace = true
