@@ -212,7 +212,7 @@ fn check_update(channel: Option<&str>) -> Result<(), String> {
 fn scan_plugin(path: Option<&str>) -> ExitCode {
     use std::io::Write;
     let Some(path) = path else {
-        eprintln!("usage: ponzik scan-plugin <file.clap | bundle.vst3>");
+        eprintln!("usage: ponzik scan-plugin <file.clap | bundle.vst3 | bundle.lv2 | ladspa.so>");
         return ExitCode::from(2);
     };
     let (out, ok) = ponzik_project::plugins::scan_child(std::path::Path::new(path));

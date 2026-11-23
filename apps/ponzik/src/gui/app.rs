@@ -248,25 +248,44 @@ pub enum Rename {
     Value(ponzik_engine::AutoTarget),
 }
 
-/// Format badge of a plugin device kind (`CLAP`, `VST3`), none for native devices.
-pub fn plugin_badge(kind: &str) -> Option<&'static str> {
-    if kind.starts_with(ponzik_clap::KIND_PREFIX) {
-        Some("CLAP")
-    } else if kind.starts_with(ponzik_vst3::KIND_PREFIX) {
-        Some("VST3")
-    } else {
-        None
+/// A plugin kind kept for the whole session, for actions that take a
+/// `&'static str` (each kind is leaked once).
+pub fn static_kind(kind: String) -> &'static str {
+    thread_local! {
+        static KINDS: std::cell::RefCell<Vec<&'static str>> = const { std::cell::RefCell::new(Vec::new()) };
     }
+    KINDS.with(|k| {
+        let mut k = k.borrow_mut();
+        if let Some(&s) = k.iter().find(|s| **s == kind) {
+            return s;
+        }
+        let s: &'static str = Box::leak(kind.into_boxed_str());
+        k.push(s);
+        s
+    })
+}
+
+/// Format badge of a plugin device kind (`CLAP`, `VST3`, `LV2`, `LADSPA`), none for native devices.
+pub fn plugin_badge(kind: &str) -> Option<&'static str> {
+    ponzik_project::plugins::Format::of_kind(kind).map(|f| f.label())
 }
 
 /// Nom lisible d'un type d'appareil hors registre (plugin CLAP : son
-/// identifiant ; plugin VST 3 : le nom de son paquet).
+/// identifiant ; VST 3 : le nom de son paquet ; LV2 : la fin de son URI ;
+/// LADSPA : le nom de sa bibliothèque).
 pub fn display_kind(kind: &str) -> String {
     if let Some((_, id)) = ponzik_clap::parse_kind(kind) {
         return id.rsplit('.').next().unwrap_or(id).to_string();
     }
+    if let Some(uri) = ponzik_lv2::parse_kind(kind) {
+        return ponzik_lv2::world::short(uri).to_string();
+    }
+    let stem = |path: &std::path::Path, id: &str| path.file_stem().map_or_else(|| id.to_string(), |s| s.to_string_lossy().into_owned());
+    if let Some((path, id)) = ponzik_ladspa::parse_kind(kind) {
+        return format!("{} {id}", stem(path, id));
+    }
     match ponzik_vst3::parse_kind(kind) {
-        Some((path, id)) => path.file_stem().map_or_else(|| id.to_string(), |s| s.to_string_lossy().into_owned()),
+        Some((path, id)) => stem(path, id),
         None => kind.to_string(),
     }
 }
@@ -715,6 +734,10 @@ pub struct App {
     pub xrun_watch: super::dropouts::XrunWatch,
     /// VST 3 plugins found by the scan, by name.
     pub vst3_plugins: Vec<ponzik_vst3::PluginInfo>,
+    /// LV2 plugins found by the scan (MIDI effects included), by name.
+    pub lv2_plugins: Vec<ponzik_lv2::PluginInfo>,
+    /// LADSPA effects found by the scan, by name.
+    pub ladspa_plugins: Vec<ponzik_ladspa::PluginInfo>,
     /// Plugin files the scan could not load, shown in the browser.
     pub scan_errors: Vec<ponzik_project::plugins::ScanError>,
     /// Background scan in progress.
@@ -927,6 +950,8 @@ impl App {
             library_build: None,
             plugins: Vec::new(),
             vst3_plugins: Vec::new(),
+            lv2_plugins: Vec::new(),
+            ladspa_plugins: Vec::new(),
             scan_errors: Vec::new(),
             plugin_scan: None,
             updates: Default::default(),
@@ -2542,21 +2567,26 @@ impl App {
             };
             v.push(entry(2, name, detail, Payload::Sample(p.clone()), super::browser::infer_tags(p), folder));
         }
-        // Instruments then effects; by name, CLAP before VST 3 for the same plugin.
-        let clap = self.plugins.iter().map(|p| (0, "CLAP", p.kind(), &p.name, &p.vendor, p.is_instrument));
-        let vst3 = self.vst3_plugins.iter().map(|p| (1, "VST 3", p.kind(), &p.name, &p.vendor, p.is_instrument));
-        let mut plugins: Vec<_> = clap.chain(vst3).collect();
-        plugins.sort_by_cached_key(|p| (!p.5, p.3.to_lowercase(), p.0));
-        for (_, format, kind, name, vendor, is_instrument) in plugins {
+        // Instruments then effects, each in a folder per format; by name, CLAP
+        // before VST 3, LV2 and LADSPA for the same plugin. LV2 MIDI effects go
+        // in the note effects of a channel, not here.
+        use ponzik_project::plugins::Format;
+        let clap = self.plugins.iter().map(|p| (Format::Clap, p.kind(), &p.name, &p.vendor, p.is_instrument));
+        let vst3 = self.vst3_plugins.iter().map(|p| (Format::Vst3, p.kind(), &p.name, &p.vendor, p.is_instrument));
+        let lv2 = self.lv2_plugins.iter().filter(|p| !p.is_midi_effect).map(|p| (Format::Lv2, p.kind(), &p.name, &p.vendor, p.is_instrument));
+        let ladspa = self.ladspa_plugins.iter().map(|p| (Format::Ladspa, p.kind(), &p.name, &p.vendor, false));
+        let mut plugins: Vec<_> = clap.chain(vst3).chain(lv2).chain(ladspa).collect();
+        plugins.sort_by_cached_key(|p| (!p.4, p.2.to_lowercase(), p.0 as u8));
+        for (format, kind, name, vendor, is_instrument) in plugins {
             let what = if is_instrument { tr("Instrument") } else { tr("Effect") };
-            let detail =
-                if vendor.is_empty() { format!("{what} {format}") } else { format!("{what} {format} · {vendor}") };
+            let label = if format == Format::Vst3 { "VST 3" } else { format.label() };
+            let detail = if vendor.is_empty() { format!("{what} {label}") } else { format!("{what} {label} · {vendor}") };
             let (payload, folder) = if is_instrument {
                 (Payload::Instrument { kind, name: name.clone() }, "Instruments")
             } else {
                 (Payload::Effect { kind, name: name.clone() }, "Effects")
             };
-            v.push(entry(3, name.clone(), detail, payload, TagSet::default(), vec![folder.to_string()]));
+            v.push(entry(3, name.clone(), detail, payload, TagSet::default(), vec![folder.to_string(), format.label().to_string()]));
         }
         v
     }
@@ -2617,7 +2647,7 @@ impl App {
     fn sidebar_area(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
         use super::tree::NavKey;
         const CATS: [(Icon, &str); 4] =
-            [(Icon::Instrument, tr_noop("Instruments")), (Icon::Effect, tr_noop("Effects")), (Icon::Sample, tr_noop("Samples")), (Icon::Plugin, tr_noop("CLAP and VST 3 plugins"))];
+            [(Icon::Instrument, tr_noop("Instruments")), (Icon::Effect, tr_noop("Effects")), (Icon::Sample, tr_noop("Samples")), (Icon::Plugin, tr_noop("Plugins: CLAP, VST 3, LV2 and LADSPA"))];
         let t = self.theme;
         c.fill_rect(r, t.bg_deep);
         c.fill_rect(Rect::new(r.right() - 1.0, r.y, 1.0, r.h), t.hairline);
@@ -2729,7 +2759,7 @@ impl App {
         let key = (
             self.sample_files.as_ptr() as usize,
             self.sample_files.len(),
-            self.plugins.len() + self.vst3_plugins.len(),
+            self.plugins.len() + self.vst3_plugins.len() + self.lv2_plugins.len() + self.ladspa_plugins.len(),
             ponzik_i18n::lang().code(),
         );
         if self.browser_cache.0 != Some(key) {
@@ -2779,7 +2809,7 @@ impl App {
                 (_, Filter::Recent, _) => (Icon::History, tr("Nothing used yet")),
                 (_, _, 2) => (Icon::Sample, tr("No WAV files")),
                 (_, _, 3) if self.plugin_scan_running() => (Icon::Plugin, tr("Scanning the plugins…")),
-                (_, _, 3) => (Icon::Plugin, tr("No CLAP or VST 3 plugins")),
+                (_, _, 3) => (Icon::Plugin, tr("No CLAP, VST 3, LV2 or LADSPA plugins")),
                 _ => (Icon::Info, tr("Empty")),
             };
             self.empty_state(c, Rect::new(inner_x, list.y + 20.0, w, 120.0), icon, line);
@@ -3101,13 +3131,19 @@ impl App {
                 let name = registry::effect_kind(&kind).map_or(kind.clone(), |k| tr(k.name).to_string());
                 (name, self.rack_device_items(*track, *slot, *unit))
             }
-            Popup::AddNoteFx { channel, slot } => (
-                tr("Note effects").into(),
-                registry::note_fx()
+            Popup::AddNoteFx { channel, slot } => {
+                let mut items: Vec<MenuItem> = registry::note_fx()
                     .iter()
                     .map(|k| MenuItem::new(super::notefx::icon(k.id), tr(k.name), Action::AddNoteFx(*channel, *slot, k.id)).tip(tr(k.description)))
-                    .collect(),
-            ),
+                    .collect();
+                // LV2 MIDI effects found by the scan.
+                for p in self.lv2_plugins.iter().filter(|p| p.is_midi_effect) {
+                    let kind = static_kind(p.kind());
+                    let tip = tr_fmt!("LV2 MIDI effect · {}", p.vendor.as_str());
+                    items.push(MenuItem::new(Icon::Plugin, &p.name, Action::AddNoteFx(*channel, *slot, kind)).tip(&tip));
+                }
+                (tr("Note effects").into(), items)
+            }
             Popup::Patterns => {
                 let mut v: Vec<MenuItem> = p
                     .patterns
