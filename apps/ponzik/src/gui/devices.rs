@@ -312,7 +312,9 @@ impl App {
         if devices.len() >= 4 && strip.w > 120.0 {
             self.want_hint(super::hints::Hint::DeviceStrip, strip);
         }
-        if self.popup.is_none() {
+        // Ctrl+arrows (the piano roll keeps them while notes are selected).
+        let piano_keys = self.view == super::app::View::Piano && !self.piano.selected.is_empty();
+        if self.popup.is_none() && !piano_keys {
             self.panel_keys(input, &lay, chain.w);
         }
 
@@ -652,6 +654,10 @@ impl App {
                 }
                 // Clic droit : automatiser, valeur par défaut ; point sarcelle si automatisé.
                 let target = device_target(device, p.id);
+                // Enter on a focused knob: type its value.
+                if p.unit != Unit::Choice && self.kb_enter(id) {
+                    self.open_popup(Popup::Rename { target: super::app::Rename::Value(target), text: String::new() }, Rect::new(cell.x - 60.0, cell.y + 20.0, cell.w + 120.0, 36.0));
+                }
                 if input.right_pressed && input.inside && cell.contains(input.x, input.y) && self.drag.is_none() {
                     let popup = Popup::Param { target, value, default: p.default };
                     self.open_popup(popup, Rect::new(input.x, input.y, 0.0, 0.0));

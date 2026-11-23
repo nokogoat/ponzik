@@ -1423,6 +1423,7 @@ impl App {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn lab_button(&mut self, c: &mut Canvas, input: &Input, id: u64, r: Rect, icon: Option<Icon>, label: &str, style: u8, tip: &str) -> bool {
         let t = self.theme;
+        let kb = self.kb_control(c, input, id, r) && self.kb_enter(id);
         let hov = self.hovered(input, id, r);
         let hv = self.hover_anim(id, hov);
         let press = self.anim.to(id ^ 0x5052, if hov && input.down { 0.96 } else { 1.0 }, T_PRESS);
@@ -1459,7 +1460,7 @@ impl App {
             }
             self.set_cursor(ponzik_window::Cursor::Hand);
         }
-        hov && input.pressed
+        (hov && input.pressed) || kb
     }
 
     fn button_width(&self, icon: bool, label: &str) -> f32 {

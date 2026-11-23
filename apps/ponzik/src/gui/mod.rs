@@ -25,6 +25,7 @@ mod freeze;
 mod grand;
 mod groove;
 mod hints;
+mod kbfocus;
 mod keymap;
 mod keys;
 mod lanes;
@@ -709,6 +710,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // PONZIK_DEVICES=collapse:1,menu:2,cursor:3,insert:2,seen: the device panel's strip and cards.
     if let Ok(spec) = std::env::var("PONZIK_DEVICES") {
         app.screenshot_devices(&spec);
+    }
+    // PONZIK_KB=n: the keyboard focus on the n-th control of the panel and transport.
+    if let Some(n) = std::env::var("PONZIK_KB").ok().and_then(|v| v.trim().parse().ok()) {
+        app.kb.pending = Some(n);
     }
     // PONZIK_CHAIN_SCROLL=px : the device panel scrolled to the right.
     if let Some(px) = std::env::var("PONZIK_CHAIN_SCROLL").ok().and_then(|v| v.trim().parse::<f32>().ok()) {

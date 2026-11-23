@@ -457,7 +457,7 @@ impl App {
             Focus::Channel(_) => {
                 let n = self.project.tracks[track].inserts.iter().flatten().count();
                 let name = self.project.tracks[track].name.clone();
-                (tr_fmt!("Track {} · {} effects", track, n), Icon::Mixer, tr_fmt!("Mixer track {}: {}\nClick: go to its effects · double-click: open the track alone", track, name), None)
+                (ponzik_i18n::tr_fmt_n!("Track {} · {} effect", "Track {} · {} effects", n, track, n), Icon::Mixer, tr_fmt!("Mixer track {}: {}\nClick: go to its effects · double-click: open the track alone", track, name), None)
             }
             Focus::Track(t) => {
                 let ch = self.panel_return.filter(|&c| self.project.channels.get(c).is_some_and(|ch| ch.track == t)).or_else(|| self.project.channels.iter().position(|ch| ch.track == t));

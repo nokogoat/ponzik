@@ -880,6 +880,7 @@ impl App {
     /// `tip` : libellé et raccourci de l'infobulle.
     pub(super) fn icon_button(&mut self, c: &mut Canvas, input: &Input, id: u64, r: Rect, icon: Icon, on: bool, tip: Tip) -> bool {
         let t = self.theme;
+        let kb = self.kb_control(c, input, id, r) && self.kb_enter(id);
         let hov = self.hovered(input, id, r);
         let hv = self.hover_anim(id, hov);
         let onv = self.anim.to(id ^ 0x4f4e, on as u8 as f32, T_HOVER);
@@ -894,7 +895,7 @@ impl App {
             self.set_tip(tip.0, tip.1);
             self.set_cursor(Cursor::Hand);
         }
-        hov && input.pressed
+        (hov && input.pressed) || kb
     }
 
     /// Sélecteur à segments de texte court, chacun avec son infobulle.
@@ -911,6 +912,11 @@ impl App {
 
     fn segmented_with(&mut self, c: &mut Canvas, input: &Input, id: u64, r: Rect, opts: &[Seg], tips: &[Tip], sel: usize) -> Option<usize> {
         let t = self.theme;
+        let kb_pick = if self.kb_control(c, input, id, r) {
+            self.kb_steps(id).map(|s| (sel as i32 + s.signum() as i32).clamp(0, opts.len() as i32 - 1) as usize).filter(|&i| i != sel)
+        } else {
+            None
+        };
         c.fill_rrect(r, 10.0, t.bg_deep);
         c.stroke_rrect(r, 10.0, 1.0, t.hairline);
         let n = opts.len().max(1) as f32;
@@ -947,7 +953,7 @@ impl App {
                 }
             }
         }
-        picked
+        picked.or(kb_pick)
     }
 
     // --- Infobulles ---
@@ -1081,6 +1087,9 @@ impl App {
         let hov = self.hovered(input, id, hit);
         let mut changed = None;
         let norm = info.to_norm(value);
+        if self.kb_control(c, input, id, Rect::new(cx - 24.0, cy - 24.0, 48.0, 48.0)) {
+            changed = self.kb_param(id, info, value);
+        }
         if hov && input.pressed {
             if input.double || input.mods.ctrl {
                 changed = Some(info.default);
@@ -1112,7 +1121,7 @@ impl App {
         let name = self.short_label(self.f.sans, 12.0, ponzik_i18n::tr(info.name), cell.w - 4.0);
         self.text_center(c, self.f.sans, 12.0, cx, cell.y + 6.0, &name, t.text2.mix(t.text, hv));
         if hov {
-            self.set_tip(&ponzik_i18n::tr_fmt!("{}\nDouble-click: default · right-click: automate, link to a controller", ponzik_i18n::tr(info.name)), "");
+            self.set_tip(&ponzik_i18n::tr_fmt!("{}\nDrag, wheel or arrows · double-click: default\nRight-click: type a value, automate, link to a controller", ponzik_i18n::tr(info.name)), "");
         }
 
         let (a0, sweep) = (0.75 * PI, 1.5 * PI);
@@ -1143,6 +1152,7 @@ impl App {
         self.text_center(c, self.f.sans, 12.0, cell.x + cell.w * 0.5, cell.y + 6.0, &name, t.text2);
         let field = Rect::new(cell.x + 2.0, cell.y + 20.0, cell.w - 4.0, 30.0);
         let hov = self.hovered(input, id, field);
+        let kb = if self.kb_control(c, input, id, field) { self.kb_param(id, info, value) } else { None };
         let hv = self.hover_anim(id, hov);
         c.fill_rrect(field, 8.0, t.raised.mix(t.raised_hi, hv));
         c.stroke_rrect(field, 8.0, 1.0, t.hairline);
@@ -1164,6 +1174,11 @@ impl App {
         }
         if hov && input.wheel != 0.0 {
             changed = Some(((cur - input.wheel.signum() as i32).clamp(0, count - 1)) as f32);
+        }
+        if kb.is_some() {
+            changed = kb;
+        } else if self.kb_enter(id) {
+            changed = Some(((cur + 1).rem_euclid(count.max(1))) as f32);
         }
         let (fx, fy) = field.center();
         let label = info.format(changed.unwrap_or(value));
@@ -1200,6 +1215,11 @@ impl App {
             self.begin_drag(id, input, value);
         }
         let mut changed = None;
+        if self.kb_control(c, input, id, r)
+            && let Some(s) = self.kb_steps(id)
+        {
+            changed = Some(value + s * wheel_step);
+        }
         if let Some(d) = self.drag.as_ref().filter(|d| d.id == id) {
             let k = if d.fine { 0.1 } else { 1.0 };
             // Comme un curseur : vers la droite on monte, vers la gauche on descend.

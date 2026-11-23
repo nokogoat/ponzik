@@ -645,6 +645,8 @@ pub struct App {
     pub samples: HashMap<String, Arc<Sample>>,
     /// Background renders of the warped audio clips.
     pub warping: super::warping::Warping,
+    /// Keyboard focus in the device panel and the transport.
+    pub kb: super::kbfocus::KbFocus,
     /// Devices folded to a slim card in the panel.
     pub collapsed: std::collections::HashSet<super::devices::Device>,
     /// Device picked in the panel (strip, Ctrl+arrows).
@@ -948,6 +950,7 @@ impl App {
             tour: Default::default(),
             hints: Default::default(),
             loop_bpms: HashMap::new(),
+            kb: Default::default(),
             collapsed: Default::default(),
             panel_cursor: None,
             strip_drag: None,
@@ -2094,6 +2097,15 @@ impl App {
         self.pointer = (input.x, input.y);
         self.cursor = ponzik_window::Cursor::Arrow;
         self.wheel_hot = std::mem::take(&mut self.wheel_hot_now);
+        // The keys of the focused control do not reach the shortcuts.
+        let kb_input;
+        let input = match self.kb_begin(input) {
+            Some(keys) => {
+                kb_input = Input { keys, ..input.clone() };
+                &kb_input
+            }
+            None => input,
+        };
         self.poll_engine(dt);
         self.learn_tick();
         self.autorec_tick();
@@ -2159,7 +2171,9 @@ impl App {
             // The browser closed: its preview with it.
             self.stop_preview();
         }
+        self.kb.scope = true;
         self.top_bar(c, under, Rect::new(0.0, 0.0, w, TOP_BAR));
+        self.kb.scope = false;
         self.float_layer(c, ui);
         self.record_panel(c, ui, Rect::new(0.0, 0.0, w, h));
         self.voice_panel(c, ui, Rect::new(0.0, 0.0, w, h));
@@ -2191,6 +2205,7 @@ impl App {
         if !input.middle_down {
             self.pan = None;
         }
+        self.kb_end(input);
     }
 
     // --- Barre du haut ---
@@ -2224,7 +2239,8 @@ impl App {
 
         let play = Rect::new(x, cy - 18.0, 40.0, 36.0);
         let hov = self.hovered(input, wid("tb-play", 0, 0), play);
-        if hov && input.pressed {
+        let kb = self.kb_control(c, input, wid("tb-play", 0, 0), play) && self.kb_enter(wid("tb-play", 0, 0));
+        if (hov && input.pressed) || kb {
             self.toggle_play();
         }
         if hov {
@@ -2752,7 +2768,11 @@ impl App {
         let h = self.layout.panel_open.max(r.h);
         match self.clip_panel_shown() {
             Some(sel) => self.clip_panel(c, input, Rect::new(r.x, r.y + 1.0, r.w, h - 1.0), sel),
-            None => self.device_panel(c, input, Rect::new(r.x, r.y + 1.0, r.w, h - 1.0)),
+            None => {
+                self.kb.scope = true;
+                self.device_panel(c, input, Rect::new(r.x, r.y + 1.0, r.w, h - 1.0));
+                self.kb.scope = false;
+            }
         }
         c.set_clip(Some(prev));
     }
