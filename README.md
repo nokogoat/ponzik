@@ -13,7 +13,7 @@
 <a href="https://github.com/nokogoat/ponzik/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/nokogoat/ponzik/release.yml?branch=main&style=for-the-badge&labelColor=26302f&label=build" alt="Build status"></a>
 </p>
 
-**[Download](https://github.com/nokogoat/ponzik/releases)** · [Getting started](docs/GETTING_STARTED.md) · [Features](docs/OVERVIEW.md) · [Shortcuts](docs/SHORTCUTS.md) · [Contributing](AGENTS.md)
+**[Download](https://github.com/nokogoat/ponzik/releases)** · [Getting started](docs/GETTING_STARTED.md) · [Features](docs/OVERVIEW.md) · [Shortcuts](docs/SHORTCUTS.md) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
