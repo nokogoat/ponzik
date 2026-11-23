@@ -25,6 +25,7 @@ Legend: **FL** = FL Studio · **AB** = Ableton Live · ✅ done in Ponzik · �
 | Plugin picker, plugin database | FL | 🟡 CLAP and VST3 plugins listed in the browser |
 | Detachable windows, multiple monitors | FL · AB | 🟡 devices in stacked floating windows inside the main window; no multi-monitor |
 | Contextual help bar (hint bar / Info View) | FL · AB | 🟡 tooltips everywhere; no permanent help bar |
+| Built-in lessons (Live's Lessons) | AB | ✅ Learn panel: 12 optional hands-on lessons in two series (using Ponzik, first productions), bubbles on the real widgets, steps that end when you do the action, saved progress |
 | Customizable themes and colors | FL | ✅ 7 themes (one light), CSS theme files with live reload, visual editor with contrast check ([THEMES.md](THEMES.md)) |
 | Markers: sections, loop, time signature, punch in/out | FL · AB | 🟡 start marker, loop over a time selection; no section markers |
 | Full undo history | FL · AB | ✅ with a history panel to jump back to any step |

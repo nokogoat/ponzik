@@ -75,6 +75,19 @@ beginners and professionals.
 Add an `Action`, handle it in `App::run_action`, expose it in the command palette
 (`gui/palette.rs`) and, if it deserves a key, in `gui/keymap.rs` (remappable).
 
+### Add a lesson (Learn panel)
+
+Lessons are data in `apps/ponzik/src/gui/lessons.rs` (`LESSONS`): an id (saved,
+never change it), a series, an icon, a title, a blurb, a duration and 3 to 7
+steps. A step is a widget (`Spot`), one sentence of 15 words at most marked with
+`tr_noop`, and a `Goal` that ends it by itself (a view shown, notes added, a clip
+placed, an effect inserted… or `Goal::Next`). A new widget gets a `Spot` variant
+and a `self.spot(Spot::X, rect)` call where its view draws it; a new kind of
+action gets a `Goal` variant checked in `App::goal_met`. Add the French strings,
+then look at it: `PONZIK_LESSON=<id>:<step> ponzik screenshot /tmp/l.png rack`
+(`list`, `list:1`, `<id>:done` and `<id>:<step>:ok` too). The tests check spots,
+sentence length, translations and the saved progress.
+
 ### Translations
 
 English is the default language. `crates/ponzik-i18n/lang/*.po` are built in;
@@ -105,7 +118,8 @@ a specific state for a capture (open a popup, a panel, a device, a language…);
 they are read in `apps/ponzik/src/gui/mod.rs` (`screenshot`) and
 `App::screenshot_*` functions; grep for `PONZIK_` to find them. Useful ones:
 `PONZIK_LANG=fr`, `PONZIK_POPUP=<name>`, `PONZIK_CHANNEL=0 PONZIK_INSTRUMENT=<id>`,
-`PONZIK_INSERTS="2:compressor"`, `PONZIK_FOCUS_TRACK=<n>`, `PONZIK_SCALE_UI=2`.
+`PONZIK_INSERTS="2:compressor"`, `PONZIK_FOCUS_TRACK=<n>`, `PONZIK_SCALE_UI=2`,
+`PONZIK_LESSON=list|<lesson>:<step>`.
 
 Sound can't be heard in a terminal either: measure it. Render with
 `ponzik render` or in a test, then check levels, pitch (`ponzik_dsp::tuner`),
