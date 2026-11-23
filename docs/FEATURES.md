@@ -237,10 +237,8 @@ Granular, Plucked Strings, Electric Piano, Drum Machine), 27 native effects (EQ,
 compressor, bus compressor, limiter, mastering limiter, gate, OTT-style multiband, pump,
 ducking, transients, reverb, algorithmic reverb, shimmer, delay,
 character delay, chorus, phaser, saturator, character saturation, bitcrusher,
-noise and texture, autofilter, slice, pitch shifter, stereo imager, utility) and
-5 note effects (arpeggiator, chord, scale, random, repeat). CLAP, VST3, LV2 and LADSPA hosting.
 noise and texture, autofilter, slice, pitch shifter, pitch correction, stereo imager, utility) and
-5 note effects (arpeggiator, chord, scale, random, repeat). CLAP and VST3 hosting.
+5 note effects (arpeggiator, chord, scale, random, repeat). CLAP, VST3, LV2 and LADSPA hosting.
 JSON projects with templates, autosave and crash recovery, undo with a history
 panel, MIDI file import and export, audio recording, count-in and tap tempo, WAV
 export (16/24/32-bit float) and FLAC export (16/24-bit) with normalization and
