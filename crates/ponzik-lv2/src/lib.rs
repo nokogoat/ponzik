@@ -246,6 +246,11 @@ pub fn note_fx_from_kind(kind: &str) -> Result<Box<dyn NoteFx>, String> {
     create_note_fx(&b, uri)
 }
 
+/// The name of a plugin already loaded in this process (no file read).
+pub fn loaded_name(kind: &str) -> Option<String> {
+    plugin::loaded_name(kind)
+}
+
 /// Presets of the plugin of `kind`: name and parameter values.
 pub fn presets_of(kind: &str) -> Vec<(String, Vec<(u32, f32)>)> {
     let Ok((b, uri)) = bundle_of(kind) else { return Vec::new() };

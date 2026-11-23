@@ -271,6 +271,7 @@ pub type ScanResult = (Vec<PluginInfo>, Vec<(String, String)>);
 
 struct Model {
     kind: &'static str,
+    name: String,
     infos: &'static [ParamInfo],
     convs: Vec<Conv>,
     defaults: Vec<f32>,
@@ -282,7 +283,12 @@ fn leak(s: String) -> &'static str {
 
 static MODELS: Mutex<Vec<(String, Arc<Model>)>> = Mutex::new(Vec::new());
 
-fn model(kind: String, ports: &[Port]) -> Arc<Model> {
+/// The name of a plugin already loaded in this process (no file read).
+pub fn loaded_name(kind: &str) -> Option<String> {
+    lock(&MODELS).iter().find(|(k, _)| k == kind).map(|(_, m)| m.name.clone())
+}
+
+fn model(kind: String, name: String, ports: &[Port]) -> Arc<Model> {
     let mut models = lock(&MODELS);
     if let Some((_, m)) = models.iter().find(|(k, _)| *k == kind) {
         return m.clone();
@@ -323,7 +329,7 @@ fn model(kind: String, ports: &[Port]) -> Arc<Model> {
         convs.push(conv);
         defaults.push(def);
     }
-    let m = Arc::new(Model { kind: leak(kind.clone()), infos: Box::leak(infos.into_boxed_slice()), convs, defaults });
+    let m = Arc::new(Model { kind: leak(kind.clone()), name: name.clone(), infos: Box::leak(infos.into_boxed_slice()), convs, defaults });
     models.push((kind, m.clone()));
     m
 }
@@ -364,7 +370,7 @@ impl LadspaEffect {
         if let Some(why) = unsupported(&ports) {
             return Err(format!("{}: {why}", c_str(descriptor.name)));
         }
-        let model = model(kind_for(path, id), &ports);
+        let model = model(kind_for(path, id), c_str(descriptor.name), &ports);
         let mut audio = Vec::new();
         let mut audio_of = Vec::new();
         let (mut ins, mut outs, mut latency_port) = (Vec::new(), Vec::new(), None);

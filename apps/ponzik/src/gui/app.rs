@@ -277,12 +277,13 @@ pub fn display_kind(kind: &str) -> String {
     if let Some((_, id)) = ponzik_clap::parse_kind(kind) {
         return id.rsplit('.').next().unwrap_or(id).to_string();
     }
+    // LV2 and LADSPA: the plugin's own name once it is loaded.
     if let Some(uri) = ponzik_lv2::parse_kind(kind) {
-        return ponzik_lv2::world::short(uri).to_string();
+        return ponzik_lv2::loaded_name(kind).unwrap_or_else(|| ponzik_lv2::world::short(uri).to_string());
     }
     let stem = |path: &std::path::Path, id: &str| path.file_stem().map_or_else(|| id.to_string(), |s| s.to_string_lossy().into_owned());
     if let Some((path, id)) = ponzik_ladspa::parse_kind(kind) {
-        return format!("{} {id}", stem(path, id));
+        return ponzik_ladspa::loaded_name(kind).unwrap_or_else(|| format!("{} {id}", stem(path, id)));
     }
     match ponzik_vst3::parse_kind(kind) {
         Some((path, id)) => stem(path, id),
