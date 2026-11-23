@@ -15,6 +15,7 @@ use crate::effects::CharSaturation;
 use crate::effects::Lofi;
 use crate::effects::VintageVerb;
 use crate::effects::Amp;
+use crate::effects::AutoTune;
 use crate::instruments::{Brass, Guitar, Strings, Winds};
 use crate::instruments::DrumMachine;
 use crate::instruments::DrumPads;
@@ -292,6 +293,13 @@ pub fn effects() -> &'static [EffectKind] {
             category: "Pitch",
             description: "Granular pitch shifting over ±24 semitones",
             create: || Box::new(PitchShifter::default()),
+        },
+        EffectKind {
+            id: "autotune",
+            name: "Pitch Correction",
+            category: "Pitch",
+            description: "Real-time pitch correction, from transparent to hard tune: key and scale, retune speed, humanize, Flex-Tune, vibrato, formants, MIDI target notes",
+            create: || Box::new(AutoTune::default()),
         },
         EffectKind {
             id: "reverb",
