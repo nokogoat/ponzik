@@ -146,3 +146,6 @@ logs input events.
   the area: `Engine: …`, `Mixer: …`, `Piano roll: …`, `Docs: …`.
 - Keep the tree green at the end of a series (tests and clippy).
 - Update `docs/FEATURES.md` / `docs/BACKLOG.md` when you ship a listed item.
+- Changes land on `main` through a **pull request**, merged by rebase so the atomic
+  commits stay. Each commit subject ends with the PR number, `Mixer: bus sends (#42)`,
+  so every line of history links to its discussion.
