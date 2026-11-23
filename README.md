@@ -34,6 +34,11 @@ Windows.
 
 ![Ponzik playing the Zalgo Rave demo](docs/images/zg-playlist.png)
 
+| | |
+|---|---|
+| ![Channel Rack](docs/images/zg-rack.png) | ![Mixer](docs/images/zg-mixer.png) |
+| ![Piano roll](docs/images/piano.png) | ![Pitch Correction](docs/images/autotune.png) |
+
 ## Highlights
 
 - **FL Studio's workflow**: Channel Rack, piano roll, playlist, the same shortcuts and gestures.
