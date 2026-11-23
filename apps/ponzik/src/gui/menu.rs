@@ -305,6 +305,77 @@ pub fn import_formats() -> Vec<ImportFormat> {
     ]
 }
 
+/// Rows grouped under their category, in order of first appearance: a
+/// submenu per category (its count on the right); the categories of a single
+/// row are not worth a submenu, their rows come last, inline.
+pub fn by_category(rows: Vec<(&'static str, MenuItem)>, icon: fn(&str) -> Icon) -> Vec<MenuItem> {
+    let mut cats: Vec<(&'static str, Vec<MenuItem>)> = Vec::new();
+    for (cat, it) in rows {
+        match cats.iter_mut().find(|(c, _)| *c == cat) {
+            Some((_, v)) => v.push(it),
+            None => cats.push((cat, vec![it])),
+        }
+    }
+    let (groups, single): (Vec<_>, Vec<_>) = cats.into_iter().partition(|(_, v)| v.len() > 1);
+    let mut out: Vec<MenuItem> = groups
+        .into_iter()
+        .map(|(cat, v)| MenuItem::sub(icon(cat), ponzik_i18n::tr(cat), v.clone()).detail(v.len().to_string()))
+        .collect();
+    let grouped = !out.is_empty();
+    for (k, (_, v)) in single.into_iter().enumerate() {
+        out.extend(v.into_iter().map(|it| if k == 0 && grouped { it.sep() } else { it }));
+    }
+    out
+}
+
+/// Icon of an instrument or effect category of the registry.
+pub fn category_icon(cat: &str) -> Icon {
+    match cat {
+        "Synths" => Icon::Wand,
+        "Drums" => Icon::Drum,
+        "Samplers" => Icon::Sample,
+        "Bass" => Icon::Bass,
+        "Keys" => Icon::Piano,
+        "Acoustic" => Icon::Instrument,
+        "External" => Icon::Midi,
+        "EQ & Filters" => Icon::Spectral,
+        "Dynamics" => Icon::Normalize,
+        "Space" => Icon::Send,
+        "Modulation" => Icon::Automation,
+        "Saturation" => Icon::Effect,
+        "Utilities" => Icon::Layout,
+        "Pitch" => Icon::Voice,
+        "Rhythm" => Icon::Metronome,
+        "Mixing" => Icon::Mixer,
+        _ => Icon::Effect,
+    }
+}
+
+/// The native effects (those `keep` accepts) by category, a row running `action(id)`.
+pub fn effect_items(keep: impl Fn(&str) -> bool, action: impl Fn(&'static str) -> Action) -> Vec<MenuItem> {
+    let rows = ponzik_engine::registry::effects()
+        .iter()
+        .filter(|k| keep(k.id))
+        .map(|k| (k.category, MenuItem::new(Icon::Effect, tr(k.name), action(k.id)).tip(tr(k.description))))
+        .collect();
+    by_category(rows, category_icon)
+}
+
+/// The native instruments by category; `replace`: the channel whose instrument they replace.
+pub fn instrument_items(replace: Option<usize>) -> Vec<MenuItem> {
+    let rows = ponzik_engine::registry::instruments()
+        .iter()
+        .map(|k| {
+            (
+                k.category,
+                MenuItem::new(Icon::Instrument, tr(k.name), Action::AddInstrument(k.id, replace))
+                    .tip(tr(k.description)),
+            )
+        })
+        .collect();
+    by_category(rows, category_icon)
+}
+
 impl App {
     /// The main menu (☰, top right): files, Import and Export submenus, theme, help.
     pub(super) fn main_menu(&self) -> (String, Vec<MenuItem>) {
@@ -909,6 +980,42 @@ mod tests {
         assert_eq!(nav_key(&mut nav, Key::Right, &r, &child), NavOut::None);
         assert_eq!(nav.open, None);
         assert_eq!(nav_key(&mut nav, Key::Enter, &r, &child), NavOut::Run(0, false));
+    }
+
+    #[test]
+    fn categories_become_submenus_and_singletons_stay_inline() {
+        let row = |n: &str| MenuItem::plain(n, Action::NewPattern);
+        let v =
+            by_category(vec![("A", row("a1")), ("B", row("b1")), ("A", row("a2")), ("C", row("c1"))], |_| Icon::Effect);
+        let names: Vec<&str> = v.iter().map(|it| it.name.as_str()).collect();
+        assert_eq!(names, ["A", "b1", "c1"]);
+        assert!(matches!(&v[0].sub, Some(Sub::Items(items)) if items.len() == 2));
+        assert_eq!(v[0].detail, "2");
+        assert!(v[1].sep && !v[2].sep, "the lone rows after a rule");
+    }
+
+    #[test]
+    fn effect_and_instrument_menus_are_short_and_complete() {
+        let leaves = |v: &[MenuItem]| -> usize {
+            v.iter()
+                .map(|it| match &it.sub {
+                    Some(Sub::Items(items)) => items.len(),
+                    _ => 1,
+                })
+                .sum()
+        };
+        let fx = effect_items(|_| true, |_| Action::None);
+        assert!(fx.len() <= 14, "{} rows at the first level", fx.len());
+        assert_eq!(leaves(&fx), ponzik_engine::registry::effects().len());
+        let inst = instrument_items(None);
+        assert!(inst.len() <= 12, "{} rows at the first level", inst.len());
+        assert_eq!(leaves(&inst), ponzik_engine::registry::instruments().len());
+        // Two levels at most.
+        for it in fx.iter().chain(&inst) {
+            if let Some(Sub::Items(items)) = &it.sub {
+                assert!(items.iter().all(|x| x.sub.is_none()));
+            }
+        }
     }
 
     // --- In the app: the main menu, top right -----------------------------------

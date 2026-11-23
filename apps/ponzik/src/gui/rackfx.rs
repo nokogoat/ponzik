@@ -163,11 +163,7 @@ impl App {
     }
 
     pub(super) fn rack_add_items(&self, track: usize, slot: usize, chain: usize) -> Vec<MenuItem> {
-        registry::effects()
-            .iter()
-            .filter(|k| rack_accepts(k.id))
-            .map(|k| MenuItem::new(Icon::Effect, tr(k.name), Action::Rack(RackAction::Add { track, slot, chain, kind: k.id.to_string() })).tip(tr(k.description)))
-            .collect()
+        super::menu::effect_items(rack_accepts, |id| Action::Rack(RackAction::Add { track, slot, chain, kind: id.to_string() }))
     }
 
     pub(super) fn rack_device_items(&self, track: usize, slot: usize, unit: usize) -> Vec<MenuItem> {
