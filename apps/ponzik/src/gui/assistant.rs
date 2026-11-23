@@ -299,7 +299,8 @@ impl App {
         }
 
         // EQ en place (au dosage courant) et suggérée.
-        let mid = g.y + g.h * 0.5;
+        // Sur un pixel entier : le trait de 2 px du 0 dB reste net.
+        let mid = (g.y + g.h * 0.5).round();
         let y_e = |d: f32| mid - d.clamp(-EQ_DB * 1.2, EQ_DB * 1.2) / EQ_DB * (g.h * 0.5 - 6.0);
         let amount = self.ma_value(device, ma::P_AMOUNT);
         let values: Vec<f32> = ma::params().iter().map(|p| self.param_value(device, p)).collect();
