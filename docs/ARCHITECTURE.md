@@ -25,5 +25,6 @@ replaced objects travel back to the interface thread to be freed there.
 | Windows | Win32, per-monitor DPI | WASAPI (low-latency shared mode) | WinMM, in and out |
 | macOS (experimental) | Cocoa through the Objective-C runtime | CoreAudio | CoreMIDI |
 
-The interface is in English and French; adding a language is one translation file
-(`crates/ponzik-i18n/lang/`).
+The interface is in English (the default) and French; adding a language is one
+translation file. Users create, edit and reload their own in Settings, without
+recompiling; see [TRANSLATING.md](TRANSLATING.md).

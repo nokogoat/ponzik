@@ -28,8 +28,8 @@ beginners and professionals.
 4. **Every user-visible string goes through the translation layer**:
    `ponzik_i18n::tr("English text")` or `tr_fmt!("{} tracks", n)`. Add the French
    translation to `crates/ponzik-i18n/lang/fr.po`. The coverage test fails if a
-   string is missing a translation or a translation is no longer used. Source
-   strings are in English; code comments may be in French or English.
+   string is missing a French translation or a catalog keeps a string no longer
+   used. Source strings are in English; code comments may be in French or English.
 5. **Saved files stay compatible.** Loading is tolerant: new fields are optional,
    unknown or broken values fall back to defaults, ids never change. Add a
    round-trip test when you change the file format (`crates/ponzik-project/src/io.rs`).
@@ -74,6 +74,14 @@ beginners and professionals.
 
 Add an `Action`, handle it in `App::run_action`, expose it in the command palette
 (`gui/palette.rs`) and, if it deserves a key, in `gui/keymap.rs` (remappable).
+
+### Translations
+
+English is the default language. `crates/ponzik-i18n/lang/*.po` are built in;
+users also load their own `.po` files at run time from `<config>/lang`, created and
+reloaded from Settings > Language. Other shipped catalogs than French may be
+partial (missing strings show in English). How translators create, test, share and
+contribute a language: [docs/TRANSLATING.md](docs/TRANSLATING.md).
 
 ### Change the interface
 
