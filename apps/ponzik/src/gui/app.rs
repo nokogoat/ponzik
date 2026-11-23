@@ -3209,19 +3209,16 @@ impl App {
         match kind {
             Popup::AddInstrument { replace } => (
                 if replace.is_some() { tr("Replace with") } else { tr("Instruments") }.into(),
-                registry::instruments()
-                    .iter()
-                    .map(|k| MenuItem::new(Icon::Instrument, tr(k.name), Action::AddInstrument(k.id, *replace)).tip(tr(k.description)))
-                    .collect(),
+                super::menu::instrument_items(*replace),
             ),
             Popup::InsertEffect { track, slot } => (
                 tr("Insert an effect").into(),
-                registry::effects().iter().map(|k| MenuItem::new(Icon::Effect, tr(k.name), Action::InsertEffect(*track, *slot, k.id)).tip(tr(k.description))).collect(),
+                super::menu::effect_items(|_| true, |id| Action::InsertEffect(*track, *slot, id)),
             ),
             Popup::DeviceMenu(d) => self.device_menu(*d),
             Popup::AddEffect { track } => (
                 track_name(*track),
-                registry::effects().iter().map(|k| MenuItem::new(Icon::Effect, tr(k.name), Action::AddEffect(*track, k.id)).tip(tr(k.description))).collect(),
+                super::menu::effect_items(|_| true, |id| Action::AddEffect(*track, id)),
             ),
             Popup::AddModulator { track, channel } => (tr("Modulators").into(), self.add_mod_items(*track, *channel)),
             Popup::RackAdd { track, slot, chain } => (tr_fmt!("Chain {}", chain + 1), self.rack_add_items(*track, *slot, *chain)),
@@ -3297,8 +3294,8 @@ impl App {
                 let mut v = vec![MenuItem::new(Icon::Pencil, tr("Rename"), Action::Popup(rename))];
                 let vca = trk.kind == TrackKind::Vca;
                 if t != MASTER && !vca {
-                    v.push(MenuItem::new(Icon::Route, tr("Output"), Action::Popup(Popup::Output(t))).detail(track_name(trk.output)));
-                    v.push(MenuItem::new(Icon::Send, tr("Send"), Action::Popup(Popup::Send(t))));
+                    v.push(MenuItem::sub_of(Icon::Route, tr("Output"), Popup::Output(t)).detail(track_name(trk.output)));
+                    v.push(MenuItem::sub_of(Icon::Send, tr("Send"), Popup::Send(t)));
                 }
                 if !vca {
                     v.push(MenuItem::new(Icon::Effect, tr("Effect"), Action::Popup(Popup::AddEffect { track: t })));
@@ -3321,7 +3318,7 @@ impl App {
                             .tip(tr("A return bus with a reverb or a delay, and a send to it")),
                     );
                     let detail = trk.vca.map_or(String::new(), track_name);
-                    v.push(MenuItem::new(Icon::Vca, tr("VCA"), Action::Popup(Popup::Vca(t))).detail(detail).tip(tr("A fader that controls the volume of several tracks")));
+                    v.push(MenuItem::sub_of(Icon::Vca, tr("VCA"), Popup::Vca(t)).detail(detail).tip(tr("A fader that controls the volume of several tracks")));
                 }
                 match trk.kind {
                     TrackKind::Bus => {
