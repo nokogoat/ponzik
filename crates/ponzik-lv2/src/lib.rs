@@ -115,6 +115,15 @@ pub fn plugin_bundles() -> Vec<PathBuf> {
     out
 }
 
+/// The installed bundles, and `own` (a plugin's bundle may be elsewhere).
+pub(crate) fn bundles_with(own: &Path) -> Vec<PathBuf> {
+    let mut all = plugin_bundles();
+    if !all.iter().any(|b| b == own) {
+        all.insert(0, own.to_path_buf());
+    }
+    all
+}
+
 /// Where each plugin URI was found, in this process.
 static KNOWN: Mutex<Option<HashMap<String, PathBuf>>> = Mutex::new(None);
 
@@ -191,6 +200,16 @@ fn model_of(bundle: &Path, uri: &str) -> Result<std::sync::Arc<plugin::Model>, S
     plugin::model(bundle, uri)
 }
 
+/// The effect `uri` of `bundle`, as its own type (control ports readable).
+pub fn open_effect(bundle: &Path, uri: &str) -> Result<Lv2Effect, String> {
+    Lv2Effect::new(model_of(bundle, uri)?)
+}
+
+/// The instrument `uri` of `bundle`, as its own type.
+pub fn open_instrument(bundle: &Path, uri: &str) -> Result<Lv2Instrument, String> {
+    Lv2Instrument::new(model_of(bundle, uri)?)
+}
+
 /// The instrument `uri` of `bundle`.
 pub fn create_instrument(bundle: &Path, uri: &str) -> Result<Box<dyn Instrument>, String> {
     Ok(Box::new(Lv2Instrument::new(model_of(bundle, uri)?)?))
@@ -231,7 +250,7 @@ pub fn note_fx_from_kind(kind: &str) -> Result<Box<dyn NoteFx>, String> {
 pub fn presets_of(kind: &str) -> Vec<(String, Vec<(u32, f32)>)> {
     let Ok((b, uri)) = bundle_of(kind) else { return Vec::new() };
     let Ok(m) = plugin::model(&b, uri) else { return Vec::new() };
-    let presets = world::presets(uri, &plugin_bundles());
+    let presets = world::presets(uri, &bundles_with(&b));
     presets
         .into_iter()
         .map(|p| {

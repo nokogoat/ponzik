@@ -1,0 +1,14 @@
+[package]
+name = "ponzik-lv2-test-plugin"
+description = "Plugins LV2 minimaux servant de banc d'essai à ponzik-lv2 (gain avec worker et état, synthé MIDI, bloc fixe)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ponzik-lv2.workspace = true

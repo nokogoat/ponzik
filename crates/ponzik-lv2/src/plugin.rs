@@ -628,15 +628,30 @@ impl Core {
                 eprintln!("LV2: {e}");
                 return;
             }
+            let before = self.host_values.clone();
             if let Err(e) = self.apply_blob(&blob) {
                 eprintln!("LV2 {}: {e}", self.model.desc.name);
             }
+            // A frequency stays a frequency: sample-rate ports follow the new rate.
+            for (k, (port, conv)) in self.model.convs.iter().enumerate() {
+                if let Conv::Linear { sample_rate: true, .. } = conv {
+                    self.controls[*port as usize] = conv.to_port(before[k], sample_rate);
+                    self.host_values[k] = before[k];
+                }
+            }
+            self.publish_all();
         }
         if let Some(f) = &mut self.fixed {
             f.pos = 0;
             f.input.iter_mut().chain(f.output.iter_mut()).for_each(|b| b.fill(0.0));
         }
         self.activate();
+    }
+
+    /// Current value of the control port `symbol` (inputs and outputs).
+    pub(crate) fn port_value(&self, symbol: &str) -> Option<f32> {
+        let p = self.model.desc.port(symbol).filter(|p| p.kind == PortKind::Control)?;
+        Some(self.controls[p.index as usize])
     }
 
     pub(crate) fn get_param(&self, id: u32) -> f32 {
@@ -921,7 +936,7 @@ impl Core {
     /// The plugin's presets (from every bundle found), with their values in
     /// Ponzik's units.
     pub(crate) fn presets(&self) -> Vec<(String, Vec<(u32, f32)>)> {
-        let presets = crate::world::presets(&self.model.desc.uri, &crate::plugin_bundles());
+        let presets = crate::world::presets(&self.model.desc.uri, &crate::bundles_with(&self.model.desc.bundle));
         presets
             .into_iter()
             .map(|p| {
@@ -993,6 +1008,11 @@ impl Lv2Instrument {
     pub fn presets(&self) -> Vec<(String, Vec<(u32, f32)>)> {
         self.0.presets()
     }
+
+    /// Value of a control port, outputs included (meters, latency).
+    pub fn port_value(&self, symbol: &str) -> Option<f32> {
+        self.0.port_value(symbol)
+    }
 }
 
 impl Lv2Effect {
@@ -1002,6 +1022,11 @@ impl Lv2Effect {
 
     pub fn presets(&self) -> Vec<(String, Vec<(u32, f32)>)> {
         self.0.presets()
+    }
+
+    /// Value of a control port, outputs included (meters, latency).
+    pub fn port_value(&self, symbol: &str) -> Option<f32> {
+        self.0.port_value(symbol)
     }
 }
 
