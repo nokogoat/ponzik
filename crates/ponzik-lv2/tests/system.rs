@@ -210,3 +210,59 @@ fn midifilter_transposes_notes() {
     eprintln!("out {:?}", out.as_slice());
     assert!(out.as_slice().iter().any(|e| e.on && e.key == 67), "C4 + 7 = G4");
 }
+
+/// The x42-eq interface (an `ui:X11UI` with `ui:idleInterface`) embedded in
+/// a Ponzik plugin window for two seconds, captured with ImageMagick's
+/// `import` when present: `-- --ignored fil4_interface_in_a_window`.
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "needs x42-eq and an X11 display"]
+fn fil4_interface_in_a_window() {
+    use std::time::{Duration, Instant};
+
+    use ponzik_engine::{EditorEvent, ParentWindow};
+    use ponzik_window::{NativeHandle, PluginWindow, PluginWindowOptions};
+
+    let Some(b) = installed("/usr/lib/lv2/fil4.lv2") else { return };
+    if std::env::var_os("DISPLAY").is_none() {
+        eprintln!("no DISPLAY, skipped");
+        return;
+    }
+    let mut fx = create_effect(b, "http://gareus.org/oss/lv2/fil4#stereo").unwrap();
+    fx.set_sample_rate(SR);
+    let ed = fx.editor().unwrap();
+    assert!(ed.has_gui(), "x42-eq has an X11 interface");
+    let options = PluginWindowOptions { title: "x42-eq in Ponzik".into(), width: 640, height: 400, position: None, owner: None, resizable: false };
+    let mut win = PluginWindow::open(&options).expect("plugin window");
+    let NativeHandle::X11(id) = win.handle() else { panic!("X11 expected") };
+    let size = ed.open(ParentWindow::X11(id), 1.0).expect("x42-eq interface");
+    eprintln!("interface size {size:?}");
+    win.set_resizable(size.resizable);
+    win.set_size(size.width, size.height);
+    let (mut ev, mut wev) = (Vec::new(), Vec::new());
+    let (l0, _) = signal(256);
+    let t0 = Instant::now();
+    let mut shot = false;
+    while t0.elapsed() < Duration::from_millis(2500) {
+        let (mut l, mut r) = (l0.clone(), l0.clone());
+        fx.process(&mut l, &mut r);
+        ed.idle(&mut ev);
+        for e in ev.drain(..) {
+            if let EditorEvent::Resize { width, height } = e {
+                win.set_size(width, height);
+            }
+            eprintln!("editor event {e:?}");
+        }
+        win.poll_events(&mut wev);
+        if !shot && t0.elapsed() > Duration::from_millis(1800) {
+            shot = true;
+            let out = std::process::Command::new("import").args(["-window", &format!("{id:#x}"), "/tmp/ponzik-lv2-fil4-ui.png"]).status();
+            eprintln!("capture: {out:?} → /tmp/ponzik-lv2-fil4-ui.png");
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(ed.is_open());
+    ed.close();
+    assert!(!ed.is_open());
+    drop(win);
+}
