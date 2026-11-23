@@ -81,6 +81,12 @@ pub trait Effect: Params + Send {
         0
     }
 
+    /// Made to be heard while recording (pitch correction): low-latency
+    /// monitoring keeps it, with its latency, instead of skipping it.
+    fn keep_when_monitoring(&self) -> bool {
+        false
+    }
+
     /// Longest time, in seconds, the effect may give silence back while
     /// sound is still on its way out (the gap between two echoes of a delay,
     /// a pre-delay): the smart disable waits that much longer before putting

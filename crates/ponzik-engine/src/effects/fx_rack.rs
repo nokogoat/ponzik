@@ -411,6 +411,10 @@ impl Effect for EffectRack {
         (0..self.layout.chains).map(|c| self.chain_latency(c)).max().unwrap_or(0)
     }
 
+    fn keep_when_monitoring(&self) -> bool {
+        self.units.iter().flatten().any(|fx| fx.keep_when_monitoring())
+    }
+
     fn as_rack(&mut self) -> Option<&mut EffectRack> {
         Some(self)
     }

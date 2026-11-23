@@ -3695,6 +3695,27 @@ mod tests {
         assert_eq!(argmax(&duplex_impulse(&mut engine, 4_000)), lat);
     }
 
+    /// Pitch correction is made to be heard while singing: low-latency
+    /// monitoring keeps it, with its own latency, instead of skipping it.
+    #[test]
+    fn low_latency_monitoring_keeps_pitch_correction() {
+        let (mut engine, mut handle, _) = setup(&[]);
+        let tune = || {
+            let mut fx = crate::registry::create_effect("autotune").unwrap();
+            fx.set_sample_rate(SR);
+            fx
+        };
+        let lat = tune().latency();
+        assert!(lat > 0 && tune().keep_when_monitoring());
+        handle.send(Command::SetChannelMute { channel: 0, muted: true }).unwrap();
+        handle.send(Command::SetInsert { track: 2, slot: 0, effect: Some(tune()) }).unwrap();
+        handle.send(Command::SetMonitor { track: 2, source: Some(InputSource::Stereo) }).unwrap();
+        handle.send(Command::SetLowLatencyMonitoring(true)).unwrap();
+        let out = duplex_impulse(&mut engine, 8_000);
+        assert_eq!(argmax(&out), lat, "the voice goes through the corrector");
+        assert_eq!(handle.latency(), lat);
+    }
+
     #[test]
     fn duplex_input_is_recorded_dry_from_each_source() {
         let (mut engine, mut handle, _) = setup(&[]);

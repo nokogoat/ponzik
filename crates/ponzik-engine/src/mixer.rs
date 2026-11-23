@@ -144,11 +144,11 @@ impl Track {
     /// Latence cumulée des inserts actifs ; `reduced` : ceux qui anticipent
     /// sont court-circuités (écoute à faible latence), donc sans latence.
     fn insert_latency(&self, reduced: bool) -> usize {
-        if reduced || self.frozen.is_some() {
+        if self.frozen.is_some() {
             return 0;
         }
         let active = self.inserts.iter().zip(&self.bypass).filter(|(_, bypass)| !**bypass);
-        active.filter_map(|(fx, _)| fx.as_ref()).map(|fx| fx.latency()).sum()
+        active.filter_map(|(fx, _)| fx.as_ref()).filter(|fx| !reduced || fx.keep_when_monitoring()).map(|fx| fx.latency()).sum()
     }
 
     /// Destination de la sortie de la piste `idx` parmi `count` pistes (le
@@ -500,7 +500,7 @@ unsafe fn run_insert_range(tracks: Tracks, idx: usize, cx: &Ctx, ready: &impl Fn
             continue;
         }
         let Some(fx) = inserts[slot].as_mut() else { continue };
-        if cx.reduced[idx] && fx.latency() > 0 {
+        if cx.reduced[idx] && fx.latency() > 0 && !fx.keep_when_monitoring() {
             continue;
         }
         at += fx.latency();
@@ -822,7 +822,7 @@ impl Mixer {
             let mut at = lat.arrival[idx];
             for slot in 0..INSERT_SLOTS {
                 let Some(fx) = t.inserts[slot].as_ref().filter(|_| !t.bypass[slot] && t.frozen.is_none()) else { continue };
-                if reduced[idx] && fx.latency() > 0 {
+                if reduced[idx] && fx.latency() > 0 && !fx.keep_when_monitoring() {
                     continue;
                 }
                 if let Some(k) = t.sidechain[slot].filter(|&k| k < count && k != idx && k != MASTER)
