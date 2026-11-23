@@ -30,7 +30,7 @@ Usage:
   ponzik zalgo                             opens the interface on the rage × techno demo
   ponzik new                               opens the interface on an empty project
   ponzik play [seconds]                    plays the demo in the terminal (Enter to stop)
-  ponzik render <output.wav> [song|pattern] [breakcore|zalgo]
+  ponzik render <output.wav> [song|pattern] [breakcore|zalgo|<file.ponzik>]
                                            exports a demo as a 24-bit WAV
   ponzik screenshot <output.png> [view] [width height]
                                            captures the interface off-screen
@@ -262,6 +262,10 @@ fn render(args: &[String]) -> Result<(), String> {
     let project = match args.get(2).map(String::as_str) {
         Some("breakcore") => ponzik_project::demo_breakcore(),
         Some("zalgo") => ponzik_project::demo_zalgo(),
+        Some(file) if file.ends_with(".ponzik") => {
+            let text = std::fs::read_to_string(file).map_err(|e| format!("{file}: {e}"))?;
+            ponzik_project::load(&text).map_err(|e| format!("{file}: {e}"))?
+        }
         _ => demo_project(),
     };
     let mode = match args.get(1).map(String::as_str) {
