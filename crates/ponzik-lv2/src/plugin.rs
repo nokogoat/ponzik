@@ -230,6 +230,11 @@ fn build_model(kind: String, desc: PluginDesc) -> Model {
 
 static MODELS: Mutex<Vec<Arc<Model>>> = Mutex::new(Vec::new());
 
+/// The plugin's name (`doap:name`) of a kind already loaded in this process.
+pub(crate) fn loaded_name(kind: &str) -> Option<String> {
+    lock(&MODELS).iter().find(|m| m.kind == kind).map(|m| m.desc.name.clone())
+}
+
 /// The model of `uri` in `bundle`, read once per process.
 pub(crate) fn model(bundle: &Path, uri: &str) -> Result<Arc<Model>, String> {
     let kind = crate::kind_for(uri);
