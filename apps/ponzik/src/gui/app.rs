@@ -2303,7 +2303,17 @@ impl App {
                 self.commit(tr("Tempo"));
             }
         }
-        self.tip_zone(input, bpm_r, tr("Tempo at the playhead\nDrag or scroll · Shift: fine"), "");
+        // Double-click or Enter: type the tempo; right-click: its menu (type, automate, controller).
+        let typed = (self.hovered(input, wid("tb-bpm", 0, 0), bpm_r) && input.pressed && input.double) || self.kb_enter(wid("tb-bpm", 0, 0));
+        if typed {
+            self.drag = None;
+            self.open_popup(Popup::Rename { target: Rename::Value(ponzik_engine::AutoTarget::Tempo), text: String::new() }, bpm_r);
+        }
+        if input.right_pressed && input.inside && bpm_r.contains(input.x, input.y) {
+            let value = self.tempo_here();
+            self.open_popup(Popup::Param { target: ponzik_engine::AutoTarget::Tempo, value, default: 120.0 }, Rect::new(bpm_r.x, bpm_r.bottom(), 0.0, 0.0));
+        }
+        self.tip_zone(input, bpm_r, tr("Tempo at the playhead\nDrag or scroll · Shift: fine · double-click: type it"), "");
         x += 120.0;
         if self.bar_shown(Bar::Tap) {
             self.tap_button(c, input, Rect::new(x, cy - 18.0, 40.0, 36.0), &k_tap);

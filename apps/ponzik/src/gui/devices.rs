@@ -851,7 +851,8 @@ impl App {
         for (i, letter) in ["A", "B"].into_iter().enumerate() {
             let b = Rect::new(r.x + 2.0 + i as f32 * 20.0, r.y + 2.0, 20.0, r.h - 4.0);
             let id = wid("fx-ab", key, i);
-            let hov = self.hovered(input, id, b);
+            // Small letters, a taller target: the whole height of the header.
+            let hov = self.hovered(input, id, Rect::new(b.x, b.y - 7.0, b.w, b.h + 14.0));
             let hv = self.hover_anim(id, hov);
             let lit = active as usize == i;
             let on = self.anim.to(id ^ 0x4f4e, lit as u8 as f32, T_HOVER);
@@ -877,7 +878,7 @@ impl App {
         let copy = Rect::new(r.x + 46.0, r.y, 20.0, r.h);
         let tip = if active == 0 { tr("Copy A to B") } else { tr("Copy B to A") };
         let id = wid("fx-ab-copy", key, 0);
-        let hov = self.hovered(input, id, copy);
+        let hov = self.hovered(input, id, Rect::new(copy.x, copy.y - 6.0, copy.w + 2.0, copy.h + 12.0));
         let hv = self.hover_anim(id, hov);
         let alpha = if same { 0.5 } else { 1.0 };
         draw_icon(c, Icon::Duplicate, copy.x + copy.w * 0.5, copy.y + copy.h * 0.5, 13.0, t.muted.mix(t.text, hv).alpha(alpha));

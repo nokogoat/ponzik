@@ -80,7 +80,12 @@ impl App {
                 self.commit(tr("Swing"));
             }
         }
-        self.tip_zone(input, swing_box, tr("Swing\nDrag or scroll"), "");
+        if self.hovered(input, wid("rack-swing", 0, 0), swing_box) && input.pressed && input.double && self.project.swing != 0.0 {
+            self.drag = None;
+            self.project.swing = 0.0;
+            self.commit(tr("Swing"));
+        }
+        self.tip_zone(input, swing_box, tr("Swing\nDrag or scroll · double-click: 0%"), "");
 
         c.fill_rrect(body, 16.0, t.panel);
         c.stroke_rrect(body, 16.0, 1.0, t.hairline);
