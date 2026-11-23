@@ -875,4 +875,29 @@ impl App {
         }
         w
     }
+
+    /// While the devices panel is hidden: a small tab at the bottom of the
+    /// main area brings it back.
+    pub(super) fn panel_tab(&mut self, c: &mut Canvas, input: &Input, main: Rect) {
+        let t = self.theme;
+        let id = wid("panel-tab", 0, 0);
+        let zone = Rect::new(main.x + main.w * 0.5 - 40.0, main.bottom() - 16.0, 80.0, 16.0);
+        let hov = self.hovered(input, id, zone);
+        let hv = self.hover_anim(id, hov);
+        let tab = Rect::new(zone.x + 12.0 - 6.0 * hv, main.bottom() - 13.0 - 3.0 * hv, zone.w - 24.0 + 12.0 * hv, 26.0);
+        c.fill_rrect(tab, 8.0, t.raised.mix(t.raised_hi, hv));
+        c.stroke_rrect(tab, 8.0, 1.0, t.hairline);
+        let (cx, _) = tab.center();
+        // An upward chevron: the panel comes up from here.
+        let (s, y) = (4.0 + hv, tab.y + 7.5);
+        c.stroke_polyline(&[(cx - s, y + s * 0.5), (cx, y - s * 0.5), (cx + s, y + s * 0.5)], 1.6, t.muted.mix(t.accent, hv));
+        if hov {
+            let k_panel = self.key_label(S::TogglePanel);
+            self.set_tip(tr("Show the devices"), &k_panel);
+            self.set_cursor(ponzik_window::Cursor::Hand);
+            if input.pressed {
+                self.panel = true;
+            }
+        }
+    }
 }

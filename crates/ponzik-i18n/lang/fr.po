@@ -9445,6 +9445,9 @@ msgstr "Ctrl+K : basculer pattern / morceau"
 msgid "Every view, a calm top bar"
 msgstr "Toutes les vues, une barre du haut sobre"
 
+msgid "Hide the devices"
+msgstr "Masquer les appareils"
+
 msgid "Input, level, monitoring, latency"
 msgstr "Entrée, niveau, retour, latence"
 
@@ -9480,6 +9483,9 @@ msgstr "Bouton Enregistrer"
 
 msgid "Short hands-on lessons"
 msgstr "Courtes leçons pratiques"
+
+msgid "Show the devices"
+msgstr "Afficher les appareils"
 
 msgid "Simple"
 msgstr "Simple"
