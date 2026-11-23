@@ -7,13 +7,13 @@
 **The free DAW. FL Studio's breadth, Ableton Live's clarity. No more gatekeeping.**
 
 <p>
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-22c55e?style=flat-square&labelColor=0e1212" alt="License: GPL-3.0"></a>
-<a href="https://github.com/nokogoat/ponzik/releases"><img src="https://img.shields.io/badge/Windows-download-22c55e?style=flat-square&labelColor=0e1212&logo=windows&logoColor=white" alt="Windows"></a>
-<a href="https://github.com/nokogoat/ponzik/releases"><img src="https://img.shields.io/badge/Linux-AppImage-22c55e?style=flat-square&labelColor=0e1212&logo=linux&logoColor=white" alt="Linux"></a>
-<a href="https://github.com/nokogoat/ponzik/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/nokogoat/ponzik/release.yml?branch=main&style=flat-square&labelColor=0e1212&label=build&color=22c55e" alt="Build status"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-15803d?style=for-the-badge&labelColor=26302f" alt="License: GPL-3.0"></a>
+<a href="https://github.com/nokogoat/ponzik/releases"><img src="https://img.shields.io/badge/Windows-.exe-15803d?style=for-the-badge&labelColor=26302f" alt="Windows .exe"></a>
+<a href="https://github.com/nokogoat/ponzik/releases"><img src="https://img.shields.io/badge/Linux-AppImage-15803d?style=for-the-badge&labelColor=26302f" alt="Linux AppImage"></a>
+<a href="https://github.com/nokogoat/ponzik/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/nokogoat/ponzik/release.yml?branch=main&style=for-the-badge&labelColor=26302f&label=build&color=15803d" alt="Build status"></a>
 </p>
 
-[Download](https://github.com/nokogoat/ponzik/releases) | [What's inside](docs/OVERVIEW.md) | [Getting started](docs/GETTING_STARTED.md) | [Shortcuts](docs/SHORTCUTS.md) | [Plugins](docs/PLUGINS.md) | [Build](docs/BUILDING.md) | [Contributing](AGENTS.md) | [License](LICENSE)
+**[Download](https://github.com/nokogoat/ponzik/releases)** · [Getting started](docs/GETTING_STARTED.md) · [Features](docs/OVERVIEW.md) · [Shortcuts](docs/SHORTCUTS.md) · [Contributing](AGENTS.md)
 
 </div>
 
@@ -45,7 +45,8 @@ Windows.
 ## Project status
 
 Most of FL Studio and Ableton Live's features are in ([comparison](docs/FEATURES.md)),
-and the [roadmap](docs/BACKLOG.md) lists what's next.
+and the [roadmap](docs/BACKLOG.md) lists what's next. More docs: [plugins](docs/PLUGINS.md),
+[themes](docs/THEMES.md), [building from source](docs/BUILDING.md), [architecture](docs/ARCHITECTURE.md).
 
 ## License
 
