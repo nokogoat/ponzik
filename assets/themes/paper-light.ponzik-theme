@@ -1,0 +1,74 @@
+/* Paper Light: a light theme for bright rooms and daylight sessions. */
+:root {
+  --name: "Paper Light";
+  --base: ponzik;
+
+  --bg-deep: #e3e8e5;
+  --bg: #eef1ef;
+  --panel: #fafbfa;
+  --strip: #f3f6f4;
+  --raised: #eaefec;
+  --raised-hi: #dde4e0;
+  --well: #e6ebe8;
+
+  --text: #16201d;
+  --text-2: #46534f;
+  --muted: #5f6c68;
+  --hairline: rgb(22 32 29 / 12%);
+  --highlight: #ffffff;
+  --shadow: #1d2b26;
+  --shadow-strength: 0.45;
+
+  --accent: #1a8532;
+  --accent-deep: #146a28;
+  --accent-hot: #8fe39d;
+  --on-accent: #ffffff;
+  --select: #0e7f77;
+  --negative: #d0353a;
+  --warning: #b7770f;
+  --frost: #1e8fa3;
+  --meter: #4d5a56;
+
+  --pad-a: #e4e9e6;
+  --pad-b: #d9e0dc;
+  --pad-head: #b9c4bf;
+
+  --knob-cap: #ffffff;
+  --knob-cap-hover: #eef3f0;
+  --knob-track: #d3dbd7;
+  --button-hover: #cfd8d4;
+
+  /* Darker pattern colors, readable on paper */
+  --pattern-1: #1a8532;
+  --pattern-2: #0e8f86;
+  --pattern-3: #5c9a1c;
+  --pattern-4: #1f7fb0;
+  --pattern-5: #2a9d6a;
+  --pattern-6: #8c9a12;
+  --pattern-7: #1f8fa8;
+  --pattern-8: #4f9a3f;
+
+  --tooltip-bg: #1e2724;
+  --tooltip-text: #f2f5f3;
+  --tooltip-text-2: #b9c4bf;
+  --toast-bg: #1e2724;
+  --toast-text: #f2f5f3;
+  --toast-dot: #3fd45a;
+}
+
+.piano {
+  --key-white: #ffffff;
+  --key-black: #27302d;
+  --piano-row: #f6f8f7;
+  --piano-row-black: #e8ecea;
+  --note-hot: #b8f0c1;
+}
+
+.playlist {
+  --lane-bg: #f1f4f2;
+  --lane-alt: rgb(22 32 29 / 4%);
+}
+
+.mixer {
+  --meter-bg: #e1e6e3;
+}

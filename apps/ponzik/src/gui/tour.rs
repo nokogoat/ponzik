@@ -3,7 +3,7 @@
 //! skipped at any step and replayed from the palette.
 
 use ponzik_i18n::{tr, tr_fmt};
-use ponzik_ui::{Canvas, Color, Path, Rect};
+use ponzik_ui::{Canvas, Path, Rect};
 
 use super::Input;
 use super::app::{App, Focus, View};
@@ -122,7 +122,7 @@ impl App {
         if let Some(a) = anchor {
             c.stroke_rrect(a.inset(-3.0), 12.0, 2.0, t.accent.alpha(0.85 * appear));
         }
-        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, Color::rgba(0, 0, 0, (90.0 * appear) as u8));
+        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, t.shade(90.0 * appear));
         c.fill_rrect(r, 14.0, t.raised.alpha(appear));
         c.stroke_rrect(r, 14.0, 1.0, t.accent.alpha(0.45 * appear));
         // Arrow towards the widget.

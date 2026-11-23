@@ -53,6 +53,8 @@ mod keys_visuals;
 mod visuals;
 mod warping;
 mod theme;
+mod themecss;
+mod themes;
 mod tools;
 mod tour;
 mod voice;
@@ -299,6 +301,7 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
         eprintln!("MIDI: {}", m.name());
     }
     app.load_settings();
+    app.theme_from_env();
     app.ctl.persist = true;
     app.start_tour_if_new();
     app.show_whats_new_if_updated();
@@ -491,6 +494,7 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
         }
         dirty |= app.editors_tick();
         dirty |= app.xrun_tick(started.elapsed().as_secs_f32());
+        dirty |= app.theme_tick();
         if app.rec.output.as_ref().is_some_and(|s| !s.is_running()) {
             return Err(tr("the audio driver stopped").into());
         }
@@ -803,6 +807,8 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     if let Ok(spec) = std::env::var("PONZIK_UPDATE") {
         app.screenshot_update(&spec);
     }
+    // PONZIK_THEME=<name|path>: a built-in, example or user theme, or a theme file.
+    app.theme_from_env();
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {
         app.screenshot_popup(&name);

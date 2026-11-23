@@ -415,8 +415,9 @@ impl App {
         };
         let (ws, keymap, theme) = from_json(&j);
         self.prefs.lang = lang_from_json(&j);
-        if let Some(th) = theme.and_then(|name| THEMES.iter().find(|t| t.name == name)) {
-            self.theme = *th;
+        self.themes.load_user();
+        if let Some(id) = theme {
+            self.select_theme(&id);
         }
         self.prefs.keymap = keymap;
         self.prefs.ui_scale = UiScale::from_json(&j);
@@ -430,7 +431,7 @@ impl App {
 
     pub fn save_settings(&mut self) {
         self.sync_workspace();
-        let mut j = to_json(&self.prefs.ws, &self.prefs.keymap, self.theme.name, self.prefs.lang);
+        let mut j = to_json(&self.prefs.ws, &self.prefs.keymap, self.themes.active_id(), self.prefs.lang);
         if let Json::Obj(fields) = &mut j {
             fields.push(("ui_scale".into(), (self.prefs.ui_scale.percent() as f64 / 100.0).into()));
             fields.push(("tour_done".into(), self.prefs.tour_done.into()));
@@ -736,11 +737,11 @@ impl App {
             self.anim.set(wid("caret", 0, 0), self.time);
         }
 
-        c.fill_rect(screen, Color::rgba(0, 0, 0, (110.0 * open) as u8));
+        c.fill_rect(screen, t.shade(110.0 * open));
         let w = 960.0f32.min(screen.w - 40.0);
         let h = 640.0f32.min(screen.h - 40.0);
         let r = Rect::new(((screen.w - w) * 0.5).round(), ((screen.h - h) * 0.5 + (1.0 - open) * 10.0).round(), w, h);
-        c.fill_rrect(r.translate(0.0, 10.0).inset(-4.0), 22.0, Color::rgba(0, 0, 0, (90.0 * open) as u8));
+        c.fill_rrect(r.translate(0.0, 10.0).inset(-4.0), 22.0, t.shade(90.0 * open));
         c.fill_rrect(r, 18.0, t.panel);
         c.stroke_rrect(r, 18.0, 1.0, t.hairline.alpha(1.8));
 
@@ -1222,7 +1223,7 @@ impl App {
     /// Miniature de l'interface : barre du haut, navigateur, onglets, panneau du bas.
     fn workspace_preview(&mut self, c: &mut Canvas, f: Rect) {
         let t = self.theme;
-        c.fill_rrect(f.translate(0.0, 4.0), 12.0, Color::rgba(0, 0, 0, 60));
+        c.fill_rrect(f.translate(0.0, 4.0), 12.0, t.shade(60.0));
         c.fill_rrect(f, 12.0, t.bg);
         let prev = c.push_clip(f.inset(1.0));
         let k = f.w / 1600.0;
@@ -1450,7 +1451,7 @@ impl App {
         let chv = self.hover_anim(cid, chov);
         let pulse = if capturing { 0.6 + 0.4 * (self.time * 5.0).sin().abs() } else { 0.0 };
         c.fill_rrect(cap, 6.0, t.bg_deep.mix(t.raised_hi, 0.5 + 0.5 * chv));
-        c.fill_rect(Rect::new(cap.x + 3.0, cap.bottom() - 1.0, cap.w - 6.0, 1.0), Color::rgba(0, 0, 0, 90));
+        c.fill_rect(Rect::new(cap.x + 3.0, cap.bottom() - 1.0, cap.w - 6.0, 1.0), t.shade(90.0));
         c.stroke_rrect(cap, 6.0, 1.0 + pulse, t.hairline.mix(t.accent, pulse.max(chv * 0.6)));
         let ink = if label.is_empty() { t.muted } else { t.text2.mix(t.text, chv) };
         let shown = if label.is_empty() { "—" } else { label.as_str() };
@@ -1510,7 +1511,7 @@ impl App {
         let hv = self.hover_anim(id, hov);
         let press = self.anim.to(id ^ 0x5052, if hov && input.down { 0.95 } else { 1.0 }, T_PRESS);
         let b = r.scale(press);
-        let fill = if accent { t.accent.mix(WHITE, 0.12 * hv) } else { t.raised.mix(t.raised_hi, hv) };
+        let fill = if accent { t.accent.mix(t.highlight, 0.12 * hv) } else { t.raised.mix(t.raised_hi, hv) };
         c.fill_rrect(b, b.h * 0.5, fill);
         let ink = if accent { t.on_accent } else { t.text2.mix(t.text, hv) };
         let cy = b.y + b.h * 0.5;

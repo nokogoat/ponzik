@@ -1,0 +1,61 @@
+/* Synthwave: neon pink and cyan on a purple night. Rounder corners. */
+:root {
+  --name: "Synthwave";
+  --base: ponzik;
+
+  --bg-deep: #0e0716;
+  --bg: #140b1f;
+  --panel: #1b1029;
+  --strip: #201332;
+  --raised: #26163a;
+  --raised-hi: #342050;
+  --well: #0d0614;
+
+  --text: #f7eaff;
+  --text-2: #c4a8da;
+  --muted: #9d83b5;
+
+  --pink: #ff3ea5;
+  --cyan: #20e3ff;
+  --accent: var(--pink);
+  --accent-deep: #d01f82;
+  --accent-hot: #ffc2e4;
+  --on-accent: #2a0418;
+  --select: var(--cyan);
+  --meter: #f0d5ff;
+  --warning: #ffd319;
+
+  --pad-a: #1f1230;
+  --pad-b: #28183d;
+  --pad-head: #3d2660;
+  --knob-cap-hover: #46306a;
+  --button-hover: #4b3372;
+
+  --pattern-1: var(--pink);
+  --pattern-2: var(--cyan);
+  --pattern-3: #ffd319;
+  --pattern-4: #b967ff;
+  --pattern-5: #ff7b54;
+  --pattern-6: #05ffa1;
+  --pattern-7: #ff71ce;
+  --pattern-8: #01cdfe;
+
+  --radius-sm: 5px;
+  --radius-md: 11px;
+  --radius-lg: 20px;
+}
+
+.mixer {
+  --meter-hot: var(--cyan);
+  --meter-clip: #ffd319;
+}
+
+.piano {
+  --note-low: #8a2be2;
+  --note: var(--pink);
+  --note-hot: #ffd319;
+}
+
+.topbar {
+  --bg-deep: #1a0d2a;
+}

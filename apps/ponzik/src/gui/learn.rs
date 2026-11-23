@@ -10,7 +10,7 @@ use ponzik_midi::MidiEvent;
 use ponzik_project::midi_map::{
     ControlTarget, CtlMode, CtlSource, CtlState, CtlValue, Learn, LearnEvent, MidiMapping, Outcome, TransportAction, source_label,
 };
-use ponzik_ui::{Canvas, Color, Rect};
+use ponzik_ui::{Canvas, Rect};
 
 use super::Input;
 use super::app::{Action, App, MenuItem};
@@ -415,7 +415,7 @@ impl App {
         let t = self.theme;
         let a = self.anim.to(wid("learn-card", 0, 0), 1.0, T_LAYOUT);
         let r = Rect::new(((w - 360.0) * 0.5).round(), TOP_BAR + 12.0 + ((1.0 - a) * -8.0).round(), 360.0, 56.0);
-        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, Color::rgba(0, 0, 0, (80.0 * a) as u8));
+        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, t.shade(80.0 * a));
         c.fill_rrect(r, 14.0, t.raised_hi.mix(t.panel, 0.4).alpha(a));
         c.stroke_rrect(r, 14.0, 1.0, t.accent.alpha(0.6 * a));
         let cy = r.y + r.h * 0.5;

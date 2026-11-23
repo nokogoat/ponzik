@@ -40,9 +40,9 @@ pub enum ClipDrag {
 }
 
 /// Couleur d'un pattern : une famille vert-sarcelle, une teinte par pattern.
+/// Theme tokens `--pattern-1` to `--pattern-8`.
 pub fn pattern_color(i: usize) -> Color {
-    const P: [u32; 8] = [0x3fd45a, 0x3ccfc4, 0x9be15d, 0x2fb6e0, 0x67e8a4, 0xc7e85a, 0x5ad1e8, 0x8ce07a];
-    Color::hex(P[i % P.len()])
+    super::theme::pattern_palette(i)
 }
 
 /// Couleurs proposées pour un pattern : la famille de Ponzik, puis des teintes
@@ -220,7 +220,7 @@ impl App {
         let tempo_r = Rect::new(area.x, ruler.bottom(), area.w, TEMPO_H);
         let top = ARRANGE_H + RULER + TEMPO_H + 4.0;
         let lanes_r = Rect::new(area.x, area.y + top, area.w, area.h - top);
-        c.fill_rrect(Rect::new(area.x - 1.0, area.y, area.w + 1.0, area.h), 12.0, t.well);
+        c.fill_rrect(Rect::new(area.x - 1.0, area.y, area.w + 1.0, area.h), 12.0, t.lane_bg);
         let lanes_used = self
             .project
             .clips
@@ -282,7 +282,7 @@ impl App {
         for l in 0..lanes {
             let ly = lane_y(l);
             if l % 2 == 1 {
-                c.fill_rect(Rect::new(area.x, ly, area.w, LANE_H), t.panel.alpha(0.35));
+                c.fill_rect(Rect::new(area.x, ly, area.w, LANE_H), t.lane_alt);
             }
             let takes = lane_y(l + 1) - ly - LANE_H;
             if takes > 0.0 {
@@ -297,7 +297,7 @@ impl App {
             map.for_each_beat(view_a, view_b, |tick, down| {
                 if !down {
                     let x = x_of(tick as f32).round();
-                    c.fill_rect(Rect::new(x, lanes_r.y, 1.0, lanes_r.h), t.hairline.alpha(0.45));
+                    c.fill_rect(Rect::new(x, lanes_r.y, 1.0, lanes_r.h), t.playlist_grid.alpha(0.45));
                 }
             });
         }
@@ -306,7 +306,7 @@ impl App {
         for (b, tick) in bars {
             let x = x_of(tick as f32).round();
             let strong = b % 4 == 0;
-            c.fill_rect(Rect::new(x, lanes_r.y, 1.0, lanes_r.h), t.hairline.alpha(if strong { 2.5 } else { 1.0 }));
+            c.fill_rect(Rect::new(x, lanes_r.y, 1.0, lanes_r.h), t.playlist_grid.alpha(if strong { 2.5 } else { 1.0 }));
             if self.playlist.zoom >= 28.0 || strong {
                 self.text(c, self.f.mono, 11.0, x + 6.0, ruler.y + 15.0, &(b + 1).to_string(), if strong { t.text2 } else { t.muted });
             }
@@ -774,7 +774,7 @@ impl App {
                         }
                     }
                     if hi > lo {
-                        c.fill_rect(Rect::new(px as f32, mid - hi * amp, 1.0, ((hi - lo) * amp).max(1.0)), t.text.alpha(0.6 * dim));
+                        c.fill_rect(Rect::new(px as f32, mid - hi * amp, 1.0, ((hi - lo) * amp).max(1.0)), t.wave.alpha(0.6 * dim));
                     }
                 }
             }
@@ -817,7 +817,7 @@ impl App {
         // Tête de lecture.
         if self.project.mode == PlayMode::Song {
             let x = x_of(self.position as f32);
-            c.fill_rect(Rect::new(x.round() - 1.0, ruler.y, 2.0, area.h), t.select);
+            c.fill_rect(Rect::new(x.round() - 1.0, ruler.y, 2.0, area.h), t.playhead);
         }
         c.set_clip(Some(prev));
     }

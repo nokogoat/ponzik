@@ -9,7 +9,7 @@ use ponzik_engine::TICKS_PER_BAR;
 use ponzik_i18n::{tr, tr_fmt};
 use ponzik_project::bounce::{render_bounce, render_freeze, render_sample};
 use ponzik_project::{BounceSource, FreezeTarget, SourceAction};
-use ponzik_ui::{Canvas, Color, Rect};
+use ponzik_ui::{Canvas, Rect};
 use ponzik_window::Cursor;
 
 use super::Input;
@@ -19,8 +19,6 @@ use super::compat;
 use super::devices::Device;
 use super::widgets::{Icon, draw_icon, wid};
 
-/// Icy tint of frozen things.
-pub const FROST: u32 = 0x8ee7f2;
 
 /// Freeze and bounce operations, from menus and the palette.
 #[derive(Clone, Debug)]
@@ -389,7 +387,7 @@ impl App {
     /// Frost over a frozen device card: read-only, with an Unfreeze button.
     pub(super) fn frost_card(&mut self, c: &mut Canvas, input: &Input, card: Rect, target: FreezeTarget, button: bool) {
         let t = self.theme;
-        let frost = Color::hex(FROST);
+        let frost = self.theme.frost;
         c.fill_rrect(card, 14.0, t.bg.alpha(0.62));
         c.fill_rrect(card, 14.0, frost.alpha(0.07));
         c.stroke_rrect(card, 14.0, 1.0, frost.alpha(0.35));
@@ -430,7 +428,7 @@ impl App {
 
     /// Snowflake badge, for rows and strips of frozen things.
     pub(super) fn frost_badge(&mut self, c: &mut Canvas, input: &Input, x: f32, y: f32, size: f32, target: FreezeTarget, id: usize) {
-        let frost = Color::hex(FROST);
+        let frost = self.theme.frost;
         let r = Rect::new(x - size * 0.5 - 2.0, y - size * 0.5 - 2.0, size + 4.0, size + 4.0);
         c.fill_rrect(r, size * 0.35, frost.alpha(0.14));
         draw_icon(c, Icon::Snowflake, x, y, size, frost);

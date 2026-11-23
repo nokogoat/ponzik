@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use ponzik_engine::mixer::INSERT_SLOTS;
 use ponzik_i18n::{tr, tr_fmt};
 use ponzik_project::{EffectDef, InstrumentDef};
-use ponzik_ui::{Canvas, Color, Rect};
+use ponzik_ui::{Canvas, Rect};
 use ponzik_window::Cursor;
 
 use super::Input;
@@ -144,7 +144,15 @@ impl App {
         if !input.file_hover && input.dropped.is_none() {
             return;
         }
-        let paths = input.dropped.clone().unwrap_or_default();
+        let mut paths = input.dropped.clone().unwrap_or_default();
+        // Theme files dropped anywhere are imported (Settings › Appearance).
+        if input.dropped.is_some() {
+            self.take_theme_drops(&mut paths);
+            if paths.is_empty() {
+                self.dnd = None;
+                return;
+            }
+        }
         match self.dnd.as_mut() {
             Some(d) if d.external => {
                 if !paths.is_empty() {
@@ -196,7 +204,7 @@ impl App {
             let name = payload.name();
             let tw = self.fonts.measure(self.f.sans_med, 13.0, &name).min(220.0);
             let chip = Rect::new(input.x + 10.0, input.y + 8.0, tw + 42.0, 32.0);
-            c.fill_rrect(chip.translate(0.0, 4.0), 12.0, Color::rgba(0, 0, 0, 70));
+            c.fill_rrect(chip.translate(0.0, 4.0), 12.0, t.shade(70.0));
             c.fill_rrect(chip, 10.0, t.raised_hi);
             c.stroke_rrect(chip, 10.0, 1.0, if target.is_some() { t.accent } else { t.hairline.alpha(2.0) });
             draw_icon(c, payload.icon(), chip.x + 17.0, chip.y + 16.0, 15.0, if target.is_some() { t.accent } else { t.text2 });

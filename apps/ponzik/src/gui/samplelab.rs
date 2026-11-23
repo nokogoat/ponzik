@@ -1810,7 +1810,7 @@ impl App {
         let w = self.fonts.measure(self.f.sans_med, 13.0, label) + 46.0;
         let (cx, _) = wave.center();
         let b = Rect::new((cx - w * 0.5).round(), (wave.y + 30.0 - (1.0 - a) * 6.0).round(), w, 34.0);
-        c.fill_rrect(b.translate(0.0, 4.0), 17.0, Color::rgba(0, 0, 0, (80.0 * a) as u8));
+        c.fill_rrect(b.translate(0.0, 4.0), 17.0, t.shade(80.0 * a));
         c.fill_rrect(b, 17.0, t.accent.alpha(a));
         let mut tri = Shape::new();
         tri.polygon(&[(cx - 7.0, b.bottom() - 1.0), (cx + 7.0, b.bottom() - 1.0), (cx, b.bottom() + 7.0)]);

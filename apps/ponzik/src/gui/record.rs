@@ -19,7 +19,7 @@ use ponzik_engine::input::{CALIBRATION_SECONDS, clip_placement, measure_round_tr
 use ponzik_engine::mixer::MASTER;
 use ponzik_engine::{Command, InputSource, InputStrip, PlayMode, RecordBuffer, Sample};
 use ponzik_project::{AudioClipDef, BitDepth};
-use ponzik_ui::{Canvas, Color, Rect};
+use ponzik_ui::{Canvas, Rect};
 
 use super::Input;
 use super::app::App;
@@ -731,7 +731,7 @@ impl App {
         // Ombre et carte.
         for k in 1..=4 {
             let k = k as f32;
-            c.fill_rrect(r.inset(-2.0 * k).translate(0.0, 2.0 * k), 16.0 + 2.0 * k, Color::hex(0x000000).alpha(0.07 * appear));
+            c.fill_rrect(r.inset(-2.0 * k).translate(0.0, 2.0 * k), 16.0 + 2.0 * k, t.shadow.alpha(0.07 * appear * t.shadow_strength));
         }
         c.fill_rrect_vgrad(r, 16.0, t.panel.mix(t.raised, 0.35), t.panel);
         c.stroke_rrect(r, 16.0, 1.0, t.hairline.mix(t.accent.alpha(0.25), 0.4));
@@ -930,7 +930,7 @@ impl App {
         let bars = Rect::new(r.x + 12.0, r.y + 12.0, clip_r.x - r.x - 22.0, 18.0);
         let pos = |db: f32| ((db - METER_FLOOR) / -METER_FLOOR).clamp(0.0, 1.0);
         let to_db = |g: f32| 20.0 * g.max(1e-6).log10();
-        let yellow = Color::hex(0xf0b44a);
+        let yellow = self.theme.warning;
         for ch in 0..2 {
             let bar = Rect::new(bars.x, bars.y + ch as f32 * (bars.h * 0.5 + 3.0), bars.w, bars.h * 0.5);
             c.fill_rrect(bar, 3.0, t.well);
@@ -973,7 +973,7 @@ impl App {
             c.fill_rrect(clip_r.inset(-3.0), 9.0, t.negative.alpha(0.2 * lit));
         }
         let (cx, cy) = clip_r.center();
-        self.text_center(c, self.f.sans_med, 11.0, cx, cy, "CLIP", t.muted.mix(WHITE, lit));
+        self.text_center(c, self.f.sans_med, 11.0, cx, cy, "CLIP", t.muted.mix(t.highlight, lit));
         if chov {
             self.set_tip(if self.rec.clipped { tr("The input clipped: lower the gain or the preamp\nClick to reset") } else { tr("Lights up when the input clips") }, "");
             if input.pressed {
@@ -1001,7 +1001,7 @@ impl App {
         } else if hear_ms <= 12.0 {
             t.accent
         } else if hear_ms <= 25.0 {
-            Color::hex(0xf0b44a)
+            self.theme.warning
         } else {
             t.negative
         };

@@ -31,9 +31,6 @@ const COMP_HELP: &str = tr_noop(
     "Comp\nSwipe a take lane: that take plays there · click: the region between edges\nDrag an edge: move it · Alt+click: next take here\n↑ ↓: take under the playhead · S: split · Q: quick swipe\nRight-click: flatten, crossfade, unused takes",
 );
 
-/// Automatic take colors, in recording order (no red: it means recording).
-const TAKE_COLORS: [u32; 8] = [0x3ccfc4, 0xf0b44a, 0xa98cf0, 0x9be15d, 0xe878b4, 0x2fb6e0, 0xf08a5d, 0x6b7cf0];
-
 /// Crossfades offered in the comp menu, in milliseconds.
 const CROSSFADES: [u32; 6] = [0, 5, 10, 20, 50, 100];
 
@@ -126,9 +123,9 @@ impl Lanes {
 }
 
 /// Color of a take: chosen, or the automatic one of its place.
-pub fn take_color(g: &TakeGroup, take: usize) -> Color {
-    match g.takes.get(take).map_or(0, |t| t.clip.color) {
-        0 => Color::hex(TAKE_COLORS[take % TAKE_COLORS.len()]),
+pub fn take_color(t: &super::theme::Theme, g: &TakeGroup, take: usize) -> Color {
+    match g.takes.get(take).map_or(0, |c| c.clip.color) {
+        0 => t.takes[take % 8],
         hex => Color::hex(hex),
     }
 }
@@ -592,7 +589,7 @@ impl App {
         let comp = |op| Action::Comp(gi, op);
         let rename = Popup::Rename { target: Rename::Take(gi, k), text: t.name.clone() };
         let mut color = MenuItem::plain(tr("Color"), Action::Popup(Popup::TakeColor(gi, k)));
-        color.color = Some(take_color(g, k));
+        color.color = Some(take_color(&self.theme, g, k));
         (
             t.name.clone(),
             vec![
@@ -609,7 +606,7 @@ impl App {
         let Some(g) = self.project.take_groups.get(gi) else { return (String::new(), Vec::new()) };
         let cur = g.takes.get(k).map_or(0, |t| t.clip.color);
         let mut auto = MenuItem::plain(tr("Automatic"), Action::Comp(gi, CompOp::TakeColor(k, 0))).on(cur == 0);
-        auto.color = Some(Color::hex(TAKE_COLORS[k % TAKE_COLORS.len()]));
+        auto.color = Some(self.theme.takes[k % 8]);
         let mut v = vec![auto];
         for (i, &(name, hex)) in PATTERN_COLORS.iter().enumerate() {
             let mut it = MenuItem::plain(tr(name), Action::Comp(gi, CompOp::TakeColor(k, hex))).on(cur == hex);
@@ -666,7 +663,7 @@ impl App {
             let hv = self.hover_anim(wid("pl-comp-g", gi, 0), hover.is_some_and(|h| h.0 == gi));
             // Muted, or a take auditioned instead: the comp is not what plays.
             let dim = if g.muted { 0.45 } else if g.solo.is_some() { 0.6 } else { 1.0 };
-            let base = take_color(&g, g.comp.first().map_or(0, |s| s.take));
+            let base = take_color(&self.theme, &g, g.comp.first().map_or(0, |s| s.take));
             // Comp lane: the frame of the whole group, its segments inside.
             c.fill_rrect(r, 8.0, t.panel.mix(t.well, 0.3).alpha(0.95));
             c.fill_rect(Rect::new(r.x + 1.0, r.y + 1.0, r.w - 2.0, HEADER - 1.0), base.mix(t.panel, 0.55).alpha(0.9 * dim));
@@ -675,7 +672,7 @@ impl App {
             let mid = body.y + body.h * 0.5;
             for s in &g.comp {
                 let (x0, x1) = (x_of(s.start as f32), x_of(s.end as f32));
-                let col = take_color(&g, s.take);
+                let col = take_color(&self.theme, &g, s.take);
                 c.fill_rect(Rect::new(x0, body.y, x1 - x0, body.h - 1.0), col.mix(t.panel, 0.62 - hv * 0.06).alpha(dim));
                 if let Some(take) = g.takes.get(s.take) {
                     let clip = take.clip.clone();
@@ -748,7 +745,7 @@ impl App {
                 if tr_.y > area.bottom() {
                     continue;
                 }
-                let col = take_color(&g, k);
+                let col = take_color(&self.theme, &g, k);
                 let soloed = g.solo == Some(k);
                 let hot = hover.is_some_and(|h| h.0 == gi && matches!(h.1, Hit::Take(j) | Hit::Solo(j) if j == k)) || swiping == Some((gi, k));
                 let hv = self.hover_anim(wid("pl-take", gi, k), hot);

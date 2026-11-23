@@ -1,0 +1,53 @@
+/* Midnight: deep blue night, violet accent, cyan selection.
+   A Ponzik theme. Duplicate it in Settings > Appearance to make it yours. */
+:root {
+  --name: "Midnight";
+  --base: ponzik;
+
+  /* Surfaces, from the deepest to the most raised */
+  --bg-deep: #070910;
+  --bg: #0b0e17;
+  --panel: #10141f;
+  --strip: #131826;
+  --raised: #171d2c;
+  --raised-hi: #212a3d;
+  --well: #080a12;
+
+  /* Text */
+  --text: #e4e8f5;
+  --text-2: #9aa3bd;
+  --muted: #7a839c;
+
+  /* What plays, and what is selected */
+  --violet: #8b7cff;
+  --accent: var(--violet);
+  --accent-deep: #6a5ae0;
+  --accent-hot: #d6d0ff;
+  --on-accent: #120c33;
+  --select: #4cc9f0;
+  --meter: #cdd3e6;
+
+  /* Step sequencer pads */
+  --pad-a: #161b28;
+  --pad-b: #1c2232;
+  --pad-head: #2b3348;
+
+  --knob-cap-hover: #2c3650;
+  --button-hover: #313b57;
+
+  /* Pattern colors: a violet and blue family */
+  --pattern-1: var(--violet);
+  --pattern-2: #4cc9f0;
+  --pattern-3: #b18cff;
+  --pattern-4: #5b8def;
+  --pattern-5: #7ae0f5;
+  --pattern-6: #c9a8ff;
+  --pattern-7: #6c7bff;
+  --pattern-8: #9ad0ff;
+
+  --radius-md: 10px;
+}
+
+.mixer {
+  --meter-hot: #4cc9f0;
+}

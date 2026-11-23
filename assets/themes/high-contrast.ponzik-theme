@@ -1,0 +1,40 @@
+/* High Contrast: pure black, white text, yellow accent, thicker borders.
+   Text passes WCAG AAA (7:1) on every surface. */
+:root {
+  --name: "High Contrast";
+  --base: ponzik;
+
+  --bg-deep: #000000;
+  --bg: #000000;
+  --panel: #0b0b0b;
+  --strip: #111111;
+  --raised: #1c1c1c;
+  --raised-hi: #3a3a3a;
+  --well: #000000;
+  --hairline: rgb(255 255 255 / 45%);
+
+  --text: #ffffff;
+  --text-2: #f0f0f0;
+  --muted: #d0d0d0;
+
+  --accent: #ffd400;
+  --accent-deep: #e0b800;
+  --accent-hot: #fff59a;
+  --on-accent: #000000;
+  --select: #00e5ff;
+  --negative: #ff5c5c;
+  --meter: #ffffff;
+
+  --pad-a: #161616;
+  --pad-b: #262626;
+  --pad-head: #5a5a5a;
+  --knob-cap-hover: #555555;
+  --button-hover: #4a4a4a;
+
+  --tooltip-bg: #ffffff;
+  --tooltip-text: #000000;
+  --tooltip-text-2: #222222;
+
+  --border-width: 1.5px;
+  --shadow-strength: 0;
+}

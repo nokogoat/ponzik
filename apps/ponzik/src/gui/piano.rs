@@ -3,7 +3,7 @@
 use ponzik_engine::{MAX_FINE, Note, PlayMode, TICKS_PER_BAR, TICKS_PER_STEP};
 use ponzik_i18n::{tr, tr_fmt, tr_fmt_n, tr_noop};
 use ponzik_project::{ChordKind, ScaleKind, Voicing, revoice};
-use ponzik_ui::{Canvas, Color, Rect};
+use ponzik_ui::{Canvas, Rect};
 use ponzik_window::{Cursor, Key};
 
 use super::Input;
@@ -202,7 +202,7 @@ impl App {
             y0 = (screen.bottom() - 8.0 - h).max(8.0);
         }
         let r = Rect::new(x, y0 + (1.0 - open) * 6.0, w, h);
-        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, Color::rgba(0, 0, 0, (90.0 * open) as u8));
+        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, t.shade(90.0 * open));
         c.fill_rrect(r, 14.0, t.panel);
         c.stroke_rrect(r, 14.0, 1.0, t.hairline.alpha(1.6));
         self.text(c, self.f.sans_med, 12.0, r.x + 16.0, r.y + 20.0, tr("Chord"), t.muted);
@@ -277,7 +277,7 @@ impl App {
             if matches!(black % 12, 1 | 3 | 6 | 8 | 10) && black < low + 36 {
                 let key = Rect::new(kb.x + (i as f32 + 1.0) * kw - kw * 0.3, kb.y + 1.0, kw * 0.6, kb.h * 0.58);
                 let on = notes.contains(&black);
-                c.fill_rrect(key, 2.0, if on { t.accent.mix(WHITE, 0.15) } else { t.bg_deep });
+                c.fill_rrect(key, 2.0, if on { t.accent.mix(t.highlight, 0.15) } else { t.bg_deep });
             }
         }
         // Nom de l'accord obtenu (ou du choix survolé), en haut à droite.
@@ -495,7 +495,7 @@ impl App {
         let scaled = self.project.scale != ScaleKind::Chromatic;
         for k in (top_key - rows..=top_key + 1).filter(|k| (0..128).contains(k)) {
             let y = y_of(k as f32);
-            let col = if is_black(k as u8) { t.well } else { t.panel.mix(t.raised, 0.35) };
+            let col = if is_black(k as u8) { t.piano_row_black } else { t.piano_row };
             c.fill_rect(Rect::new(grid.x, y, grid.w, KEY_H), col);
             // Gamme du projet : rangées hors gamme assombries, tonique teintée.
             if scaled {
@@ -506,7 +506,7 @@ impl App {
                 }
             }
             if k % 12 == 0 {
-                c.fill_rect(Rect::new(grid.x, y + KEY_H - 1.0, grid.w, 1.0), t.hairline.alpha(2.0));
+                c.fill_rect(Rect::new(grid.x, y + KEY_H - 1.0, grid.w, 1.0), t.piano_grid.alpha(2.0));
             }
         }
         let first = (sx / TICKS_PER_STEP as f32).floor() as u32;
@@ -524,7 +524,7 @@ impl App {
             } else {
                 continue;
             };
-            c.fill_rect(Rect::new(x, grid.y, w, grid.h), t.hairline.alpha(a));
+            c.fill_rect(Rect::new(x, grid.y, w, grid.h), t.piano_grid.alpha(a));
         }
         let end_x = x_of(pat_len);
         if end_x < grid.right() {
@@ -707,9 +707,9 @@ impl App {
             if hv > 0.01 {
                 c.fill_rrect(r.inset(-2.5), 6.0, t.accent.alpha(0.18 * hv));
             }
-            let base = t.accent_deep.mix(t.accent, 0.4 + 0.6 * n.vel);
-            let fill = if selected { base.mix(t.accent_hot, 0.35) } else { base.mix(t.accent_hot, 0.3 * hv) };
-            let fill = fill.mix(WHITE, (1.0 - pop) * 0.55);
+            let base = t.note_low.mix(t.note, 0.4 + 0.6 * n.vel);
+            let fill = if selected { base.mix(t.note_hot, 0.35) } else { base.mix(t.note_hot, 0.3 * hv) };
+            let fill = fill.mix(t.highlight, (1.0 - pop) * 0.55);
             let body = r.inset(-(1.0 - pop) * 1.5);
             let chance = f32::from(n.prob.min(100)) / 100.0;
             if n.slide {
@@ -818,7 +818,7 @@ impl App {
         // Tête de lecture.
         if self.playing && self.project.mode == PlayMode::Pattern(pat) {
             let x = x_of(self.cycle_position() as f32);
-            c.fill_rect(Rect::new(x.round() - 1.0, grid.y, 2.0, grid.h), t.select);
+            c.fill_rect(Rect::new(x.round() - 1.0, grid.y, 2.0, grid.h), t.playhead);
         }
         c.set_clip(Some(prev));
 
@@ -829,7 +829,7 @@ impl App {
 
         // Clavier : touches blanches pleine largeur, noires par-dessus ; clic pour écouter.
         let prev = c.push_clip(keys);
-        let ivory = t.text.mix(t.raised_hi, 0.12);
+        let ivory = t.key_white;
         c.fill_rect(keys, ivory);
         let visible: Vec<i32> = (top_key - rows..=top_key + 1).filter(|k| (0..128).contains(k)).collect();
         let hover_key = (input.inside && keys.contains(input.x, input.y) && self.drag.is_none()).then(|| key_at(input.y) as u8);
@@ -841,7 +841,7 @@ impl App {
             let playing = self.preview == Some((ch, key)) || self.held.iter().any(|h| h.channel == ch && h.key == key);
             let hov = hover_key == Some(key);
             if is_black(key) {
-                let fill = if playing { t.accent } else { t.bg_deep.mix(t.raised_hi, hov as u8 as f32 * 0.6) };
+                let fill = if playing { t.accent } else { t.key_black.mix(t.raised_hi, hov as u8 as f32 * 0.6) };
                 c.fill_rrect(Rect::new(r.x, r.y + 1.0, r.w * 0.6, r.h - 2.0), 3.0, fill);
             } else {
                 if playing || hov {

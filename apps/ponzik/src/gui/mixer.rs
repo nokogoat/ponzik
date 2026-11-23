@@ -314,7 +314,7 @@ impl App {
     }
 
     fn strip_w(&self) -> f32 {
-        if self.mixer_compact { COMPACT_W } else { STRIP_W }
+        self.theme.dense(if self.mixer_compact { COMPACT_W } else { STRIP_W })
     }
 
     pub(super) fn mixer_view(&mut self, c: &mut Canvas, input: &Input, header: Rect, body: Rect) {
@@ -719,7 +719,7 @@ impl App {
         let (cx, ny) = (inner.x + inner.w * 0.5, inner.y + 25.0);
         // Frozen: a frost band under the name and a badge by the number.
         if self.project.tracks[tr].frozen.is_some() && tr != MASTER {
-            let frost = ponzik_ui::Color::hex(super::freeze::FROST);
+            let frost = self.theme.frost;
             c.fill_rrect(Rect::new(inner.x, inner.y - 2.0, inner.w, 34.0), 8.0, frost.alpha(0.08));
             self.frost_badge(c, input, inner.right() - 9.0, ny, 11.0, ponzik_project::FreezeTarget::Track(tr), tr);
         }
@@ -910,7 +910,7 @@ impl App {
             self.commit(ponzik_i18n::tr("Track mute"));
         }
         let hv = self.hover_anim(mid, hov);
-        let (fill, ink) = if muted { (t.text.mix(WHITE, hv * 0.2), t.bg_deep) } else { (t.raised.mix(t.raised_hi, hv), t.text2) };
+        let (fill, ink) = if muted { (t.text.mix(t.highlight, hv * 0.2), t.bg_deep) } else { (t.raised.mix(t.raised_hi, hv), t.text2) };
         c.fill_rrect(mute_r, 8.0, fill);
         let (mx, my) = mute_r.center();
         draw_icon(c, Icon::Mute, mx, my, 14.0, ink);
@@ -1069,7 +1069,7 @@ impl App {
             self.commit(ponzik_i18n::tr("Track mute"));
         }
         let hv = self.hover_anim(mid, hov);
-        let (fill, ink) = if muted { (t.text.mix(WHITE, hv * 0.2), t.bg_deep) } else { (t.raised.mix(t.raised_hi, hv), t.text2) };
+        let (fill, ink) = if muted { (t.text.mix(t.highlight, hv * 0.2), t.bg_deep) } else { (t.raised.mix(t.raised_hi, hv), t.text2) };
         c.fill_rrect(mute_r, 6.0, fill);
         draw_icon(c, Icon::Mute, mute_r.x + mute_r.w * 0.5, mute_r.y + mute_r.h * 0.5, 12.0, ink);
         if hov {
@@ -1154,7 +1154,7 @@ impl App {
             self.commit(ponzik_i18n::tr("Track mute"));
         }
         let hv = self.hover_anim(mid, hov);
-        let (fill, ink) = if muted { (t.text.mix(WHITE, hv * 0.2), t.bg_deep) } else { (t.raised.mix(t.raised_hi, hv), t.text2) };
+        let (fill, ink) = if muted { (t.text.mix(t.highlight, hv * 0.2), t.bg_deep) } else { (t.raised.mix(t.raised_hi, hv), t.text2) };
         c.fill_rrect(mute, 8.0, fill);
         let (mx, my) = mute.center();
         draw_icon(c, Icon::Mute, mx, my, 14.0, ink);
@@ -1310,24 +1310,24 @@ impl App {
         let meter_x = track_x + if compact { 16.0 } else { 22.0 };
         for side in 0..2 {
             let x = meter_x + side as f32 * 7.0;
-            c.fill_rrect(Rect::new(x, area.y + CAP_H * 0.5, 5.0, travel), 2.0, t.well);
+            c.fill_rrect(Rect::new(x, area.y + CAP_H * 0.5, 5.0, travel), 2.0, t.meter_bg);
             let top = y_of(gain_to_pos(meter.level[side]));
             if bottom - top > 0.5 {
                 let prev = c.push_clip(Rect::new(x, warn, 5.0, bottom - warn));
                 c.fill_rrect(Rect::new(x, top, 5.0, bottom - top), 2.0, t.meter);
                 c.set_clip(Some(prev));
                 let prev = c.push_clip(Rect::new(x, area.y, 5.0, warn - area.y));
-                c.fill_rrect(Rect::new(x, top, 5.0, bottom - top), 2.0, t.accent);
+                c.fill_rrect(Rect::new(x, top, 5.0, bottom - top), 2.0, t.meter_hot);
                 c.set_clip(Some(prev));
             }
             let hold = meter.hold[side];
             if hold > 1e-4 {
-                let col = if hold >= 0.999 { t.negative } else { t.text2 };
+                let col = if hold >= 0.999 { t.meter_clip } else { t.text2 };
                 c.fill_rect(Rect::new(x, y_of(gain_to_pos(hold)).round() - 1.0, 5.0, 2.0), col);
             }
         }
         let hv = self.hover_anim(id, (hov && cap.contains(input.x, input.y)) || self.is_dragging(id));
-        c.fill_rrect_vgrad(cap, 6.0, t.text.mix(WHITE, hv * 0.5), t.text.mix(t.raised_hi, 0.25).mix(WHITE, hv * 0.3));
+        c.fill_rrect_vgrad(cap, 6.0, t.text.mix(t.highlight, hv * 0.5), t.text.mix(t.raised_hi, 0.25).mix(t.highlight, hv * 0.3));
         c.fill_rect(Rect::new(cap.x + 6.0, cap.y + CAP_H * 0.5 - 1.0, cap_w - 12.0, 2.0), t.bg_deep.alpha(0.55));
         self.ctl_mark(c, (cap.right() - 3.0, cap.y + 3.0), 4.0, ponzik_project::midi_map::ControlTarget::Param(target));
     }

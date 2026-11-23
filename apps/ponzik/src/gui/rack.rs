@@ -2,7 +2,7 @@
 
 use ponzik_engine::{TICKS_PER_BAR, TICKS_PER_STEP};
 use ponzik_i18n::{tr, tr_fmt};
-use ponzik_ui::{Canvas, Color, Rect};
+use ponzik_ui::{Canvas, Rect};
 use ponzik_window::Cursor;
 
 use super::Input;
@@ -139,7 +139,8 @@ impl App {
         }
 
         let rows = Rect::new(inner.x, inner.y + 36.0, inner.w, inner.h - 36.0);
-        let total = self.project.channels.len() as f32 * (ROW_H + ROW_GAP) + 48.0;
+        let (row_h, row_gap) = (self.theme.dense(ROW_H), self.theme.dense(ROW_GAP));
+        let total = self.project.channels.len() as f32 * (row_h + row_gap) + 48.0;
         let hov_rows = input.inside && rows.contains(input.x, input.y);
         let scroll_key = wid("rack-scroll", 0, 0);
         let mut target = self.anim.get(scroll_key ^ 1).unwrap_or(0.0);
@@ -153,16 +154,16 @@ impl App {
         let prev = c.push_clip(rows);
         let mut y = rows.y - scroll;
         for ch in 0..self.project.channels.len() {
-            let row = Rect::new(rows.x, y, rows.w, ROW_H);
+            let row = Rect::new(rows.x, y, rows.w, row_h);
             if row.bottom() > rows.y && row.y < rows.bottom() {
                 self.channel_row(c, input, row, ch, steps, &geom, head);
             }
-            y += ROW_H + ROW_GAP;
+            y += row_h + row_gap;
         }
         if !self.project.channels.is_empty() {
             // Every step row, clipped to the visible rows.
             let top = rows.y - scroll;
-            let bottom = (y - ROW_GAP).min(rows.bottom());
+            let bottom = (y - row_gap).min(rows.bottom());
             self.tour_anchor(0, Rect::new(pads.x, top.max(rows.y), pads.w, bottom - top.max(rows.y)));
         }
         let add = Rect::new(rows.x, y + 2.0, LEFT - 12.0, 44.0);
@@ -259,7 +260,7 @@ impl App {
             (c.name.clone(), kind)
         };
         let track = self.project.channels[ch].track;
-        let name_col = if muted { t.text2 } else { t.text.mix(WHITE, nh * 0.3) };
+        let name_col = if muted { t.text2 } else { t.text.mix(t.highlight, nh * 0.3) };
         let lock = self.channel_lock(ch);
         let missing = self.channel_missing_sample(ch);
         let looped = if missing.is_none() { self.channel_loop(ch, false) } else { None };
@@ -443,7 +444,7 @@ impl App {
                 if pop < 1.0 {
                     let grow = 2.0 + pop * 7.0;
                     c.stroke_rrect(pad.inset(-grow), radius + grow, 1.5, t.accent.alpha((1.0 - pop) * 0.7));
-                    top = top.mix(WHITE, (1.0 - pop) * 0.45);
+                    top = top.mix(t.highlight, (1.0 - pop) * 0.45);
                 }
                 let pad = pad.inset(-(1.0 - pop) * 2.0);
                 if n.prob < 100 {
@@ -455,7 +456,7 @@ impl App {
                     c.set_clip(Some(prev));
                 } else {
                     c.fill_rrect_vgrad(pad, radius, top, bottom);
-                    c.fill_rect(Rect::new(pad.x + radius, pad.y + 1.0, pad.w - 2.0 * radius, 1.0), WHITE.alpha(0.3));
+                    c.fill_rect(Rect::new(pad.x + radius, pad.y + 1.0, pad.w - 2.0 * radius, 1.0), t.highlight.alpha(0.3));
                 }
                 // Repeats: the pad split in as many slices.
                 if n.ratchet > 1 {
@@ -515,14 +516,14 @@ impl App {
         let v = out.unwrap_or(norm);
         let (a0, sweep) = (0.75 * std::f32::consts::PI, 1.5 * std::f32::consts::PI);
         let a = a0 + sweep * v;
-        c.stroke_arc(cx, cy, 11.0, a0, a0 + sweep, 2.5, t.raised_hi);
+        c.stroke_arc(cx, cy, 11.0, a0, a0 + sweep, 2.5, t.knob_track);
         let from = if bipolar { a0 + sweep * 0.5 } else { a0 };
         if (a - from).abs() > 0.02 {
             c.stroke_arc(cx, cy, 11.0, from.min(a), from.max(a), 2.5, t.text2.mix(t.text, hv));
         }
-        c.fill_circle(cx, cy, 7.0, t.raised_hi.mix(Color::hex(0x3a4644), hv));
+        c.fill_circle(cx, cy, 7.0, t.knob_cap.mix(t.button_hover, hv));
         let (dx, dy) = (a.cos(), a.sin());
-        c.stroke_polyline(&[(cx + dx * 2.0, cy + dy * 2.0), (cx + dx * 6.0, cy + dy * 6.0)], 1.6, t.text);
+        c.stroke_polyline(&[(cx + dx * 2.0, cy + dy * 2.0), (cx + dx * 6.0, cy + dy * 6.0)], 1.6, t.knob_pointer);
         out.filter(|o| (o - norm).abs() > 1e-6)
     }
 }

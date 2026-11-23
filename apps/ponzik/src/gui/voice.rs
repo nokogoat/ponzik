@@ -13,7 +13,7 @@ use ponzik_dsp::voice::VoiceTracker;
 use ponzik_engine::{Command, InputSource, PPQ, PlayMode, TICKS_PER_BAR, VoiceConfig, VoiceMode, VoiceReport, VoiceSettings};
 use ponzik_i18n::{tr, tr_fmt, tr_fmt_n};
 use ponzik_project::ScaleKind;
-use ponzik_ui::{Canvas, Color, Rect};
+use ponzik_ui::{Canvas, Rect};
 
 use super::Input;
 use super::app::{Action, App};
@@ -300,7 +300,7 @@ impl App {
         let appear = self.anim.to(wid("voice-panel", 0, 0), 1.0, T_LAYOUT);
         for k in 1..=4 {
             let k = k as f32;
-            c.fill_rrect(r.inset(-2.0 * k).translate(0.0, 2.0 * k), 16.0 + 2.0 * k, Color::hex(0x000000).alpha(0.07 * appear));
+            c.fill_rrect(r.inset(-2.0 * k).translate(0.0, 2.0 * k), 16.0 + 2.0 * k, t.shadow.alpha(0.07 * appear * t.shadow_strength));
         }
         c.fill_rrect_vgrad(r, 16.0, t.panel.mix(t.raised, 0.35), t.panel);
         c.stroke_rrect(r, 16.0, 1.0, t.hairline.mix(t.accent.alpha(0.25), 0.4));

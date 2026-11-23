@@ -7,7 +7,7 @@ use ponzik_i18n::{tr, tr_fmt, tr_fmt_n, tr_noop};
 use ponzik_project::ScaleKind;
 use ponzik_project::generate::{self, BassRhythm, Contour, MelodySpec, Mood, ProgressionSpec, RhythmStyle};
 use ponzik_project::transform::{self, ArpDir};
-use ponzik_ui::{Canvas, Color, Rect};
+use ponzik_ui::{Canvas, Rect};
 use ponzik_window::Key;
 
 use super::Input;
@@ -831,7 +831,7 @@ impl App {
             y0 = (screen.bottom() - 8.0 - h).max(8.0);
         }
         let r = Rect::new(x, y0 + (1.0 - open) * 6.0, w, h);
-        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, Color::rgba(0, 0, 0, (90.0 * open) as u8));
+        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, t.shade(90.0 * open));
         c.fill_rrect(r, 14.0, t.panel);
         c.stroke_rrect(r, 14.0, 1.0, t.hairline.alpha(1.6));
 
@@ -938,7 +938,7 @@ impl App {
             y0 = (anchor.y - 8.0 - h).max(8.0);
         }
         let r = Rect::new(x, y0 + (1.0 - open) * 6.0, w, h);
-        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, Color::rgba(0, 0, 0, (90.0 * open) as u8));
+        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, t.shade(90.0 * open));
         c.fill_rrect(r, 14.0, t.panel);
         c.stroke_rrect(r, 14.0, 1.0, t.hairline.alpha(1.6));
         let name = self.project.channels.get(ch).map_or(String::new(), |c| c.name.clone());

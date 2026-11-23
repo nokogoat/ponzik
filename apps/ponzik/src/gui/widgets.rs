@@ -924,7 +924,7 @@ impl App {
         let x = self.anim.to(id, sel as f32, T_LAYOUT);
         let knob = Rect::new(r.x + 3.0 + x * seg_w, r.y + 3.0, seg_w, r.h - 6.0);
         c.fill_rrect(knob, 7.0, t.raised_hi);
-        c.fill_rect(Rect::new(knob.x + 6.0, knob.y + 1.0, knob.w - 12.0, 1.0), WHITE.alpha(0.06));
+        c.fill_rect(Rect::new(knob.x + 6.0, knob.y + 1.0, knob.w - 12.0, 1.0), t.highlight.alpha(0.06));
         let mut picked = None;
         for (i, opt) in opts.iter().enumerate() {
             let seg = Rect::new(r.x + 3.0 + i as f32 * seg_w, r.y, seg_w, r.h);
@@ -1031,18 +1031,18 @@ impl App {
             y = input.y - h - 10.0;
         }
         let r = Rect::new(x.round(), (y + (1.0 - a) * 4.0).round(), w, h);
-        c.fill_rrect(r.translate(0.0, 4.0).inset(-1.0), 10.0, Color::rgba(0, 0, 0, (70.0 * a) as u8));
-        c.fill_rrect(r, 8.0, t.raised_hi.mix(t.bg_deep, 0.15).alpha(a));
+        c.fill_rrect(r.translate(0.0, 4.0).inset(-1.0), 10.0, t.shade(70.0 * a));
+        c.fill_rrect(r, 8.0, t.tooltip_bg.alpha(a));
         c.stroke_rrect(r, 8.0, 1.0, t.hairline.alpha(a * 1.6));
         for (i, l) in lines.iter().enumerate() {
             let cy = r.y + 15.0 + i as f32 * 18.0 + if i > 0 { 2.0 } else { 0.0 };
             if i == 0 {
-                self.text(c, self.f.sans_med, 12.0, r.x + 10.0, cy, l, t.text.alpha(a));
+                self.text(c, self.f.sans_med, 12.0, r.x + 10.0, cy, l, t.tooltip_text.alpha(a));
                 if !key.is_empty() {
                     self.keycap(c, r.right() - 6.0, cy, &key, a);
                 }
             } else {
-                self.text(c, self.f.sans, 12.0, r.x + 10.0, cy, l, t.text2.alpha(a));
+                self.text(c, self.f.sans, 12.0, r.x + 10.0, cy, l, t.tooltip_text2.alpha(a));
             }
         }
     }
@@ -1127,16 +1127,16 @@ impl App {
         let (a0, sweep) = (0.75 * PI, 1.5 * PI);
         let shown = changed.map_or(norm, |v| info.to_norm(v));
         let a = a0 + sweep * shown;
-        c.stroke_arc(cx, cy, 17.0, a0, a0 + sweep, 3.0, t.raised_hi);
+        c.stroke_arc(cx, cy, 17.0, a0, a0 + sweep, 3.0, t.knob_track);
         let bipolar = info.min < 0.0 && info.max > 0.0;
         let from = if bipolar { a0 + sweep * info.to_norm(0.0) } else { a0 };
         if (a - from).abs() > 0.01 {
-            c.stroke_arc(cx, cy, 17.0, from.min(a), from.max(a), 3.0, t.accent.mix(t.accent_hot, hv * 0.25));
+            c.stroke_arc(cx, cy, 17.0, from.min(a), from.max(a), 3.0, t.knob_arc.mix(t.accent_hot, hv * 0.25));
         }
-        c.fill_circle(cx, cy, 11.0, t.raised_hi.mix(Color::hex(0x34403e), hv));
+        c.fill_circle(cx, cy, 11.0, t.knob_cap.mix(t.knob_cap_hover, hv));
         c.stroke_circle(cx, cy, 11.0, 1.0, t.hairline);
         let (dx, dy) = (a.cos(), a.sin());
-        c.stroke_polyline(&[(cx + dx * 3.5, cy + dy * 3.5), (cx + dx * 9.5, cy + dy * 9.5)], 2.0, t.text);
+        c.stroke_polyline(&[(cx + dx * 3.5, cy + dy * 3.5), (cx + dx * 9.5, cy + dy * 9.5)], 2.0, t.knob_pointer);
 
         let label = info.format(changed.unwrap_or(value));
         let label = self.fit(self.f.mono, 11.0, &label, cell.w - 2.0);

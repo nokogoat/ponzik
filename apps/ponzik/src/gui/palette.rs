@@ -4,7 +4,7 @@
 use ponzik_engine::mixer::MASTER;
 use ponzik_engine::registry;
 use ponzik_i18n::{tr, tr_fmt};
-use ponzik_ui::{Canvas, Color, Rect};
+use ponzik_ui::{Canvas, Rect};
 use ponzik_window::Key;
 
 use super::Input;
@@ -343,8 +343,8 @@ impl App {
         add(tr("Demo: house groove").into(), tr("Demo"), none(), Action::LoadDemo(0));
         add(tr("Demo: Amen rave (breakcore)").into(), tr("Demo"), none(), Action::LoadDemo(1));
         add(tr("Demo: Zalgo rave (rage × techno)").into(), tr("Demo"), none(), Action::LoadDemo(2));
-        for (i, th) in THEMES.iter().enumerate() {
-            add(tr_fmt!("Theme: {}", tr(th.label)), tr("Theme"), none(), Action::SetTheme(i));
+        for i in 0..self.themes.entries.len() {
+            add(tr_fmt!("Theme: {}", self.theme_label(i)), tr("Theme"), none(), Action::SetTheme(i));
         }
         v
     }
@@ -394,11 +394,11 @@ impl App {
         selected = selected.min(count.saturating_sub(1));
 
         // Fond assombri, puis la palette en haut de l'écran.
-        c.fill_rect(screen, Color::rgba(0, 0, 0, (120.0 * open) as u8));
+        c.fill_rect(screen, t.shade(120.0 * open));
         let w = 620.0f32.min(screen.w - 48.0);
         let rows = count.clamp(1, VISIBLE);
         let r = Rect::new((screen.w - w) * 0.5, screen.h * 0.14 + (1.0 - open) * 10.0, w, 64.0 + rows as f32 * ROW_H + 12.0);
-        c.fill_rrect(r.translate(0.0, 8.0).inset(-4.0), 20.0, Color::rgba(0, 0, 0, (80.0 * open) as u8));
+        c.fill_rrect(r.translate(0.0, 8.0).inset(-4.0), 20.0, t.shade(80.0 * open));
         c.fill_rrect(r, 18.0, t.panel);
         c.stroke_rrect(r, 18.0, 1.0, t.hairline.alpha(1.8));
 
@@ -444,7 +444,7 @@ impl App {
                 let kw = self.fonts.measure(self.f.mono, 11.0, &item.shortcut) + 14.0;
                 let cap = Rect::new(x - kw, row.y + 10.0, kw, 20.0);
                 c.fill_rrect(cap, 5.0, t.raised_hi);
-                c.fill_rect(Rect::new(cap.x + 3.0, cap.bottom() - 1.0, cap.w - 6.0, 1.0), Color::rgba(0, 0, 0, 90));
+                c.fill_rect(Rect::new(cap.x + 3.0, cap.bottom() - 1.0, cap.w - 6.0, 1.0), t.shade(90.0));
                 self.text_center(c, self.f.mono, 11.0, cap.x + cap.w * 0.5, cap.y + 10.0, &item.shortcut, t.text2);
                 x = cap.x - 12.0;
             }

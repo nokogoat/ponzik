@@ -4,7 +4,7 @@
 
 use ponzik_engine::{PlayMode, TempoMap, TimeSig};
 use ponzik_i18n::{tr, tr_ctx, tr_fmt, tr_noop};
-use ponzik_project::{MARKER_COLORS, Placement};
+use ponzik_project::Placement;
 use ponzik_ui::{Canvas, Color, Path, Rect};
 use ponzik_window::Cursor;
 
@@ -94,7 +94,7 @@ impl App {
 
     pub fn marker_color(&self, i: usize) -> Color {
         match self.project.markers.get(i).map_or(0, |m| m.color) {
-            0 => Color::hex(MARKER_COLORS[i % MARKER_COLORS.len()]),
+            0 => self.theme.markers[i % 8],
             hex => Color::hex(hex),
         }
     }

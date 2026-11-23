@@ -6,7 +6,7 @@
 //! sur le panneau du bas les réancre. Le navigateur et le panneau du bas se
 //! redimensionnent en tirant leur bord.
 
-use ponzik_ui::{Canvas, Color, Rect};
+use ponzik_ui::{Canvas, Rect};
 use ponzik_i18n::{tr, tr_fmt};
 use ponzik_window::Cursor;
 
@@ -441,8 +441,8 @@ impl App {
             // Ombre portée : plus large pendant le déplacement, la fenêtre semble levée.
             let lift = self.anim.to(wid("float-lift", id, 0), moving as u8 as f32, T_HOVER);
             let depth = (8.0 + lift * 8.0) * open;
-            c.fill_rrect(r.translate(0.0, depth).inset(-depth * 0.6), 20.0, Color::rgba(0, 0, 0, (50.0 * open) as u8));
-            c.fill_rrect(r.translate(0.0, 3.0).inset(-1.5), 16.0, Color::rgba(0, 0, 0, (90.0 * open) as u8));
+            c.fill_rrect(r.translate(0.0, depth).inset(-depth * 0.6), 20.0, t.shade(50.0 * open));
+            c.fill_rrect(r.translate(0.0, 3.0).inset(-1.5), 16.0, t.shade(90.0 * open));
 
             // Coin de redimensionnement, servi avant le contenu.
             let corner = Rect::new(r.right() - RESIZE, r.bottom() - RESIZE, RESIZE, RESIZE);

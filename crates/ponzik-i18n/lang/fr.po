@@ -8509,3 +8509,166 @@ msgstr "{} · {} sur {}"
 
 msgid "Tempo Sync"
 msgstr "Synchro tempo"
+# --- Appearance and themes ---
+
+msgid " (+{} more)"
+msgstr " (+{} autres)"
+
+msgid " (did you mean --{}?)"
+msgstr " (vouliez-vous dire --{} ?)"
+
+msgid "\"{}\" is not a color"
+msgstr "« {} » n'est pas une couleur"
+
+msgid "\"{}\" is not a hex color (#rgb, #rrggbb or #rrggbbaa)"
+msgstr "« {} » n'est pas une couleur hexadécimale (#rgb, #rrggbb ou #rrggbbaa)"
+
+msgid "\"{}\" is not a number"
+msgstr "« {} » n'est pas un nombre"
+
+msgid "\"{}\" is not a theme property: names start with \"--\", like --accent"
+msgstr "« {} » n'est pas une propriété de thème : les noms commencent par « -- », comme --accent"
+
+msgid "\"{}\": lengths are in px"
+msgstr "« {} » : les longueurs sont en px"
+
+msgid "\"{}\": use compact, normal, comfortable or a number"
+msgstr "« {} » : utilisez compact, normal, comfortable ou un nombre"
+
+msgid "--{} belongs in :root"
+msgstr "--{} se place dans :root"
+
+msgid "--{} has no value"
+msgstr "--{} n'a pas de valeur"
+
+msgid "--{} must be between {} and {}"
+msgstr "--{} doit être entre {} et {}"
+
+msgid "Could not create the theme: {}"
+msgstr "Impossible de créer le thème : {}"
+
+msgid "Could not delete the theme: {}"
+msgstr "Impossible de supprimer le thème : {}"
+
+msgid "Could not export the theme: {}"
+msgstr "Impossible d'exporter le thème : {}"
+
+msgid "Could not import the theme: {}"
+msgstr "Impossible d'importer le thème : {}"
+
+msgid "Could not open {}: {}"
+msgstr "Impossible d'ouvrir {} : {}"
+
+msgid "Could not save the theme: {}"
+msgstr "Impossible d'enregistrer le thème : {}"
+
+msgid "Edit and save: the theme updates live"
+msgstr "Modifiez et enregistrez : le thème se met à jour en direct"
+
+msgid "Palettes"
+msgstr "Palettes"
+
+msgid "Shape and motion"
+msgstr "Formes et mouvement"
+
+msgid "Signals"
+msgstr "Signaux"
+
+msgid "Surfaces"
+msgstr "Surfaces"
+
+msgid "Text"
+msgstr "Texte"
+
+msgid "Theme created: {}"
+msgstr "Thème créé : {}"
+
+msgid "Theme deleted: {}"
+msgstr "Thème supprimé : {}"
+
+msgid "Theme exported: {}"
+msgstr "Thème exporté : {}"
+
+msgid "Theme imported: {}"
+msgstr "Thème importé : {}"
+
+msgid "Theme imported: {} · line {}: {}"
+msgstr "Thème importé : {} · ligne {} : {}"
+
+msgid "Theme {}: line {}: {}{}"
+msgstr "Thème {} : ligne {} : {}{}"
+
+msgid "Tooltips and toasts"
+msgstr "Infobulles, alertes"
+
+msgid "block never closed (missing })"
+msgstr "bloc jamais fermé (} manquante)"
+
+msgid "color-mix: only \"in srgb\" is supported, not \"{}\""
+msgstr "color-mix : seul « in srgb » est pris en charge, pas « {} »"
+
+msgid "comment never closed (missing */)"
+msgstr "commentaire jamais fermé (*/ manquant)"
+
+msgid "empty component in \"{}\""
+msgstr "composante vide dans « {} »"
+
+msgid "expected \"--name: value;\", found \"{}\""
+msgstr "« --nom: valeur; » attendu, trouvé « {} »"
+
+msgid "expected a block like \":root {{ … }}\", found \"{}\""
+msgstr "bloc comme « :root {{ … }} » attendu, trouvé « {} »"
+
+msgid "expected color-mix(in srgb, color [p%], color [q%]), found \"{}\""
+msgstr "color-mix(in srgb, couleur [p%], couleur [q%]) attendu, trouvé « {} »"
+
+msgid "invalid property name \"--{}\""
+msgstr "nom de propriété invalide « --{} »"
+
+msgid "missing \")\" after var( in \"{}\""
+msgstr "« ) » manquante après var( dans « {} »"
+
+msgid "missing \")\" in \"{}\""
+msgstr "« ) » manquante dans « {} »"
+
+msgid "nested blocks are not supported"
+msgstr "les blocs imbriqués ne sont pas pris en charge"
+
+msgid "unexpected \"}\""
+msgstr "« } » inattendue"
+
+msgid "unknown base theme \"{}\", using Ponzik"
+msgstr "thème de base « {} » inconnu, Ponzik est utilisé"
+
+msgid "unknown color function \"{}()\""
+msgstr "fonction de couleur « {}() » inconnue"
+
+msgid "unknown selector \"{}\" (use :root or one of {})"
+msgstr "sélecteur « {} » inconnu (utilisez :root ou l'un de {})"
+
+msgid "unknown token --{}{}"
+msgstr "jeton inconnu --{}{}"
+
+msgid "var() references nested too deeply"
+msgstr "références var() trop imbriquées"
+
+msgid "var() takes a --name, found \"{}\""
+msgstr "var() attend un --nom, trouvé « {} »"
+
+msgid "var(--{}) refers to itself"
+msgstr "var(--{}) fait référence à elle-même"
+
+msgid "var(--{}): --{} is not declared"
+msgstr "var(--{}) : --{} n'est pas déclarée"
+
+msgid "{} copy"
+msgstr "Copie de {}"
+
+msgid "{} is read-only: editing a copy"
+msgstr "{} est en lecture seule : modification d'une copie"
+
+msgid "{}() needs 3 components and an optional alpha, in \"{}\""
+msgstr "{}() attend 3 composantes et une opacité facultative, dans « {} »"
+
+msgid "{}() needs hue, saturation and lightness, in \"{}\""
+msgstr "{}() attend teinte, saturation et luminosité, dans « {} »"

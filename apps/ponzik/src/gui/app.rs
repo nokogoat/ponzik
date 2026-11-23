@@ -50,6 +50,7 @@ enum RowHit {
 /// Ce dont dépendent les entrées : échantillons (adresse, nombre), plugins, langue.
 type BrowserKey = (usize, usize, usize, &'static str);
 use super::theme::*;
+use super::themecss::Area;
 use super::widgets::{Icon, TipState, draw_icon, wid};
 
 const SCOPE_LEN: usize = 8_192;
@@ -722,6 +723,8 @@ pub struct App {
     pub fonts: Fonts,
     pub f: FontSet,
     pub theme: Theme,
+    /// Built-in, example and user themes; the active one and its editor.
+    pub themes: super::themes::ThemeStore,
     pub sample_rate: u32,
     pub time: f32,
     melodic: HashMap<String, bool>,
@@ -910,7 +913,8 @@ impl App {
             drag: None,
             fonts,
             f,
-            theme: PONZIK,
+            theme: ponzik(),
+            themes: Default::default(),
             sample_rate,
             time: 0.0,
             melodic: HashMap::new(),
@@ -1216,7 +1220,7 @@ impl App {
         let t = self.theme;
         let a = self.anim.to(wid("recover", 0, 0), 1.0, T_LAYOUT);
         let r = r.translate(0.0, ((1.0 - a) * -8.0).round());
-        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, Color::rgba(0, 0, 0, (80.0 * a) as u8));
+        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, t.shade(80.0 * a));
         c.fill_rrect(r, 14.0, t.raised_hi.mix(t.panel, 0.4).alpha(a));
         c.stroke_rrect(r, 14.0, 1.0, t.hairline.alpha(1.6 * a));
         let cy = r.y + r.h * 0.5;
@@ -2126,6 +2130,7 @@ impl App {
         }
         self.os_drag(input);
 
+        self.apply_theme_style(c);
         let t = self.theme;
         let (w, h) = c.logical_size();
         c.set_clip(None);
@@ -2165,16 +2170,16 @@ impl App {
         let main = Rect::new(sb, TOP_BAR, w - sb, h - TOP_BAR - pn);
         self.main_area(c, under, main);
         if pn > 1.0 {
-            self.panel_area(c, under, Rect::new(sb, h - pn, w - sb, pn));
+            self.with_area(Area::Devices, |s| s.panel_area(c, under, Rect::new(sb, h - pn, w - sb, pn)));
         }
         if sb > 1.0 {
-            self.sidebar_area(c, under, Rect::new(0.0, TOP_BAR, sb, h - TOP_BAR));
+            self.with_area(Area::Browser, |s| s.sidebar_area(c, under, Rect::new(0.0, TOP_BAR, sb, h - TOP_BAR)));
         } else if self.browser.preview.playing.is_some() {
             // The browser closed: its preview with it.
             self.stop_preview();
         }
         self.kb.scope = true;
-        self.top_bar(c, under, Rect::new(0.0, 0.0, w, TOP_BAR));
+        self.with_area(Area::Topbar, |s| s.top_bar(c, under, Rect::new(0.0, 0.0, w, TOP_BAR)));
         self.kb.scope = false;
         self.float_layer(c, ui);
         self.record_panel(c, ui, Rect::new(0.0, 0.0, w, h));
@@ -2250,8 +2255,8 @@ impl App {
         }
         let hv = self.hover_anim(wid("tb-play", 0, 0), hov);
         let on = self.anim.to(wid("tb-play-on", 0, 0), self.playing as u8 as f32, T_HOVER);
-        c.fill_rrect(play, 10.0, t.text.mix(t.accent, on).mix(WHITE, 0.12 * hv));
-        c.fill_rect(Rect::new(play.x + 8.0, play.y + 1.0, play.w - 16.0, 1.0), WHITE.alpha(0.3));
+        c.fill_rrect(play, 10.0, t.text.mix(t.accent, on).mix(t.highlight, 0.12 * hv));
+        c.fill_rect(Rect::new(play.x + 8.0, play.y + 1.0, play.w - 16.0, 1.0), t.highlight.alpha(0.3));
         let (px, py) = play.center();
         draw_icon(c, if self.playing { Icon::Pause } else { Icon::Play }, px, py, 16.0, t.bg_deep.mix(t.on_accent, on));
         use ponzik_project::midi_map::TransportAction as TA;
@@ -2546,7 +2551,7 @@ impl App {
         let h = (40.0 + 2.0 * key_h + GAP + 17.0 + list_h + 10.0).min(screen.h - anchor.bottom() - 20.0);
         let x = anchor.x.min(screen.right() - 12.0 - w).max(12.0);
         let r = Rect::new(x, anchor.bottom() + 8.0 + (1.0 - open) * 6.0, w, h);
-        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, Color::rgba(0, 0, 0, (90.0 * open) as u8));
+        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, t.shade(90.0 * open));
         c.fill_rrect(r, 14.0, t.panel);
         c.stroke_rrect(r, 14.0, 1.0, t.hairline.alpha(1.6));
         self.text(c, self.f.sans_med, 12.0, r.x + 16.0, r.y + 20.0, tr("Scale"), t.muted);
@@ -2751,11 +2756,11 @@ impl App {
         let body_shifted = body.translate(0.0, rise);
         let prev = c.push_clip(Rect::new(r.x, header.y, r.w, r.bottom() - header.y));
         match self.view {
-            View::Rack => self.rack_view(c, input, header, body_shifted),
-            View::Piano => self.piano_view(c, input, header, body_shifted),
-            View::Playlist => self.playlist_view(c, input, header, body_shifted),
+            View::Rack => self.with_area(Area::Rack, |s| s.rack_view(c, input, header, body_shifted)),
+            View::Piano => self.with_area(Area::Piano, |s| s.piano_view(c, input, header, body_shifted)),
+            View::Playlist => self.with_area(Area::Playlist, |s| s.playlist_view(c, input, header, body_shifted)),
             View::Session => self.session_view(c, input, header, body_shifted),
-            View::Mixer => self.mixer_view(c, input, header, body_shifted),
+            View::Mixer => self.with_area(Area::Mixer, |s| s.mixer_view(c, input, header, body_shifted)),
             View::Lab => self.lab_view(c, input, header, body_shifted),
         }
         if enter < 0.999 {
@@ -3068,7 +3073,7 @@ impl App {
                 y += 20.0;
                 last_cat = *cat;
             }
-            let row = Rect::new(inner_x, y, w, 34.0);
+            let row = Rect::new(inner_x, y, w, t.dense(34.0));
             if sel == Some(k) {
                 sel_row = Some(row);
             }
@@ -3105,7 +3110,7 @@ impl App {
                     RowHit::Star => self.toggle_favorite(&item),
                 }
             }
-            y += 36.0;
+            y += row.h + 2.0;
         }
         // Survol : la ligne sous la souris joue après un court instant.
         if !self.dnd_active() {
@@ -3702,7 +3707,7 @@ impl App {
             Popup::MainMenu => {
                 use super::keymap::Shortcut as S;
                 let key = |s: S| self.key_label(s);
-                let theme = THEMES.iter().position(|th| th.name == self.theme.name).unwrap_or(0);
+                let theme = self.theme_label(self.themes.active);
                 (
                     "Ponzik".into(),
                     vec![
@@ -3722,7 +3727,7 @@ impl App {
                         MenuItem::new(Icon::Play, tr("House demo"), Action::LoadDemo(0)).sep(),
                         MenuItem::new(Icon::Play, tr("Breakcore demo"), Action::LoadDemo(1)),
                         MenuItem::new(Icon::Play, tr("Zalgo rave demo"), Action::LoadDemo(2)),
-                        MenuItem::new(Icon::Theme, tr("Theme"), Action::Popup(Popup::Themes)).detail(tr(THEMES[theme].label).into()).sep(),
+                        MenuItem::new(Icon::Theme, tr("Theme"), Action::Popup(Popup::Themes)).detail(theme).sep(),
                         MenuItem::new(Icon::Layout, tr("Settings"), Action::Popup(Popup::Settings { tab: 0 }))
                             .detail(key(S::Settings))
                             .tip(tr("Views, panels and shortcuts")),
@@ -3733,18 +3738,16 @@ impl App {
                     ],
                 )
             }
-            Popup::Themes => (
-                tr("Theme").into(),
-                THEMES
-                    .iter()
-                    .enumerate()
-                    .map(|(i, th)| {
-                        let mut it = MenuItem::plain(tr(th.label), Action::SetTheme(i)).on(th.name == self.theme.name);
-                        it.color = Some(th.accent);
+            Popup::Themes => {
+                let items: Vec<MenuItem> = (0..self.themes.entries.len())
+                    .map(|i| {
+                        let mut it = MenuItem::plain(&self.theme_label(i), Action::SetTheme(i)).on(i == self.themes.active);
+                        it.color = Some(self.themes.entries[i].set.root.accent);
                         it
                     })
-                    .collect(),
-            ),
+                    .collect();
+                (tr("Theme").into(), items)
+            }
             Popup::ClipMenu(i) => {
                 let Some(clip) = p.clips.get(*i) else { return (String::new(), Vec::new()) };
                 let pat = clip.pattern;
@@ -4036,10 +4039,7 @@ impl App {
                 self.replace_project(p, None);
                 self.toast(&tr_fmt!("Demo loaded: {}", name));
             }
-            Action::SetTheme(i) => {
-                self.theme = THEMES[i.min(THEMES.len() - 1)];
-                self.save_settings();
-            }
+            Action::SetTheme(i) => self.set_theme(i),
             Action::ApplyPreset(i) => self.apply_profile(i),
             Action::SetLanguage(lang) => self.set_language(lang),
             Action::ReloadTranslations => self.reload_translations(),
@@ -4324,7 +4324,7 @@ impl App {
             } else {
                 let w = if matches!(target, Rename::Translation) { 480.0 } else { 360.0 };
                 let r = Rect::new((screen.w - w) * 0.5, screen.h * 0.32 + (1.0 - open) * 8.0, w, 92.0);
-                c.fill_rect(screen, Color::rgba(0, 0, 0, (110.0 * open) as u8));
+                c.fill_rect(screen, t.shade(110.0 * open));
                 c.fill_rrect(r, 16.0, t.panel);
                 c.stroke_rrect(r, 16.0, 1.0, t.hairline.alpha(1.6));
                 let title = match target {
@@ -4337,7 +4337,7 @@ impl App {
                 self.text_fit(c, self.f.sans_med, 14.0, r.x + 20.0, r.y + 24.0, title, r.w - 40.0, t.text2);
                 Rect::new(r.x + 16.0, r.y + 40.0, r.w - 32.0, 38.0)
             };
-            c.fill_rrect(field.translate(0.0, 4.0).inset(-2.0), 12.0, Color::rgba(0, 0, 0, (70.0 * open) as u8));
+            c.fill_rrect(field.translate(0.0, 4.0).inset(-2.0), 12.0, t.shade(70.0 * open));
             c.fill_rrect(field, 10.0, t.well);
             c.stroke_rrect(field, 10.0, 1.5, t.select.alpha(0.9 * open));
             let ok_x = self.keycap(c, field.right() - 8.0, field.y + field.h * 0.5, tr("Enter"), 0.8);
@@ -4375,7 +4375,10 @@ impl App {
             return;
         }
 
-        let (title, items) = self.menu_items(&state.kind);
+        let (title, mut items) = self.menu_items(&state.kind);
+        for it in &mut items {
+            it.height = t.dense(it.height);
+        }
         // Assez large pour le plus long libellé et sa valeur (jusqu'à 360 px).
         let widest = items
             .iter()
@@ -4394,7 +4397,7 @@ impl App {
             y = (state.anchor.y - 8.0 - h).max(TOP_BAR);
         }
         let r = Rect::new(x.max(12.0), y + (1.0 - open) * 6.0, w, h);
-        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, Color::rgba(0, 0, 0, (90.0 * open) as u8));
+        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, t.shade(90.0 * open));
         c.fill_rrect(r, 14.0, t.panel);
         c.stroke_rrect(r, 14.0, 1.0, t.hairline.alpha(1.6));
         self.text_fit(c, self.f.sans_med, 12.0, r.x + 16.0, r.y + 20.0, &title, r.w - 32.0, t.muted);
@@ -4425,7 +4428,7 @@ impl App {
             ry += it.height;
             let id = wid("popup-row", i, 0);
             // Lines of text (no action) are not buttons.
-            let line = it.height < 38.0 && matches!(it.action, Action::None);
+            let line = it.height < t.dense(38.0) && matches!(it.action, Action::None);
             let over = input.inside && row.contains(input.x, input.y) && list.contains(input.x, input.y);
             let hov = over && !line;
             let hv = self.hover_anim(id, hov);
@@ -4535,10 +4538,10 @@ impl App {
             let bw = action.as_ref().map_or(0.0, |(l, _)| self.fonts.measure(self.f.sans_med, 12.0, l) + 26.0);
             let tw = self.fonts.measure(self.f.sans, 13.0, &text).min(area.w - 80.0 - bw);
             let r = Rect::new(area.right() - 16.0 - tw - 40.0 - bw, y - 40.0 + (1.0 - alpha) * 8.0, tw + 40.0 + bw, 40.0);
-            c.fill_rrect(r, 12.0, t.raised_hi.alpha(alpha));
+            c.fill_rrect(r, 12.0, t.toast_bg.alpha(alpha));
             c.stroke_rrect(r, 12.0, 1.0, t.hairline.alpha(alpha));
-            c.fill_circle(r.x + 16.0, r.y + 20.0, 3.0, t.accent.alpha(alpha));
-            self.text_fit(c, self.f.sans, 13.0, r.x + 28.0, r.y + 20.0, &text, tw, t.text.alpha(alpha));
+            c.fill_circle(r.x + 16.0, r.y + 20.0, 3.0, t.toast_dot.alpha(alpha));
+            self.text_fit(c, self.f.sans, 13.0, r.x + 28.0, r.y + 20.0, &text, tw, t.toast_text.alpha(alpha));
             if let Some((label, act)) = action {
                 let b = Rect::new(r.right() - bw - 6.0, r.y + 7.0, bw, 26.0);
                 let id = wid("toast-act", i, 0);
