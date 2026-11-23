@@ -861,6 +861,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     if let Ok(spec) = std::env::var("PONZIK_INSTALL") {
         app.screenshot_install(&spec);
     }
+    // PONZIK_WORKSPACE=simple|full|beatmaker|sampling|live|minimal[,nopanel]: a profile.
+    if let Ok(spec) = std::env::var("PONZIK_WORKSPACE") {
+        app.screenshot_workspace(&spec);
+    }
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {
         app.screenshot_popup(&name);
