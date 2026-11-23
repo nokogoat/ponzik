@@ -22,6 +22,18 @@ pub(super) fn music_dir() -> PathBuf {
     ["Musique", "Music"].iter().map(|d| h.join(d)).find(|p| p.is_dir()).unwrap_or(h)
 }
 
+/// A folder for a short label: `~/Music/Ponzik` rather than `/home/ana/Music/Ponzik`.
+pub fn short_path(path: &Path) -> String {
+    let h = home();
+    match path.strip_prefix(&h) {
+        Ok(rest) if h.components().count() > 1 => {
+            let rest = rest.display().to_string();
+            if rest.is_empty() { "~".into() } else { format!("~{}{rest}", std::path::MAIN_SEPARATOR) }
+        }
+        _ => path.display().to_string(),
+    }
+}
+
 pub fn projects_dir() -> PathBuf {
     music_dir().join("Ponzik")
 }

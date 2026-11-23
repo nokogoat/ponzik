@@ -74,12 +74,13 @@ fn main() -> ExitCode {
         detach_own_console();
     }
     let result = match args.first().map(String::as_str) {
-        None => gui::run(demo_project(), None),
-        Some("breakcore") => gui::run(ponzik_project::demo_breakcore(), None),
-        Some("zalgo") => gui::run(ponzik_project::demo_zalgo(), None),
-        Some("new") => gui::run(ponzik_project::Project::empty(), None),
+        // The last project, or the start screen.
+        None => gui::run(ponzik_project::Project::empty(), None, true),
+        Some("breakcore") => gui::run(ponzik_project::demo_breakcore(), None, false),
+        Some("zalgo") => gui::run(ponzik_project::demo_zalgo(), None, false),
+        Some("new") => gui::run(ponzik_project::Project::empty(), None, false),
         Some("bench") => bench::bench(&args[1..]),
-        Some(a) if project_arg(a).is_some() => gui::run(demo_project(), project_arg(a)),
+        Some(a) if project_arg(a).is_some() => gui::run(ponzik_project::Project::empty(), project_arg(a), false),
         Some("install") => cli_install(&args[1..]),
         Some("uninstall") => cli_uninstall(&args[1..]),
         // "Installed apps" › Uninstall: a confirmation window (none with --quiet).

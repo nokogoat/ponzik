@@ -9713,3 +9713,54 @@ msgstr "{} locators devenus des repères d'arrangement"
 
 msgid "{} patterns from {} MIDI clips, {} notes"
 msgstr "{} patterns depuis {} clips MIDI, {} notes"
+
+msgid "An empty project, ready for your first sound"
+msgstr "Un projet vide, prêt pour votre premier son"
+
+msgid "Arrows to choose · Enter to open · Esc for an empty project"
+msgstr "Flèches pour choisir · Entrée pour ouvrir · Échap pour un projet vide"
+
+msgid "At startup"
+msgstr "Au démarrage"
+
+msgid "House demo"
+msgstr "Démo house"
+
+msgid "Listen first"
+msgstr "Écouter d'abord"
+
+msgid "New project, templates and recent projects to choose from"
+msgstr "Nouveau projet, modèles et projets récents au choix"
+
+msgid "No recent projects yet"
+msgstr "Pas encore de projet récent"
+
+msgid "Open a project…"
+msgstr "Ouvrir un projet…"
+
+msgid "Otherwise this screen opens at every launch · also in Settings › Workspace"
+msgstr "Sinon cet écran s'ouvre à chaque lancement · aussi dans Réglages › Espace de travail"
+
+msgid "Ponzik, FL Studio, Ableton Live or MIDI"
+msgstr "Ponzik, FL Studio, Ableton Live ou MIDI"
+
+msgid "Recent projects"
+msgstr "Projets récents"
+
+msgid "Reopen the last project"
+msgstr "Rouvrir le dernier projet"
+
+msgid "Reopen the last project at startup"
+msgstr "Rouvrir le dernier projet au démarrage"
+
+msgid "Start screen"
+msgstr "Écran d'accueil"
+
+msgid "Start something new, or pick up where you left off"
+msgstr "Commencez quelque chose, ou reprenez là où vous en étiez"
+
+msgid "Templates"
+msgstr "Modèles"
+
+msgid "The project you had open comes back as you left it"
+msgstr "Le projet ouvert revient tel que vous l'avez laissé"
