@@ -18,7 +18,7 @@ Legend: **FL** = FL Studio · **AB** = Ableton Live · ✅ done in Ponzik · �
 | Multiple arrangements in one project | FL | ⬜ |
 | Session view: clip grid, scenes, quantized launching | AB | ✅ 8 × 8 |
 | Arrangement view: linear timeline, tracks, recording the Session into the Arrangement | AB | 🟡 playlist |
-| Clip View / Device View (clip and effect chain details at the bottom of the screen) | AB | 🟡 resizable bottom device panel; no clip panel |
+| Clip View / Device View (clip and effect chain details at the bottom of the screen) | AB | ✅ resizable bottom device panel with a strip of device chips (jump, drag to reorder, bypass, detach, presets), collapsible cards, an effect inserted between two cards, Ctrl+arrows from device to device, keyboard focus (Tab, arrows, Enter); clip panel for the selected clip |
 | Performance mode: launch Playlist clips live | FL | ⬜ |
 | Browser: samples, presets, plugins, projects, favorites, tags, collections | FL · AB | 🟡 instruments, effects, CLAP and VST3 plugins, WAV and FLAC files, search, drag and drop; no favorites or tags |
 | Similar-sound search in the browser | AB | ⬜ |
@@ -225,7 +225,10 @@ Proprietary instruments cannot be copied, so Ponzik builds its own equivalents.
 A real-time engine; in-house ALSA and WASAPI drivers for playback and capture;
 MIDI input; in-house windowing and rendering. Channel Rack with swing, piano roll
 with scale tools, chord stamps, chord grid, humanize and velocity lane, playlist
-(patterns, audio, automation, make unique, time selection duplication), Session
+(patterns, audio, automation, make unique, time selection duplication, loops that
+repeat when their edge is dragged, loop to the end of the song or the selection,
+repeat ×2 ×4 ×8, paint brush), a sampler that fits a loop to the pattern in tempo
+sync, values typed by hand for every knob, Session
 view, a mixer of up to 1,000 tracks (inserts, sends, routing, solo, sidechain, PDC, master
 LUFS and spectrum), devices with visuals in stacked floating windows. 12 native
 instruments (Pulse, DrumSynth, FM, Wave, Sampler, Acid 303, Kick, Slicer,
