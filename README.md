@@ -7,14 +7,10 @@
 **The free DAW. FL Studio's breadth, Ableton Live's clarity. No more gatekeeping.**
 
 <p>
-<img src="https://img.shields.io/badge/price-0%20%E2%82%AC%20forever-22c55e?style=for-the-badge&labelColor=0e1212" alt="price: 0 € forever">
-<img src="https://img.shields.io/badge/written%20in-100%25%20Rust-22c55e?style=for-the-badge&labelColor=0e1212&logo=rust&logoColor=white" alt="written in: 100% Rust">
-<img src="https://img.shields.io/badge/dependencies-0-22c55e?style=for-the-badge&labelColor=0e1212" alt="dependencies: 0">
-<img src="https://img.shields.io/badge/gatekeeping-none-22c55e?style=for-the-badge&labelColor=0e1212" alt="gatekeeping: none">
-<img src="https://img.shields.io/badge/subscriptions-never-22c55e?style=for-the-badge&labelColor=0e1212" alt="subscriptions: never">
-<img src="https://img.shields.io/badge/runs%20on-Linux%20%C2%B7%20Windows-3ccfc4?style=for-the-badge&labelColor=0e1212&logo=linux&logoColor=white" alt="runs on: Linux · Windows">
-<img src="https://img.shields.io/badge/license-GPL--3.0-3ccfc4?style=for-the-badge&labelColor=0e1212" alt="license: GPL-3.0">
-<a href="https://github.com/nokogoat/ponzik/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/nokogoat/ponzik/release.yml?branch=main&style=for-the-badge&labelColor=0e1212&label=nightly&color=22c55e" alt="nightly build"></a>
+<img src="https://img.shields.io/badge/price-0%20%E2%82%AC-22c55e?style=flat-square&labelColor=0e1212" alt="price: 0 €">
+<img src="https://img.shields.io/badge/100%25-Rust-22c55e?style=flat-square&labelColor=0e1212&logo=rust&logoColor=white" alt="100% Rust">
+<img src="https://img.shields.io/badge/gatekeeping-none-22c55e?style=flat-square&labelColor=0e1212" alt="gatekeeping: none">
+<a href="https://github.com/nokogoat/ponzik/releases"><img src="https://img.shields.io/github/actions/workflow/status/nokogoat/ponzik/release.yml?branch=main&style=flat-square&labelColor=0e1212&label=nightly&color=22c55e" alt="nightly build"></a>
 </p>
 
 [Download](https://github.com/nokogoat/ponzik/releases) | [What's inside](docs/OVERVIEW.md) | [Getting started](docs/GETTING_STARTED.md) | [Shortcuts](docs/SHORTCUTS.md) | [Plugins](docs/PLUGINS.md) | [Build](docs/BUILDING.md) | [Contributing](AGENTS.md) | [License](LICENSE)
