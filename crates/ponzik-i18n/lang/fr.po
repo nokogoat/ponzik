@@ -2383,8 +2383,8 @@ msgstr "Échos sur deux mesures\nHaut : gauche · bas : droite"
 msgid "Frozen tail\nIt holds as long as Freeze is on"
 msgstr "Queue figée\nElle tient tant que « Figer » est actif"
 
-msgid "Tail over 5 s\nLine: pre-delay · mark: decay"
-msgstr "Queue sur 5 s\nTrait : pré-délai · repère : déclin"
+msgid "Tail over 5 s: mids filled, highs as a thin line\nLine: pre-delay · mark: decay (−60 dB at 500 Hz)"
+msgstr "Queue sur 5 s : médiums remplis, aigus en trait fin\nTrait : pré-délai · repère : déclin (−60 dB à 500 Hz)"
 
 # --- Command line ---
 
