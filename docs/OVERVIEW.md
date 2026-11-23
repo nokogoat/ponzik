@@ -28,10 +28,12 @@
   speaker, **Mallets**, plus synths (Pulse, FM, Wavetable, Acid 303, Granular, Pluck),
   drums (Kick, DrumSynth, Drum Machine, **Drum Pads**), Sampler, Slicer and External
   MIDI for hardware synths.
-- **31 native effects**: EQ with spectrum, compressors, bus compressor, OTT-style
+- **32 native effects**: EQ with spectrum, compressors, bus compressor, OTT-style
   multiband, limiters with true peak, gate, transient shaper, pump, ducking, reverbs,
   shimmer, delays, chorus, phaser, rotary speaker, saturators, **Amp & Cab**,
-  bitcrusher, noise & texture, stutter, pitch shifter, stereo imager, utility,
+  bitcrusher, noise & texture, stutter, pitch shifter, **Pitch Correction** (real-time
+  Auto-Tune style tuning to the project's scale or to MIDI notes, from transparent to
+  hard tune, formants kept, live pitch graph), stereo imager, utility,
   **Rack** (parallel chains with 8 macros) and **Mix Assistant** (listens to a track
   and suggests a chain, it imposes nothing).
 - **Note effects** before any instrument: arpeggiator, chord, scale, random, repeat.

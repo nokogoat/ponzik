@@ -140,7 +140,7 @@ template" (V1-12)**.
 | V3-2 | **Virtual musicians**: a drummer, bassist and keyboardist who play along with the chord track, tuned by complexity and intensity (Logic's Session Players) | A huge help for beginners | L | project (generation), ui | V3-1 | ⬜ |
 | V3-3 | **Scratch pads**: an alternative arrangement in the same project (Studio One), multiple arrangements (FL) | Try out a structure without breaking anything | M | project, ui | V2-9 | ⬜ |
 | V3-4 | **Project versions**: named snapshots, comparison and rollback, with continuous autosave | Replaces "project_final_v7_REAL.flp" | M | project, ui | V1-2 | ⬜ |
-| V3-5 | **Pitch correction**: YIN detection, notes as editable blobs (pitch, vibrato, length, formants), an automatic mode tuned to the scale | Melodyne and Newtone; a must for vocals | L | dsp (PSOLA), engine, ui | V1-3, V2-11 | ⬜ (YIN tuner already in the DSP crate) |
+| V3-5 | **Pitch correction**: YIN detection, notes as editable blobs (pitch, vibrato, length, formants), an automatic mode tuned to the scale | Melodyne and Newtone; a must for vocals | L | dsp (PSOLA), engine, ui | V1-3, V2-11 | 🟡 the automatic real-time mode ships (Pitch Correction effect); editable note blobs on recorded clips remain |
 | V3-6 | **Spectral editing**: a clip spectrogram, brush eraser and attenuation, noise reduction | Cleaning up takes (Edison, RX, SpectraLayers) | L | dsp (STFT), ui | V1-10 | ⬜ |
 | V3-7 | **Audio to MIDI** (drums, melody, harmony) | Live does it; useful for reworking a sample | L | dsp | V3-5 | 🟡 melody done: Voice to Notes (sing or hum to play and record the selected instrument in real time) and Convert to notes on audio clips; drums and harmony to do |
 | V3-8 | Local **stem separation** | Live 12.3, FL, Studio One 7 and Cubase 15 all have it. Without dependencies it needs a small hand-written neural network, which makes it the heaviest project | L | dsp | – | ⬜ |
@@ -201,7 +201,7 @@ in the product.
 | **Character saturation** | Tube, tape, transistor, rectifier, multiband, with a mix control | Decapitator, Saturn 2 | 2 | ✅ |
 | **Animated filter** | Envelope filter, drawn and step LFO, vowel and comb modes | FilterFreak, MicroShift | 2 | ⬜ |
 | **Vocoder** | 16 to 32 bands, internal or sidechain carrier, formants | Vocodex, Live's Vocoder | 2 (V2-1) | ⬜ |
-| **Pitch corrector** | Real-time automatic tuning to the scale, adjustable speed (the "T-Pain" effect at 0 ms) | Auto-Tune, Pitcher, Melodyne | 3 (V3-5) | ⬜ |
+| **Pitch corrector** | Real-time automatic tuning to the scale, adjustable speed (the "T-Pain" effect at 0 ms) | Auto-Tune, Pitcher, Melodyne | 3 (V3-5) | ✅ Pitch Correction effect (real time, scale or MIDI target) |
 | **Wavetable synth 2** | Ponzik Wave extended: 3 oscillators + sub + noise, spectral, granular and multisample modes, modulation matrix, phase distortion, table import | Serum 2, Vital | 3 (V2-6) | ⬜ |
 | **Modular drum synth** | Kick, snare, hi-hat in layers (transient + body + noise), a preset family per machine | Bitwig v8, v9 and v0 | 2 | ✅ Drum Machine (eight layered pads); no per-machine preset families yet |
 | **Noise and texture** | Vinyl crackle, tape hiss, block bit loss, wow | RC-20 | 2 | ✅ |
