@@ -660,7 +660,7 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     }
     // PONZIK_FLP=<file.flp>: an FL Studio project imported (its report closed).
     if let Ok(path) = std::env::var("PONZIK_FLP") {
-        app.import_flp(std::path::Path::new(&path));
+        app.import_project(std::path::Path::new(&path));
         app.popup = None;
     }
     // PONZIK_PL_SCROLL=lane,px: the first clip moved down to that lane, the lanes scrolled by px.
@@ -894,7 +894,7 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     if let Ok(spec) = std::env::var("PONZIK_START") {
         app.screenshot_start(&spec);
     }
-    // PONZIK_FILEDIALOG=save|open|recent|unsaved[:folder][,flp|als][,sel:n][,q:text][,confirm][,newdir][,path]:
+    // PONZIK_FILEDIALOG=save|open|recent|unsaved[:folder][,flp|als|rpp][,sel:n][,q:text][,confirm][,newdir][,path]:
     // the file dialog (see filedialog.rs).
     if let Ok(spec) = std::env::var("PONZIK_FILEDIALOG") {
         app.screenshot_file_dialog(&spec);

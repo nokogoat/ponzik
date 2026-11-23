@@ -298,20 +298,10 @@ pub fn scan_flp() -> Vec<PathBuf> {
     out
 }
 
-/// Converts an FL Studio project; samples are looked up next to it too.
-pub fn import_flp(path: &Path) -> Result<(Project, ponzik_project::ImportReport), String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("{} : {e}", path.display()))?;
-    let name = path.file_stem().map_or("FL Studio".to_string(), |s| s.to_string_lossy().into_owned());
-    let dir = path.parent();
-    ponzik_project::import_flp(&bytes, &name, &|raw| ponzik_project::resolve_sample(raw, dir))
-}
-
-/// Opens an Ableton Live set; audio files are looked up next to it too.
-pub fn import_als(path: &Path) -> Result<(Project, ponzik_project::ImportReport), String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("{} : {e}", path.display()))?;
-    let name = path.file_stem().map_or("Ableton Live".to_string(), |s| s.to_string_lossy().into_owned());
-    let dir = path.parent();
-    ponzik_project::als::import_als(&bytes, &name, &|raw| ponzik_project::resolve_sample(raw, dir))
+/// Converts the project of another program (FL Studio, Ableton Live,
+/// REAPER, LMMS, Ardour, a MusicXML score); its media are looked up next to it too.
+pub fn import_project(path: &Path) -> Result<(Project, ponzik_project::ImportReport), String> {
+    ponzik_project::foreign::import_file(path)
 }
 
 /// A sample path of the project as a path on disk (library sounds are
@@ -340,6 +330,11 @@ pub fn export_flp(project: &Project, path: &Path) -> Result<(), String> {
 /// An Ableton Live copy of the project.
 pub fn export_als(project: &Project, path: &Path) -> Result<(), String> {
     write_file(path, &ponzik_project::als::export_als(project))
+}
+
+/// A REAPER copy of the project.
+pub fn export_rpp(project: &Project, path: &Path) -> Result<(), String> {
+    write_file(path, ponzik_project::rpp::export_rpp(project, &media_on_disk).as_bytes())
 }
 
 pub fn export_midi(project: &Project, pattern: usize) -> Result<PathBuf, String> {

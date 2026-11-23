@@ -326,7 +326,8 @@ impl App {
         add(tr("Save as").into(), tr("File"), k(S::SaveAs), Action::SaveAs);
         add(tr("Export for FL Studio (.flp)").into(), tr("File"), none(), Action::SaveCopy(super::filedialog::Format::Flp));
         add(tr("Export for Ableton Live (.als)").into(), tr("File"), none(), Action::SaveCopy(super::filedialog::Format::Als));
-        add(tr("Show the FL Studio import report").into(), tr("File"), none(), Action::Popup(Popup::ImportReport));
+        add(tr("Export for REAPER (.rpp)").into(), tr("File"), none(), Action::SaveCopy(super::filedialog::Format::Rpp));
+        add(tr("Show the import report").into(), tr("File"), none(), Action::Popup(Popup::ImportReport));
         add(
             tr("Locate missing files (relink offline samples and audio)").into(),
             tr("File"),

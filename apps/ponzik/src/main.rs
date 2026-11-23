@@ -111,11 +111,13 @@ fn main() -> ExitCode {
 }
 
 /// A project file given on the command line (a double-click in the file
-/// manager): an existing `.ponzik`, `.flp` or `.als`.
+/// manager): an existing `.ponzik`, or the project of another program
+/// (`.flp`, `.als`, `.rpp`, `.mmp`, `.mmpz`, `.ardour`, `.musicxml`, `.mxl`; the
+/// ones Ponzik can't open yet open the window with a message).
 fn project_arg(arg: &str) -> Option<std::path::PathBuf> {
     let path = std::path::Path::new(arg);
-    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
-    (matches!(ext.as_str(), "ponzik" | "flp" | "als") && path.is_file()).then(|| path.to_path_buf())
+    let known = ponzik_project::foreign::Format::of(path).is_some() || ponzik_project::foreign::unsupported(path).is_some();
+    (known && path.is_file()).then(|| path.to_path_buf())
 }
 
 /// `ponzik install [--desktop]`: installs (Windows) or adds to the menu (Linux), without a window.
