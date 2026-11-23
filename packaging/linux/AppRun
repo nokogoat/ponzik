@@ -1,0 +1,5 @@
+#!/bin/sh
+# Entry point of the AppImage: the program, with the arguments it was given.
+# Nothing is bundled but the program itself, so no library path to set.
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/bin/ponzik" "$@"

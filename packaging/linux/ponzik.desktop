@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Ponzik
+GenericName=Digital Audio Workstation
+Comment=The free DAW. No more gatekeeping.
+Exec=ponzik
+Icon=ponzik
+Terminal=false
+Categories=AudioVideo;Audio;Midi;Sequencer;
+Keywords=DAW;music;beat;producer;synth;sampler;
+StartupWMClass=Ponzik
