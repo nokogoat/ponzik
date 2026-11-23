@@ -55,6 +55,15 @@ name = "ponzik-i18n"
 version = "0.1.0"
 
 [[package]]
+name = "ponzik-lv2"
+version = "0.1.0"
+dependencies = [
+ "ponzik-engine",
+ "ponzik-i18n",
+ "ponzik-window",
+]
+
+[[package]]
 name = "ponzik-midi"
 version = "0.1.0"
 

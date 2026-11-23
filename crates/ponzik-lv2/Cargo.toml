@@ -1,0 +1,14 @@
+[package]
+name = "ponzik-lv2"
+description = "Hôte de plugins LV2 pour Ponzik : lecteur Turtle, ABI C écrite à la main, chargement dynamique"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ponzik-engine.workspace = true
+ponzik-i18n.workspace = true
+
+[dev-dependencies]
+ponzik-window.workspace = true
