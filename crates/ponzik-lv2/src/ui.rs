@@ -69,7 +69,7 @@ unsafe extern "C" fn write_port(controller: *mut c_void, port: u32, size: u32, p
         let _ = lock(&s.to_audio).push((port, v));
         s.values[port as usize].store(v.to_bits(), Ordering::Relaxed);
         if let Some(k) = s.model.param(port) {
-            s.push(EditorEvent::Param { id: port, value: s.model.convs[k].1.to_host(v, s.sample_rate()) });
+            s.push(EditorEvent::Param { id: port, value: s.model.convs[k].1.to_host(v) });
         }
     } else if protocol == urids().event_transfer && size >= 8 {
         // SAFETY: an atom of `size` bytes.
@@ -379,7 +379,7 @@ impl PluginEditor for Lv2Editor {
                 let Some(sym) = s.model.desc.ports.get(*port as usize).map(|p| &p.symbol) else { continue };
                 if let Some(v) = blob.port(sym) {
                     let _ = tx.push((*port, v));
-                    values.push((*port, conv.to_host(v, s.sample_rate())));
+                    values.push((*port, conv.to_host(v)));
                 }
             }
         }

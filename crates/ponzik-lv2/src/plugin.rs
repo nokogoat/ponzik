@@ -106,7 +106,8 @@ pub(crate) fn library_uris(path: &Path) -> Result<Vec<String>, String> {
 /// How a control value shows in Ponzik.
 #[derive(Clone, Debug)]
 pub(crate) enum Conv {
-    /// Ponzik value = port value × `scale` (× the sample rate for a sample-rate port).
+    /// Ponzik value = port value × `scale`; the bounds of a sample-rate
+    /// port are fractions of the rate (its value is absolute).
     Linear { scale: f32, integer: bool, sample_rate: bool, min: f32, max: f32 },
     /// Ponzik value = index in the list of port values.
     Choice(Vec<f32>),
@@ -116,19 +117,19 @@ impl Conv {
     pub(crate) fn to_port(&self, v: f32, sr: f32) -> f32 {
         match self {
             Conv::Linear { scale, integer, sample_rate, min, max } => {
-                let p = if *sample_rate { v / sr.max(1.0) } else { v / scale };
-                let p = if p.is_finite() { p.clamp(*min, *max) } else { *min };
+                let (p, k) = if *sample_rate { (v, sr) } else { (v / scale, 1.0) };
+                let p = if p.is_finite() { p.clamp(min * k, max * k) } else { min * k };
                 if *integer { p.round() } else { p }
             }
             Conv::Choice(values) => values.get((v.max(0.0).round() as usize).min(values.len().saturating_sub(1))).copied().unwrap_or(0.0),
         }
     }
 
-    pub(crate) fn to_host(&self, p: f32, sr: f32) -> f32 {
+    pub(crate) fn to_host(&self, p: f32) -> f32 {
         match self {
             Conv::Linear { scale, sample_rate, .. } => {
                 if *sample_rate {
-                    p * sr
+                    p
                 } else {
                     p * scale
                 }
@@ -210,7 +211,7 @@ fn build_model(kind: String, desc: PluginDesc) -> Model {
             let labels: Vec<&'static str> = p.scale_points.iter().map(|s| leak(s.1.clone())).collect();
             let values: Vec<f32> = p.scale_points.iter().map(|s| s.0).collect();
             let conv = Conv::Choice(values);
-            let d = conv.to_host(def, DISPLAY_RATE) as usize;
+            let d = conv.to_host(def) as usize;
             infos.push(ParamInfo::choice(p.index, name, Box::leak(labels.into_boxed_slice()), d));
             convs.push((p.index, conv));
             continue;
@@ -387,9 +388,10 @@ impl Core {
                     PortBuf::Audio(vec![0f32; frames].into_boxed_slice())
                 }
                 PortKind::Control => {
-                    let lo = p.min.unwrap_or(0.0);
-                    let hi = p.max.unwrap_or(lo.max(1.0));
-                    controls[i] = p.default.unwrap_or(lo).clamp(lo.min(hi), hi.max(lo));
+                    let k = if p.sample_rate { 48_000.0 } else { 1.0 };
+                    let lo = p.min.unwrap_or(0.0) * k;
+                    let hi = p.max.map_or(lo.max(1.0), |m| m * k);
+                    controls[i] = p.default.map_or(lo, |d| d * k).clamp(lo.min(hi), hi.max(lo));
                     if p.designation == LV2_FREE_WHEELING {
                         controls[i] = 0.0;
                     }
@@ -608,9 +610,8 @@ impl Core {
 
     /// Ponzik values from the control values, and the values the editor sees.
     fn publish_all(&mut self) {
-        let sr = self.sample_rate;
         for (k, (port, conv)) in self.model.convs.iter().enumerate() {
-            self.host_values[k] = conv.to_host(self.controls[*port as usize], sr);
+            self.host_values[k] = conv.to_host(self.controls[*port as usize]);
         }
         for (i, v) in self.controls.iter().enumerate() {
             if let Some(a) = self.shared.values.get(i) {
@@ -736,14 +737,13 @@ impl Core {
             return false;
         }
         let u = urids();
-        let sr = self.sample_rate;
         // Values written by the plugin's interface.
         while let Some((port, v)) = self.from_ui.pop() {
             if let Some(c) = self.controls.get_mut(port as usize) {
                 *c = v;
             }
             if let Some(k) = self.model.param(port) {
-                self.host_values[k] = self.model.convs[k].1.to_host(v, sr);
+                self.host_values[k] = self.model.convs[k].1.to_host(v);
             }
         }
         // Atoms written by the interface: port, type, body.
@@ -946,7 +946,7 @@ impl Core {
                     .filter_map(|(sym, v)| {
                         let port = self.model.desc.port(sym)?.index;
                         let k = self.model.param(port)?;
-                        Some((port, self.model.convs[k].1.to_host(*v, self.sample_rate)))
+                        Some((port, self.model.convs[k].1.to_host(*v)))
                     })
                     .collect();
                 (p.name, values)
@@ -1185,18 +1185,19 @@ mod tests {
     #[test]
     fn conversions_follow_the_port() {
         let sr = Conv::Linear { scale: DISPLAY_RATE, integer: false, sample_rate: true, min: 0.0, max: 0.5 };
-        assert_eq!(sr.to_port(4_410.0, 44_100.0), 0.1);
-        assert_eq!(sr.to_port(40_000.0, 44_100.0), 0.5, "clamped to the port's range");
-        assert_eq!(sr.to_host(0.1, 44_100.0), 4_410.0);
+        // The value is absolute, only the bounds follow the rate.
+        assert_eq!(sr.to_port(4_410.0, 44_100.0), 4_410.0);
+        assert_eq!(sr.to_port(40_000.0, 44_100.0), 22_050.0, "clamped to the port's range");
+        assert_eq!(sr.to_host(4_410.0), 4_410.0);
         let ms = Conv::Linear { scale: 0.001, integer: true, sample_rate: false, min: 1.0, max: 500.0 };
         assert_eq!(ms.to_port(0.0204, 48_000.0), 20.0);
-        assert!((ms.to_host(20.0, 48_000.0) - 0.02).abs() < 1e-6);
+        assert!((ms.to_host(20.0) - 0.02).abs() < 1e-6);
         let choice = Conv::Choice(vec![1.0, 2.0, 4.0]);
         assert_eq!(choice.to_port(2.0, 1.0), 4.0);
         assert_eq!(choice.to_port(9.0, 1.0), 4.0);
-        assert_eq!(choice.to_host(2.2, 1.0), 1.0);
+        assert_eq!(choice.to_host(2.2), 1.0);
         let toggle = Conv::Choice(vec![0.0, 1.0]);
-        assert_eq!(toggle.to_host(0.3, 1.0), 1.0, "anything but zero is on");
-        assert_eq!(toggle.to_host(0.0, 1.0), 0.0);
+        assert_eq!(toggle.to_host(0.3), 1.0, "anything but zero is on");
+        assert_eq!(toggle.to_host(0.0), 0.0);
     }
 }
