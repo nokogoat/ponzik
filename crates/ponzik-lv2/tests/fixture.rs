@@ -235,10 +235,10 @@ fn fixed_blocks_go_through_a_fifo() {
 #[test]
 fn presets_carry_values_in_ponzik_units() {
     let Some(b) = bundle("presets") else { return };
-    // Known in this process once opened from its bundle.
-    let fx = create_effect(&b, GAIN).unwrap();
-    drop(fx);
-    let presets = presets_of(&kind_for(GAIN));
+    // Through the instance (its own bundle), then by kind (the bundle this
+    // process knows for the URI: other tests' copies may come and go).
+    let presets = open_effect(&b, GAIN).unwrap().presets();
+    assert!(presets_of(&kind_for(GAIN)).iter().all(|p| p.0 == "Half"));
     let half = presets.iter().find(|p| p.0 == "Half").unwrap_or_else(|| panic!("{presets:?}"));
     assert!(half.1.contains(&(4, 0.5)));
     assert!(half.1.contains(&(5, 2.0)), "mode Four is the third choice");

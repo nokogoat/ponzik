@@ -134,7 +134,8 @@ fn remember(uri: &str, bundle: &Path) {
 /// The bundle of plugin `uri`: one seen in this process, otherwise the
 /// first of the search folders whose manifest names it.
 pub fn find_bundle(uri: &str) -> Option<PathBuf> {
-    if let Some(b) = host::lock(&KNOWN).as_ref().and_then(|m| m.get(uri).cloned()) {
+    // A bundle removed since it was seen is looked for again.
+    if let Some(b) = host::lock(&KNOWN).as_ref().and_then(|m| m.get(uri).cloned()).filter(|b| b.join("manifest.ttl").is_file()) {
         return Some(b);
     }
     let target = ttl::Term::iri(uri);
