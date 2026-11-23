@@ -19,29 +19,24 @@ use super::Input;
 use super::compat;
 use super::lessons::Spot;
 use super::offline::REPORT_ANCHOR;
-use super::browser::{BrowserUi, Filter, Tag, TagSet, item_key};
+use super::browser::{BrowserUi, Filter, TagSet, item_key};
+use super::tree::Tree;
 use super::dnd::Payload;
 
-/// Entrée du navigateur : (catégorie, nom, description, contenu).
-/// Une entrée du navigateur : catégorie, nom, description, contenu, étiquettes.
-type BrowserEntry = (usize, String, String, Payload, TagSet);
-
-/// Ce qu'une ligne du navigateur affiche.
-struct RowView<'a> {
-    title: &'a str,
-    detail: &'a str,
-    badge: Option<&'a str>,
-    /// It can be listened to (a play button), or it lines up with those that can.
-    preview: bool,
-    slot: bool,
-    favorite: bool,
-    playing: bool,
-    /// Picked with the arrow keys.
-    selected: bool,
+/// Une entrée du navigateur.
+pub(super) struct BrowserEntry {
+    /// Onglet : instruments, effets, sons, plugins.
+    pub cat: usize,
+    pub name: String,
+    pub detail: String,
+    pub payload: Payload,
+    pub tags: TagSet,
+    /// Dossiers de l'arbre, du haut vers le bas.
+    pub folder: Vec<String>,
 }
 
 /// What a click on a browser row touched.
-enum RowHit {
+pub(super) enum RowHit {
     None,
     /// The row itself: added on release, or dragged somewhere.
     Grab,
@@ -708,7 +703,7 @@ pub struct App {
     pub last_plugin_param: Option<(ponzik_engine::AutoTarget, f32)>,
     /// Entrées du navigateur, reconstruites seulement quand leurs sources
     /// (échantillons, plugins, langue) changent, pas à chaque image.
-    pub(super) browser_cache: (Option<BrowserKey>, Vec<BrowserEntry>),
+    pub(super) browser_cache: (Option<BrowserKey>, Vec<BrowserEntry>, Vec<Tree>),
     /// Favorites, recent items, tag filter and sound preview of the browser.
     pub browser: BrowserUi,
 
@@ -908,7 +903,7 @@ impl App {
             editors: Default::default(),
             last_plugin_param: None,
             xrun_watch: Default::default(),
-            browser_cache: (None, Vec::new()),
+            browser_cache: (None, Vec::new(), Vec::new()),
             browser: BrowserUi::default(),
             playing: false,
             metronome: false,
@@ -2150,6 +2145,15 @@ impl App {
             }
             None => input,
         };
+        // Once clicked, the browser's list takes the arrows and Enter.
+        let br_input;
+        let input = match self.browser_take_keys(input) {
+            Some(keys) => {
+                br_input = Input { keys, ..input.clone() };
+                &br_input
+            }
+            None => input,
+        };
         self.poll_engine(dt);
         self.lesson_tick();
         self.learn_tick();
@@ -2869,24 +2873,26 @@ impl App {
 
     // --- Navigateur ---
 
-    /// Tout ce que propose le navigateur : (catégorie, nom, description, contenu).
+    /// Tout ce que propose le navigateur, avec le dossier de chaque élément dans l'arbre.
     fn browser_entries(&self) -> Vec<BrowserEntry> {
         let mut v = Vec::new();
+        let entry = |cat, name: String, detail: String, payload, tags, folder: Vec<String>| BrowserEntry { cat, name, detail, payload, tags, folder };
         for k in registry::instruments() {
             let payload = Payload::Instrument { kind: k.id.into(), name: tr(k.name).into() };
-            v.push((0, tr(k.name).to_string(), tr(k.description).to_string(), payload, TagSet::default()));
+            v.push(entry(0, tr(k.name).to_string(), tr(k.description).to_string(), payload, TagSet::default(), vec![k.category.to_string()]));
         }
         for k in registry::effects() {
             let payload = Payload::Effect { kind: k.id.into(), name: tr(k.name).into() };
-            v.push((1, tr(k.name).to_string(), tr(k.description).to_string(), payload, TagSet::default()));
+            v.push(entry(1, tr(k.name).to_string(), tr(k.description).to_string(), payload, TagSet::default(), vec![k.category.to_string()]));
         }
         for p in &self.sample_files {
             let name = p.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
-            let folder = match compat::library_folder(p) {
-                Some(f) => tr_fmt!("Library · {}", f),
-                None => p.parent().and_then(|p| p.file_name()).map_or(String::new(), |s| s.to_string_lossy().into_owned()),
+            let parent = || p.parent().and_then(|p| p.file_name()).map_or(String::new(), |s| s.to_string_lossy().into_owned());
+            let (detail, folder) = match compat::library_folder(p) {
+                Some(f) => (tr_fmt!("Library · {}", f), f.split('/').map(str::to_string).collect()),
+                None => (parent(), vec![super::tree::USER_ROOT.to_string(), parent()]),
             };
-            v.push((2, name, folder, Payload::Sample(p.clone()), super::browser::infer_tags(p)));
+            v.push(entry(2, name, detail, Payload::Sample(p.clone()), super::browser::infer_tags(p), folder));
         }
         // Instruments then effects; by name, CLAP before VST 3 for the same plugin.
         let clap = self.plugins.iter().map(|p| (0, "CLAP", p.kind(), &p.name, &p.vendor, p.is_instrument));
@@ -2897,22 +2903,71 @@ impl App {
             let what = if is_instrument { tr("Instrument") } else { tr("Effect") };
             let detail =
                 if vendor.is_empty() { format!("{what} {format}") } else { format!("{what} {format} · {vendor}") };
-            let payload = if is_instrument {
-                Payload::Instrument { kind, name: name.clone() }
+            let (payload, folder) = if is_instrument {
+                (Payload::Instrument { kind, name: name.clone() }, "Instruments")
             } else {
-                Payload::Effect { kind, name: name.clone() }
+                (Payload::Effect { kind, name: name.clone() }, "Effects")
             };
-            v.push((3, name.clone(), detail, payload, TagSet::default()));
+            v.push(entry(3, name.clone(), detail, payload, TagSet::default(), vec![folder.to_string()]));
         }
         v
     }
 
+    /// The tree of each tab, over `entries`.
+    fn browser_trees(entries: &[BrowserEntry]) -> Vec<Tree> {
+        (0..4)
+            .map(|cat| {
+                let items = entries.iter().enumerate().filter(|(_, e)| e.cat == cat).map(|(i, e)| (i, e.folder.clone()));
+                Tree::build(super::tree::TAB_PREFIX[cat], items)
+            })
+            .collect()
+    }
+
     /// Items of the browser tab shown, in order (captures).
     pub(super) fn browser_tab_payloads(&self) -> Vec<(usize, Payload)> {
-        self.browser_entries().into_iter().filter(|e| e.0 == self.sidebar_tab).map(|e| (e.0, e.3)).collect()
+        self.browser_entries().into_iter().filter(|e| e.cat == self.sidebar_tab).map(|e| (e.cat, e.payload)).collect()
+    }
+
+    /// Start of a frame: the list of the browser was clicked, so the arrows
+    /// and Enter walk it (Escape leaves it); returns the keys left for the
+    /// shortcuts when some were taken.
+    pub(super) fn browser_take_keys(&mut self, input: &Input) -> Option<Vec<(Key, ponzik_window::Modifiers)>> {
+        use super::tree::NavKey;
+        self.browser.keys.clear();
+        if !self.browser.list_focus || !self.sidebar || self.popup.is_some() || self.sidebar_focus {
+            return None;
+        }
+        let mut rest = Vec::with_capacity(input.keys.len());
+        let mut took = false;
+        for &(key, mods) in &input.keys {
+            let nav = match key {
+                _ if mods.ctrl || mods.alt => None,
+                Key::Up => Some(NavKey::Up),
+                Key::Down => Some(NavKey::Down),
+                Key::Left => Some(NavKey::Left),
+                Key::Right => Some(NavKey::Right),
+                Key::Enter => Some(NavKey::Enter),
+                Key::Escape => {
+                    self.browser.list_focus = false;
+                    self.browser.sel = None;
+                    took = true;
+                    continue;
+                }
+                _ => None,
+            };
+            match nav {
+                Some(n) => {
+                    self.browser.keys.push(n);
+                    took = true;
+                }
+                None => rest.push((key, mods)),
+            }
+        }
+        took.then_some(rest)
     }
 
     fn sidebar_area(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
+        use super::tree::NavKey;
         const CATS: [(Icon, &str); 4] =
             [(Icon::Instrument, tr_noop("Instruments")), (Icon::Effect, tr_noop("Effects")), (Icon::Sample, tr_noop("Samples")), (Icon::Plugin, tr_noop("CLAP and VST 3 plugins"))];
         let t = self.theme;
@@ -2923,8 +2978,9 @@ impl App {
         let inner_x = r.right() - full + 12.0;
         let w = full - 24.0;
 
-        // Recherche : filtre instruments, effets et échantillons.
-        let field = Rect::new(inner_x, r.y + 12.0, w, 36.0);
+        // Recherche : filtre instruments, effets et échantillons. Favoris et
+        // récents à sa droite.
+        let field = Rect::new(inner_x, r.y + 12.0, w - 2.0 * 40.0, 36.0);
         let fid = wid("sb-search", 0, 0);
         let fhov = self.hovered(input, fid, field);
         if fhov {
@@ -2932,12 +2988,12 @@ impl App {
         }
         if fhov && input.pressed {
             self.sidebar_focus = true;
+            self.browser.list_focus = false;
         } else if input.pressed && !field.contains(input.x, input.y) {
             self.sidebar_focus = false;
         }
-        let mut enter = false;
-        // Arrow keys: the next or previous item, previewed.
-        let mut step = 0i32;
+        // Keys for the list: from the search field, or the list itself once clicked.
+        let mut keys: Vec<NavKey> = std::mem::take(&mut self.browser.keys);
         if self.sidebar_focus {
             self.sidebar_query.push_str(&input.text);
             for &(key, _) in &input.keys {
@@ -2950,13 +3006,15 @@ impl App {
                         self.sidebar_focus = false;
                         self.browser.sel = None;
                     }
-                    Key::Enter => enter = true,
-                    Key::Down => step += 1,
-                    Key::Up => step -= 1,
+                    Key::Enter => keys.push(NavKey::Enter),
+                    Key::Down => keys.push(NavKey::Down),
+                    Key::Up => keys.push(NavKey::Up),
+                    Key::Left => keys.push(NavKey::Left),
+                    Key::Right => keys.push(NavKey::Right),
                     _ => {}
                 }
             }
-            if !input.text.is_empty() || input.keys.iter().any(|k| !matches!(k.0, Key::Up | Key::Down | Key::Enter)) {
+            if !input.text.is_empty() || input.keys.iter().any(|k| matches!(k.0, Key::Backspace | Key::Escape)) {
                 self.sidebar_scroll = 0.0;
                 self.browser.sel = None;
             }
@@ -2968,7 +3026,7 @@ impl App {
         draw_icon(c, Icon::Search, field.x + 18.0, field.y + 18.0, 14.0, t.muted);
         let query = self.sidebar_query.clone();
         if query.is_empty() && !self.sidebar_focus {
-            self.text(c, self.f.sans, 13.0, field.x + 34.0, field.y + 18.0, tr("Search"), t.muted);
+            self.text_fit(c, self.f.sans, 13.0, field.x + 34.0, field.y + 18.0, tr("Search"), field.w - 40.0, t.muted);
             if fhv > 0.01 {
                 let key = self.key_label(super::keymap::Shortcut::Search);
                 if !key.is_empty() {
@@ -2976,16 +3034,27 @@ impl App {
                 }
             }
         }
-        let tw = self.text(c, self.f.sans, 13.0, field.x + 34.0, field.y + 18.0, &query, t.text);
+        let shown = self.fit(self.f.sans, 13.0, &query, field.w - 44.0);
+        let tw = self.text(c, self.f.sans, 13.0, field.x + 34.0, field.y + 18.0, &shown, t.text);
         if self.sidebar_focus {
             if (self.time * 2.0).fract() < 0.6 {
                 c.fill_rect(Rect::new(field.x + 35.0 + if query.is_empty() { 0.0 } else { tw }, field.y + 9.0, 1.5, 18.0), t.select);
             }
             self.anim.set(wid("caret", 0, 0), self.time);
         }
+        for (i, (filter, icon, tip)) in
+            [(Filter::Favorites, Icon::StarFilled, tr("Favorites")), (Filter::Recent, Icon::History, tr("Recent"))].into_iter().enumerate()
+        {
+            let b = Rect::new(field.right() + 4.0 + i as f32 * 40.0, field.y, 36.0, 36.0);
+            let on = self.browser.filter == filter;
+            if self.icon_button(c, input, wid("sb-filter", i, 0), b, icon, on, (tip, "")) {
+                self.browser.filter = if on { Filter::All } else { filter };
+                self.sidebar_scroll = 0.0;
+                self.browser.sel = None;
+            }
+        }
 
         // Catégories : des icônes ; la recherche les parcourt toutes.
-        let searching = !query.trim().is_empty();
         let cats = Rect::new(inner_x, field.bottom() + 10.0, w, 36.0);
         let icons: Vec<Icon> = CATS.iter().map(|c| c.0).collect();
         let tips: Vec<(&str, &str)> = CATS.iter().map(|c| (tr(c.1), "")).collect();
@@ -3005,8 +3074,10 @@ impl App {
             self.browser.filter = Filter::All;
             self.browser.sel = None;
         }
+        let query = self.sidebar_query.clone();
+        let searching = !query.trim().is_empty();
 
-        // Entrées, reconstruites quand leurs sources changent.
+        // Entrées et arbres, reconstruits quand leurs sources changent.
         let key = (
             self.sample_files.as_ptr() as usize,
             self.sample_files.len(),
@@ -3014,183 +3085,47 @@ impl App {
             ponzik_i18n::lang().code(),
         );
         if self.browser_cache.0 != Some(key) {
-            self.browser_cache = (Some(key), self.browser_entries());
+            let entries = self.browser_entries();
+            let trees = Self::browser_trees(&entries);
+            self.browser_cache = (Some(key), entries, trees);
         }
         let all = std::mem::take(&mut self.browser_cache.1);
-
-        // Filtres : favoris et récents partout, étiquettes des échantillons.
-        let mut chips: Vec<(Option<Tag>, Option<Icon>, &str, bool)> = vec![
-            (None, Some(Icon::StarFilled), tr("Favorites"), self.browser.filter == Filter::Favorites),
-            (None, Some(Icon::History), tr("Recent"), self.browser.filter == Filter::Recent),
-        ];
-        if !searching && self.browser.filter == Filter::All && self.sidebar_tab == 2 {
-            let mut present = TagSet::default();
-            for e in all.iter().filter(|e| e.0 == 2) {
-                for tag in e.4.iter() {
-                    present.insert(tag);
-                }
-            }
-            if self.browser.tag.is_some_and(|t| !present.has(t)) {
-                self.browser.tag = None;
-            }
-            chips.extend(present.iter().map(|tag| (Some(tag), None, tr(tag.label()), self.browser.tag == Some(tag))));
-        }
-        let (mut cx, mut cy) = (inner_x, cats.bottom() + 8.0);
-        for (i, &(tag, icon, label, on)) in chips.iter().enumerate() {
-            let cw = self.fonts.measure(self.f.sans_med, 11.5, label) + if icon.is_some() { 34.0 } else { 18.0 };
-            if cx + cw > inner_x + w + 0.5 && cx > inner_x {
-                (cx, cy) = (inner_x, cy + 28.0);
-            }
-            let chip = Rect::new(cx, cy, cw, 24.0);
-            if self.filter_chip(c, input, wid("sb-chip", i, 0), chip, icon, label, on) {
-                match (i, tag) {
-                    (0, _) => self.browser.filter = if on { Filter::All } else { Filter::Favorites },
-                    (1, _) => self.browser.filter = if on { Filter::All } else { Filter::Recent },
-                    (_, tag) => self.browser.tag = if on { None } else { tag },
-                }
-                self.sidebar_scroll = 0.0;
-                self.browser.sel = None;
-            }
-            cx += cw + 6.0;
-        }
-        drop(chips);
+        let trees = std::mem::take(&mut self.browser_cache.2);
 
         // Pré-écoute : bascule automatique et volume, en bas.
         let footer = Rect::new(inner_x, r.bottom() - 46.0, w, 46.0);
-        let list = Rect::new(r.x, cy + 30.0, r.w, footer.y - cy - 32.0);
+        let list = Rect::new(r.x, cats.bottom() + 8.0, r.w, footer.y - cats.bottom() - 8.0);
         self.spot(Spot::BrowserList, list);
         let hov_list = input.inside && list.contains(input.x, input.y);
+        // A click in the list hands it the arrow keys; anywhere else takes them back.
+        if input.pressed && input.inside {
+            self.browser.list_focus = hov_list;
+        }
         if hov_list && input.wheel != 0.0 {
             self.sidebar_scroll = (self.sidebar_scroll - input.wheel * 60.0).max(0.0);
         }
         let scroll = self.anim.to(wid("sb-scroll", 0, 0), self.sidebar_scroll, T_LAYOUT);
         let inner = c.push_clip(list);
-        let mut y = list.y + 6.0 - scroll;
-
-        // Filtre et tri par pertinence.
+        let y0 = list.y + 6.0 - scroll;
         let filter = self.browser.filter;
-        let prefs = &self.browser.prefs;
-        let mut entries: Vec<&BrowserEntry> = Vec::new();
-        if searching {
-            let mut scored: Vec<(i32, &BrowserEntry)> = all
-                .iter()
-                .filter_map(|e| super::palette::fuzzy_score(&query, &format!("{} {}", e.1, e.2)).map(|s| (s, e)))
-                .collect();
-            scored.sort_by_key(|s| (s.1.0, std::cmp::Reverse(s.0)));
-            entries.extend(scored.into_iter().map(|(_, e)| e));
-        } else {
-            match filter {
-                Filter::Favorites => entries.extend(all.iter().filter(|e| prefs.is_favorite(&item_key(&e.3)))),
-                Filter::Recent => {
-                    let mut ranked: Vec<(usize, &BrowserEntry)> =
-                        all.iter().filter_map(|e| prefs.recent_rank(&item_key(&e.3)).map(|r| (r, e))).collect();
-                    ranked.sort_by_key(|r| r.0);
-                    entries.extend(ranked.into_iter().map(|r| r.1));
-                }
-                Filter::All => {
-                    let tag = self.browser.tag.filter(|_| self.sidebar_tab == 2);
-                    entries.extend(all.iter().filter(|e| e.0 == self.sidebar_tab && tag.is_none_or(|t| e.4.has(t))));
-                }
-            }
-        }
-        // Flèches : l'élément suivant, écouté.
-        let moved = step != 0 && !entries.is_empty();
-        if moved {
-            let last = entries.len() as i32 - 1;
-            let at = match self.browser.sel {
-                Some(s) => (s as i32 + step).clamp(0, last),
-                None if step > 0 => 0,
-                None => last,
-            } as usize;
-            self.browser.sel = Some(at);
-            if super::browser::previewable(&entries[at].3) {
-                let cmd = self.browser.preview.select(&item_key(&entries[at].3), self.browser.prefs.auto_preview);
-                self.run_preview(cmd);
-            }
-        }
-        let sel = self.browser.sel.filter(|&s| s < entries.len());
-        if enter && let Some(e) = sel.or((!entries.is_empty()).then_some(0)).map(|i| entries[i]) {
-            self.add_default(e.3.clone());
-        }
+        let tab = self.sidebar_tab;
 
-        // Sections : par catégorie en recherche et dans les favoris, par dossier sinon.
-        let sectioned = searching || filter == Filter::Favorites;
-        let grouped = !searching && filter == Filter::All;
-        let mut last_cat = usize::MAX;
-        let mut last_group = "";
-        let lib_prefix = tr_fmt!("Library · {}", "");
-        let mut hovered_key: Option<String> = None;
-        let mut sel_row = None;
-        for (k, (cat, name, detail, payload)) in entries.iter().map(|e| (&e.0, &e.1, &e.2, &e.3)).enumerate() {
-            // Samples: the library first, one heading per folder, then the rest;
-            // plugins: instruments, then effects.
-            let group = match (cat, payload) {
-                (2, _) => detail.strip_prefix(lib_prefix.as_str()).unwrap_or(tr("Your samples")),
-                (3, Payload::Instrument { .. }) => tr("Instruments"),
-                (3, _) => tr("Effects"),
-                _ => "",
-            };
-            if grouped && group != last_group {
-                y += if last_group.is_empty() { 4.0 } else { 10.0 };
-                self.text(c, self.f.sans_med, 11.5, inner_x + 12.0, y + 8.0, group, t.muted);
-                y += 20.0;
-                last_group = group;
-            }
-            if sectioned && *cat != last_cat {
-                // Section : son icône et un filet.
-                y += if last_cat == usize::MAX { 4.0 } else { 12.0 };
-                draw_icon(c, CATS[*cat].0, inner_x + 12.0, y + 8.0, 13.0, t.muted);
-                c.fill_rect(Rect::new(inner_x + 26.0, y + 8.0, w - 30.0, 1.0), t.hairline);
-                y += 20.0;
-                last_cat = *cat;
-            }
-            let row = Rect::new(inner_x, y, w, t.dense(34.0));
-            if sel == Some(k) {
-                sel_row = Some(row);
-            }
-            if row.bottom() > list.y && row.y < list.bottom() {
-                let badge = match payload {
-                    Payload::Instrument { kind, .. } | Payload::Effect { kind, .. } => plugin_badge(kind),
-                    Payload::Sample(_) | Payload::Files(_) => None,
-                };
-                let item = item_key(payload);
-                let view = RowView {
-                    title: name,
-                    detail,
-                    badge,
-                    preview: super::browser::previewable(payload),
-                    slot: matches!(payload, Payload::Sample(_) | Payload::Instrument { .. }),
-                    favorite: self.browser.prefs.is_favorite(&item),
-                    playing: self.browser.preview.playing.as_deref() == Some(item.as_str()),
-                    selected: sel == Some(k),
-                };
-                let (hit, hov) = self.browser_row(c, input, wid("br", *cat, k), row, &view);
-                if hov && view.preview {
-                    hovered_key = Some(item.clone());
-                }
-                match hit {
-                    RowHit::None => {}
-                    RowHit::Grab => {
-                        self.stop_preview();
-                        self.begin_dnd(input, payload.clone());
-                    }
-                    RowHit::Play => {
-                        let cmd = self.browser.preview.click_play(&item);
-                        self.run_preview(Some(cmd));
-                    }
-                    RowHit::Star => self.toggle_favorite(&item),
-                }
-            }
-            y += row.h + 2.0;
-        }
+        let out = if !searching && filter == Filter::All {
+            let tree = &trees[tab];
+            self.browser_tree(c, input, list, inner_x, w, y0, &all, tree, &keys)
+        } else {
+            self.browser_flat(c, input, list, inner_x, w, y0, &all, &trees, &query, searching, &keys)
+        };
+        let mut y = out.y;
         // Survol : la ligne sous la souris joue après un court instant.
         if !self.dnd_active() {
-            let cmd = self.browser.preview.hover(hovered_key.as_deref(), self.time, self.browser.prefs.auto_preview);
+            let cmd = self.browser.preview.hover(out.hovered_key.as_deref(), self.time, self.browser.prefs.auto_preview);
             self.run_preview(cmd);
         }
-        let plugins_tab = !searching && filter == Filter::All && self.sidebar_tab == 3;
-        if entries.is_empty() && (!plugins_tab || self.scan_errors.is_empty()) {
-            let (icon, line) = match (searching, filter, self.sidebar_tab) {
+        let plugins_tab = !searching && filter == Filter::All && tab == 3;
+        let empty = (y - y0) < 1.0;
+        if empty && (!plugins_tab || self.scan_errors.is_empty()) {
+            let (icon, line) = match (searching, filter, tab) {
                 (true, _, _) => (Icon::Search, tr("Nothing found")),
                 (_, Filter::Favorites, _) => (Icon::Star, tr("No favorites yet: click the star of a row")),
                 (_, Filter::Recent, _) => (Icon::History, tr("Nothing used yet")),
@@ -3205,12 +3140,14 @@ impl App {
         if plugins_tab {
             y = self.plugin_scan_rows(c, input, list, inner_x, w, y);
         }
-        drop(entries);
         self.browser_cache.1 = all;
+        self.browser_cache.2 = trees;
         let content_h = y + scroll - list.y + 16.0;
         self.sidebar_scroll = self.sidebar_scroll.min((content_h - list.h).max(0.0));
         // The picked row stays in sight.
-        if moved && let Some(row) = sel_row {
+        if out.moved
+            && let Some(row) = out.sel_row
+        {
             let (top, bottom) = (row.y + scroll - self.sidebar_scroll, row.bottom() + scroll - self.sidebar_scroll);
             if top < list.y + 4.0 {
                 self.sidebar_scroll = (self.sidebar_scroll - (list.y + 4.0 - top)).max(0.0);
@@ -3218,30 +3155,206 @@ impl App {
                 self.sidebar_scroll += bottom - (list.bottom() - 4.0);
             }
         }
+        // A list that has the keys says so with a thin accent line on its edge.
+        let kv = self.anim.to(wid("sb-list-focus", 0, 0), (self.browser.list_focus || self.sidebar_focus) as u8 as f32, T_HOVER);
+        if kv > 0.01 {
+            c.fill_rect(Rect::new(list.x, list.y, list.w, 1.0), t.select.alpha(0.5 * kv));
+        }
         c.set_clip(Some(inner));
         self.preview_bar(c, input, footer);
         c.set_clip(Some(prev));
     }
 
-    /// Pastille de filtre du navigateur, allumée quand elle est choisie.
-    fn filter_chip(&mut self, c: &mut Canvas, input: &Input, id: u64, r: Rect, icon: Option<Icon>, label: &str, on: bool) -> bool {
+    /// Search results, favorites and recent items: a flat list, by category,
+    /// each sound with its folder under its name; the folders whose name
+    /// matches the search come first, a click opens them in the tree.
+    #[allow(clippy::too_many_arguments)]
+    fn browser_flat(
+        &mut self,
+        c: &mut Canvas,
+        input: &Input,
+        list: Rect,
+        inner_x: f32,
+        w: f32,
+        y0: f32,
+        all: &[BrowserEntry],
+        trees: &[Tree],
+        query: &str,
+        searching: bool,
+        keys: &[super::tree::NavKey],
+    ) -> super::tree::TreeOut {
+        use super::tree::{ItemView, NavKey, TreeOut, folder_label, folder_look};
+        const CAT_ICONS: [Icon; 4] = [Icon::Instrument, Icon::Effect, Icon::Sample, Icon::Plugin];
         let t = self.theme;
-        let hov = self.hovered(input, id, r);
-        let hv = self.hover_anim(id, hov);
-        let onv = self.anim.to(id ^ 0x4f4e, on as u8 as f32, T_HOVER);
-        c.fill_rrect(r, 12.0, t.raised.alpha(0.5 + 0.5 * hv).mix(t.accent.alpha(0.18), onv));
-        c.stroke_rrect(r, 12.0, 1.0, t.hairline.mix(t.accent.alpha(0.8), onv));
-        let col = t.text2.mix(t.text, hv).mix(t.accent, onv);
-        let mut x = r.x + 9.0;
-        if let Some(icon) = icon {
-            draw_icon(c, icon, x + 6.0, r.y + 12.0, 12.0, col);
-            x += 16.0;
+        let filter = self.browser.filter;
+        let prefs = &self.browser.prefs;
+        let mut entries: Vec<usize> = Vec::new();
+        if searching {
+            let mut scored: Vec<(i32, usize)> = all
+                .iter()
+                .enumerate()
+                .filter_map(|(i, e)| super::palette::fuzzy_score(query, &format!("{} {}", e.name, e.detail)).map(|s| (s, i)))
+                .collect();
+            // The tab shown first, then the others.
+            let tab = self.sidebar_tab;
+            scored.sort_by_key(|&(s, i)| (all[i].cat != tab, all[i].cat, std::cmp::Reverse(s)));
+            entries.extend(scored.into_iter().map(|(_, i)| i));
+        } else {
+            match filter {
+                Filter::Favorites => entries.extend((0..all.len()).filter(|&i| prefs.is_favorite(&item_key(&all[i].payload)))),
+                Filter::Recent => {
+                    let mut ranked: Vec<(usize, usize)> =
+                        (0..all.len()).filter_map(|i| prefs.recent_rank(&item_key(&all[i].payload)).map(|r| (r, i))).collect();
+                    ranked.sort_by_key(|r| r.0);
+                    entries.extend(ranked.into_iter().map(|r| r.1));
+                }
+                Filter::All => {}
+            }
         }
-        self.text(c, self.f.sans_med, 11.5, x, r.y + 12.0, label, col);
-        if hov {
-            self.set_cursor(ponzik_window::Cursor::Hand);
+        // Flèches : l'élément suivant, écouté ; Entrée l'ajoute.
+        let mut moved = false;
+        for &k in keys {
+            match k {
+                NavKey::Up | NavKey::Down if !entries.is_empty() => {
+                    let last = entries.len() as i32 - 1;
+                    let step = if k == NavKey::Down { 1 } else { -1 };
+                    let at = match self.browser.sel {
+                        Some(s) => (s as i32 + step).clamp(0, last),
+                        None if step > 0 => 0,
+                        None => last,
+                    } as usize;
+                    self.browser.sel = Some(at);
+                    moved = true;
+                    let payload = &all[entries[at]].payload;
+                    if super::browser::previewable(payload) {
+                        let cmd = self.browser.preview.select(&item_key(payload), self.browser.prefs.auto_preview);
+                        self.run_preview(cmd);
+                    }
+                }
+                NavKey::Enter => {
+                    let sel = self.browser.sel.filter(|&s| s < entries.len());
+                    if let Some(&e) = sel.or((!entries.is_empty()).then_some(0)).and_then(|i| entries.get(i)) {
+                        self.add_default(all[e].payload.clone());
+                    }
+                }
+                _ => {}
+            }
         }
-        hov && input.pressed
+        let sel = self.browser.sel.filter(|&s| s < entries.len());
+        let mut out = TreeOut { y: y0, sel_row: None, moved, hovered_key: None };
+        let mut y = y0;
+        let visible = |r: Rect| r.bottom() > list.y && r.y < list.bottom();
+
+        // Folders of sounds whose name matches: a click opens them in the tree.
+        if searching {
+            let q = query.trim().to_lowercase();
+            let tree = &trees[2];
+            let matches: Vec<usize> = (0..tree.folders.len()).filter(|&f| tree.folders[f].name.to_lowercase().contains(&q)).take(6).collect();
+            for (k, f) in matches.into_iter().enumerate() {
+                let row = Rect::new(inner_x, y, w, t.dense(36.0));
+                y += row.h + 2.0;
+                if !visible(row) {
+                    continue;
+                }
+                let fo = &tree.folders[f];
+                let id = wid(&fo.key, 0x7366, k);
+                let hov = self.hovered(input, id, row) && !self.dnd_active();
+                let hv = self.hover_anim(id, hov);
+                if hv > 0.01 {
+                    c.fill_rrect(row, 8.0, t.raised.alpha(hv));
+                }
+                let (icon, ci) = folder_look(&tree.folders[fo.top].name, Icon::Folder);
+                let tint = t.patterns[ci % t.patterns.len()];
+                let cy = row.y + row.h * 0.5;
+                c.fill_rrect(Rect::new(row.x + 3.0, cy - 13.0, 26.0, 26.0), 8.0, tint.alpha(0.14 + 0.08 * hv));
+                draw_icon(c, if fo.depth == 0 { icon } else { Icon::Folder }, row.x + 16.0, cy, 14.0, tint);
+                let path = tree.lineage(f).iter().map(|&g| folder_label(2, &tree.folders[g].name)).collect::<Vec<_>>().join(" › ");
+                let count = fo.count.to_string();
+                let cw = self.fonts.measure(self.f.mono_med, 10.5, &count);
+                self.text_fit(c, self.f.sans_med, 13.0, row.x + 34.0, cy, &path, row.w - 34.0 - cw - 34.0, t.text2.mix(t.text, hv));
+                self.text(c, self.f.mono_med, 10.5, row.right() - 30.0 - cw, cy, &count, t.muted);
+                draw_icon(c, Icon::ChevronRight, row.right() - 14.0, cy, 12.0, t.muted.mix(t.accent, hv));
+                if hov {
+                    self.set_cursor(ponzik_window::Cursor::Hand);
+                    self.set_tip(tr("Open this folder"), "");
+                    if input.pressed {
+                        self.browser.reveal = Some(fo.key.clone());
+                        self.sidebar_tab = 2;
+                        self.sidebar_query.clear();
+                        self.sidebar_focus = false;
+                        self.browser.list_focus = true;
+                        self.browser.filter = Filter::All;
+                    }
+                }
+            }
+        }
+
+        // Sections : par catégorie, une icône et un filet.
+        let mut last_cat = usize::MAX;
+        for (k, &e) in entries.iter().enumerate() {
+            let entry = &all[e];
+            if entry.cat != last_cat {
+                y += if last_cat == usize::MAX && y == y0 { 4.0 } else { 12.0 };
+                draw_icon(c, CAT_ICONS[entry.cat], inner_x + 12.0, y + 8.0, 13.0, t.muted);
+                c.fill_rect(Rect::new(inner_x + 26.0, y + 8.0, w - 30.0, 1.0), t.hairline);
+                y += 20.0;
+                last_cat = entry.cat;
+            }
+            let row = Rect::new(inner_x, y, w, t.dense(42.0));
+            if sel == Some(k) {
+                out.sel_row = Some(row);
+            }
+            y += row.h + 2.0;
+            if !visible(row) {
+                continue;
+            }
+            let names: Vec<&str> = entry.folder.iter().map(String::as_str).collect();
+            let (lead, tint, title, badges) = self.entry_look(entry, &names);
+            let sub = match entry.cat {
+                2 => entry.folder.iter().map(|n| super::tree::folder_label(2, n)).collect::<Vec<_>>().join(" › "),
+                3 => entry.detail.clone(),
+                _ => entry.folder.first().map_or(String::new(), |n| tr(n).to_string()),
+            };
+            let item = item_key(&entry.payload);
+            let tip = if entry.cat == 2 {
+                tr_fmt!("{}\nClick: add · drag: drop", entry.name)
+            } else {
+                tr_fmt!("{}\nClick: add · drag: drop", entry.detail)
+            };
+            let view = ItemView {
+                lead,
+                tint,
+                title: &title,
+                sub: Some(&sub),
+                badges: &badges,
+                tip: &tip,
+                preview: super::browser::previewable(&entry.payload),
+                favorite: self.browser.prefs.is_favorite(&item),
+                playing: self.browser.preview.playing.as_deref() == Some(item.as_str()),
+                selected: sel == Some(k),
+                reveal: 1.0,
+            };
+            let (hit, hov) = self.item_row(c, input, wid("br", entry.cat, e), row, &view);
+            if hov && view.preview {
+                out.hovered_key = Some(item.clone());
+            }
+            match hit {
+                RowHit::None => {}
+                RowHit::Grab => {
+                    self.browser.sel = Some(k);
+                    self.stop_preview();
+                    self.begin_dnd(input, entry.payload.clone());
+                }
+                RowHit::Play => {
+                    self.browser.sel = Some(k);
+                    let cmd = self.browser.preview.click_play(&item);
+                    self.run_preview(Some(cmd));
+                }
+                RowHit::Star => self.toggle_favorite(&item),
+            }
+        }
+        out.y = y;
+        out
     }
 
     /// Bas du navigateur : pré-écoute automatique et son volume.
@@ -3301,93 +3414,6 @@ impl App {
             self.set_cursor(ponzik_window::Cursor::ResizeH);
             self.set_tip(&tr_fmt!("Preview volume: {} %", (vol * 100.0).round() as i32), "");
         }
-    }
-
-    /// Ligne du navigateur : le nom, la description en infobulle, un bouton
-    /// d'écoute à gauche (échantillons, instruments) et l'étoile des favoris à
-    /// droite. `badge` : format d'un plugin (CLAP, VST3), en pastille.
-    /// Renvoie ce que le clic a touché, et si la ligne est survolée.
-    fn browser_row(&mut self, c: &mut Canvas, input: &Input, id: u64, row: Rect, v: &RowView) -> (RowHit, bool) {
-        let t = self.theme;
-        let hov = self.hovered(input, id, row) && !self.dnd_active();
-        let hv = self.hover_anim(id, hov);
-        let pv = self.anim.to(id ^ 0x504c, v.playing as u8 as f32, T_HOVER);
-        if hv > 0.01 || pv > 0.01 {
-            c.fill_rrect(row, 8.0, t.raised.alpha(hv.max(pv)).mix(t.accent.alpha(0.12), pv));
-        }
-        if v.selected {
-            c.stroke_rrect(row, 8.0, 1.0, t.select.alpha(0.8));
-        }
-        let cy = row.y + row.h * 0.5;
-        let play = Rect::new(row.x + 4.0, row.y + 5.0, 24.0, 24.0);
-        let star = Rect::new(row.right() - 54.0, row.y + 5.0, 24.0, 24.0);
-        let mut title_x = row.x + 12.0;
-        if v.preview {
-            let phov = hov && play.contains(input.x, input.y);
-            let col = t.muted.alpha(0.5 + 0.5 * hv).mix(t.text, if phov { 1.0 } else { 0.0 }).mix(t.accent, pv);
-            if v.playing {
-                // Three bars that move while it plays.
-                for i in 0..3 {
-                    let h = 4.0 + 6.0 * (0.5 + 0.5 * (self.time * 9.0 + i as f32 * 2.1).sin());
-                    c.fill_rrect(Rect::new(play.x + 6.0 + i as f32 * 4.5, cy + 5.0 - h, 3.0, h), 1.0, t.accent);
-                }
-                self.anim.set(wid("br-eq", 0, 0), self.time);
-            } else {
-                if phov {
-                    c.fill_circle(play.x + 12.0, cy, 11.0, t.raised_hi);
-                }
-                draw_icon(c, Icon::Play, play.x + 12.0, cy, 11.0, col);
-            }
-        }
-        if v.preview || v.slot {
-            title_x = row.x + 32.0;
-        }
-        let mut title_w = row.right() - 60.0 - title_x;
-        if let Some(badge) = v.badge {
-            let bw = self.fonts.measure(self.f.mono_med, 9.0, badge) + 10.0;
-            let pill = Rect::new(star.x - 4.0 - bw, cy - 8.0, bw, 16.0);
-            // CLAP in the accent, VST 3 in the select tint: told apart at a glance.
-            let tint = if badge == "CLAP" { t.accent } else { t.select };
-            c.fill_rrect(pill, 8.0, tint.alpha(0.14 + 0.1 * hv));
-            c.stroke_rrect(pill, 8.0, 1.0, tint.alpha(0.45));
-            let (px, py) = pill.center();
-            self.text_center(c, self.f.mono_med, 9.0, px, py, badge, tint);
-            title_w -= bw + 8.0;
-        }
-        self.text_fit(c, self.f.sans_med, 13.0, title_x, cy, v.title, title_w, t.text2.mix(t.text, hv.max(pv)));
-        let shov = hov && star.contains(input.x, input.y);
-        if v.favorite {
-            draw_icon(c, Icon::StarFilled, star.x + 12.0, cy, 13.0, if shov { t.text } else { t.accent });
-        } else if hv > 0.01 {
-            draw_icon(c, Icon::Star, star.x + 12.0, cy, 13.0, t.muted.alpha(hv).mix(t.text, if shov { 1.0 } else { 0.0 }));
-        }
-        if hv > 0.01 {
-            draw_icon(c, Icon::Plus, row.right() - 16.0, cy, 13.0, t.accent.alpha(hv));
-        }
-        if !hov {
-            return (RowHit::None, false);
-        }
-        let phov = v.preview && play.contains(input.x, input.y);
-        if phov || shov {
-            self.set_cursor(ponzik_window::Cursor::Hand);
-        }
-        let tip = if phov {
-            tr("Listen").to_string()
-        } else if shov {
-            (if v.favorite { tr("Remove from the favorites") } else { tr("Add to the favorites") }).to_string()
-        } else if v.detail.is_empty() {
-            tr("Click: add · drag: drop").to_string()
-        } else {
-            tr_fmt!("{}\nClick: add · drag: drop", v.detail)
-        };
-        self.set_tip(&tip, "");
-        let hit = match (input.pressed, phov, shov) {
-            (false, ..) => RowHit::None,
-            (true, true, _) => RowHit::Play,
-            (true, _, true) => RowHit::Star,
-            _ => RowHit::Grab,
-        };
-        (hit, true)
     }
 
     // --- Menus ---

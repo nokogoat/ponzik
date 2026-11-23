@@ -13,7 +13,6 @@ use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
 
 use ponzik_engine::Sample;
-use ponzik_i18n::tr_noop;
 use ponzik_project::json::{self, Json};
 
 use super::dnd::Payload;
@@ -54,25 +53,6 @@ impl Tag {
         Tag::Keys,
         Tag::Vocal,
     ];
-
-    /// Label of its filter chip (to translate).
-    pub fn label(self) -> &'static str {
-        match self {
-            Tag::Kick => tr_noop("Kick"),
-            Tag::Snare => tr_noop("Snare"),
-            Tag::Clap => tr_noop("Clap"),
-            Tag::Hat => tr_noop("Hat"),
-            Tag::Cymbal => tr_noop("Cymbal"),
-            Tag::Perc => tr_noop("Perc"),
-            Tag::Loop => tr_noop("Loop"),
-            Tag::Fx => tr_noop("FX"),
-            Tag::Bass => tr_noop("Bass"),
-            Tag::Synth => tr_noop("Synth"),
-            Tag::Pad => tr_noop("Pad"),
-            Tag::Keys => tr_noop("Keys"),
-            Tag::Vocal => tr_noop("Vocal"),
-        }
-    }
 
     fn bit(self) -> u16 {
         1 << Tag::ALL.iter().position(|&t| t == self).unwrap_or(0)
@@ -116,6 +96,7 @@ impl TagSet {
         self.0 &= !tag.bit();
     }
 
+    #[cfg(test)]
     pub fn iter(self) -> impl Iterator<Item = Tag> {
         Tag::ALL.into_iter().filter(move |&t| self.has(t))
     }
@@ -214,12 +195,20 @@ pub struct BrowserPrefs {
     pub auto_preview: bool,
     /// Preview volume, 0 to 1.
     pub volume: f32,
+    /// Folders of the browser tree opened or closed by hand (key, open).
+    pub folders: Vec<(String, bool)>,
 }
 
 impl Default for BrowserPrefs {
     fn default() -> Self {
-        Self { favorites: Vec::new(), recent: Vec::new(), auto_preview: true, volume: 0.7 }
+        Self { favorites: Vec::new(), recent: Vec::new(), auto_preview: true, volume: 0.7, folders: Vec::new() }
     }
+}
+
+/// A folder never touched: the sounds' folders start closed (there are many),
+/// the other tabs' open (a few devices each).
+pub fn folder_open_by_default(key: &str) -> bool {
+    !key.starts_with("s/")
 }
 
 impl BrowserPrefs {
@@ -253,6 +242,19 @@ impl BrowserPrefs {
         self.recent.iter().position(|k| k == key)
     }
 
+    /// Whether the tree folder `key` is open.
+    pub fn is_open(&self, key: &str) -> bool {
+        self.folders.iter().find(|f| f.0 == key).map_or_else(|| folder_open_by_default(key), |f| f.1)
+    }
+
+    /// Opens or closes the folder `key`; a folder back to its default is forgotten.
+    pub fn set_open(&mut self, key: &str, open: bool) {
+        self.folders.retain(|f| f.0 != key);
+        if open != folder_open_by_default(key) {
+            self.folders.push((key.to_string(), open));
+        }
+    }
+
     /// Gain of the audition voice: the slider follows the ear (squared).
     pub fn gain(&self) -> f32 {
         self.volume * self.volume
@@ -265,6 +267,7 @@ impl BrowserPrefs {
             ("preview_volume".into(), self.volume.into()),
             ("favorites".into(), list(&self.favorites)),
             ("recent".into(), list(&self.recent)),
+            ("folders".into(), Json::Obj(self.folders.iter().map(|(k, open)| (k.clone(), (*open).into())).collect())),
         ])
     }
 
@@ -282,9 +285,19 @@ impl BrowserPrefs {
         };
         let mut recent = list("recent");
         recent.truncate(RECENT_MAX);
+        let mut folders: Vec<(String, bool)> = Vec::new();
+        for (k, v) in j.get("folders").and_then(Json::as_obj).unwrap_or(&[]) {
+            if let Some(open) = v.as_bool()
+                && !k.is_empty()
+                && !folders.iter().any(|f| f.0 == *k)
+            {
+                folders.push((k.clone(), open));
+            }
+        }
         Self {
             favorites: list("favorites"),
             recent,
+            folders,
             auto_preview: j.get("auto_preview").and_then(Json::as_bool).unwrap_or(d.auto_preview),
             volume: j.get("preview_volume").and_then(Json::as_f64).map_or(d.volume, |v| (v as f32).clamp(0.0, 1.0)),
         }
@@ -579,10 +592,17 @@ pub struct BrowserUi {
     pub prefs: BrowserPrefs,
     pub preview: Preview,
     pub filter: Filter,
-    /// Tag chip chosen on the samples tab.
-    pub tag: Option<Tag>,
-    /// Row picked with the arrow keys (index in the listed items).
+    /// Row picked with the arrow keys (index in the listed items, or in the
+    /// rows of the tree).
     pub sel: Option<usize>,
+    /// The list was clicked: the arrows and Enter walk it.
+    pub list_focus: bool,
+    /// Keys taken for the list this frame.
+    pub keys: Vec<super::tree::NavKey>,
+    /// A folder to open and bring into sight (picked among the search results).
+    pub reveal: Option<String>,
+    /// Folder under the pointer (or holding the row under it): its guide lights up.
+    pub hot_folder: Option<usize>,
     /// Where the preferences are saved (none: not saved, in captures).
     pub path: Option<PathBuf>,
     preparer: Option<Preparer>,
@@ -772,8 +792,8 @@ impl super::app::App {
         changed
     }
 
-    /// `PONZIK_BROWSE=fav|recent|tag:kick|star:0,3|play:2|sel:1|auto:off|vol:0.4`:
-    /// the browser's filters, stars and preview for a capture.
+    /// `PONZIK_BROWSE=fav|recent|open:Drums,Drums/Kicks|q:kick|star:0,3|play:2|sel:1|focus|auto:off|vol:0.4`:
+    /// the browser's filters, open folders, search, stars and preview for a capture.
     pub fn screenshot_browser(&mut self, spec: &str, entries: &[(usize, Payload)]) {
         for part in spec.split(';') {
             let (name, arg) = part.split_once(':').unwrap_or((part, ""));
@@ -788,7 +808,14 @@ impl super::app::App {
                         }
                     }
                 }
-                "tag" => self.browser.tag = Tag::ALL.into_iter().find(|t| t.label().eq_ignore_ascii_case(arg.trim())),
+                "open" => {
+                    for path in arg.split(',').map(str::trim).filter(|p| !p.is_empty()) {
+                        let prefix = super::tree::TAB_PREFIX[self.sidebar_tab.min(3)];
+                        self.browser.prefs.set_open(&format!("{prefix}/{path}"), true);
+                    }
+                }
+                "q" => self.sidebar_query = arg.to_string(),
+                "focus" => self.browser.list_focus = true,
                 "star" => {
                     for i in nums() {
                         if let Some((_, p)) = entries.get(i) {
@@ -880,6 +907,26 @@ mod tests {
         let q = BrowserPrefs::from_json(&j);
         assert_eq!(q.favorites, ["a"]);
         assert_eq!((q.volume, q.auto_preview), (1.0, true));
+    }
+
+    #[test]
+    fn folder_states_round_trip() {
+        let mut p = BrowserPrefs::default();
+        // Sounds closed, devices open, until touched.
+        assert!(!p.is_open("s/Drums") && p.is_open("i/Synths"));
+        p.set_open("s/Drums", true);
+        p.set_open("s/Drums/Kicks", true);
+        p.set_open("e/Space", false);
+        assert!(p.is_open("s/Drums") && p.is_open("s/Drums/Kicks") && !p.is_open("e/Space"));
+        // Back to its default: forgotten.
+        p.set_open("s/Drums/Kicks", false);
+        assert_eq!(p.folders.len(), 2);
+        let back = BrowserPrefs::from_json(&json::parse(&p.to_json().pretty()).unwrap());
+        assert_eq!(back, p);
+        // Damaged entries are skipped, older files have none.
+        let j = json::parse(r#"{"folders": {"s/FX": true, "s/Bass": 3, "": true}}"#).unwrap();
+        assert_eq!(BrowserPrefs::from_json(&j).folders, [("s/FX".to_string(), true)]);
+        assert!(BrowserPrefs::from_json(&json::parse("{}").unwrap()).folders.is_empty());
     }
 
     #[test]

@@ -778,9 +778,6 @@ msgstr "Aucun fichier WAV"
 msgid "No CLAP or VST 3 plugins"
 msgstr "Aucun plugin CLAP ni VST 3"
 
-msgid "Click: add · drag: drop"
-msgstr "Clic : ajouter · glisser : déposer"
-
 msgid "{}\nClick: add · drag: drop"
 msgstr "{}\nClic : ajouter · glisser : déposer"
 
@@ -6514,15 +6511,6 @@ msgstr "Joue le son sous la souris ou choisi avec les flèches ; les boucles sui
 msgid "Preview volume: {} %"
 msgstr "Volume d'écoute : {} %"
 
-msgid "Cymbal"
-msgstr "Cymbale"
-
-msgid "Perc"
-msgstr "Perc"
-
-msgid "Synth"
-msgstr "Synthé"
-
 # --- Files dropped from other applications ---
 
 msgid "Files"
@@ -9415,3 +9403,11 @@ msgstr "Les exports font tourner chaque effet en permanence ; désactivé, ils s
 
 msgid "{} ms between a key and its sound, plus the effects' own delay"
 msgstr "{} ms entre une touche et son son, plus le retard propre des effets"
+
+# --- Browser tree ---
+
+msgid "Open this folder"
+msgstr "Ouvrir ce dossier"
+
+msgid "{}: {} items\nClick or arrows: open, close"
+msgstr "{} : {} éléments\nClic ou flèches : ouvrir, fermer"

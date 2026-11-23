@@ -60,6 +60,7 @@ mod theme;
 mod themecss;
 mod themes;
 mod tools;
+mod tree;
 mod tour;
 mod voice;
 mod tracks;
@@ -636,8 +637,8 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     if let Some(i) = std::env::var("PONZIK_BROWSER").ok().and_then(|v| v.parse::<usize>().ok()) {
         app.sidebar_tab = i.min(3);
     }
-    // PONZIK_BROWSE=fav|recent:0,2|tag:kick|star:0,3|play:2|sel:1|auto:off|vol:0.4 (";"-separated):
-    // the browser's filters, stars and preview.
+    // PONZIK_BROWSE=fav|recent:0,2|open:Drums,Drums/Kicks|q:kick|star:0,3|play:2|sel:1|focus|auto:off|vol:0.4
+    // (";"-separated): the browser's filters, open folders, search, stars and preview.
     if let Ok(spec) = std::env::var("PONZIK_BROWSE") {
         let items = app.browser_tab_payloads();
         app.screenshot_browser(&spec, &items);
