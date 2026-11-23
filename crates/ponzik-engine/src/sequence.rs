@@ -611,7 +611,16 @@ impl Sequence {
         match self.mode {
             PlayMode::Pattern(p) => {
                 if let Some(pat) = self.patterns.get(p) {
-                    self.collect_looped(p, pat, 0.0, from, to, out);
+                    if self.active_loop().is_some() {
+                        // A time selection plays what it covers, once per lap:
+                        // past the pattern's end it is silent, never bar 1 again.
+                        let end = to.min(pat.len.max(1) as f64);
+                        if from < end {
+                            self.collect_looped(p, pat, 0.0, from, end, out);
+                        }
+                    } else {
+                        self.collect_looped(p, pat, 0.0, from, to, out);
+                    }
                 }
             }
             PlayMode::Song => {
