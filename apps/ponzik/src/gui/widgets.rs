@@ -197,6 +197,8 @@ pub enum Icon {
     Collapse,
     /// Two chevrons pointing outward: expand.
     Expand,
+    /// A graduation cap: the lessons.
+    Learn,
 }
 
 /// Diagonal stripes over `r` (clipped to it): offline clips and samples.
@@ -362,6 +364,13 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
             c.stroke_polyline(&[p(-7.0, 3.5), p(7.0, 3.5)], stroke, col.alpha(0.6));
             c.fill_circle(cx + 2.5 * s, cy - 3.5 * s, 2.6 * s, col);
             c.fill_circle(cx - 3.0 * s, cy + 3.5 * s, 2.6 * s, col);
+        }
+        Icon::Learn => {
+            // A mortarboard: the board, the cap under it, the tassel.
+            c.stroke_polyline(&[p(0.0, -6.0), p(8.0, -2.5), p(0.0, 1.0), p(-8.0, -2.5), p(0.0, -6.0)], stroke, col);
+            c.stroke_polyline(&[p(-4.6, -0.6), p(-4.6, 3.4), p(0.0, 5.6), p(4.6, 3.4), p(4.6, -0.6)], stroke, col);
+            c.stroke_polyline(&[p(7.0, -2.0), p(7.0, 3.5)], stroke * 0.85, col);
+            c.fill_circle(cx + 7.0 * s, cy + 4.6 * s, 1.3 * s.max(0.9), col);
         }
         Icon::Info => {
             c.stroke_circle(cx, cy, 7.0 * s, stroke, col);
