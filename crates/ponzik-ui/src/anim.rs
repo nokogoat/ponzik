@@ -9,6 +9,9 @@ pub struct Anim {
     moving: bool,
     /// Une valeur suivie par [`Anim::to_ambient`] bouge encore.
     ambient: bool,
+    /// Vitesse des animations choisie par le thème : 1 normale, 2 deux fois plus
+    /// vite, 0 aucune (chaque valeur saute à sa cible).
+    speed: Option<f32>,
 }
 
 impl Anim {
@@ -27,8 +30,9 @@ impl Anim {
     /// (≈ 95 % du chemin parcouru en 3 × `tau`).
     pub fn to(&mut self, id: u64, target: f32, tau: f32) -> f32 {
         let dt = self.dt;
+        let speed = self.speed.unwrap_or(1.0);
         let v = self.values.entry(id).or_insert(target);
-        let k = 1.0 - (-dt / tau.max(1e-4)).exp();
+        let k = if speed <= 0.0 { 1.0 } else { 1.0 - (-dt / (tau / speed).max(1e-4)).exp() };
         *v += (target - *v) * k;
         if (target - *v).abs() < 1e-3 {
             *v = target;
@@ -55,6 +59,12 @@ impl Anim {
         if self.values.insert(id, value) != Some(value) {
             self.moving = true;
         }
+    }
+
+    /// Vitesse des animations (voir le champ) : 1 par défaut, 0 pour aucune.
+    pub fn set_speed(&mut self, speed: f32) {
+        let s = if speed.is_finite() { speed.clamp(0.0, 4.0) } else { 1.0 };
+        self.speed = (s != 1.0).then_some(s);
     }
 
     pub fn get(&self, id: u64) -> Option<f32> {
@@ -92,6 +102,25 @@ mod tests {
             a.to(1, 1.0, 0.05);
         }
         assert!(!a.is_moving());
+    }
+
+    #[test]
+    fn speed_zero_jumps_and_speed_two_is_faster() {
+        let mut a = Anim::new();
+        a.set_speed(0.0);
+        a.begin_frame(1.0 / 60.0);
+        a.to(1, 0.0, 0.05);
+        a.begin_frame(1.0 / 60.0);
+        assert_eq!(a.to(1, 1.0, 0.05), 1.0);
+        let step = |speed: f32| {
+            let mut a = Anim::new();
+            a.set_speed(speed);
+            a.begin_frame(1.0 / 60.0);
+            a.to(1, 0.0, 0.05);
+            a.begin_frame(1.0 / 60.0);
+            a.to(1, 1.0, 0.05)
+        };
+        assert!(step(2.0) > step(1.0));
     }
 
     #[test]

@@ -334,7 +334,14 @@ pub struct Canvas {
     /// à l'autre : dessiner un potard n'alloue rien.
     scratch_path: Path,
     scratch_pts: Vec<Pt>,
+    /// Style du thème : rayons des coins (petit, moyen, grand) qui remplacent
+    /// 4, 8 et 16 px, et épaisseur des contours (1 = inchangée).
+    radii: [f32; 3],
+    border: f32,
 }
+
+/// Rayons de référence : un thème qui les garde dessine exactement comme avant.
+pub const DEFAULT_RADII: [f32; 3] = [4.0, 8.0, 16.0];
 
 impl Canvas {
     pub fn new(width: usize, height: usize) -> Self {
@@ -350,6 +357,8 @@ impl Canvas {
             damage: Damage::default(),
             scratch_path: Path::new(),
             scratch_pts: Vec::new(),
+            radii: DEFAULT_RADII,
+            border: 1.0,
         };
         c.resize(width, height);
         c
@@ -392,6 +401,32 @@ impl Canvas {
             self.scale = scale;
             self.set_clip(None);
             self.invalidate();
+        }
+    }
+
+    /// Style des formes : `radii` (petit, moyen, grand) remplace les rayons de
+    /// 4, 8 et 16 px (interpolés entre eux), `border` multiplie l'épaisseur des
+    /// contours. Les pastilles et les cercles (rayon = demi-côté) restent ronds.
+    pub fn set_style(&mut self, radii: [f32; 3], border: f32) {
+        let ok = |v: f32| if v.is_finite() { v.clamp(0.0, 64.0) } else { 0.0 };
+        self.radii = radii.map(ok);
+        self.border = if border.is_finite() { border.clamp(0.0, 8.0) } else { 1.0 };
+    }
+
+    /// Rayon logique après le style du thème.
+    fn styled_radius(&self, r: Rect, radius: f32) -> f32 {
+        if self.radii == DEFAULT_RADII || radius <= 0.0 || radius >= r.w.min(r.h) * 0.5 - 1e-3 {
+            return radius;
+        }
+        let [s, m, l] = self.radii;
+        if radius <= 4.0 {
+            radius / 4.0 * s
+        } else if radius <= 8.0 {
+            s + (radius - 4.0) / 4.0 * (m - s)
+        } else if radius <= 16.0 {
+            m + (radius - 8.0) / 8.0 * (l - m)
+        } else {
+            l * radius / 16.0
         }
     }
 
@@ -551,6 +586,7 @@ impl Canvas {
         if r.w <= 0.0 || r.h <= 0.0 || (top.a == 0 && bottom.a == 0) {
             return;
         }
+        let radius = self.styled_radius(r, radius);
         let (r, radius) = (self.to_physical(r), radius * self.scale);
         let radius = radius.clamp(0.0, r.w.min(r.h) * 0.5);
         let Some(bbox) = self.bounds(r.x, r.y, r.right(), r.bottom()) else { return };
@@ -560,6 +596,10 @@ impl Canvas {
     /// Contour intérieur d'épaisseur `width`.
     pub fn stroke_rrect(&mut self, r: Rect, radius: f32, width: f32, c: Color) {
         if r.w <= 0.0 || r.h <= 0.0 || c.a == 0 {
+            return;
+        }
+        let (radius, width) = (self.styled_radius(r, radius), width * self.border);
+        if width <= 0.0 {
             return;
         }
         let (r, radius, width) = (self.to_physical(r), radius * self.scale, width * self.scale);
@@ -821,6 +861,29 @@ mod tests {
         c.fill_rrect(Rect::new(0.0, 0.0, 40.0, 40.0), 10.0, Color::hex(0xffffff));
         let expected = 1600.0 - (4.0 - std::f32::consts::PI) * 100.0;
         assert!((coverage_sum(&c) - expected).abs() < 3.0, "{}", coverage_sum(&c));
+    }
+
+    #[test]
+    fn theme_style_remaps_corners_but_keeps_circles() {
+        let fill = |radii: [f32; 3], r: Rect, radius: f32| {
+            let mut c = Canvas::new(40, 40);
+            c.set_style(radii, 1.0);
+            c.fill_rrect(r, radius, Color::hex(0xffffff));
+            coverage_sum(&c)
+        };
+        let square = Rect::new(0.0, 0.0, 40.0, 40.0);
+        // Rayons par défaut : rien ne change.
+        assert_eq!(fill(DEFAULT_RADII, square, 10.0), fill([4.0, 8.0, 16.0], square, 10.0));
+        // Coins carrés : la surface entière.
+        assert!((fill([0.0, 0.0, 0.0], square, 10.0) - 1600.0).abs() < 1.0);
+        // Un cercle reste un cercle.
+        let disc = Rect::new(10.0, 10.0, 20.0, 20.0);
+        assert_eq!(fill([0.0, 0.0, 0.0], disc, 10.0), fill(DEFAULT_RADII, disc, 10.0));
+        // Contours plus épais.
+        let mut c = Canvas::new(40, 40);
+        c.set_style(DEFAULT_RADII, 2.0);
+        c.stroke_rrect(square, 0.0, 1.0, Color::hex(0xffffff));
+        assert!((coverage_sum(&c) - 304.0).abs() < 1.0);
     }
 
     #[test]

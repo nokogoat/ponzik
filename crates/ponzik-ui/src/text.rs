@@ -33,6 +33,8 @@ pub struct Fonts {
     fonts: Vec<Font>,
     glyphs: HashMap<GlyphKey, Glyph>,
     raster: Rasterizer,
+    /// Échelle des textes choisie par le thème (1 = tailles demandées).
+    size_scale: f32,
 }
 
 impl Default for Fonts {
@@ -43,7 +45,7 @@ impl Default for Fonts {
 
 impl Fonts {
     pub fn new() -> Self {
-        Self { fonts: Vec::new(), glyphs: HashMap::new(), raster: Rasterizer::new() }
+        Self { fonts: Vec::new(), glyphs: HashMap::new(), raster: Rasterizer::new(), size_scale: 1.0 }
     }
 
     pub fn add(&mut self, data: &'static [u8]) -> Result<FontId, String> {
@@ -51,8 +53,17 @@ impl Fonts {
         Ok(FontId(self.fonts.len() - 1))
     }
 
+    /// Multiplie toutes les tailles de texte (mesures comprises), 0.5 à 2.
+    pub fn set_size_scale(&mut self, k: f32) {
+        self.size_scale = if k.is_finite() { k.clamp(0.5, 2.0) } else { 1.0 };
+    }
+
+    pub fn size_scale(&self) -> f32 {
+        self.size_scale
+    }
+
     fn scale(&self, f: FontId, size: f32) -> f32 {
-        size / self.fonts[f.0].units_per_em
+        size * self.size_scale / self.fonts[f.0].units_per_em
     }
 
     /// Hauteur des capitales, pour centrer du texte optiquement.
@@ -97,7 +108,7 @@ impl Fonts {
         let size = size * k;
         let s = self.scale(f, size);
         let baseline = (baseline * k).round() as i32;
-        let size_key = (size * 4.0).round() as u32;
+        let size_key = (size * self.size_scale * 4.0).round() as u32;
         let x = x * k;
         let mut pen = x;
         let mut prev = None;

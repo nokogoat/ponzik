@@ -20,7 +20,7 @@ mod text;
 
 pub mod brand;
 pub use anim::Anim;
-pub use canvas::{Canvas, Path};
+pub use canvas::{Canvas, DEFAULT_RADII, Path};
 pub use color::Color;
 pub use geom::Rect;
 pub use png::{encode_png, encode_png_rgba};
