@@ -969,7 +969,25 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
         );
     }
     let png = encode_png(canvas.pixels(), pw, ph);
-    std::fs::write(path, png).map_err(|e| format!("{path}: {e}"))
+    std::fs::write(path, png).map_err(|e| format!("{path}: {e}"))?;
+    // PONZIK_SWITCH=<view>[,n]: then switches to that view and writes the n
+    // following frames (default 6) next to the capture, `<name>-sw<k>.png`,
+    // to look at a view change frame by frame.
+    if let Some((to, n)) = std::env::var("PONZIK_SWITCH").ok().and_then(|v| {
+        let (name, n) = v.split_once(',').unwrap_or((v.as_str(), "6"));
+        Some((view_named(name.trim())?, n.trim().parse::<usize>().unwrap_or(6)))
+    }) {
+        app.set_view(to);
+        let stem = path.strip_suffix(".png").unwrap_or(path);
+        for k in 0..n {
+            engine.process(&mut audio, 2);
+            app.frame(&mut canvas, &input, 1.0 / 60.0);
+            let png = encode_png(canvas.pixels(), pw, ph);
+            let file = format!("{stem}-sw{k}.png");
+            std::fs::write(&file, png).map_err(|e| format!("{file}: {e}"))?;
+        }
+    }
+    Ok(())
 }
 
 /// Interface timing of `view` for `ponzik bench`: `frames` images drawn in

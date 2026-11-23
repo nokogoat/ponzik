@@ -2418,9 +2418,11 @@ impl App {
             return;
         }
 
-        // Entrée de vue : fondu et légère montée.
+        // Entrée de vue : le contenu monte légèrement et finit d'apparaître. The
+        // tabs and the view's toolbar switch at once, never faded: a fade over
+        // them read as the bar blinking on every view change.
         let enter = self.anim.to(wid("view-enter", 0, 0), 1.0, T_LAYOUT);
-        let rise = ((1.0 - enter) * 10.0).round();
+        let rise = ((1.0 - enter) * 8.0).round();
         let body_shifted = body.translate(0.0, rise);
         let prev = c.push_clip(Rect::new(r.x, header.y, r.w, r.bottom() - header.y));
         match self.view {
@@ -2432,7 +2434,9 @@ impl App {
             View::Lab => self.lab_view(c, input, header, body_shifted),
         }
         if enter < 0.999 {
-            c.fill_rect(Rect::new(r.x, header.y - 2.0, r.w, r.bottom() - header.y + 2.0), t.bg.alpha(1.0 - enter));
+            // Starts at 55 % visible: no frame is ever close to empty.
+            let veil = (1.0 - enter) * 0.45;
+            c.fill_rect(Rect::new(r.x, body.y - 4.0, r.w, r.bottom() - body.y + 4.0), t.bg.alpha(veil));
         }
         c.set_clip(Some(prev));
     }
