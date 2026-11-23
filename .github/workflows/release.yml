@@ -9,11 +9,15 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    # Docs-only changes don't need a new build.
+    paths-ignore: ["**.md", "docs/**"]
   workflow_dispatch:
 
+# A new push waits for the running build instead of cancelling it (a cancelled
+# run would show as failing on the README badge).
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read

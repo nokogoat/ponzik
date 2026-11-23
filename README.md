@@ -10,7 +10,7 @@
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-15803d?style=for-the-badge&labelColor=26302f" alt="License: GPL-3.0"></a>
 <a href="https://github.com/nokogoat/ponzik/releases"><img src="https://img.shields.io/badge/Windows-.exe-15803d?style=for-the-badge&labelColor=26302f" alt="Windows .exe"></a>
 <a href="https://github.com/nokogoat/ponzik/releases"><img src="https://img.shields.io/badge/Linux-AppImage-15803d?style=for-the-badge&labelColor=26302f" alt="Linux AppImage"></a>
-<a href="https://github.com/nokogoat/ponzik/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/nokogoat/ponzik/release.yml?branch=main&style=for-the-badge&labelColor=26302f&label=build&color=15803d" alt="Build status"></a>
+<a href="https://github.com/nokogoat/ponzik/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/nokogoat/ponzik/release.yml?branch=main&style=for-the-badge&labelColor=26302f&label=build" alt="Build status"></a>
 </p>
 
 **[Download](https://github.com/nokogoat/ponzik/releases)** · [Getting started](docs/GETTING_STARTED.md) · [Features](docs/OVERVIEW.md) · [Shortcuts](docs/SHORTCUTS.md) · [Contributing](AGENTS.md)
