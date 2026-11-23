@@ -32,8 +32,8 @@ const CONTROL_RATE: u32 = 16;
 const SETS: &[&str] = &["Basic", "Harmonic"];
 const UNISON: &[&str] = &["1", "2", "3", "4", "5", "6", "7", "8"];
 
-const P_SET: u32 = 0;
-const P_POSITION: u32 = 1;
+pub const P_SET: u32 = 0;
+pub const P_POSITION: u32 = 1;
 const P_UNISON: u32 = 2;
 const P_DETUNE: u32 = 3;
 const P_SPREAD: u32 = 4;
@@ -162,6 +162,36 @@ fn harmonic_shape(frame: usize, t: f64) -> f64 {
 }
 
 const SET_FRAMES: [usize; 2] = [5, 8];
+
+/// Les images d'un jeu de tables telles que les joue le niveau d'octave le plus
+/// grave (à 48 kHz : même limite de bande, même normalisation), réduites à
+/// `points` valeurs par période, pour un affichage. Alloue : hors du thread audio.
+pub fn table_frames(set: usize, points: usize) -> Vec<Vec<f32>> {
+    let set = set.min(SET_FRAMES.len() - 1);
+    let shape = if set == 0 { basic_shape } else { harmonic_shape };
+    let n = TABLE_LEN;
+    let harmonics = ((48_000.0 * 0.5 / LEVEL0_HZ) as usize).clamp(1, n / 2 - 1);
+    let (mut re, mut im) = (vec![0.0; n], vec![0.0; n]);
+    (0..SET_FRAMES[set])
+        .map(|f| {
+            for (k, x) in re.iter_mut().enumerate() {
+                *x = shape(f, k as f64 / n as f64);
+            }
+            im.fill(0.0);
+            fft(&mut re, &mut im, false);
+            for h in harmonics + 1..=n - harmonics - 1 {
+                re[h] = 0.0;
+                im[h] = 0.0;
+            }
+            re[0] = 0.0;
+            im[0] = 0.0;
+            fft(&mut re, &mut im, true);
+            let peak = re.iter().fold(0.0f64, |m, x| m.max(x.abs()));
+            let scale = if peak > 1e-9 { 1.0 / peak } else { 1.0 };
+            (0..points.max(2)).map(|i| (re[i * n / points.max(2)] * scale) as f32).collect()
+        })
+        .collect()
+}
 
 fn build_tables(sample_rate: f32) -> [TableSet; 2] {
     [
@@ -554,6 +584,21 @@ mod tests {
         w.note_off(48);
         peak(&mut w, 48_000);
         assert_eq!(peak(&mut w, 512), 0.0);
+    }
+
+    #[test]
+    fn displayed_frames_are_the_played_tables() {
+        let tables = build_tables(48_000.0);
+        for (set, t) in tables.iter().enumerate() {
+            let shown = table_frames(set, 256);
+            assert_eq!(shown.len(), t.frames);
+            for (f, frame) in shown.iter().enumerate() {
+                let played = t.table(f, 0);
+                for (i, &v) in frame.iter().enumerate() {
+                    assert!((v - played[i * TABLE_LEN / 256]).abs() < 1e-4, "table {set}, image {f}, point {i}");
+                }
+            }
+        }
     }
 
     #[test]

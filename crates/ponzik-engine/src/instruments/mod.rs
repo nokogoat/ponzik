@@ -39,4 +39,4 @@ pub use pluck::Pluck;
 pub use pulse::{Pulse, PulseParams};
 pub use sampler::{SAMPLER_BEATS, SAMPLER_MODE, SAMPLER_SYNC, Sampler};
 pub use slicer::Slicer;
-pub use wavetable::WaveSynth;
+pub use wavetable::{P_POSITION as WAVE_POSITION, P_SET as WAVE_SET, WaveSynth, table_frames as wave_table_frames};
