@@ -1,6 +1,7 @@
 mod alloc_count;
 mod build_info;
 mod gui;
+mod install;
 #[cfg(test)]
 mod i18n_coverage;
 
@@ -39,6 +40,13 @@ Usage:
   ponzik library [dir]                     renders the bundled sound library (24-bit WAV)
                                            into dir (default: ~/Music/Ponzik/Library)
   ponzik check-update [nightly|stable]     asks GitHub for a newer release
+  ponzik install [--desktop]               Windows: installs for this user (Start menu,
+                                           file types, Installed apps; --desktop: a
+                                           desktop shortcut too); Linux: adds the
+                                           AppImage to the applications menu
+  ponzik uninstall [--yes] [--purge]       removes what install added (--purge: the
+                                           settings too; projects always stay)
+  ponzik <file.ponzik | file.flp>          opens a project
   ponzik version                           shows the version and build
   ponzik help                              shows this help")
 }
@@ -53,13 +61,19 @@ fn main() -> ExitCode {
     // Windows: the program is a console program (the command line prints), but
     // started from the Explorer it only owns a console of its own: let it go.
     #[cfg(windows)]
-    if args.first().is_none_or(|a| a == "breakcore" || a == "zalgo") {
+    if args.first().is_none_or(|a| a == "breakcore" || a == "zalgo" || a == "--uninstall" || project_arg(a).is_some()) {
         detach_own_console();
     }
     let result = match args.first().map(String::as_str) {
-        None => gui::run(demo_project()),
-        Some("breakcore") => gui::run(ponzik_project::demo_breakcore()),
-        Some("zalgo") => gui::run(ponzik_project::demo_zalgo()),
+        None => gui::run(demo_project(), None),
+        Some("breakcore") => gui::run(ponzik_project::demo_breakcore(), None),
+        Some("zalgo") => gui::run(ponzik_project::demo_zalgo(), None),
+        Some(a) if project_arg(a).is_some() => gui::run(demo_project(), project_arg(a)),
+        Some("install") => cli_install(&args[1..]),
+        Some("uninstall") => cli_uninstall(&args[1..]),
+        // "Installed apps" › Uninstall: a confirmation window (none with --quiet).
+        Some("--uninstall") if args.iter().any(|a| a == "--quiet") => uninstall_now(false),
+        Some("--uninstall") => gui::run_uninstall(),
         Some("play") => play(args.get(1).map(String::as_str)),
         Some("render") => render(&args[1..]),
         Some("screenshot") => screenshot(&args[1..]),
@@ -82,6 +96,60 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// A project file given on the command line (a double-click in the file
+/// manager): an existing `.ponzik` or `.flp`.
+fn project_arg(arg: &str) -> Option<std::path::PathBuf> {
+    let path = std::path::Path::new(arg);
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    (matches!(ext.as_str(), "ponzik" | "flp") && path.is_file()).then(|| path.to_path_buf())
+}
+
+/// `ponzik install [--desktop]`: installs (Windows) or adds to the menu (Linux), without a window.
+fn cli_install(args: &[String]) -> Result<(), String> {
+    let opts = install::Options { desktop: args.iter().any(|a| a == "--desktop"), move_to_applications: false };
+    let st = install::status();
+    if st.platform == install::Platform::Linux && st.place == install::Place::Unmanaged {
+        eprintln!("{}", tr("Not started from an AppImage: the menu entry will start this program file"));
+    }
+    let report = install::install(opts)?;
+    for w in &report.warnings {
+        eprintln!("{}", tr_fmt!("warning: {}", w.as_str()));
+    }
+    println!("{}", tr_fmt!("Ponzik is installed: {}", report.program.display().to_string()));
+    Ok(())
+}
+
+/// `ponzik uninstall [--yes] [--purge]`: asks first, unless `--yes`.
+fn cli_uninstall(args: &[String]) -> Result<(), String> {
+    let purge = args.iter().any(|a| a == "--purge");
+    if !args.iter().any(|a| a == "--yes" || a == "-y") {
+        let what = if purge { tr("Remove Ponzik and its settings? Your projects stay. [y/N] ") } else { tr("Remove Ponzik? Your projects and settings stay. [y/N] ") };
+        eprint!("{what}");
+        let mut answer = String::new();
+        let _ = io::stdin().lock().read_line(&mut answer);
+        let a = answer.trim().to_lowercase();
+        if !(a.starts_with('y') || a.starts_with('o')) {
+            println!("{}", tr("Nothing was removed"));
+            return Ok(());
+        }
+    }
+    uninstall_now(purge)
+}
+
+/// Uninstalls, then (Windows) deletes the program once this process ends.
+fn uninstall_now(purge: bool) -> Result<(), String> {
+    let warnings = install::uninstall(purge, &gui::config_dir())?;
+    for w in &warnings {
+        eprintln!("{}", tr_fmt!("warning: {}", w.as_str()));
+    }
+    let done = match install::Platform::current() {
+        install::Platform::Linux => tr("Ponzik is no longer in the applications menu. The AppImage stays where it is."),
+        _ => tr("Ponzik is uninstalled. Your projects are still there."),
+    };
+    println!("{done}");
+    install::delete_program_after_exit()
 }
 
 /// Frees the console window Windows opened for this process alone (started

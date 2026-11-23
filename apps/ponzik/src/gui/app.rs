@@ -223,6 +223,8 @@ pub enum Popup {
     WhatsNew,
     /// The Learn panel: short lessons.
     Learn,
+    /// Install or uninstall Ponzik (see `install.rs`).
+    Install,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -698,6 +700,8 @@ pub struct App {
     pub plugin_scan: Option<super::plugins::PluginScan>,
     /// Update checks, downloads and the "What's new" popup.
     pub updates: super::updates::Updates,
+    /// The install screens (first launch, Settings › About, `--uninstall`).
+    pub install: super::install::InstallUi,
     /// Editors of the plugin instances and their windows.
     pub editors: super::editors::PluginEditors,
     /// Plugin parameter last moved in a plugin window, and its value.
@@ -900,6 +904,7 @@ impl App {
             scan_errors: Vec::new(),
             plugin_scan: None,
             updates: Default::default(),
+            install: Default::default(),
             editors: Default::default(),
             last_plugin_param: None,
             xrun_watch: Default::default(),
@@ -2122,6 +2127,10 @@ impl App {
     }
 
     pub fn frame(&mut self, c: &mut Canvas, input: &Input, dt: f32) {
+        // The first screen and the uninstaller fill the window on their own.
+        if self.install.standalone {
+            return self.install_frame(c, input, dt);
+        }
         self.anim.begin_frame(dt);
         self.time += dt;
         self.pointer = (input.x, input.y);
@@ -3877,7 +3886,8 @@ impl App {
             | Popup::StepEdit { .. }
             | Popup::Settings { .. }
             | Popup::WhatsNew
-            | Popup::Learn => (String::new(), Vec::new()),
+            | Popup::Learn
+            | Popup::Install => (String::new(), Vec::new()),
         }
     }
 
@@ -4343,6 +4353,12 @@ impl App {
         }
         if matches!(state.kind, Popup::Groove) {
             if self.groove_popup(c, input, state.anchor, screen) {
+                self.popup = Some(state);
+            }
+            return;
+        }
+        if matches!(state.kind, Popup::Install) {
+            if self.install_sheet(c, input, screen) {
                 self.popup = Some(state);
             }
             return;

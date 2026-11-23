@@ -4427,8 +4427,8 @@ msgstr "{} dB latéral"
 
 # --- Command line help ---
 
-msgid "Ponzik — the free DAW. No more gatekeeping.\n\nUsage:\n  ponzik                                   opens the interface (house demo)\n  ponzik breakcore                         opens the interface on the breakcore demo\n  ponzik zalgo                             opens the interface on the rage × techno demo\n  ponzik play [seconds]                    plays the demo in the terminal (Enter to stop)\n  ponzik render <output.wav> [song|pattern] [breakcore|zalgo]\n                                           exports a demo as a 24-bit WAV\n  ponzik screenshot <output.png> [view] [width height]\n                                           captures the interface off-screen\n                                           (views: rack, piano, playlist, mixer, lab;\n                                           bc-<view>, zg-<view>: the other demos;\n                                           PONZIK_SAMPLELAB=demo|<wav> opens the Sample Lab;\n                                           PONZIK_SCALE_UI=2 renders at 2× for HiDPI;\n                                           PONZIK_LANG=fr picks the language)\n  ponzik library [dir]                     renders the bundled sound library (24-bit WAV)\n                                           into dir (default: ~/Music/Ponzik/Library)\n  ponzik check-update [nightly|stable]     asks GitHub for a newer release\n  ponzik version                           shows the version and build\n  ponzik help                              shows this help"
-msgstr "Ponzik — le DAW libre. No more gatekeeping.\n\nUsage :\n  ponzik                                   ouvre l'interface (démo house)\n  ponzik breakcore                         ouvre l'interface sur la démo breakcore\n  ponzik zalgo                             ouvre l'interface sur la démo rage × techno\n  ponzik play [secondes]                   joue la démo dans le terminal (Entrée pour arrêter)\n  ponzik render <sortie.wav> [song|pattern] [breakcore|zalgo]\n                                           exporte une démo en WAV 24 bits\n  ponzik screenshot <sortie.png> [vue] [largeur hauteur]\n                                           capture l'interface hors écran\n                                           (vues : rack, piano, playlist, mixer, lab ;\n                                           bc-<vue>, zg-<vue> : les autres démos ;\n                                           PONZIK_SAMPLELAB=demo|<wav> ouvre le Sample Lab ;\n                                           PONZIK_SCALE_UI=2 rend en 2× pour l'HiDPI ;\n                                           PONZIK_LANG=fr choisit la langue)\n  ponzik library [dossier]                 génère la banque de sons fournie (WAV 24 bits)\n                                           dans dossier (par défaut : ~/Musique/Ponzik/Library)\n  ponzik check-update [nightly|stable]     demande à GitHub s'il existe une version plus récente\n  ponzik version                           affiche la version et le build\n  ponzik help                              affiche cette aide"
+msgid "Ponzik — the free DAW. No more gatekeeping.\n\nUsage:\n  ponzik                                   opens the interface (house demo)\n  ponzik breakcore                         opens the interface on the breakcore demo\n  ponzik zalgo                             opens the interface on the rage × techno demo\n  ponzik play [seconds]                    plays the demo in the terminal (Enter to stop)\n  ponzik render <output.wav> [song|pattern] [breakcore|zalgo]\n                                           exports a demo as a 24-bit WAV\n  ponzik screenshot <output.png> [view] [width height]\n                                           captures the interface off-screen\n                                           (views: rack, piano, playlist, mixer, lab;\n                                           bc-<view>, zg-<view>: the other demos;\n                                           PONZIK_SAMPLELAB=demo|<wav> opens the Sample Lab;\n                                           PONZIK_SCALE_UI=2 renders at 2× for HiDPI;\n                                           PONZIK_LANG=fr picks the language)\n  ponzik library [dir]                     renders the bundled sound library (24-bit WAV)\n                                           into dir (default: ~/Music/Ponzik/Library)\n  ponzik check-update [nightly|stable]     asks GitHub for a newer release\n  ponzik install [--desktop]               Windows: installs for this user (Start menu,\n                                           file types, Installed apps; --desktop: a\n                                           desktop shortcut too); Linux: adds the\n                                           AppImage to the applications menu\n  ponzik uninstall [--yes] [--purge]       removes what install added (--purge: the\n                                           settings too; projects always stay)\n  ponzik <file.ponzik | file.flp>          opens a project\n  ponzik version                           shows the version and build\n  ponzik help                              shows this help"
+msgstr "Ponzik — le DAW libre. No more gatekeeping.\n\nUsage :\n  ponzik                                   ouvre l'interface (démo house)\n  ponzik breakcore                         ouvre l'interface sur la démo breakcore\n  ponzik zalgo                             ouvre l'interface sur la démo rage × techno\n  ponzik play [secondes]                   joue la démo dans le terminal (Entrée pour arrêter)\n  ponzik render <sortie.wav> [song|pattern] [breakcore|zalgo]\n                                           exporte une démo en WAV 24 bits\n  ponzik screenshot <sortie.png> [vue] [largeur hauteur]\n                                           capture l'interface hors écran\n                                           (vues : rack, piano, playlist, mixer, lab ;\n                                           bc-<vue>, zg-<vue> : les autres démos ;\n                                           PONZIK_SAMPLELAB=demo|<wav> ouvre le Sample Lab ;\n                                           PONZIK_SCALE_UI=2 rend en 2× pour l'HiDPI ;\n                                           PONZIK_LANG=fr choisit la langue)\n  ponzik library [dossier]                 génère la banque de sons fournie (WAV 24 bits)\n                                           dans dossier (par défaut : ~/Musique/Ponzik/Library)\n  ponzik check-update [nightly|stable]     demande à GitHub s'il existe une version plus récente\n  ponzik install [--desktop]               Windows : installe pour cet utilisateur (menu Démarrer,\n                                           types de fichiers, Applications installées ; --desktop :\n                                           un raccourci sur le bureau aussi) ; Linux : ajoute\n                                           l'AppImage au menu des applications\n  ponzik uninstall [--yes] [--purge]       retire ce qu'install a ajouté (--purge : les réglages\n                                           aussi ; les projets restent toujours)\n  ponzik <fichier.ponzik | fichier.flp>    ouvre un projet\n  ponzik version                           affiche la version et le build\n  ponzik help                              affiche cette aide"
 
 # --- Interface size, MIDI clock, takes ---
 
@@ -9091,3 +9091,259 @@ msgstr "Votre progression est gardée"
 
 msgid "{} min"
 msgstr "{} min"
+# --- Install, uninstall, applications menu ---
+
+msgid "Add Ponzik to the applications menu"
+msgstr "Ajouter Ponzik au menu des applications"
+
+msgid "Add it later from Settings › About"
+msgstr "Ajoutez-le plus tard depuis Réglages › À propos"
+
+msgid "Add to applications menu"
+msgstr "Ajouter au menu des applications"
+
+msgid "Add to menu"
+msgstr "Ajouter au menu"
+
+msgid "Also put a shortcut on the desktop"
+msgstr "Mettre aussi un raccourci sur le bureau"
+
+msgid "Also remove my settings (themes, shortcuts, translations)"
+msgstr "Supprimer aussi mes réglages (thèmes, raccourcis, traductions)"
+
+msgid "Built from source"
+msgstr "Compilé depuis les sources"
+
+msgid "Copies Ponzik to your programs, with shortcuts and file types"
+msgstr "Copie Ponzik dans vos programmes, avec raccourcis et types de fichiers"
+
+msgid "Could not copy Ponzik to {}: {}"
+msgstr "Impossible de copier Ponzik vers {} : {}"
+
+msgid "Delete {} by hand to finish"
+msgstr "Supprimez {} à la main pour terminer"
+
+msgid "Digital Audio Workstation"
+msgstr "Station audionumérique"
+
+msgid "Don't ask again"
+msgstr "Ne plus demander"
+
+msgid "Enter installs · Esc closes"
+msgstr "Entrée installe · Échap ferme"
+
+msgid "Enter installs · Esc just runs it"
+msgstr "Entrée installe · Échap le lance tel quel"
+
+msgid "FL Studio project"
+msgstr "Projet FL Studio"
+
+msgid "Find it with your other apps"
+msgstr "Retrouvez-le avec vos autres applications"
+
+msgid "How do you want to use it?"
+msgstr "Comment voulez-vous l'utiliser ?"
+
+msgid "In the applications menu"
+msgstr "Dans le menu des applications"
+
+msgid "In your launcher, with its icon"
+msgstr "Dans votre lanceur, avec son icône"
+
+msgid "Install"
+msgstr "Installer"
+
+msgid "Install Ponzik"
+msgstr "Installer Ponzik"
+
+msgid "Install it later from Settings › About"
+msgstr "Installez-le plus tard depuis Réglages › À propos"
+
+msgid "Installation"
+msgstr "Installation"
+
+msgid "Installed"
+msgstr "Installé"
+
+msgid "Installing Ponzik…"
+msgstr "Installation de Ponzik…"
+
+msgid "Installing is not supported on this system yet"
+msgstr "L'installation n'est pas encore prise en charge sur ce système"
+
+msgid "Just run it"
+msgstr "Juste le lancer"
+
+msgid "Keep it portable"
+msgstr "Le garder portable"
+
+msgid "Move the AppImage to ~/Applications first"
+msgstr "Déplacer d'abord l'AppImage dans ~/Applications"
+
+msgid "Not in the applications menu"
+msgstr "Absent du menu des applications"
+
+msgid "Not installed"
+msgstr "Non installé"
+
+msgid "Not started from an AppImage: the menu entry will start this program file"
+msgstr "Pas lancé depuis une AppImage : l'entrée du menu lancera ce fichier programme"
+
+msgid "Nothing is added to your system"
+msgstr "Rien n'est ajouté à votre système"
+
+msgid "Nothing is installed"
+msgstr "Rien n'est installé"
+
+msgid "Nothing is installed: it runs from this file"
+msgstr "Rien n'est installé : il tourne depuis ce fichier"
+
+msgid "Nothing was removed"
+msgstr "Rien n'a été supprimé"
+
+msgid "Opens .ponzik and FL Studio .flp files"
+msgstr "Ouvre les fichiers .ponzik et .flp de FL Studio"
+
+msgid "Ponzik could not be installed"
+msgstr "Ponzik n'a pas pu être installé"
+
+msgid "Ponzik could not be removed"
+msgstr "Ponzik n'a pas pu être supprimé"
+
+msgid "Ponzik is in the applications menu"
+msgstr "Ponzik est dans le menu des applications"
+
+msgid "Ponzik is in your applications menu"
+msgstr "Ponzik est dans votre menu des applications"
+
+msgid "Ponzik is installed"
+msgstr "Ponzik est installé"
+
+msgid "Ponzik is installed: {}"
+msgstr "Ponzik est installé : {}"
+
+msgid "Ponzik is no longer in the applications menu. The AppImage stays where it is."
+msgstr "Ponzik n'est plus dans le menu des applications. L'AppImage reste où elle est."
+
+msgid "Ponzik is uninstalled"
+msgstr "Ponzik est désinstallé"
+
+msgid "Ponzik is uninstalled. Your projects are still there."
+msgstr "Ponzik est désinstallé. Vos projets sont toujours là."
+
+msgid "Ponzik left the applications menu"
+msgstr "Ponzik a quitté le menu des applications"
+
+msgid "Ponzik project"
+msgstr "Projet Ponzik"
+
+msgid "Portable"
+msgstr "Portable"
+
+msgid "Portable AppImage"
+msgstr "AppImage portable"
+
+msgid "Puts Ponzik in the applications menu, opening .ponzik and .flp files"
+msgstr "Met Ponzik dans le menu des applications, pour ouvrir les fichiers .ponzik et .flp"
+
+msgid "Quit Ponzik"
+msgstr "Quitter Ponzik"
+
+msgid "Recommended"
+msgstr "Recommandé"
+
+msgid "Release builds can install themselves"
+msgstr "Les versions publiées savent s'installer"
+
+msgid "Remove Ponzik and its settings? Your projects stay. [y/N] "
+msgstr "Supprimer Ponzik et ses réglages ? Vos projets restent. [o/N] "
+
+msgid "Remove Ponzik? Your projects and settings stay. [y/N] "
+msgstr "Supprimer Ponzik ? Vos projets et réglages restent. [o/N] "
+
+msgid "Remove from menu"
+msgstr "Retirer du menu"
+
+msgid "Removes Ponzik from the applications menu, with its icons and file types. The AppImage stays where it is."
+msgstr "Retire Ponzik du menu des applications, avec ses icônes et ses types de fichiers. L'AppImage reste où elle est."
+
+msgid "Removes Ponzik from this computer; your projects stay"
+msgstr "Supprime Ponzik de cet ordinateur ; vos projets restent"
+
+msgid "Removes the menu entry, icons and file types; the AppImage stays"
+msgstr "Retire l'entrée du menu, les icônes et les types de fichiers ; l'AppImage reste"
+
+msgid "Removes the program, its shortcuts, its file types and its entry in Windows Settings."
+msgstr "Supprime le programme, ses raccourcis, ses types de fichiers et son entrée dans les Paramètres Windows."
+
+msgid "Removing Ponzik…"
+msgstr "Suppression de Ponzik…"
+
+msgid "Runs from the downloaded file"
+msgstr "Tourne depuis le fichier téléchargé"
+
+msgid "Settings stay in your user profile"
+msgstr "Les réglages restent dans votre profil"
+
+msgid "Start menu shortcut, desktop if you like"
+msgstr "Menu Démarrer, et bureau si vous voulez"
+
+msgid "Start the AppImage whenever you like"
+msgstr "Lancez l'AppImage quand vous voulez"
+
+msgid "Starting it from its new home…"
+msgstr "Démarrage depuis son nouvel emplacement…"
+
+msgid "Starting it from ~/Applications…"
+msgstr "Démarrage depuis ~/Applications…"
+
+msgid "Still one AppImage that updates itself"
+msgstr "Toujours une seule AppImage, qui se met à jour"
+
+msgid "Thanks for making music with it. Your projects are still in {}."
+msgstr "Merci d'avoir fait de la musique avec. Vos projets sont toujours dans {}."
+
+msgid "The menu starts this AppImage"
+msgstr "Le menu lance cette AppImage"
+
+msgid "Try again"
+msgstr "Réessayer"
+
+msgid "Uninstall"
+msgstr "Désinstaller"
+
+msgid "Uninstall Ponzik"
+msgstr "Désinstaller Ponzik"
+
+msgid "Uninstall Ponzik?"
+msgstr "Désinstaller Ponzik ?"
+
+msgid "Updates itself · remove it from Windows Settings"
+msgstr "Se met à jour · se retire depuis Windows"
+
+msgid "Version {}"
+msgstr "Version {}"
+
+msgid "Version {} · build {}"
+msgstr "Version {} · build {}"
+
+msgid "Welcome to Ponzik"
+msgstr "Bienvenue dans Ponzik"
+
+msgid "Where should Ponzik live?"
+msgstr "Où Ponzik doit-il vivre ?"
+
+msgid "With shortcuts and file types"
+msgstr "Avec raccourcis et types de fichiers"
+
+msgid "Your projects and sounds stay"
+msgstr "Vos projets et vos sons restent"
+
+msgid "warning: {}"
+msgstr "attention : {}"
+
+msgid "{} (note: {})"
+msgstr "{} (remarque : {})"
+
+msgid "{} · build {}"
+msgstr "{} · build {}"

@@ -26,6 +26,7 @@ mod freeze;
 mod grand;
 mod groove;
 mod hints;
+mod install;
 mod kbfocus;
 mod keymap;
 mod keys;
@@ -75,7 +76,7 @@ use ponzik_window::{Event, Key, Modifiers, MouseButton, Window};
 
 use app::{App, View};
 pub use settings::init_language;
-pub use compat::{library_dir, project_samples};
+pub use compat::{config_dir, library_dir, project_samples};
 
 /// PIPEWIRE_LATENCY vient de nous (l'utilisateur ne l'a pas fixée).
 static PIPEWIRE_LATENCY_OURS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -257,7 +258,18 @@ impl ClickTracker {
     }
 }
 
-pub fn run(project: ponzik_project::Project) -> Result<(), String> {
+pub fn run(project: ponzik_project::Project, open: Option<std::path::PathBuf>) -> Result<(), String> {
+    // The registration follows this copy (version after an update, AppImage moved).
+    crate::install::refresh_at_startup();
+    // A downloaded copy: install it, or just run it.
+    match install::first_screen()? {
+        install::Exit::Continue => {}
+        install::Exit::Quit => return Ok(()),
+        install::Exit::Relaunch(program) => {
+            updates::relaunch(&program);
+            return Ok(());
+        }
+    }
     // Tampon audio choisi (ou relevé après des craquements) aux sessions précédentes.
     settings::init_audio_buffer();
     // Sous PipeWire, l'appareil ALSA « default » ajoute son propre tampon
@@ -306,6 +318,10 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     app.theme_from_env();
     app.ctl.persist = true;
     app.lessons.persist = true;
+    // A project double-clicked in the file manager.
+    if let Some(path) = open {
+        app.open_file(path);
+    }
     app.start_tour_if_new();
     app.show_whats_new_if_updated();
     app.start_update_check_at_launch();
@@ -334,7 +350,11 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     // Sortie normale (fermeture ou erreur rapportée) : le verrou de session est retiré,
     // les panneaux ouverts sont retenus pour la prochaine fois.
     app.close_autosave();
-    app.save_settings();
+    // Uninstalled from the settings: nothing is written back, the program goes.
+    let uninstalled = app.install.uninstalled;
+    if !uninstalled {
+        app.save_settings();
+    }
     // "Restart" after an update: the new build takes over, once this one has
     // let go of the audio device and its window.
     let relaunch = if result.is_ok() { app.updates.relaunch.take() } else { None };
@@ -343,8 +363,13 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     if let Some(target) = relaunch {
         updates::relaunch(&target);
     }
+    if uninstalled {
+        crate::install::delete_program_after_exit()?;
+    }
     result
 }
+
+pub use install::run_uninstall;
 
 /// Temps passé par phase (interface, rastérisation, envoi), cumulé puis
 /// affiché toutes les deux secondes avec `PONZIK_PROFILE=1`.
@@ -812,6 +837,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     }
     // PONZIK_THEME=<name|path>: a built-in, example or user theme, or a theme file.
     app.theme_from_env();
+    // PONZIK_INSTALL=welcome|working|done|failed|uninstall|removed|about[,windows|linux]
+    // [,installed|portable|loose|unmanaged][,app]: the install screens (see install.rs).
+    if let Ok(spec) = std::env::var("PONZIK_INSTALL") {
+        app.screenshot_install(&spec);
+    }
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {
         app.screenshot_popup(&name);

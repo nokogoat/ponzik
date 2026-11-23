@@ -199,6 +199,8 @@ pub enum Icon {
     Expand,
     /// A graduation cap: the lessons.
     Learn,
+    /// An arrow going down into a tray: install.
+    Install,
 }
 
 /// Diagonal stripes over `r` (clipped to it): offline clips and samples.
@@ -752,6 +754,11 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
                 stroke,
                 col,
             );
+        }
+        Icon::Install => {
+            c.stroke_polyline(&[p(0.0, -7.0), p(0.0, 2.5)], stroke, col);
+            c.stroke_polyline(&[p(-4.0, -1.5), p(0.0, 2.5), p(4.0, -1.5)], stroke, col);
+            c.stroke_polyline(&[p(-6.0, 1.0), p(-6.0, 6.5), p(6.0, 6.5), p(6.0, 1.0)], stroke, col);
         }
         Icon::Export => {
             c.stroke_polyline(&[p(0.0, 3.0), p(0.0, -7.0)], stroke, col);

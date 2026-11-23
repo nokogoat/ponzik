@@ -320,7 +320,7 @@ impl App {
 
     /// Answers of the background threads; true when something changed on screen.
     pub fn updates_tick(&mut self) -> bool {
-        let mut changed = false;
+        let mut changed = self.install_tick();
         if let Some((file, size)) = &self.updates.download {
             let p = std::fs::metadata(file).map_or(0.0, |m| (m.len() as f64 / *size as f64).min(1.0) as f32);
             if (p - self.updates.progress).abs() > 0.004 {
@@ -402,7 +402,7 @@ impl App {
 
     /// The program should end now (restart into the update).
     pub fn quit_requested(&self) -> bool {
-        self.updates.relaunch.is_some()
+        self.updates.relaunch.is_some() || self.install.quit
     }
 
     /// Fake states for the screenshots (`PONZIK_UPDATE=available|downloading|installed|uptodate|error|offline`).
@@ -506,6 +506,10 @@ impl App {
         if self.hovered(input, wid("about-rel", 0, 0), rel) {
             *hint = Some(update::RELEASES_PAGE.into());
         }
+
+        // Where this copy runs, and the install buttons.
+        let inst = Rect::new(left.x, y + 32.0 + 30.0, left.w, 118.0);
+        self.install_card(c, input, inst, hint);
 
         // Updates.
         self.update_card(c, input, right, hint);

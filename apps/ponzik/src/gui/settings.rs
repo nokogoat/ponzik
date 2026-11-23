@@ -427,6 +427,7 @@ impl App {
         (self.prefs.buffer_ms, self.prefs.buffer_manual) = buffer_from_json(&j);
         self.ctl.global = ponzik_project::midi_map::load_mappings(j.get("midi_map"), usize::MAX);
         self.updates.load(&j);
+        self.install.load(&j);
         self.apply_workspace(ws, false);
     }
 
@@ -446,6 +447,7 @@ impl App {
                 fields.push(("midi_map".into(), ponzik_project::midi_map::mappings_json(&self.ctl.global)));
             }
             self.updates.save(fields);
+            self.install.save(fields);
             if self.prefs.buffer_ms > 0 {
                 fields.push(("audio_buffer_ms".into(), (self.prefs.buffer_ms as f64).into()));
                 fields.push(("audio_buffer_manual".into(), self.prefs.buffer_manual.into()));
