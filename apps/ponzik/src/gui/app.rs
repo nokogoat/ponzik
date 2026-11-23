@@ -1338,9 +1338,23 @@ impl App {
 
     /// À appeler après chaque modification du projet. Les gestes continus (même
     /// libellé à moins d'une seconde) forment une seule étape d'annulation.
+    /// "Auto" pattern length: a pattern whose notes changed grows to its last
+    /// note, rounded up to the bar, so everything drawn is played.
+    fn fit_edited_patterns(&mut self) {
+        for (i, p) in self.project.patterns.iter_mut().enumerate() {
+            if self.synced.patterns.get(i).is_some_and(|old| old.notes == p.notes) {
+                continue;
+            }
+            p.len = p.len.max(fitted_len(p));
+        }
+    }
+
     pub fn commit(&mut self, label: &str) {
         // Modulations of a removed or replaced device go with it.
         self.project.prune_modulators();
+        if !self.prefs.fixed_pattern_len {
+            self.fit_edited_patterns();
+        }
         if self.project == self.synced {
             return;
         }
@@ -4392,8 +4406,22 @@ fn master_spectrum(sample_rate: u32) -> SpectrumAnalyzer {
     s
 }
 
+/// Length that plays every note of `p`: its last note end, rounded up to the bar.
+pub fn fitted_len(p: &ponzik_project::PatternDef) -> u32 {
+    let end = p.notes.iter().flatten().map(|n| n.start + n.len).max().unwrap_or(0);
+    end.div_ceil(TICKS_PER_BAR).max(1) * TICKS_PER_BAR
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fitted_len_reaches_the_last_note() {
+        let mut p = ponzik_project::PatternDef { name: String::new(), len: TICKS_PER_BAR, notes: vec![Vec::new()], color: 0, groove: None };
+        assert_eq!(super::fitted_len(&p), TICKS_PER_BAR);
+        p.notes[0].push(ponzik_engine::Note { start: TICKS_PER_BAR, len: TICKS_PER_BAR / 2, ..ponzik_engine::Note::DEFAULT });
+        assert_eq!(super::fitted_len(&p), 2 * TICKS_PER_BAR);
+    }
+
     use super::*;
 
     #[test]
@@ -4452,3 +4480,4 @@ mod tests {
         });
     }
 }
+

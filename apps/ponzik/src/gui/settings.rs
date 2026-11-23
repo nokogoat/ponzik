@@ -374,6 +374,9 @@ pub struct Prefs {
     pub buffer_manual: bool,
     /// Smart disable, eco mode, export quality.
     pub perf: super::performance::Perf,
+    /// Patterns keep the length picked in the Channel Rack instead of growing
+    /// to their last note ("Auto", the default: you hear what you see).
+    pub fixed_pattern_len: bool,
     /// Action that closes the sheet to open its own popup ("Create a translation").
     pending: Option<Action>,
 }
@@ -517,6 +520,7 @@ impl App {
         self.prefs.hints_seen = j.get("hints_seen").and_then(Json::as_f64).map_or(0, |v| if v.is_finite() { v.clamp(0.0, u32::MAX as f64) as u32 } else { 0 });
         (self.prefs.buffer_ms, self.prefs.buffer_manual) = buffer_from_json(&j);
         self.prefs.perf.load(&j);
+        self.prefs.fixed_pattern_len = j.get("fixed_pattern_length").and_then(Json::as_bool).unwrap_or(false);
         self.ctl.global = ponzik_project::midi_map::load_mappings(j.get("midi_map"), usize::MAX);
         self.updates.load(&j);
         self.install.load(&j);
@@ -529,6 +533,9 @@ impl App {
         if let Json::Obj(fields) = &mut j {
             fields.push(("ui_scale".into(), (self.prefs.ui_scale.percent() as f64 / 100.0).into()));
             fields.push(("tour_done".into(), self.prefs.tour_done.into()));
+            if self.prefs.fixed_pattern_len {
+                fields.push(("fixed_pattern_length".into(), true.into()));
+            }
             if self.prefs.hints_seen != 0 {
                 fields.push(("hints_seen".into(), (self.prefs.hints_seen as f64).into()));
             }
