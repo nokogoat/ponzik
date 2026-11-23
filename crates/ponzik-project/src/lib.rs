@@ -68,7 +68,7 @@ pub use comp::{CompSegment, Take, TakeGroup};
 pub use zalgo::demo_zalgo;
 pub use demo::demo_project;
 pub use history::History;
-pub use flp::{ImportReport, ReportGroup, ReportKind, import_flp, resolve_sample};
+pub use flp::{ImportReport, ReportGroup, ReportKind, export_flp, import_flp, resolve_sample};
 pub use io::{load, load_from_file, save, save_to_file};
 pub use midi_file::{MidiFile, MidiTrack, import_midi, read_smf, write_smf};
 pub use render::{
