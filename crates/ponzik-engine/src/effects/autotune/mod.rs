@@ -433,6 +433,10 @@ impl Effect for AutoTune {
         self.latency
     }
 
+    fn keep_when_monitoring(&self) -> bool {
+        true
+    }
+
     fn channel_notes(&mut self, notes: &[ChannelNotes]) {
         self.notes = self.source_notes(notes);
         self.shared.set_midi(&self.notes);
