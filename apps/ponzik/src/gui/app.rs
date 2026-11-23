@@ -117,6 +117,10 @@ pub enum Popup {
     /// Choix d'un instrument : nouveau canal, ou remplacement de celui d'un canal.
     AddInstrument { replace: Option<usize> },
     AddEffect { track: usize },
+    /// An effect inserted at a slot, those after it shifting right.
+    InsertEffect { track: usize, slot: usize },
+    /// Right-click on a device's chip in the panel strip.
+    DeviceMenu(super::devices::Device),
     /// Choix d'un effet de notes pour un emplacement d'un canal.
     AddNoteFx { channel: usize, slot: usize },
     Patterns,
@@ -418,6 +422,12 @@ pub enum Action {
     TogglePaint,
     /// The channel's loop plays once per pattern, in time.
     FitLoop(usize),
+    /// An edit of a device of the panel.
+    Device(super::devices::Device, super::devstrip::DeviceOp),
+    /// An effect inserted at a slot (track, slot, kind).
+    InsertEffect(usize, usize, &'static str),
+    /// Collapse (true) or expand every device of the panel.
+    CollapseAll(bool),
 }
 
 /// Ligne de menu : une icône (ou la couleur d'un pattern), un nom court, une
@@ -635,6 +645,21 @@ pub struct App {
     pub samples: HashMap<String, Arc<Sample>>,
     /// Background renders of the warped audio clips.
     pub warping: super::warping::Warping,
+    /// Devices folded to a slim card in the panel.
+    pub collapsed: std::collections::HashSet<super::devices::Device>,
+    /// Device picked in the panel (strip, Ctrl+arrows).
+    pub panel_cursor: Option<super::devstrip::StripItem>,
+    /// Chip dragged along the device strip.
+    pub strip_drag: Option<super::devstrip::StripDrag>,
+    /// A control under the pointer wanted the wheel last frame / this frame.
+    pub wheel_hot: bool,
+    pub wheel_hot_now: bool,
+    /// Until then, the wheel keeps scrolling the device panel.
+    pub wheel_latch: f32,
+    /// Device to scroll into view at the next panel frame (palette).
+    pub panel_reveal: Option<super::devstrip::StripItem>,
+    /// Channel the panel came from when it switched to its track.
+    pub panel_return: Option<usize>,
     /// Loop tempo of the files played by samplers (`None`: not a loop).
     pub loop_bpms: HashMap<String, Option<f32>>,
     /// Transients of the files (seconds), for the warp markers.
@@ -923,6 +948,14 @@ impl App {
             tour: Default::default(),
             hints: Default::default(),
             loop_bpms: HashMap::new(),
+            collapsed: Default::default(),
+            panel_cursor: None,
+            strip_drag: None,
+            wheel_hot: false,
+            wheel_hot_now: false,
+            wheel_latch: 0.0,
+            panel_return: None,
+            panel_reveal: None,
             scale_anchor: Rect::new(0.0, 0.0, 0.0, 0.0),
             layout: Default::default(),
             cursor: Default::default(),
@@ -2060,6 +2093,7 @@ impl App {
         self.time += dt;
         self.pointer = (input.x, input.y);
         self.cursor = ponzik_window::Cursor::Arrow;
+        self.wheel_hot = std::mem::take(&mut self.wheel_hot_now);
         self.poll_engine(dt);
         self.learn_tick();
         self.autorec_tick();
@@ -3265,6 +3299,11 @@ impl App {
                     .map(|k| MenuItem::new(Icon::Instrument, tr(k.name), Action::AddInstrument(k.id, *replace)).tip(tr(k.description)))
                     .collect(),
             ),
+            Popup::InsertEffect { track, slot } => (
+                tr("Insert an effect").into(),
+                registry::effects().iter().map(|k| MenuItem::new(Icon::Effect, tr(k.name), Action::InsertEffect(*track, *slot, k.id)).tip(tr(k.description))).collect(),
+            ),
+            Popup::DeviceMenu(d) => self.device_menu(*d),
             Popup::AddEffect { track } => (
                 track_name(*track),
                 registry::effects().iter().map(|k| MenuItem::new(Icon::Effect, tr(k.name), Action::AddEffect(*track, k.id)).tip(tr(k.description))).collect(),
@@ -3793,6 +3832,9 @@ impl App {
             Action::Loop(sel, op) => self.loop_clip(sel, op),
             Action::TogglePaint => self.toggle_paint(),
             Action::FitLoop(ch) => self.fit_loop_to_pattern(ch),
+            Action::Device(d, op) => self.device_op(d, op),
+            Action::InsertEffect(track, slot, kind) => self.insert_effect_at(track, slot, kind),
+            Action::CollapseAll(on) => self.collapse_all(on),
             Action::SetPatternColor(pat, color) => {
                 if let Some(p) = self.project.patterns.get_mut(pat) {
                     p.color = color;

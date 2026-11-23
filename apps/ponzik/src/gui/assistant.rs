@@ -348,6 +348,9 @@ impl App {
                 let d = (mid - input.y) / (g.h * 0.5 - 6.0) * EQ_DB;
                 self.ma_set(device, id + 1, (d * 10.0).round() / 10.0);
             }
+            if hov {
+                self.claim_wheel();
+            }
             if hov && input.wheel != 0.0 {
                 self.ma_set(device, id + 2, get(id + 2) * 1.15f32.powf(input.wheel));
             }
@@ -495,6 +498,9 @@ impl App {
         if let Some(d) = self.drag.filter(|d| d.id == id) {
             let k = if d.fine { 0.2 } else { 1.0 };
             self.set_param_value(device, info, d.v0 + (input.x - d.y0) / slider.w * k);
+        }
+        if hov {
+            self.claim_wheel();
         }
         if hov && input.wheel != 0.0 {
             self.set_param_value(device, info, amount + 0.05 * input.wheel);

@@ -201,11 +201,24 @@ impl App {
     }
 
     pub(super) fn device_panel(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
+        use super::devstrip::{ADD_W, COLLAPSED_W, ChainLayout, StripItem};
         let t = self.theme;
         let track = self.focused_track();
         let header = Rect::new(r.x + PAD, r.y + 10.0, r.w - 2.0 * PAD, 28.0);
+        let chain = Rect::new(r.x + PAD, header.bottom() + 8.0, r.w - 2.0 * PAD, r.bottom() - header.bottom() - 8.0 - 12.0);
 
-        // Titre : ce qu'on édite (double-clic : renommer) et, discrètement, où ça sort.
+        // The wheel scrolls the panel sideways anywhere (knobs take it only
+        // when it starts on them); the cards then see no wheel.
+        let scrolled = self.panel_wheel(input, r, header);
+        let no_wheel;
+        let input = if scrolled {
+            no_wheel = Input { wheel: 0.0, ..input.clone() };
+            &no_wheel
+        } else {
+            input
+        };
+
+        // Titre : ce qu'on édite (double-clic : renommer), sa couleur et, discrètement, où ça sort.
         let (title, out, rename) = match self.focus {
             Focus::Channel(ch) if ch < self.project.channels.len() => {
                 let c = &self.project.channels[ch];
@@ -218,8 +231,11 @@ impl App {
                 (tr.name.clone(), out, Rename::Track(track))
             }
         };
-        let tw = self.fonts.measure(self.f.sans_med, 15.0, &title);
-        let title_r = Rect::new(header.x - 6.0, header.y, tw + 12.0, 28.0);
+        let tint = self.panel_tint();
+        c.fill_rrect(Rect::new(header.x - 2.0, header.y + 6.0, 4.0, 16.0), 2.0, tint);
+        let title_x = header.x + 10.0;
+        let tw = self.fonts.measure(self.f.sans_med, 15.0, &title).min(header.w * 0.22);
+        let title_r = Rect::new(title_x - 6.0, header.y, tw + 12.0, 28.0);
         let tid = wid("dev-title", 0, 0);
         let thov = self.hovered(input, tid, title_r);
         let thv = self.hover_anim(tid, thov);
@@ -232,43 +248,86 @@ impl App {
                 self.open_popup(Popup::Rename { target: rename, text: title.clone() }, title_r);
             }
         }
-        self.text(c, self.f.sans_med, 15.0, header.x, header.y + 14.0, &title, t.text);
+        self.text_fit(c, self.f.sans_med, 15.0, title_x, header.y + 14.0, &title, tw, t.text);
+        let mut hx = title_x + tw + 12.0;
         if let Some(out) = out {
-            let x = header.x + tw + 14.0;
-            draw_icon(c, Icon::Route, x + 7.0, header.y + 14.0, 13.0, t.muted);
-            self.text(c, self.f.sans, 12.0, x + 20.0, header.y + 14.0, &out, t.muted);
+            draw_icon(c, Icon::Route, hx + 7.0, header.y + 14.0, 13.0, t.muted);
+            let ow = self.fonts.measure(self.f.sans, 12.0, &out).min(120.0);
+            self.text_fit(c, self.f.sans, 12.0, hx + 20.0, header.y + 14.0, &out, ow, t.muted);
+            hx += 20.0 + ow + 12.0;
         }
 
+        // Layout of the chain: note effects, devices (collapsed ones slim), « Add », modulators.
         let devices = self.panel_devices();
-
-        let chain = Rect::new(r.x + PAD, header.bottom() + 8.0, r.w - 2.0 * PAD, r.bottom() - header.bottom() - 8.0 - 12.0);
-        let widths: Vec<f32> = devices
-            .iter()
-            .map(|&d| {
-                if self.layout.floating(d) {
-                    return super::float::PLACEHOLDER_W;
-                }
-                self.device_width(d)
-            })
-            .collect();
-        let mods = self.panel_mod_count() as f32 * 350.0 + 80.0;
-        let total: f32 = widths.iter().sum::<f32>() + devices.len() as f32 * CARD_GAP + 120.0 + mods + self.note_fx_lead();
-        let over_header = input.inside && header.contains(input.x, input.y);
-        let over_chain = input.inside && chain.contains(input.x, input.y);
-        if (over_header || (over_chain && input.mods.shift)) && input.wheel != 0.0 {
-            self.chain_scroll -= input.wheel * 80.0;
+        let lead = self.note_fx_lead();
+        let mut items = Vec::new();
+        if lead > 0.0 {
+            items.push((StripItem::Notes, 0.0, lead - CARD_GAP));
         }
+        let mut x = lead;
+        let mut widths = Vec::with_capacity(devices.len());
+        for &d in &devices {
+            let w = if self.layout.floating(d) {
+                super::float::PLACEHOLDER_W
+            } else if self.is_collapsed(d) {
+                COLLAPSED_W
+            } else {
+                self.device_width(d)
+            };
+            items.push((StripItem::Dev(d), x, w));
+            widths.push(w);
+            x += w + CARD_GAP;
+        }
+        let add_x = x;
+        let mods = self.panel_mod_count();
+        if mods > 0 {
+            items.push((StripItem::Mods, add_x + ADD_W + CARD_GAP * 2.0, mods as f32 * 350.0));
+        }
+        let total = add_x + ADD_W + CARD_GAP * 2.0 + mods as f32 * 350.0 + 80.0;
+        let lay = ChainLayout { items, total };
+        if let Some(item) = self.panel_reveal.take() {
+            self.reveal(&lay, item);
+        }
+
+        // Right of the header: collapse all, expand all, add an effect.
+        let add_label = tr("Add effect");
+        let aw = self.fonts.measure(self.f.sans_med, 13.0, add_label) + 48.0;
+        let add_r = Rect::new(header.right() - aw, header.y + 1.0, aw, 26.0);
+        if self.lab_button(c, input, wid("dev-add-top", track, 0), add_r, Some(Icon::Plus), add_label, 0, tr("A new effect at the end of the chain\nor drag one from the browser")) {
+            self.open_popup(Popup::AddEffect { track }, add_r);
+        }
+        let expand_r = Rect::new(add_r.x - 34.0, header.y, 28.0, 28.0);
+        let collapse_r = Rect::new(expand_r.x - 30.0, header.y, 28.0, 28.0);
+        if self.icon_button(c, input, wid("dev-collapse-all", 0, 0), collapse_r, Icon::Collapse, false, (tr("Collapse all the devices"), "")) {
+            self.collapse_all(true);
+        }
+        if self.icon_button(c, input, wid("dev-expand-all", 0, 0), expand_r, Icon::Expand, false, (tr("Expand all the devices"), "")) {
+            self.collapse_all(false);
+        }
+
+        // The switch between the instrument and the track's effects, then the strip.
+        let sx_end = self.panel_switch(c, input, hx, header.y + 14.0, &lay);
+        let strip = Rect::new(sx_end + 10.0, header.y, collapse_r.x - 10.0 - sx_end - 10.0, header.h);
+        self.device_strip(c, input, strip, &lay, chain.w);
+        if devices.len() >= 4 && strip.w > 120.0 {
+            self.want_hint(super::hints::Hint::DeviceStrip, strip);
+        }
+        if self.popup.is_none() {
+            self.panel_keys(input, &lay, chain.w);
+        }
+
         // Bouton du milieu : faire glisser la chaîne.
+        let over_chain = input.inside && chain.contains(input.x, input.y);
         let pan_id = wid("chain-pan", 0, 0);
         if over_chain && input.middle_pressed {
             self.pan = Some((pan_id, input.x, input.y, self.chain_scroll, 0.0));
         }
         if let Some((_, x0, _, s0, _)) = self.pan.filter(|p| p.0 == pan_id) {
             self.chain_scroll = s0 - (input.x - x0);
-            self.chain_scroll = self.chain_scroll.clamp(0.0, (total - chain.w).max(0.0));
+            self.chain_scroll = self.chain_scroll.clamp(0.0, (lay.total - chain.w).max(0.0));
             self.anim.set(wid("chain-sx", 0, 0), self.chain_scroll);
         }
-        self.chain_scroll = self.chain_scroll.clamp(0.0, (total - chain.w).max(0.0));
+        self.chain_scroll = self.chain_scroll.clamp(0.0, (lay.total - chain.w).max(0.0));
         let sx = self.anim.to(wid("chain-sx", 0, 0), self.chain_scroll, T_LAYOUT);
 
         self.drop_zone(input, chain, DropTarget::Track(track));
@@ -289,6 +348,7 @@ impl App {
             self.frost_card(c, input, Rect::new(fx_x, chain.y, x - CARD_GAP - fx_x, chain.h), target, false);
         }
         let mut button = true;
+        let mut gaps = Vec::new();
         for (d, w) in devices.iter().zip(widths) {
             let card = Rect::new(x, chain.y, w, chain.h);
             let lock = self.device_lock(*d);
@@ -300,26 +360,43 @@ impl App {
                     // One Unfreeze button per freeze, on its first card.
                     self.frost_card(c, input, card, target, button);
                     button = false;
+                } else if self.is_collapsed(*d) {
+                    self.collapsed_card(c, input, card, *d);
                 } else {
                     self.device_card(c, input, card, *d, false);
+                }
+                if self.panel_cursor == Some(StripItem::Dev(*d)) {
+                    let a = self.anim.to(wid("dev-cursor", device_key(*d), 0), 1.0, T_HOVER);
+                    c.stroke_rrect(card.inset(-1.0), 15.0, 1.5, t.accent.alpha(0.7 * a));
                 }
             }
             if lock.is_none() {
                 button = true;
             }
+            // Before each effect: room to insert one there.
+            if let Device::Effect { slot, .. } = *d
+                && track_lock.is_none()
+            {
+                gaps.push((x - CARD_GAP * 0.5, slot));
+            }
             x += w + CARD_GAP;
         }
-        // Emplacement d'ajout.
-        let add = Rect::new(x, chain.y, 64.0, chain.h);
+        for (gx, slot) in gaps {
+            self.insert_gap(c, input, gx, chain, track, slot);
+        }
+        // Emplacement d'ajout : une carte nommée au bout de la chaîne.
+        let add = Rect::new(x, chain.y, ADD_W, chain.h);
         let id = wid("chain-add", track, 0);
         let hov = self.hovered(input, id, add);
         let hv = self.hover_anim(id, hov);
         c.fill_rrect(add, 14.0, t.panel.alpha(hv * 0.6));
         c.stroke_rrect(add, 14.0, 1.0, t.hairline.alpha(1.0 + hv * 2.0));
         let (ax, ay) = add.center();
-        draw_icon(c, Icon::Plus, ax, ay, 20.0, t.muted.mix(t.accent, hv));
+        draw_icon(c, Icon::Plus, ax, ay - 12.0, 22.0, t.muted.mix(t.accent, hv));
+        self.text_center(c, self.f.sans_med, 12.0, ax, ay + 16.0, add_label, t.text2.mix(t.accent, hv));
         if hov {
             self.set_tip(tr("Add an effect\nor drag one from the browser"), "");
+            self.set_cursor(ponzik_window::Cursor::Hand);
         }
         if hov && input.pressed {
             self.open_popup(Popup::AddEffect { track }, add);
@@ -329,6 +406,12 @@ impl App {
         self.modulator_cards(c, if locked { &dead } else { input }, add.right() + CARD_GAP * 2.0, chain);
         c.set_clip(Some(prev));
         self.mod_drag_layer(c, input);
+        // Scroll bar: where the view is in a chain wider than the panel.
+        if lay.total > chain.w + 1.0 {
+            let w = (chain.w * chain.w / lay.total).max(40.0);
+            let bx = chain.x + (chain.w - w) * (sx / (lay.total - chain.w)).clamp(0.0, 1.0);
+            c.fill_rrect(Rect::new(bx, chain.bottom() + 4.0, w, 4.0), 2.0, t.text2.alpha(0.3));
+        }
     }
 
     /// Modulator cards shown in the panel.
@@ -371,24 +454,36 @@ impl App {
         let params = params_of(&kind, inst);
 
         let (name, bypass, color) = match device {
-            Device::Instrument(_) => {
-                let name = registry::instrument_kind(&kind)
-                    .map(|k| tr(k.name).to_string())
-                    .or_else(|| self.plugin_name(&kind))
-                    .unwrap_or_else(|| super::app::display_kind(&kind));
-                (name, false, t.accent)
-            }
+            Device::Instrument(_) => (self.device_name(device), false, t.accent),
             Device::Effect { track, slot } => {
-                let def = self.project.tracks[track].inserts[slot].as_ref().expect("effect in its slot");
-                let name = registry::effect_kind(&def.kind)
-                    .map(|k| tr(k.name).to_string())
-                    .or_else(|| self.plugin_name(&def.kind))
-                    .unwrap_or_else(|| super::app::display_kind(&def.kind));
-                (name, def.bypass, pattern_color(1))
+                let bypass = self.project.tracks[track].inserts[slot].as_ref().is_some_and(|d| d.bypass);
+                (self.device_name(device), bypass, pattern_color(1))
             }
             Device::RackUnit { .. } => (super::app::display_kind(&kind), false, pattern_color(1)),
         };
-        c.fill_rrect(Rect::new(head.x + 12.0, head.y + 12.0, 3.0, 12.0), 1.5, if bypass { t.muted } else { color });
+        // Collapse (in the panel): the card folds to its name and on/off.
+        // In its color, in place of the color mark.
+        let folds = !floating && !matches!(device, Device::RackUnit { .. });
+        let mark = if bypass { t.muted } else { color };
+        if folds {
+            let fold = Rect::new(head.x + 3.0, head.y + 5.0, 26.0, 26.0);
+            let id = wid("fx-fold", device_key(device), 0);
+            let hov = self.hovered(input, id, fold);
+            let hv = self.hover_anim(id, hov);
+            c.fill_rrect(fold, 7.0, t.raised.alpha(hv));
+            draw_icon(c, Icon::Collapse, fold.x + fold.w * 0.5, fold.y + fold.h * 0.5, 13.0, mark.mix(t.text, hv * 0.5));
+            if hov {
+                self.set_tip(tr("Collapse\nDouble-click its slim card or Expand to open it again"), "");
+                self.set_cursor(ponzik_window::Cursor::Hand);
+                if input.pressed {
+                    self.device_op(device, super::devstrip::DeviceOp::Collapse);
+                }
+            }
+        }
+        let head = if folds { Rect::new(head.x + 10.0, head.y, head.w - 10.0, head.h) } else { head };
+        if !folds {
+            c.fill_rrect(Rect::new(head.x + 12.0, head.y + 12.0, 3.0, 12.0), 1.5, mark);
+        }
         // CPU load of the device, share of one core.
         let cpu = match device {
             Device::Instrument(ch) => self.engine.channel_cpu(ch),
@@ -465,8 +560,7 @@ impl App {
             }
             let close = Rect::new(head.right() - 32.0, head.y + 5.0, 26.0, 26.0);
             if self.icon_button(c, input, wid("fx-close", track, slot), close, Icon::Close, false, (tr("Remove"), "")) {
-                self.project.tracks[track].inserts[slot] = None;
-                self.commit(tr("Remove an effect"));
+                self.device_op(device, super::devstrip::DeviceOp::Remove);
                 return;
             }
         }

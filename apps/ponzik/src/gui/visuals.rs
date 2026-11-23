@@ -219,6 +219,9 @@ impl App {
                     self.set_value_of(device, params, g, (d * 10.0).round() / 10.0);
                 }
             }
+            if hov && h.q.is_some() {
+                self.claim_wheel();
+            }
             if hov && input.wheel != 0.0
                 && let Some(q) = h.q
             {
@@ -297,6 +300,9 @@ impl App {
                 "limiter" => self.set_value_of(device, params, 0, d.v0 + dx * 24.0),
                 _ => self.set_value_of(device, params, 0, d.v0 + dx * 60.0),
             }
+        }
+        if hov && kind == "compressor" {
+            self.claim_wheel();
         }
         if hov && input.wheel != 0.0 && kind == "compressor" {
             let ratio = v(self, 1);
@@ -798,6 +804,9 @@ impl App {
         if let Some(d) = self.drag.filter(|d| d.id == id) {
             let dx = (input.x - d.y0) / r.w.max(1.0);
             self.set_value_of(device, params, drag.0, d.v0 + dx * drag.1);
+        }
+        if hov && wheel.is_some() {
+            self.claim_wheel();
         }
         if hov
             && input.wheel != 0.0

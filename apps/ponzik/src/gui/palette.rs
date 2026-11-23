@@ -94,6 +94,18 @@ impl App {
         }
         add(tr("Show or hide the browser").into(), tr("View"), k(S::ToggleBrowser), Action::ToggleSidebar);
         add(tr("Show or hide the devices").into(), tr("View"), k(S::TogglePanel), Action::TogglePanel);
+        add(tr("Collapse all the devices").into(), tr("Devices"), none(), Action::CollapseAll(true));
+        add(tr("Expand all the devices").into(), tr("Devices"), none(), Action::CollapseAll(false));
+        for d in self.panel_devices() {
+            use super::devstrip::DeviceOp;
+            let name = self.device_name(d);
+            add(tr_fmt!("Go to device: {}", name.as_str()), tr("Devices"), "Ctrl ← →".into(), Action::Device(d, DeviceOp::Show));
+            add(tr_fmt!("Collapse or expand: {}", name.as_str()), tr("Devices"), none(), Action::Device(d, DeviceOp::Collapse));
+            if let super::devices::Device::Effect { .. } = d {
+                add(tr_fmt!("Bypass or enable: {}", name.as_str()), tr("Devices"), none(), Action::Device(d, DeviceOp::Bypass));
+                add(tr_fmt!("Detach into a window: {}", name.as_str()), tr("Devices"), none(), Action::Device(d, DeviceOp::Float));
+            }
+        }
         // Réglages : une vue masquée se retrouve toujours ici.
         add(tr("Settings: workspace").into(), tr("Settings"), k(S::Settings), Action::Popup(Popup::Settings { tab: 0 }));
         add(tr("Settings: keyboard shortcuts").into(), tr("Settings"), none(), Action::Popup(Popup::Settings { tab: 1 }));

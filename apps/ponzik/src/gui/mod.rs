@@ -16,6 +16,7 @@ mod clip;
 mod comp;
 mod compat;
 mod devices;
+mod devstrip;
 mod dnd;
 mod editors;
 mod dropouts;
@@ -704,6 +705,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // PONZIK_MODS=edit,all : modulators on the focused track (depth mode, all kinds).
     if let Ok(spec) = std::env::var("PONZIK_MODS") {
         app.screenshot_mods(&spec);
+    }
+    // PONZIK_DEVICES=collapse:1,menu:2,cursor:3,insert:2,seen: the device panel's strip and cards.
+    if let Ok(spec) = std::env::var("PONZIK_DEVICES") {
+        app.screenshot_devices(&spec);
     }
     // PONZIK_CHAIN_SCROLL=px : the device panel scrolled to the right.
     if let Some(px) = std::env::var("PONZIK_CHAIN_SCROLL").ok().and_then(|v| v.trim().parse::<f32>().ok()) {

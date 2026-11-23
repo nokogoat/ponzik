@@ -1096,6 +1096,9 @@ impl App {
                 changed = Some(v);
             }
         }
+        if hov {
+            self.claim_wheel();
+        }
         if hov && input.wheel != 0.0 {
             let step = if info.unit == Unit::Choice { 1.0 / (info.max - info.min).max(1.0) } else { 0.02 };
             changed = Some(info.from_norm(norm + input.wheel * step));
@@ -1155,6 +1158,9 @@ impl App {
         if hov && input.pressed {
             let dir = if input.x < field.x + field.w * 0.3 { -1 } else { 1 };
             changed = Some(((cur + dir).rem_euclid(count.max(1))) as f32);
+        }
+        if hov {
+            self.claim_wheel();
         }
         if hov && input.wheel != 0.0 {
             changed = Some(((cur - input.wheel.signum() as i32).clamp(0, count - 1)) as f32);
