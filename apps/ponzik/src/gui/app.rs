@@ -1115,8 +1115,23 @@ impl App {
                 self.open_popup(Popup::TrackMenu(t), Rect::new(560.0, 146.0, 0.0, 0.0));
                 return;
             }
-            "settings" | "keys" => Popup::Settings { tab: usize::from(name == "keys") },
-            "about" => Popup::Settings { tab: 3 },
+            // appearance:<token>: the theme editor with that token in the color picker.
+            _ if name.starts_with("appearance:") => {
+                let token = super::theme::token_index(name.trim_start_matches("appearance:"));
+                if let Some(i) = token {
+                    self.themes.editor.token = Some(i);
+                    self.themes.editor.group = super::theme::Group::ALL.iter().position(|g| *g == super::theme::TOKENS[i].group).unwrap_or(0);
+                }
+                Popup::Settings { tab: 3 }
+            }
+            "settings" | "keys" | "appearance" => Popup::Settings {
+                tab: match name {
+                    "keys" => 1,
+                    "appearance" => 3,
+                    _ => 0,
+                },
+            },
+            "about" => Popup::Settings { tab: 4 },
             "whatsnew" | "whatsnew-full" => {
                 // As at the first launch after an update: "don't show again" checked.
                 if let Some(latest) = super::whatsnew::sections().into_iter().next() {
@@ -3732,20 +3747,21 @@ impl App {
                             .detail(key(S::Settings))
                             .tip(tr("Views, panels and shortcuts")),
                         MenuItem::new(Icon::Info, tr("What's new"), Action::Update(super::updates::UpdateOp::ShowNews)).tip(tr("The changes of this version")),
-                        MenuItem::new(Icon::Reset, tr("About and updates"), Action::Popup(Popup::Settings { tab: 3 }))
+                        MenuItem::new(Icon::Reset, tr("About and updates"), Action::Popup(Popup::Settings { tab: 4 }))
                             .detail(self.updates_badge())
                             .tip(tr("Version, build and update settings")),
                     ],
                 )
             }
             Popup::Themes => {
-                let items: Vec<MenuItem> = (0..self.themes.entries.len())
+                let mut items: Vec<MenuItem> = (0..self.themes.entries.len())
                     .map(|i| {
                         let mut it = MenuItem::plain(&self.theme_label(i), Action::SetTheme(i)).on(i == self.themes.active);
                         it.color = Some(self.themes.entries[i].set.root.accent);
                         it
                     })
                     .collect();
+                items.push(MenuItem::new(Icon::Pencil, tr("Edit themes"), Action::Popup(Popup::Settings { tab: 3 })).sep().tip(tr("Colors, corners, text size, theme files")));
                 (tr("Theme").into(), items)
             }
             Popup::ClipMenu(i) => {

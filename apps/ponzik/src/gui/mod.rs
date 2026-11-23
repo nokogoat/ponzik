@@ -6,6 +6,7 @@
 
 mod acoustic;
 mod app;
+mod appearance;
 mod arrange;
 mod assistant;
 mod automation;

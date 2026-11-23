@@ -8544,6 +8544,57 @@ msgstr "--{} n'a pas de valeur"
 msgid "--{} must be between {} and {}"
 msgstr "--{} doit être entre {} et {}"
 
+msgid "--{} on --{}: contrast {:.1}:1, {:.1}:1 needed to read comfortably"
+msgstr "--{} sur --{} : contraste {:.1}:1, il faut {:.1}:1 pour lire confortablement"
+
+msgid "--{} · inherited · click to edit the color"
+msgstr "--{} · hérité · cliquez pour changer la couleur"
+
+msgid "--{} · set by this theme · click to edit the color"
+msgstr "--{} · fixé par ce thème · cliquez pour changer la couleur"
+
+msgid "A copy of this theme that you can edit"
+msgstr "Une copie de ce thème, modifiable"
+
+msgid "All text is readable on its surface"
+msgstr "Tous les textes sont lisibles sur leur fond"
+
+msgid "Appearance"
+msgstr "Apparence"
+
+msgid "Back to the inherited value"
+msgstr "Revenir à la valeur héritée"
+
+msgid "Based on {} · {}"
+msgstr "Basé sur {} · {}"
+
+msgid "Built-in theme, read-only"
+msgstr "Thème intégré, en lecture seule"
+
+msgid "Built-in themes are read-only: editing one makes a copy in your themes folder"
+msgstr "Les thèmes intégrés sont en lecture seule : en modifier un crée une copie dans votre dossier de thèmes"
+
+msgid "Built-in · read-only: changing a color makes an editable copy"
+msgstr "Intégré · lecture seule : changer une couleur crée une copie modifiable"
+
+msgid "Click again to delete"
+msgstr "Cliquez encore pour supprimer"
+
+msgid "Colors, corners, text size, theme files"
+msgstr "Couleurs, coins, taille du texte, fichiers de thème"
+
+msgid "Comfortable"
+msgstr "Aéré"
+
+msgid "Compact"
+msgstr "Compact"
+
+msgid "Contrast check"
+msgstr "Vérification du contraste"
+
+msgid "Corner radius of small, medium and large shapes"
+msgstr "Arrondi des coins des petites, moyennes et grandes formes"
+
 msgid "Could not create the theme: {}"
 msgstr "Impossible de créer le thème : {}"
 
@@ -8562,17 +8613,68 @@ msgstr "Impossible d'ouvrir {} : {}"
 msgid "Could not save the theme: {}"
 msgstr "Impossible d'enregistrer le thème : {}"
 
+msgid "Darkness of shadows under menus and windows (0: none)"
+msgstr "Intensité des ombres sous les menus et les fenêtres (0 : aucune)"
+
+msgid "Delete this theme"
+msgstr "Supprimer ce thème"
+
+msgid "Drop a .css theme on the window to import it"
+msgstr "Déposez un thème .css sur la fenêtre pour l'importer"
+
 msgid "Edit and save: the theme updates live"
 msgstr "Modifiez et enregistrez : le thème se met à jour en direct"
 
+msgid "Edit themes"
+msgstr "Modifier les thèmes"
+
+msgid "Every change shows live in the app"
+msgstr "Chaque changement s'affiche en direct dans l'application"
+
+msgid "Example theme, read-only"
+msgstr "Thème d'exemple, en lecture seule"
+
+msgid "Example · based on {} · read-only: changing a color makes an editable copy"
+msgstr "Exemple · basé sur {} · lecture seule : changer une couleur crée une copie modifiable"
+
+msgid "Export to share"
+msgstr "Exporter pour partager"
+
+msgid "Folder"
+msgstr "Dossier"
+
+msgid "Generate a whole theme from the accent color (readable contrast)"
+msgstr "Générer tout un thème à partir de la couleur d'accent (contraste lisible)"
+
+msgid "Open the CSS file in your text editor (changes apply live)"
+msgstr "Ouvrir le fichier CSS dans votre éditeur de texte (les changements s'appliquent en direct)"
+
 msgid "Palettes"
 msgstr "Palettes"
+
+msgid "Pick a color in the list"
+msgstr "Choisissez une couleur dans la liste"
+
+msgid "Randomize the accent"
+msgstr "Accent au hasard"
+
+msgid "Settings: appearance and themes"
+msgstr "Réglages : apparence et thèmes"
 
 msgid "Shape and motion"
 msgstr "Formes et mouvement"
 
 msgid "Signals"
 msgstr "Signaux"
+
+msgid "Size of all text"
+msgstr "Taille de tous les textes"
+
+msgid "Spacing of lists, rows and mixer strips"
+msgstr "Espacement des listes, des rangées et des tranches du mixer"
+
+msgid "Speed of animations (0: no animations)"
+msgstr "Vitesse des animations (0 : aucune animation)"
 
 msgid "Surfaces"
 msgstr "Surfaces"
@@ -8589,6 +8691,12 @@ msgstr "Thème supprimé : {}"
 msgid "Theme exported: {}"
 msgstr "Thème exporté : {}"
 
+msgid "Theme files: {}"
+msgstr "Fichiers de thème : {}"
+
+msgid "Theme generated from the accent · undo per color"
+msgstr "Thème généré à partir de l'accent · annulation couleur par couleur"
+
 msgid "Theme imported: {}"
 msgstr "Thème importé : {}"
 
@@ -8598,8 +8706,26 @@ msgstr "Thème importé : {} · ligne {} : {}"
 msgid "Theme {}: line {}: {}{}"
 msgstr "Thème {} : ligne {} : {}{}"
 
+msgid "Themes"
+msgstr "Thèmes"
+
+msgid "Themes: colors, corners, text size, density, animations"
+msgstr "Thèmes : couleurs, coins, taille du texte, densité, animations"
+
+msgid "Thickness of outlines"
+msgstr "Épaisseur des contours"
+
 msgid "Tooltips and toasts"
 msgstr "Infobulles, alertes"
+
+msgid "Type a color: #22c55e, rgb(34 197 94), hsl(142 71% 45%)…"
+msgstr "Tapez une couleur : #22c55e, rgb(34 197 94), hsl(142 71% 45%)…"
+
+msgid "Undo the last change of this token"
+msgstr "Annuler le dernier changement de ce jeton"
+
+msgid "Your theme: edit it here or in its CSS file"
+msgstr "Votre thème : modifiez-le ici ou dans son fichier CSS"
 
 msgid "block never closed (missing })"
 msgstr "bloc jamais fermé (} manquante)"
@@ -8624,6 +8750,9 @@ msgstr "color-mix(in srgb, couleur [p%], couleur [q%]) attendu, trouvé « {} »
 
 msgid "invalid property name \"--{}\""
 msgstr "nom de propriété invalide « --{} »"
+
+msgid "line {}: {}"
+msgstr "ligne {} : {}"
 
 msgid "missing \")\" after var( in \"{}\""
 msgstr "« ) » manquante après var( dans « {} »"
@@ -8666,6 +8795,9 @@ msgstr "Copie de {}"
 
 msgid "{} is read-only: editing a copy"
 msgstr "{} est en lecture seule : modification d'une copie"
+
+msgid "{} problems in the file"
+msgstr "{} problèmes dans le fichier"
 
 msgid "{}() needs 3 components and an optional alpha, in \"{}\""
 msgstr "{}() attend 3 composantes et une opacité facultative, dans « {} »"

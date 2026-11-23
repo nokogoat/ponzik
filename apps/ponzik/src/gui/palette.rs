@@ -111,7 +111,7 @@ impl App {
         add(tr("Settings: workspace").into(), tr("Settings"), k(S::Settings), Action::Popup(Popup::Settings { tab: 0 }));
         add(tr("Settings: keyboard shortcuts").into(), tr("Settings"), none(), Action::Popup(Popup::Settings { tab: 1 }));
         add(tr("Settings: MIDI controller links").into(), tr("Settings"), none(), Action::Popup(Popup::Settings { tab: 2 }));
-        add(tr("Settings: about and updates").into(), tr("Settings"), none(), Action::Popup(Popup::Settings { tab: 3 }));
+        add(tr("Settings: about and updates").into(), tr("Settings"), none(), Action::Popup(Popup::Settings { tab: 4 }));
         {
             use super::updates::UpdateOp;
             add(tr("Check for updates").into(), tr("Help"), none(), Action::Update(UpdateOp::Check));
@@ -346,6 +346,7 @@ impl App {
         for i in 0..self.themes.entries.len() {
             add(tr_fmt!("Theme: {}", self.theme_label(i)), tr("Theme"), none(), Action::SetTheme(i));
         }
+        add(tr("Settings: appearance and themes").into(), tr("Settings"), none(), Action::Popup(Popup::Settings { tab: 3 }));
         v
     }
 

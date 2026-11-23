@@ -724,10 +724,12 @@ impl App {
                     Key::Enter => self.bind(s, combo, true),
                     _ => {}
                 }
+            } else if tab == 3 && self.themes.editor.hex.is_some() {
+                // Typed into the theme editor's color field.
             } else {
                 match key {
                     Key::Escape => close = true,
-                    Key::Tab => tab = (tab + 1) % 4,
+                    Key::Tab => tab = (tab + 1) % 5,
                     _ => {}
                 }
             }
@@ -737,7 +739,8 @@ impl App {
             self.anim.set(wid("caret", 0, 0), self.time);
         }
 
-        c.fill_rect(screen, t.shade(110.0 * open));
+        // Appearance: a lighter veil, the app behind is the live preview.
+        c.fill_rect(screen, t.shade(if tab == 3 { 40.0 } else { 110.0 } * open));
         let w = 960.0f32.min(screen.w - 40.0);
         let h = 640.0f32.min(screen.h - 40.0);
         let r = Rect::new(((screen.w - w) * 0.5).round(), ((screen.h - h) * 0.5 + (1.0 - open) * 10.0).round(), w, h);
@@ -746,17 +749,18 @@ impl App {
         c.stroke_rrect(r, 18.0, 1.0, t.hairline.alpha(1.8));
 
         // En-tête : deux onglets, et la croix.
-        let tabs = Rect::new(r.x + 16.0, r.y + 14.0, 544.0, 38.0);
+        let tabs = Rect::new(r.x + 16.0, r.y + 14.0, 690.0, 38.0);
         c.fill_rrect(tabs, 11.0, t.bg_deep);
         c.stroke_rrect(tabs, 11.0, 1.0, t.hairline);
         let pos = self.anim.to(wid("set-tabs", 0, 0), tab as f32, T_LAYOUT);
-        let seg_w = (tabs.w - 6.0) / 4.0;
+        let seg_w = (tabs.w - 6.0) / 5.0;
         let knob = Rect::new(tabs.x + 3.0 + pos * seg_w, tabs.y + 3.0, seg_w, tabs.h - 6.0);
         c.fill_rrect(knob, 8.0, t.raised_hi);
         let names = [
             (Icon::Layout, tr("Workspace"), tr("Views, panels and top bar")),
             (Icon::Keyboard, tr("Shortcuts"), tr("Change the keys")),
             (Icon::Midi, tr("MIDI"), tr("Controller links: list, modes, ranges")),
+            (Icon::Theme, tr("Appearance"), tr("Themes: colors, corners, text size, density, animations")),
             (Icon::Info, tr("About"), tr("Version, build and update settings")),
         ];
         let mut hint: Option<String> = None;
@@ -804,6 +808,7 @@ impl App {
             0 => self.workspace_tab(c, input, body, &mut hint),
             1 => self.keys_tab(c, input, body, foot, &mut hint),
             2 => self.midi_tab(c, input, body, &mut hint),
+            3 => self.appearance_tab(c, input, body, &mut hint),
             _ => self.about_tab(c, input, body, &mut hint),
         }
         if let Some(action) = self.prefs.pending.take() {
@@ -822,7 +827,8 @@ impl App {
                 match tab {
                     0 => tr("Click a tile to show or hide it").into(),
                     1 => tr("Click a key, then the new combination · Esc cancels").into(),
-                    3 => tr("Updates come from the GitHub releases of Ponzik; nothing is sent about you").into(),
+                    3 => tr("Built-in themes are read-only: editing one makes a copy in your themes folder").into(),
+                    4 => tr("Updates come from the GitHub releases of Ponzik; nothing is sent about you").into(),
                     _ => tr("Global links follow the controller in every project; project links are saved with the song").into(),
                 }
             });
