@@ -60,6 +60,13 @@ const MAX_BITS: f32 = 16.0;
 /// Filtre d'usure : de 20 kHz / 20 Hz (neuf) à 2,5 kHz / 150 Hz (usé).
 const AGE_LOW_PASS: [f32; 2] = [20_000.0, 2_500.0];
 const AGE_HIGH_PASS: [f32; 2] = [20.0, 150.0];
+/// The needle lifts when the music stops: hiss and crackle follow the input,
+/// fading out this long after the last sound (and back in at once).
+const NOISE_HOLD: f32 = 0.6;
+const NOISE_RELEASE: f32 = 0.25;
+const NOISE_ATTACK: f32 = 0.005;
+/// Below this (about -90 dBFS) the input counts as silence.
+const NOISE_THRESHOLD: f32 = 3e-5;
 
 /// `a` à 0, `b` à 1, en progression géométrique.
 fn geometric(range: [f32; 2], t: f32) -> f32 {
@@ -117,6 +124,13 @@ pub struct Lofi {
     crackle_coef: f32,
     aged: bool,
     mix: Smoother,
+    /// Samples since the input last made a sound.
+    quiet_for: usize,
+    hold_len: usize,
+    /// 0..1: how much hiss and crackle play (see `NOISE_HOLD`).
+    noise_gate: f32,
+    gate_up: f32,
+    gate_down: f32,
 }
 
 impl Default for Lofi {
@@ -137,6 +151,11 @@ impl Default for Lofi {
             crackle_coef: 0.0,
             aged: false,
             mix: Smoother::new(1.0),
+            quiet_for: usize::MAX,
+            hold_len: 1,
+            noise_gate: 0.0,
+            gate_up: 0.0,
+            gate_down: 0.0,
         };
         l.set_sample_rate(DEFAULT_SR);
         l
@@ -213,6 +232,9 @@ impl Effect for Lofi {
         self.crackle_coef = decay_coef(CRACKLE_TAU, sample_rate);
         self.dropout.set_time(0.003, sample_rate);
         self.mix.set_time(0.02, sample_rate);
+        self.hold_len = (NOISE_HOLD * sample_rate) as usize;
+        self.gate_up = decay_coef(NOISE_ATTACK, sample_rate);
+        self.gate_down = decay_coef(NOISE_RELEASE, sample_rate);
         self.update();
         self.reset();
     }
@@ -227,6 +249,8 @@ impl Effect for Lofi {
         self.dropout.set_target(1.0);
         self.dropout.snap();
         self.mix.snap();
+        self.quiet_for = usize::MAX;
+        self.noise_gate = 0.0;
     }
 
     fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
@@ -252,6 +276,18 @@ impl Effect for Lofi {
             let dropout = self.dropout.next_value();
             let mix = self.mix.next_value();
             let step = self.step;
+            if l.abs().max(r.abs()) > NOISE_THRESHOLD {
+                self.quiet_for = 0;
+            } else {
+                self.quiet_for = self.quiet_for.saturating_add(1);
+            }
+            let (target, coef) = if self.quiet_for < self.hold_len { (1.0, self.gate_up) } else { (0.0, self.gate_down) };
+            self.noise_gate = target + (self.noise_gate - target) * coef;
+            if self.noise_gate < 1e-3 {
+                // Fully lifted: true silence, so the effect can sleep.
+                self.noise_gate = 0.0;
+            }
+            let gate = self.noise_gate;
             for (x, ch) in [l, r].into_iter().zip(&mut self.channels) {
                 ch.line.write(*x);
                 let dry = ch.line.read(base);
@@ -261,7 +297,7 @@ impl Effect for Lofi {
                 }
                 wet *= dropout;
                 if hiss > 0.0 {
-                    wet += hiss * ch.hiss_filter.highpass(ch.hiss.next_sample());
+                    wet += gate * hiss * ch.hiss_filter.highpass(ch.hiss.next_sample());
                 }
                 if crackle_p > 0.0 {
                     let roll = 0.5 + 0.5 * ch.crackle.next_sample();
@@ -270,7 +306,7 @@ impl Effect for Lofi {
                         let a = (0.5 + 0.5 * ch.crackle.next_sample()).powi(4);
                         ch.crackle_env = ch.crackle_env.max(a * CRACKLE_LEVEL * (0.3 + 0.7 * crackle));
                     }
-                    wet += ch.crackle_env * ch.crackle.next_sample();
+                    wet += gate * ch.crackle_env * ch.crackle.next_sample();
                     ch.crackle_env *= self.crackle_coef;
                 }
                 if step > 0.0 {
@@ -305,10 +341,12 @@ mod tests {
         let (a, b) = run_mono(&mut l, &silence);
         assert!(a.iter().chain(&b).all(|&s| s == 0.0), "tout à zéro : silence");
 
+        // Music playing, but far below the hiss (-80 dBFS).
+        let playing = vec![1e-4; 96_000];
         let floor = |hiss: f32| {
             let mut l = bare();
             l.set_param(P_HISS, hiss);
-            let (a, b) = run_mono(&mut l, &silence);
+            let (a, b) = run_mono(&mut l, &playing);
             (gain_to_db(rms(&a)), gain_to_db(rms(&b)), a, b)
         };
         let (dl, dr, a, b) = floor(1.0);
@@ -333,10 +371,9 @@ mod tests {
 
     #[test]
     fn crackle_and_age_do_their_job() {
-        let silence = vec![0.0; 96_000];
         let mut l = bare();
         l.set_param(P_CRACKLE, 1.0);
-        let (a, _) = run_mono(&mut l, &silence);
+        let (a, _) = run_mono(&mut l, &vec![1e-4; 96_000]);
         // Des grains épars : crête nette au-dessus d'un fond presque nul.
         assert!(peak(&a) > 0.05 && peak(&a) > 6.0 * rms(&a), "{} {}", peak(&a), rms(&a));
 
@@ -344,6 +381,21 @@ mod tests {
         l.set_param(P_AGE, 1.0);
         let (y, _) = run_mono(&mut l, &sine(10_000.0, 0.5, 24_000));
         assert!(peak(&y[4_800..]) < 0.05, "les aigus disparaissent : {}", peak(&y[4_800..]));
+    }
+
+    /// Paused: the noise fades out with the music instead of hissing forever.
+    #[test]
+    fn noise_stops_with_the_music() {
+        let mut l = bare();
+        l.set_param(P_HISS, 1.0);
+        l.set_param(P_CRACKLE, 1.0);
+        let (idle, _) = run_mono(&mut l, &vec![0.0; 48_000]);
+        assert!(idle.iter().all(|&s| s == 0.0), "nothing played: silence");
+        let mut x = noise(0.3, 48_000, 7);
+        x.extend(std::iter::repeat_n(0.0, 4 * 48_000));
+        let (y, _) = run_mono(&mut l, &x);
+        let tail = &y[y.len() - 48_000..];
+        assert!(peak(tail) < 1e-5, "still hissing after the stop: {}", peak(tail));
     }
 
     #[test]
