@@ -299,16 +299,15 @@ impl App {
         }
     }
 
-    /// Ends the program and starts the new file, the project saved first.
+    /// Ends the program and starts the new file. Unsaved changes: the usual
+    /// question (save, don't save, cancel), never a forced save.
     fn restart_for_update(&mut self) {
         let Some(target) = install_target() else { return };
         if self.modified {
-            self.save();
-            if self.modified {
-                return;
-            }
+            self.ask_unsaved(super::filedialog::Then::Restart(target));
+        } else {
+            self.updates.relaunch = Some(target);
         }
-        self.updates.relaunch = Some(target);
     }
 
     fn update_failed(&mut self, msg: String, loud: bool) {

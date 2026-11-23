@@ -474,6 +474,8 @@ fn store_recent(list: &[PathBuf]) {
 pub enum Then {
     Nothing,
     Quit,
+    /// Restart into the update just installed (this program file).
+    Restart(PathBuf),
     Open(PathBuf),
     NewFromTemplate(usize),
     LoadDemo(usize),
@@ -914,6 +916,7 @@ impl App {
         match then {
             Then::Nothing => {}
             Then::Quit => self.quit_now = true,
+            Then::Restart(target) => self.updates.relaunch = Some(target),
             Then::Open(path) => {
                 self.open_file(path);
             }
@@ -1633,7 +1636,7 @@ impl App {
         self.text_fit(c, self.f.sans_med, 18.0, tx, r.y + 36.0, tr("Save your changes?"), r.right() - tx - 24.0, t.text);
         let then = self.pending.clone().unwrap_or(Then::Nothing);
         let sub = match then {
-            Then::Quit => tr_fmt!("\"{}\" has unsaved changes: they are lost if Ponzik closes now.", self.project.name.as_str()),
+            Then::Quit | Then::Restart(_) => tr_fmt!("\"{}\" has unsaved changes: they are lost if Ponzik closes now.", self.project.name.as_str()),
             _ => tr_fmt!("\"{}\" has unsaved changes: they are lost if another project replaces it.", self.project.name.as_str()),
         };
         let lines = self.wrap(self.f.sans, 13.0, &sub, r.right() - tx - 24.0);
@@ -1983,6 +1986,14 @@ mod tests {
         app.modified = true;
         app.request_open(PathBuf::from("/nowhere/x.ponzik"));
         assert_eq!(app.pending, Some(Then::Open(PathBuf::from("/nowhere/x.ponzik"))));
+        // Restarting into an update: "Don't save" restarts all the same.
+        let mut app = test_app();
+        app.modified = true;
+        app.ask_unsaved(Then::Restart(PathBuf::from("/nowhere/Ponzik.AppImage")));
+        assert!(!app.quit_requested());
+        app.continue_with(Then::Restart(PathBuf::from("/nowhere/Ponzik.AppImage")));
+        assert!(app.quit_requested());
+        assert!(app.modified, "nothing was saved");
     }
 
     #[test]
