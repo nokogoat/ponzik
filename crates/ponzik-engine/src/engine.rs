@@ -2784,6 +2784,18 @@ mod tests {
         assert_eq!(ons(&probe), [0, 12_000, 24_000]);
     }
 
+    /// A selection running past the pattern's end hears silence there, not bar 1 again.
+    #[test]
+    fn loop_past_the_pattern_end_stays_silent() {
+        let (mut engine, mut handle, probe) = setup(&[0, 4]);
+        let seq = Sequence { patterns: vec![pattern(&[0, 4])], loop_range: Some((12 * TICKS_PER_STEP, 28 * TICKS_PER_STEP)), ..Default::default() };
+        handle.send(Command::SetSequence(Box::new(seq))).unwrap();
+        handle.send(Command::Locate((12 * TICKS_PER_STEP) as f64)).unwrap();
+        handle.send(Command::Play).unwrap();
+        run(&mut engine, 200_000, 256);
+        assert!(ons(&probe).is_empty(), "{:?}", ons(&probe));
+    }
+
     /// Canal External MIDI (port 1, canal MIDI 3) sur un pattern, la file de
     /// sortie MIDI servant de port factice.
     fn setup_midi(steps: &[usize]) -> (Engine, EngineHandle, ponzik_midi::out::MessageReceiver) {
