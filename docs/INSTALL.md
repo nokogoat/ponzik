@@ -24,6 +24,29 @@ chmod +x Ponzik-x86_64.AppImage
 ./Ponzik-x86_64.AppImage
 ```
 
+The first time it starts, Ponzik offers to **add itself to the applications
+menu**, or to **just run** as it is (tick "Don't ask again" to keep it that
+way). Adding it to the menu writes, for your user only, in
+`~/.local/share` (or `$XDG_DATA_HOME`):
+
+| File | What it is |
+| --- | --- |
+| `applications/ponzik.desktop` | The menu entry; it starts the AppImage where it is |
+| `icons/hicolor/256x256/apps/ponzik.png`, `icons/hicolor/scalable/apps/ponzik.svg` | The icon |
+| `mime/packages/ponzik.xml` | The file types `application/x-ponzik` (`*.ponzik`) and `application/x-flp` (FL Studio's `*.flp`) |
+
+then refreshes the desktop's caches with `update-desktop-database`,
+`update-mime-database` and `gtk-update-icon-cache` when they are installed.
+If the AppImage sits in Downloads, Ponzik offers to move it to `~/Applications`
+first (it then restarts from there). Nothing is written outside your home.
+
+The menu entry follows the AppImage: after an update its version is updated,
+and if you move the AppImage, the entry points to the new place the next time
+you start it from there. **Settings › About** shows whether the menu starts
+this AppImage, with **Add to menu** and **Remove from menu**. Removing it takes
+away the entry, the icons and the file types; the AppImage and your projects
+stay.
+
 The AppImage bundles no library: Ponzik draws its own interface and talks to
 X11 over its socket, so the only libraries it loads are ones every desktop
 distribution has:
@@ -37,11 +60,68 @@ uses FUSE (`fusermount`, usually already installed). Without it, start it with
 
 ## Windows
 
-Download `Ponzik-windows-x86_64.exe` (or unzip the portable folder) and run it.
-Windows may warn that the program is from an unknown publisher because it is
-not signed: choose "More info", then "Run anyway". Keep the program in a folder
-you can write to (Downloads, Desktop, a folder of your own, not
-`C:\Program Files`), so that it can update itself.
+Download `Ponzik-windows-x86_64.exe` and run it. Windows may warn that the
+program is from an unknown publisher because it is not signed: choose "More
+info", then "Run anyway".
+
+The first screen offers two choices:
+
+- **Install Ponzik** (recommended). Ponzik installs itself, for your user only
+  and without administrator rights; there is no separate installer program:
+  - the program goes to `%LOCALAPPDATA%\Programs\Ponzik\Ponzik.exe`;
+  - a shortcut is added to the Start menu, and to the desktop if the box is ticked;
+  - `.ponzik` projects open with Ponzik, and Ponzik is added to the "Open
+    with" list of FL Studio's `.flp` files (it becomes their default program
+    only if no other program, FL Studio for instance, claimed them);
+  - Ponzik appears in **Settings › Apps › Installed apps** (publisher, version,
+    size), from where it can be uninstalled.
+
+  Ponzik then starts again from its new place. The downloaded file is no longer
+  needed and can be deleted.
+- **Just run it**: nothing is installed, Ponzik runs from the downloaded file.
+  Tick "Don't ask again" to stop the question. It can be installed later from
+  **Settings › About**.
+
+The portable zip (`Ponzik-windows-x86_64.zip`) has a file named `portable`
+next to `Ponzik.exe`: that copy never offers to install itself. Keep the
+folder somewhere you can write to (not `C:\Program Files`) so that it can update
+itself. Delete the `portable` file to be offered the install again.
+
+Everything the install writes is under your user:
+
+| Where | What |
+| --- | --- |
+| `HKCU\Software\Classes\.ponzik`, `Ponzik.Project`, `Ponzik.FlpProject` | File types and their icon |
+| `HKCU\Software\Classes\.flp\OpenWithProgids` | Ponzik in the "Open with" list of `.flp` files |
+| `HKCU\Software\Classes\Applications\Ponzik.exe` | Ponzik's name in "Open with" |
+| `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Ponzik` | The "Installed apps" entry (`UninstallString` is `Ponzik.exe --uninstall`) |
+
+Shortcuts are `.lnk` files made with the shell's own `IShellLinkW` object.
+
+### Uninstalling on Windows
+
+Choose **Uninstall** in Settings › Apps › Installed apps, or in Ponzik's
+**Settings › About**. Ponzik asks first, then removes its shortcuts, its file
+types, its "Installed apps" entry and the program itself (the program file and
+its folder are deleted a couple of seconds after Ponzik closes, by a hidden
+`cmd` that waits for it). Your projects (in `Music\Ponzik`) always stay. Your
+settings (`%APPDATA%\Ponzik`: themes, shortcuts, translations) stay too,
+unless you tick "Also remove my settings".
+
+## From the command line
+
+```sh
+ponzik install [--desktop]           # Windows: install for this user (--desktop: a desktop shortcut)
+                                     # Linux: add the AppImage to the applications menu
+ponzik uninstall [--yes] [--purge]   # remove it again (--purge: the settings too)
+ponzik <file.ponzik | file.flp>      # open a project
+```
+
+`ponzik uninstall` asks for confirmation unless `--yes` is given.
+`Ponzik.exe --uninstall --quiet` uninstalls on Windows without any window.
+
+For a try from source, `PONZIK_INSTALL=welcome` shows the first screen in a
+build that would not show it otherwise.
 
 ## How updates work
 
@@ -58,7 +138,9 @@ If a newer build exists, a message offers **Install & restart**. Ponzik then:
    if they differ;
 3. puts it in place of the running one: on Linux, the AppImage file is replaced
    in one step; on Windows, the running `.exe` is renamed to `Ponzik.exe.old`
-   (deleted at the next start) and the new one takes its name;
+   (deleted at the next start) and the new one takes its name. The installed
+   copy updates the same way, in its install folder; at its next start it
+   writes its new version in the "Installed apps" entry (`DisplayVersion`);
 4. saves your project if it has changes, then restarts on the new version.
 
 After an update, the **What's new** window shows the newest section of the
