@@ -401,6 +401,12 @@ impl Effect for EffectRack {
         }
     }
 
+    fn channel_notes(&mut self, notes: &[crate::effect::ChannelNotes]) {
+        for fx in self.units.iter_mut().flatten() {
+            fx.channel_notes(notes);
+        }
+    }
+
     fn latency(&self) -> usize {
         (0..self.layout.chains).map(|c| self.chain_latency(c)).max().unwrap_or(0)
     }

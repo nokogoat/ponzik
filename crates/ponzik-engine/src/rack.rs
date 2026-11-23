@@ -3,7 +3,7 @@
 //! patterns ([`crate::sequence`]).
 
 use crate::note_fx::{NoteBuffer, NoteEvent, NoteFx};
-use crate::{Instrument, NoteExpression};
+use crate::{ChannelNotes, Instrument, NoteExpression};
 
 const MAX_PENDING_OFFS: usize = 64;
 /// Emplacements d'effets de notes par canal.
@@ -51,6 +51,8 @@ pub struct Channel {
     last_pitch: Option<f32>,
     /// Expressions of notes started at `fx_clock`, sent once they play.
     exprs: Vec<(u8, NoteExpression)>,
+    /// Notes the instrument holds, for the effects that follow a channel.
+    pub(crate) notes: ChannelNotes,
 }
 
 impl Channel {
@@ -76,6 +78,7 @@ impl Channel {
             porta: 0.0,
             last_pitch: None,
             exprs: Vec::with_capacity(MAX_EXPRESSIONS),
+            notes: ChannelNotes::EMPTY,
         }
     }
 
@@ -117,8 +120,10 @@ impl Channel {
         if !self.has_note_fx() {
             if ev.on {
                 self.instrument.note_on(ev.key, ev.vel);
+                self.notes.note_on(ev.key);
             } else {
                 self.instrument.note_off(ev.key);
+                self.notes.note_off(ev.key);
             }
             return;
         }
@@ -134,7 +139,7 @@ impl Channel {
     pub(crate) fn flush(&mut self, now: u64) {
         let elapsed = now.saturating_sub(self.fx_clock).min(u32::MAX as u64) as u32;
         self.fx_clock = now;
-        let Self { instrument, note_fx, inputs, stages, .. } = self;
+        let Self { instrument, note_fx, inputs, stages, notes, .. } = self;
         let [a, b] = stages;
         let (mut src, mut dst) = (a, b);
         src.clear();
@@ -158,8 +163,10 @@ impl Channel {
         for ev in src.as_slice() {
             if ev.on {
                 instrument.note_on(ev.key, ev.vel);
+                notes.note_on(ev.key);
             } else {
                 instrument.note_off(ev.key);
+                notes.note_off(ev.key);
             }
         }
         src.clear();
@@ -276,6 +283,7 @@ impl Channel {
         self.inputs.clear();
         self.exprs.clear();
         self.last_pitch = None;
+        self.notes = ChannelNotes::EMPTY;
         for fx in self.note_fx.iter_mut().flatten() {
             fx.reset();
         }

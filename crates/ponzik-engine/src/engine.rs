@@ -1518,6 +1518,9 @@ impl Engine {
             self.route_input(pos_start, n, spt);
         }
         self.metronome_click(pos_start, n, t0, spt);
+        for (i, notes) in self.mixer.notes.iter_mut().enumerate() {
+            *notes = self.channels.get(i).map_or(crate::ChannelNotes::EMPTY, |c| c.notes);
+        }
         match active {
             Some(pool) => self.mixer.process_parallel(n, &self.state.track_peaks, pool),
             None => self.mixer.process(n, &self.state.track_peaks),
@@ -2632,6 +2635,41 @@ mod tests {
         run(&mut engine, 256, 256);
         assert_eq!(played(&probe, "on")[3..], [(61, 512), (68, 512)]);
         assert!(matches!(handle.garbage.pop(), Some(Garbage::NoteFx(fx)) if fx.kind() == "scale"));
+    }
+
+    #[test]
+    fn inserts_see_the_notes_a_channel_holds() {
+        struct Watch(Arc<AtomicU64>);
+        impl crate::param::Params for Watch {
+            fn params(&self) -> &'static [crate::param::ParamInfo] {
+                &[]
+            }
+            fn get_param(&self, _: u32) -> f32 {
+                0.0
+            }
+            fn set_param(&mut self, _: u32, _: f32) {}
+        }
+        impl Effect for Watch {
+            fn kind(&self) -> &'static str {
+                "watch"
+            }
+            fn set_sample_rate(&mut self, _: f32) {}
+            fn channel_notes(&mut self, notes: &[crate::ChannelNotes]) {
+                let n = notes[0];
+                self.0.store(n.held[0] | u64::from(n.last.unwrap_or(0)) << 56, Ordering::Relaxed);
+            }
+            fn process(&mut self, _: &mut [f32], _: &mut [f32]) {}
+        }
+        let (mut engine, mut handle, _) = setup(&[]);
+        let seen = Arc::new(AtomicU64::new(0));
+        handle.send(Command::SetInsert { track: 1, slot: 0, effect: Some(Box::new(Watch(seen.clone()))) }).unwrap();
+        handle.send(Command::NoteOn { channel: 0, note: 48, velocity: 1.0 }).unwrap();
+        handle.send(Command::NoteOn { channel: 0, note: 55, velocity: 1.0 }).unwrap();
+        run(&mut engine, 256, 256);
+        assert_eq!(seen.load(Ordering::Relaxed), (1 << 48 | 1 << 55) | 55 << 56);
+        handle.send(Command::NoteOff { channel: 0, note: 55 }).unwrap();
+        run(&mut engine, 256, 256);
+        assert_eq!(seen.load(Ordering::Relaxed), 1 << 48 | 48 << 56);
     }
 
     #[test]

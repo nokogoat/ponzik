@@ -3,6 +3,50 @@ use std::sync::Arc;
 
 use crate::param::Params;
 
+/// Notes a channel of the rack holds down at the end of the block (after its
+/// note effects), as an effect can follow them: a pitch corrector taking its
+/// target melody from a channel.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ChannelNotes {
+    /// Bit `n % 64` of word `n / 64`: MIDI note `n` is held.
+    pub held: [u64; 2],
+    /// Most recent note started and still held.
+    pub last: Option<u8>,
+}
+
+impl ChannelNotes {
+    pub const EMPTY: Self = Self { held: [0; 2], last: None };
+
+    pub fn is_held(&self, note: u8) -> bool {
+        let n = usize::from(note.min(127));
+        self.held[n / 64] & (1 << (n % 64)) != 0
+    }
+
+    pub fn any(&self) -> bool {
+        self.held != [0; 2]
+    }
+
+    /// Pitch classes held (bit 0: C … bit 11: B).
+    pub fn pitch_classes(&self) -> u16 {
+        (0..128u8).filter(|&n| self.is_held(n)).fold(0, |m, n| m | 1 << (n % 12))
+    }
+
+    pub fn note_on(&mut self, note: u8) {
+        let n = usize::from(note.min(127));
+        self.held[n / 64] |= 1 << (n % 64);
+        self.last = Some(n as u8);
+    }
+
+    pub fn note_off(&mut self, note: u8) {
+        let n = usize::from(note.min(127));
+        self.held[n / 64] &= !(1 << (n % 64));
+        if self.last == Some(n as u8) {
+            // The highest note still held takes over.
+            self.last = (0..128u8).rev().find(|&k| self.is_held(k));
+        }
+    }
+}
+
 /// Un effet audio inséré sur une piste du mixer : EQ, compresseur, réverb…
 ///
 /// `process` et `set_param` sont appelés depuis le thread audio : ni allocation,
@@ -24,6 +68,10 @@ pub trait Effect: Params + Send {
     /// quand une piste clé est branchée sur l'insert : même longueur que le bloc,
     /// post-fader de la piste clé. Sans clé, n'est pas appelé.
     fn sidechain(&mut self, _left: &[f32], _right: &[f32]) {}
+
+    /// Notes held on each channel of the rack (indexed by channel), called
+    /// before every `process`. Most effects ignore it.
+    fn channel_notes(&mut self, _notes: &[ChannelNotes]) {}
 
     /// Retard introduit par l'effet, en échantillons (anticipation, suréchantillonnage,
     /// plugin externe). Le mixer le compense sur les autres chemins pour que tout
