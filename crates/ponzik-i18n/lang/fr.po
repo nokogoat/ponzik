@@ -7977,3 +7977,38 @@ msgstr "Voix en notes : chantez ou fredonnez pour jouer {}"
 
 msgid "Waiting for your voice…"
 msgstr "En attente de votre voix…"
+
+# --- Updates ---
+
+msgid "not a release"
+msgstr "ce n'est pas une version publiée"
+
+msgid "curl was not found: install it to get updates"
+msgstr "curl est introuvable : installez-le pour recevoir les mises à jour"
+
+msgid "No connection: updates will be checked next time"
+msgstr "Pas de connexion : les mises à jour seront vérifiées la prochaine fois"
+
+msgid "Couldn't reach GitHub: no release found"
+msgstr "GitHub injoignable : aucune version trouvée"
+
+msgid "GitHub refused the request ({}): check the token, or try again in an hour"
+msgstr "GitHub a refusé la requête ({}) : vérifiez le jeton, ou réessayez dans une heure"
+
+msgid "GitHub answered with an error ({})"
+msgstr "GitHub a répondu par une erreur ({})"
+
+msgid "{} is missing from the release"
+msgstr "{} manque dans la version publiée"
+
+msgid "The release has no checksums: update refused"
+msgstr "La version publiée n'a pas de sommes de contrôle : mise à jour refusée"
+
+msgid "No checksum for {}: update refused"
+msgstr "Pas de somme de contrôle pour {} : mise à jour refusée"
+
+msgid "Download incomplete ({} of {} bytes)"
+msgstr "Téléchargement incomplet ({} octets sur {})"
+
+msgid "The download is damaged (checksum mismatch)"
+msgstr "Le téléchargement est abîmé (somme de contrôle différente)"
