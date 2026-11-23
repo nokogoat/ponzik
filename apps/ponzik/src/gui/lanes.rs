@@ -174,9 +174,24 @@ impl App {
         let label = self.fit(self.f.mono_med, 11.0, &label, chip.w - 18.0);
         self.text(c, self.f.mono_med, 11.0, chip.x + 6.0, chip.y + 12.0, &label, t.text.mix(t.accent, 0.3 * hv));
         draw_icon(c, Icon::ChevronDown, chip.right() - 8.0, chip.y + 12.0, 8.0, t.muted);
+        // Curves drawn in other lanes keep playing while hidden: say so.
+        let shown = self.piano.lane.target(ch);
+        let scope = AutoScope::Pattern(self.project.current_pattern);
+        let hidden = self.project.automation.iter().filter(|a| a.scope == scope && !a.points.is_empty() && Some(a.target) != shown).count();
+        if hidden > 0 {
+            let (bx, by) = (chip.right() - 2.0, chip.y + 2.0);
+            c.fill_circle(bx, by, 7.0, t.select);
+            let n = hidden.min(9).to_string();
+            let tw = self.fonts.measure(self.f.mono_med, 10.0, &n);
+            self.text(c, self.f.mono_med, 10.0, bx - tw * 0.5, by, &n, t.on_accent);
+        }
         if hov {
             self.set_cursor(Cursor::Hand);
-            self.set_tip(tr("Lane\nClick: chance, condition, repeats, pan, fine pitch, pitch bend, CCs, parameters · wheel: next"), "");
+            if hidden > 0 {
+                self.set_tip(&tr_fmt!("Lane\n{} other curves are drawn in this pattern and keep playing: open the menu to see them", hidden), "");
+            } else {
+                self.set_tip(tr("Lane\nClick: chance, condition, repeats, pan, fine pitch, pitch bend, CCs, parameters · wheel: next"), "");
+            }
             if input.pressed {
                 self.open_popup(Popup::PianoLanes, chip);
             }
