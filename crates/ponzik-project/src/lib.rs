@@ -61,6 +61,7 @@ pub mod transform;
 pub mod update;
 pub mod voice;
 pub mod warp;
+pub mod zip;
 
 pub use arrange::{MARKER_COLORS, Placement, TimeSlice};
 pub use bounce::{BounceSource, FreezeTarget, SourceAction, frozen_content_changed};

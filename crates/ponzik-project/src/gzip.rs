@@ -1,5 +1,7 @@
-//! DEFLATE (RFC 1951) and gzip (RFC 1952), written here: Ableton Live sets
-//! (`.als`) are gzipped XML.
+//! DEFLATE (RFC 1951), gzip (RFC 1952) and zlib (RFC 1950), written here:
+//! Ableton Live sets (`.als`) are gzipped XML, LMMS projects (`.mmpz`) are
+//! zlib streams behind Qt's `qCompress` length, zip archives (`.mxl`) hold
+//! DEFLATE entries.
 //!
 //! The compressor finds repeats with a hash chain over a 32 KiB window and
 //! writes them in one fixed-Huffman block: XML shrinks to a fraction of its
@@ -357,6 +359,67 @@ fn codes(r: &mut BitReader, out: &mut Vec<u8>, lit: &Huffman, dist: &Huffman, li
     }
 }
 
+/// Adler-32 (zlib's checksum) of `data`.
+pub fn adler32(data: &[u8]) -> u32 {
+    const MOD: u32 = 65_521;
+    let (mut a, mut b) = (1u32, 0u32);
+    // 5552 bytes keep the sums below 2^32 between reductions.
+    for chunk in data.chunks(5552) {
+        for &x in chunk {
+            a += x as u32;
+            b += a;
+        }
+        a %= MOD;
+        b %= MOD;
+    }
+    (b << 16) | a
+}
+
+/// True if `bytes` start with a valid zlib header (DEFLATE, no preset dictionary).
+pub fn is_zlib(bytes: &[u8]) -> bool {
+    match bytes {
+        [cmf, flg, ..] => cmf & 0x0f == 8 && cmf >> 4 <= 7 && (*cmf as u16 * 256 + *flg as u16) % 31 == 0 && flg & 0x20 == 0,
+        _ => false,
+    }
+}
+
+/// Decompresses a zlib stream, checking its Adler-32 when it is there.
+pub fn zlib_decompress(bytes: &[u8], limit: usize) -> Result<Vec<u8>, String> {
+    if !is_zlib(bytes) {
+        return Err("not a zlib stream".into());
+    }
+    let (out, used) = inflate_at(&bytes[2..], limit)?;
+    if let Some(tail) = bytes.get(2 + used..2 + used + 4) {
+        if u32::from_be_bytes([tail[0], tail[1], tail[2], tail[3]]) != adler32(&out) {
+            return Err("damaged zlib stream (checksum mismatch)".into());
+        }
+    }
+    Ok(out)
+}
+
+/// A zlib stream of `data`.
+pub fn zlib_compress(data: &[u8]) -> Vec<u8> {
+    let mut out = vec![0x78, 0x9c];
+    out.extend_from_slice(&deflate(data));
+    out.extend_from_slice(&adler32(data).to_be_bytes());
+    out
+}
+
+/// Decompresses Qt's `qCompress` output: the size as 4 big-endian bytes, then
+/// a zlib stream (LMMS `.mmpz` projects).
+pub fn qt_uncompress(bytes: &[u8], limit: usize) -> Result<Vec<u8>, String> {
+    let head = bytes.get(..4).ok_or("truncated compressed data")?;
+    let size = u32::from_be_bytes([head[0], head[1], head[2], head[3]]) as usize;
+    if size > limit {
+        return Err("compressed data larger than expected".into());
+    }
+    let out = zlib_decompress(&bytes[4..], limit)?;
+    if out.len() != size {
+        return Err("damaged compressed data (size mismatch)".into());
+    }
+    Ok(out)
+}
+
 /// True if `bytes` start like a gzip file.
 pub fn is_gzip(bytes: &[u8]) -> bool {
     bytes.starts_with(&[0x1f, 0x8b])
@@ -466,6 +529,43 @@ mod tests {
         stored.extend_from_slice(&(!5u16).to_le_bytes());
         stored.extend_from_slice(b"hello");
         assert_eq!(inflate(&stored, 100).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn zlib_and_qt_streams() {
+        assert_eq!(adler32(b"Wikipedia"), 0x11E6_0398);
+        assert_eq!(adler32(b""), 1);
+        let big = noise(20_000, 5);
+        assert_eq!(adler32(&big), {
+            let (mut a, mut b) = (1u64, 0u64);
+            for &x in &big {
+                a = (a + x as u64) % 65_521;
+                b = (b + a) % 65_521;
+            }
+            (b << 16 | a) as u32
+        });
+        // `zlib.compress(b"hello hello hello hello\n")`.
+        let z = [
+            0x78, 0x9c, 0xcb, 0x48, 0xcd, 0xc9, 0xc9, 0x57, 0xc8, 0x40, 0x27, 0xb9, 0x00, 0x70, 0xbe, 0x08, 0xbb,
+        ];
+        assert!(is_zlib(&z));
+        assert_eq!(zlib_decompress(&z, 1 << 20).unwrap(), b"hello hello hello hello\n");
+        let text = "<note pos=\"0\" key=\"57\"/>".repeat(300);
+        let mut q = (text.len() as u32).to_be_bytes().to_vec();
+        q.extend_from_slice(&zlib_compress(text.as_bytes()));
+        assert_eq!(qt_uncompress(&q, 1 << 20).unwrap(), text.as_bytes());
+        // Damage: checksum, size, truncation, junk, bombs.
+        let mut bad = q.clone();
+        let n = bad.len();
+        bad[n - 1] ^= 1;
+        assert!(qt_uncompress(&bad, 1 << 20).is_err());
+        let mut wrong_size = q.clone();
+        wrong_size[3] ^= 1;
+        assert!(qt_uncompress(&wrong_size, 1 << 20).is_err());
+        assert!(qt_uncompress(&q[..q.len() / 2], 1 << 20).is_err());
+        assert!(qt_uncompress(&[0, 0], 1 << 20).is_err());
+        assert!(zlib_decompress(b"<?xml", 1 << 20).is_err());
+        assert!(qt_uncompress(&q, 100).is_err());
     }
 
     /// PONZIK_GZIP_OUT=<file>: writes a gzipped sample, to check it with `gzip -t`.
