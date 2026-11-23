@@ -97,6 +97,8 @@ pub struct Track {
     pub(crate) insert_ns: [u64; INSERT_SLOTS],
     /// Frames each insert has turned silence into silence ([`ASLEEP`]: it sleeps).
     quiet: [u32; INSERT_SLOTS],
+    /// The block's output (post-fader) is all zeros: routing it adds nothing.
+    silent: bool,
 }
 
 impl Track {
@@ -123,6 +125,7 @@ impl Track {
             cpu_ns: 0,
             insert_ns: [0; INSERT_SLOTS],
             quiet: [0; INSERT_SLOTS],
+            silent: false,
         }
     }
 
@@ -436,6 +439,10 @@ unsafe fn route(tracks: Tracks, src: usize, dst: usize, amount: f32, cx: &Ctx) {
     let delay = if cx.reduced[src] { 0 } else { cx.lat.gap(cx.lat.arrival[dst], cx.lat.out(src)) };
     // SAFETY: voir la fonction.
     let (s, d) = unsafe { (&*tracks.0.add(src), &mut *tracks.0.add(dst)) };
+    // Zeros added without delay change nothing (an empty or silent track).
+    if s.silent && delay == 0 {
+        return;
+    }
     add_route(s, d, delay, amount, cx.n);
 }
 
@@ -572,8 +579,10 @@ unsafe fn process_track(tracks: Tracks, idx: usize, cx: &Ctx, vca: f32, ready: i
         t.l[i] *= gl;
         t.r[i] *= gr;
     }
+    let (pl, pr) = (peak(&t.l[..n]), peak(&t.r[..n]));
+    t.silent = pl == 0.0 && pr == 0.0;
     if let Some(m) = cx.meters.get(idx) {
-        m.record(peak(&t.l[..n]), peak(&t.r[..n]));
+        m.record(pl, pr);
     }
     if cx.lat.history[idx] {
         let Track { l, r, output_delay, .. } = t;
