@@ -2227,9 +2227,6 @@ msgstr "Live"
 msgid "Full"
 msgstr "Complet"
 
-msgid "All of Ponzik"
-msgstr "Tout Ponzik"
-
 msgid "Rack, playlist and mixer"
 msgstr "Rack, playlist et mixer"
 
@@ -9411,3 +9408,57 @@ msgstr "Ouvrir ce dossier"
 
 msgid "{}: {} items\nClick or arrows: open, close"
 msgstr "{} : {} éléments\nClic ou flèches : ouvrir, fermer"
+
+msgid "All of Ponzik, every button in the top bar"
+msgstr "Tout Ponzik, chaque bouton dans la barre du haut"
+
+msgid "Also on the devices panel itself"
+msgstr "Aussi sur le panneau des appareils lui-même"
+
+msgid "Also in the Channel Rack and the piano roll"
+msgstr "Aussi dans le Channel Rack et le piano roll"
+
+msgid "Also in the main menu"
+msgstr "Aussi dans le menu principal"
+
+msgid "Also in the menu of the record button"
+msgstr "Aussi dans le menu du bouton d'enregistrement"
+
+msgid "Also when hovering the tempo"
+msgstr "Aussi au survol du tempo"
+
+msgid "Also with a right-click on undo"
+msgstr "Aussi d'un clic droit sur annuler"
+
+msgid "Automation"
+msgstr "Automation"
+
+msgid "Button that shows or hides the devices"
+msgstr "Bouton qui affiche ou masque les appareils"
+
+msgid "Ctrl+K finds every action"
+msgstr "Ctrl+K trouve chaque action"
+
+msgid "Ctrl+K: switch pattern / song"
+msgstr "Ctrl+K : basculer pattern / morceau"
+
+msgid "Every view, a calm top bar"
+msgstr "Toutes les vues, une barre du haut sobre"
+
+msgid "Panel"
+msgstr "Panneau"
+
+msgid "Save button"
+msgstr "Bouton Enregistrer"
+
+msgid "Short hands-on lessons"
+msgstr "Courtes leçons pratiques"
+
+msgid "Simple"
+msgstr "Simple"
+
+msgid "Voice"
+msgstr "Voix"
+
+msgid "Voice to notes: sing or hum to play an instrument"
+msgstr "Voix en notes : chantez ou fredonnez pour jouer un instrument"

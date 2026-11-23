@@ -14,9 +14,11 @@ use super::keymap::{Combo, GROUPS, Keymap, Shortcut};
 use super::theme::*;
 use super::widgets::{Icon, draw_icon, wid};
 
-const VERSION: f64 = 1.0;
+/// 2: the calm top bar (new items, a smaller default).
+const VERSION: f64 = 2.0;
 
-/// Éléments facultatifs de la barre du haut.
+/// Éléments facultatifs de la barre du haut. Lecture, arrêt, tempo, recherche
+/// et menu y restent toujours ; le reste se montre ou se range ici.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Bar {
     Mode,
@@ -26,15 +28,28 @@ pub enum Bar {
     Scale,
     Metronome,
     Record,
+    /// Panneau d'enregistrement : entrée, niveau, latence.
+    Mic,
+    /// Voix vers notes.
+    Voice,
+    /// Armement de l'enregistrement d'automation.
+    AutoArm,
     Keyboard,
     /// Annuler et rétablir.
     Undo,
     History,
+    Save,
+    /// Bouton du panneau d'appareils.
+    Panel,
+    Learn,
     Load,
 }
 
+/// Saved settings before the calm top bar: every item was shown by default.
+const OLD_BARS: [&str; 11] = ["mode", "pattern", "tap", "position", "scale", "metronome", "record", "keyboard", "undo", "history", "load"];
+
 impl Bar {
-    pub const ALL: [Bar; 11] = [
+    pub const ALL: [Bar; 17] = [
         Bar::Mode,
         Bar::Pattern,
         Bar::Tap,
@@ -42,14 +57,25 @@ impl Bar {
         Bar::Scale,
         Bar::Metronome,
         Bar::Record,
+        Bar::Mic,
+        Bar::Voice,
+        Bar::AutoArm,
         Bar::Keyboard,
         Bar::Undo,
         Bar::History,
+        Bar::Save,
+        Bar::Panel,
+        Bar::Learn,
         Bar::Load,
     ];
 
     fn index(self) -> usize {
         Bar::ALL.iter().position(|b| *b == self).unwrap_or(0)
+    }
+
+    /// Shown in the calm default bar ("Simple"): the transport, undo and the load.
+    pub fn simple(self) -> bool {
+        matches!(self, Bar::Mode | Bar::Position | Bar::Metronome | Bar::Record | Bar::Undo | Bar::Load)
     }
 
     fn id(self) -> &'static str {
@@ -61,9 +87,15 @@ impl Bar {
             Bar::Scale => "scale",
             Bar::Metronome => "metronome",
             Bar::Record => "record",
+            Bar::Mic => "mic",
+            Bar::Voice => "voice",
+            Bar::AutoArm => "auto_arm",
             Bar::Keyboard => "keyboard",
             Bar::Undo => "undo",
             Bar::History => "history",
+            Bar::Save => "save",
+            Bar::Panel => "panel",
+            Bar::Learn => "learn",
             Bar::Load => "load",
         }
     }
@@ -77,9 +109,15 @@ impl Bar {
             Bar::Scale => tr("Scale"),
             Bar::Metronome => tr("Metronome"),
             Bar::Record => tr("Rec"),
+            Bar::Mic => tr("Input"),
+            Bar::Voice => tr("Voice"),
+            Bar::AutoArm => tr("Automation"),
             Bar::Keyboard => tr("Keyboard"),
             Bar::Undo => tr("Undo"),
             Bar::History => tr("History"),
+            Bar::Save => tr("Save"),
+            Bar::Panel => tr("Panel"),
+            Bar::Learn => tr("Learn"),
             Bar::Load => tr("DSP"),
         }
     }
@@ -93,9 +131,15 @@ impl Bar {
             Bar::Scale => tr("Project scale"),
             Bar::Metronome => tr("Metronome"),
             Bar::Record => tr("Record notes and audio"),
+            Bar::Mic => tr("Recording panel: input, level, monitoring, latency"),
+            Bar::Voice => tr("Voice to notes: sing or hum to play an instrument"),
+            Bar::AutoArm => tr("Record automation: Touch, Latch, Write"),
             Bar::Keyboard => tr("Computer keyboard played like a piano"),
             Bar::Undo => tr("Undo and redo buttons"),
             Bar::History => tr("Edit history"),
+            Bar::Save => tr("Save button"),
+            Bar::Panel => tr("Button that shows or hides the devices"),
+            Bar::Learn => tr("Short hands-on lessons"),
             Bar::Load => tr("Audio processor load"),
         }
     }
@@ -109,9 +153,15 @@ impl Bar {
             Bar::Scale => Glyph::Icon(Icon::Scale),
             Bar::Metronome => Glyph::Icon(Icon::Metronome),
             Bar::Record => Glyph::Rec,
+            Bar::Mic => Glyph::Icon(Icon::Mic),
+            Bar::Voice => Glyph::Icon(Icon::Voice),
+            Bar::AutoArm => Glyph::Icon(Icon::Automation),
             Bar::Keyboard => Glyph::Icon(Icon::Keyboard),
             Bar::Undo => Glyph::Icon(Icon::Undo),
             Bar::History => Glyph::Icon(Icon::History),
+            Bar::Save => Glyph::Icon(Icon::Save),
+            Bar::Panel => Glyph::Icon(Icon::Panel),
+            Bar::Learn => Glyph::Icon(Icon::Learn),
             Bar::Load => Glyph::Gauge,
         }
     }
@@ -119,17 +169,32 @@ impl Bar {
     /// Largeur dans la vraie barre (px), pour l'aperçu.
     fn width(self) -> f32 {
         match self {
-            Bar::Mode => 142.0,
+            Bar::Mode => 76.0,
             Bar::Pattern => 198.0,
-            Bar::Tap => 50.0,
-            Bar::Position => 138.0,
+            Bar::Tap => 44.0,
+            Bar::Position => 132.0,
             Bar::Scale => 134.0,
-            Bar::Metronome | Bar::Record | Bar::Keyboard => 40.0,
             Bar::Undo => 72.0,
-            Bar::History => 36.0,
             Bar::Load => 34.0,
+            _ => 38.0,
         }
     }
+
+    /// Where the item is when it is not in the top bar.
+    fn elsewhere(self) -> &'static str {
+        match self {
+            Bar::Mode => tr("Ctrl+K: switch pattern / song"),
+            Bar::Pattern => tr("Also in the Channel Rack and the piano roll"),
+            Bar::Tap => tr("Also when hovering the tempo"),
+            Bar::Scale => tr("Also in the Channel Rack and the piano roll"),
+            Bar::Record | Bar::Position | Bar::Load | Bar::Undo => tr("Ctrl+K finds every action"),
+            Bar::Metronome | Bar::Mic | Bar::Voice | Bar::AutoArm | Bar::Keyboard => tr("Also in the menu of the record button"),
+            Bar::History => tr("Also with a right-click on undo"),
+            Bar::Save | Bar::Learn => tr("Also in the main menu"),
+            Bar::Panel => tr("Also on the devices panel itself"),
+        }
+    }
+
 }
 
 /// Ce qu'affiche une tuile.
@@ -150,12 +215,13 @@ pub struct Workspace {
     pub browser: bool,
     pub panel: bool,
     pub count_in: bool,
-    pub bar: [bool; 11],
+    pub bar: [bool; Bar::ALL.len()],
 }
 
 impl Default for Workspace {
+    /// The "Simple" profile: every view, a calm top bar.
     fn default() -> Self {
-        Self { views: [true; 6], browser: true, panel: true, count_in: true, bar: [true; 11] }
+        Self { views: [true; 6], browser: true, panel: true, count_in: true, bar: Bar::ALL.map(Bar::simple) }
     }
 }
 
@@ -197,29 +263,39 @@ impl Workspace {
         }
     }
 
-    fn with(views: &[View], browser: bool, panel: bool, hide: &[Bar]) -> Self {
+    /// The simple bar, with `show` added and `hide` taken away.
+    fn with(views: &[View], browser: bool, panel: bool, show: &[Bar], hide: &[Bar]) -> Self {
         let mut ws = Workspace { browser, panel, ..Default::default() };
         ws.views = View::ALL.map(|v| views.contains(&v));
+        for b in show {
+            ws.bar[b.index()] = true;
+        }
         for b in hide {
             ws.bar[b.index()] = false;
         }
         ws
     }
+
+    /// Everything shown, as before the calm top bar.
+    fn full() -> Self {
+        Self { bar: [true; Bar::ALL.len()], ..Default::default() }
+    }
 }
 
 /// Profils en un clic : nom, description, espace de travail.
-pub fn presets() -> [(&'static str, &'static str, Workspace); 5] {
+pub fn presets() -> [(&'static str, &'static str, Workspace); 6] {
     use View::*;
     [
-        (tr("Full"), tr("All of Ponzik"), Workspace::default()),
-        (tr("Beatmaker"), tr("Rack, playlist and mixer"), Workspace::with(&[Rack, Playlist, Mixer], true, true, &[Bar::Keyboard])),
-        (tr("Sampling"), tr("Everything but the piano roll"), Workspace::with(&[Rack, Playlist, Session, Mixer, Lab], true, true, &[Bar::Scale, Bar::Keyboard])),
-        (tr("Live"), tr("Session and mixer, to play live"), Workspace::with(&[Session, Mixer], true, true, &[Bar::Pattern, Bar::Position])),
+        (tr("Simple"), tr("Every view, a calm top bar"), Workspace::default()),
+        (tr("Full"), tr("All of Ponzik, every button in the top bar"), Workspace::full()),
+        (tr("Beatmaker"), tr("Rack, playlist and mixer"), Workspace::with(&[Rack, Playlist, Mixer], true, true, &[Bar::Pattern, Bar::Tap], &[])),
+        (tr("Sampling"), tr("Everything but the piano roll"), Workspace::with(&[Rack, Playlist, Session, Mixer, Lab], true, true, &[Bar::Mic], &[])),
         (
-            tr("Minimal"),
-            tr("Rack and playlist, nothing else"),
-            Workspace::with(&[Rack, Playlist], true, false, &[Bar::Tap, Bar::Scale, Bar::Keyboard, Bar::History, Bar::Load]),
+            tr("Live"),
+            tr("Session and mixer, to play live"),
+            Workspace::with(&[Session, Mixer], true, true, &[Bar::Tap, Bar::Mic, Bar::AutoArm], &[Bar::Position]),
         ),
+        (tr("Minimal"), tr("Rack and playlist, nothing else"), Workspace::with(&[Rack, Playlist], true, false, &[], &[Bar::Load, Bar::Metronome])),
     ]
 }
 
@@ -363,9 +439,22 @@ pub fn from_json(j: &Json) -> (Workspace, Keymap, Option<String>) {
             ws.views[i] = on;
         }
     }
-    for (i, &b) in Bar::ALL.iter().enumerate() {
-        if let Some(on) = flag(j.get("bar"), b.id()) {
-            ws.bar[i] = on;
+    // Before version 2 every item was shown: an untouched bar takes the calm
+    // default, a customised one keeps its choices and shows what it showed.
+    let old = j.get("version").and_then(Json::as_f64).unwrap_or(0.0) < 2.0;
+    let customised = OLD_BARS.iter().any(|id| flag(j.get("bar"), id) == Some(false));
+    if old && customised {
+        ws.bar = [true; Bar::ALL.len()];
+        let record = flag(j.get("bar"), "record").unwrap_or(true);
+        for b in [Bar::Mic, Bar::Voice, Bar::AutoArm] {
+            ws.bar[b.index()] = record;
+        }
+    }
+    if !old || customised {
+        for (i, &b) in Bar::ALL.iter().enumerate() {
+            if let Some(on) = flag(j.get("bar"), b.id()) {
+                ws.bar[i] = on;
+            }
         }
     }
     ws.browser = j.get("browser").and_then(Json::as_bool).unwrap_or(ws.browser);
@@ -488,6 +577,20 @@ impl App {
         }
         if save {
             self.save_settings();
+        }
+    }
+
+    /// Capture: a profile by its English id, and `nopanel` to hide the devices.
+    pub fn screenshot_workspace(&mut self, spec: &str) {
+        const IDS: [&str; 6] = ["simple", "full", "beatmaker", "sampling", "live", "minimal"];
+        for part in spec.split(',').map(str::trim) {
+            if part == "nopanel" {
+                self.panel = false;
+            } else if let Some(i) = IDS.iter().position(|id| *id == part)
+                && let Some((_, _, ws)) = presets().into_iter().nth(i)
+            {
+                self.apply_workspace(ws, false);
+            }
         }
     }
 
@@ -752,7 +855,7 @@ impl App {
         // Appearance: a lighter veil, the app behind is the live preview.
         c.fill_rect(screen, t.shade(if tab == 3 { 40.0 } else { 110.0 } * open));
         let w = 960.0f32.min(screen.w - 40.0);
-        let h = 640.0f32.min(screen.h - 40.0);
+        let h = 690.0f32.min(screen.h - 40.0);
         let r = Rect::new(((screen.w - w) * 0.5).round(), ((screen.h - h) * 0.5 + (1.0 - open) * 10.0).round(), w, h);
         c.fill_rrect(r.translate(0.0, 10.0).inset(-4.0), 22.0, t.shade(90.0 * open));
         c.fill_rrect(r, 18.0, t.panel);
@@ -934,7 +1037,8 @@ impl App {
             (ws.browser, ws.panel, ws.count_in) = (self.sidebar, self.panel, self.count_in);
             ws
         };
-        let card_w = ((left.w - 4.0 * gap) / 5.0).floor();
+        let n_cards = presets().len() as f32;
+        let card_w = ((left.w - (n_cards - 1.0) * gap) / n_cards).floor();
         for (i, (name, desc, ws)) in presets().into_iter().enumerate() {
             let card = Rect::new(left.x + i as f32 * (card_w + gap), y, card_w, 70.0);
             let id = wid("set-preset", i, 0);
@@ -948,10 +1052,10 @@ impl App {
             c.stroke_rrect(body, 12.0, 1.0 + on * 0.5, t.hairline.mix(t.accent, on));
             // Les vues du profil, en petites icônes.
             let views: Vec<View> = View::ALL.into_iter().filter(|&v| ws.view(v)).collect();
-            let step = 16.0;
+            let step = ((card_w - 20.0) / views.len().max(1) as f32).min(16.0);
             let x0 = body.x + body.w * 0.5 - (views.len() as f32 - 1.0) * step * 0.5;
             for (k, v) in views.iter().enumerate() {
-                draw_icon(c, v.icon(), x0 + k as f32 * step, body.y + 24.0, 12.0, t.muted.mix(t.accent, on.max(hv * 0.5)));
+                draw_icon(c, v.icon(), x0 + k as f32 * step, body.y + 24.0, (step - 3.0).min(12.0), t.muted.mix(t.accent, on.max(hv * 0.5)));
             }
             self.text_center(c, self.f.sans_med, 12.0, body.x + body.w * 0.5, body.y + 50.0, name, t.text2.mix(t.text, on.max(hv)));
             if hov {
@@ -983,55 +1087,60 @@ impl App {
         }
         y += 92.0 + 18.0;
 
-        // Panneaux, puis la barre du haut.
+        // Panneaux, puis la barre du haut : chaque élément rangé peut y revenir.
         self.section(c, left.x, y, tr("Panels and top bar"));
         y += 20.0;
+        #[derive(Clone, Copy)]
+        enum Cell {
+            Browser,
+            Devices,
+            CountIn,
+            Bar(Bar),
+        }
         let cols = 7;
         let small_w = ((left.w - (cols - 1) as f32 * gap) / cols as f32).floor();
-        let mut cells: Vec<(Glyph, &str, &str, bool)> = vec![
-            (Glyph::Icon(Icon::Sidebar), tr("Browser"), tr("Sounds, instruments and effects"), self.sidebar),
-            (Glyph::Icon(Icon::Panel), tr("Devices"), tr("Details of the selected channel or track"), self.panel),
+        let mut cells: Vec<(Cell, Glyph, &str, &str, bool)> = vec![
+            (Cell::Browser, Glyph::Icon(Icon::Sidebar), tr("Browser"), tr("Sounds, instruments and effects"), self.sidebar),
+            (Cell::Devices, Glyph::Icon(Icon::Panel), tr("Devices"), tr("Details of the selected channel or track"), self.panel),
         ];
         for b in Bar::ALL {
-            cells.push((b.glyph(), b.label(), b.hint(), self.bar_shown(b)));
+            cells.push((Cell::Bar(b), b.glyph(), b.label(), b.hint(), self.bar_shown(b)));
             if b == Bar::Record {
-                cells.push((Glyph::CountIn, tr("Count-in"), tr("One bar of metronome before recording"), self.count_in));
+                cells.push((Cell::CountIn, Glyph::CountIn, tr("Count-in"), tr("One bar of metronome before recording"), self.count_in));
             }
         }
+        let tile_h = 56.0;
         let mut toggled = None;
-        for (k, (glyph, label, desc, on)) in cells.iter().enumerate() {
-            let r = Rect::new(left.x + (k % cols) as f32 * (small_w + gap), y + (k / cols) as f32 * (64.0 + gap), small_w, 64.0);
+        for (k, &(cell, glyph, label, desc, on)) in cells.iter().enumerate() {
+            let r = Rect::new(left.x + (k % cols) as f32 * (small_w + gap), y + (k / cols) as f32 * (tile_h + gap), small_w, tile_h);
             let id = wid("set-cell", k, 0);
-            if self.tile(c, input, id, r, *glyph, label, *on, "") {
-                toggled = Some(k);
+            if self.tile(c, input, id, r, glyph, label, on, "") {
+                toggled = Some(cell);
             }
             if self.hovered(input, id, r) {
-                *hint = Some(format!("{label} · {desc}"));
+                // Ce qui n'est pas dans la barre reste à portée : on dit où.
+                let place = match cell {
+                    Cell::Bar(b) if !on => format!(" · {}", b.elsewhere()),
+                    _ => String::new(),
+                };
+                *hint = Some(format!("{label} · {desc}{place}"));
             }
         }
         let rows = cells.len().div_ceil(cols);
-        y += rows as f32 * (64.0 + gap) - gap + 18.0;
+        y += rows as f32 * (tile_h + gap) - gap + 18.0;
         // Taille de l'interface et tampon audio côte à côte.
         let size_w = (left.w * 0.38).floor();
         self.section(c, left.x, y, tr("Interface size"));
         self.ui_scale_slider(c, input, Rect::new(left.x, y + 20.0, size_w, 34.0), hint);
         self.audio_buffer_choice(c, input, left.x + size_w + 24.0, y, left.w - size_w - 24.0, hint);
 
-        if let Some(k) = toggled {
+        if let Some(cell) = toggled {
             let mut ws = current.clone();
-            match k {
-                0 => ws.browser = !ws.browser,
-                1 => ws.panel = !ws.panel,
-                _ => {
-                    let (glyph, ..) = cells[k];
-                    if matches!(glyph, Glyph::CountIn) {
-                        ws.count_in = !ws.count_in;
-                    } else {
-                        // Les cases suivent Bar::ALL, le pré-compte glissé après Rec.
-                        let b = k - 2 - usize::from(k > 2 + Bar::Record.index());
-                        ws.bar[b] = !ws.bar[b];
-                    }
-                }
+            match cell {
+                Cell::Browser => ws.browser = !ws.browser,
+                Cell::Devices => ws.panel = !ws.panel,
+                Cell::CountIn => ws.count_in = !ws.count_in,
+                Cell::Bar(b) => ws.bar[b.index()] = !ws.bar[b.index()],
             }
             self.apply_workspace(ws, true);
         }
@@ -1250,13 +1359,16 @@ impl App {
         c.fill_rect(Rect::new(f.x, f.y, f.w, top), t.bg_deep);
         c.fill_rect(Rect::new(f.x, f.y + top, f.w, 1.0), t.hairline);
         let cy = f.y + top * 0.5;
-        // Barre : lecture et tempo toujours là, le reste glisse en place.
-        let mut widths: Vec<(Option<Bar>, f32)> = vec![(None, 100.0)];
-        for b in [Bar::Mode, Bar::Pattern] {
+        // Barre : la capsule du transport au centre (lecture, arrêt et tempo
+        // toujours là), motif et gamme à côté, le reste à droite ; tout glisse en place.
+        let play = (None, 84.0);
+        let tempo = (None, 118.0);
+        let mut widths: Vec<(Option<Bar>, f32)> = vec![(Some(Bar::Mode), Bar::Mode.width()), play];
+        for b in [Bar::Record, Bar::Mic, Bar::Voice, Bar::AutoArm, Bar::Keyboard] {
             widths.push((Some(b), b.width()));
         }
-        widths.push((None, 120.0));
-        for b in [Bar::Tap, Bar::Position, Bar::Scale, Bar::Metronome, Bar::Record, Bar::Keyboard] {
+        widths.push(tempo);
+        for b in [Bar::Tap, Bar::Metronome, Bar::Position] {
             widths.push((Some(b), b.width()));
         }
         let mut items = Vec::new();
@@ -1267,25 +1379,47 @@ impl App {
             items.push((*b, wpx * k * v, v));
             total += wpx * k * v;
         }
-        let mut x = f.x + ((f.w - total) * 0.5).max(4.0);
+        let side: Vec<f32> = [Bar::Pattern, Bar::Scale]
+            .into_iter()
+            .enumerate()
+            .map(|(i, b)| b.width() * k * self.anim.to(wid("set-pv-side", i, 0), self.bar_shown(b) as u8 as f32, T_LAYOUT))
+            .collect();
+        let side_w: f32 = side.iter().sum();
+        let x0 = f.x + ((f.w - total - side_w) * 0.5).max(4.0);
+        let cap = Rect::new(x0 - 2.0, cy - top * 0.36, total + 4.0, top * 0.72);
+        c.fill_rrect(cap, 4.0, t.raised.alpha(0.45));
+        c.stroke_rrect(cap, 4.0, 1.0, t.hairline);
+        let mut x = x0;
         for (i, (b, w, v)) in items.into_iter().enumerate() {
             if w > 1.0 {
-                let blk = Rect::new(x + 1.0, cy - top * 0.3, (w - 2.0).max(0.0), top * 0.6);
-                let col = match (i, b) {
-                    (0, _) => t.accent,
-                    (_, Some(Bar::Record)) => t.negative.alpha(0.8),
+                let blk = Rect::new(x + 1.0, cy - top * 0.26, (w - 2.0).max(0.0), top * 0.52);
+                let col = match b {
+                    None if i == 1 => t.accent,
+                    Some(Bar::Record) => t.negative.alpha(0.8),
                     _ => t.raised_hi,
                 };
                 c.fill_rrect(blk, 2.5, col.alpha(v));
             }
             x += w;
         }
-        let right_items = [(Bar::Undo, 0), (Bar::History, 1), (Bar::Load, 2)];
+        for w in side {
+            if w > 1.0 {
+                c.fill_rrect(Rect::new(x + 4.0, cy - top * 0.26, w - 4.0, top * 0.52), 2.5, t.raised);
+            }
+            x += w;
+        }
+        // Droite : menu et recherche toujours là, puis ce que l'espace de travail y garde.
         let mut rx = f.right() - 6.0;
-        for (b, i) in right_items {
+        for _ in 0..2 {
+            let w = 36.0 * k * 0.8;
+            c.fill_rrect(Rect::new(rx - w, cy - top * 0.2, w, top * 0.4), 2.0, t.raised_hi);
+            rx -= w + 3.0;
+        }
+        let right_items = [Bar::Undo, Bar::History, Bar::Save, Bar::Panel, Bar::Learn, Bar::Load];
+        for (i, b) in right_items.into_iter().enumerate() {
             let v = self.anim.to(wid("set-pv-right", i, 0), self.bar_shown(b) as u8 as f32, T_LAYOUT);
             if v > 0.01 {
-                let w = b.width() * k * 0.8;
+                let w = b.width() * k * 0.8 * v;
                 c.fill_rrect(Rect::new(rx - w, cy - top * 0.2, w, top * 0.4), 2.0, t.raised.alpha(v));
                 rx -= w + 3.0;
             }
@@ -1546,7 +1680,7 @@ mod tests {
 
     #[test]
     fn settings_round_trip() {
-        let mut ws = presets()[3].2.clone();
+        let mut ws = presets()[4].2.clone();
         ws.browser = false;
         ws.count_in = false;
         let mut keymap = Keymap::default();
@@ -1613,8 +1747,45 @@ mod tests {
                 assert_ne!(a, b);
             }
         }
-        assert!(!p[2].2.view(View::Piano), "Sampling : sans piano roll");
-        assert!(p[3].2.view(View::Session) && !p[3].2.view(View::Rack), "Live : la session");
+        assert_eq!(p[0].2, Workspace::default(), "Simple : l'espace par défaut");
+        assert!(p[1].2.bar.iter().all(|&on| on), "Complet : toute la barre");
+        assert!(!p[3].2.view(View::Piano), "Sampling : sans piano roll");
+        assert!(p[4].2.view(View::Session) && !p[4].2.view(View::Rack), "Live : la session");
+    }
+
+    #[test]
+    fn the_default_top_bar_is_calm() {
+        let ws = Workspace::default();
+        for b in [Bar::Record, Bar::Undo, Bar::Mode] {
+            assert!(ws.bar(b), "{b:?}");
+        }
+        for b in [Bar::Pattern, Bar::Scale, Bar::Tap, Bar::Mic, Bar::Voice, Bar::AutoArm, Bar::Keyboard, Bar::History, Bar::Save, Bar::Panel, Bar::Learn] {
+            assert!(!ws.bar(b), "{b:?}");
+        }
+    }
+
+    #[test]
+    fn old_settings_migrate_to_the_calm_bar() {
+        // Untouched (every item on, as the old default): the new default.
+        let untouched = r#"{"version": 1, "bar": {"mode": true, "pattern": true, "tap": true, "position": true, "scale": true,
+            "metronome": true, "record": true, "keyboard": true, "undo": true, "history": true, "load": true}}"#;
+        let (ws, ..) = from_json(&json::parse(untouched).unwrap());
+        assert_eq!(ws.bar, Workspace::default().bar);
+        // Customised: the choices stay, what was shown stays shown.
+        let custom = r#"{"version": 1, "bar": {"tap": false, "history": false, "record": true}}"#;
+        let (ws, ..) = from_json(&json::parse(custom).unwrap());
+        assert!(!ws.bar(Bar::Tap) && !ws.bar(Bar::History));
+        for b in [Bar::Pattern, Bar::Scale, Bar::Mic, Bar::Voice, Bar::AutoArm, Bar::Save, Bar::Panel, Bar::Learn] {
+            assert!(ws.bar(b), "{b:?}");
+        }
+        // The record button hid the input, voice and automation buttons with it.
+        let no_rec = r#"{"version": 1, "bar": {"record": false}}"#;
+        let (ws, ..) = from_json(&json::parse(no_rec).unwrap());
+        assert!(!ws.bar(Bar::Record) && !ws.bar(Bar::Mic) && !ws.bar(Bar::Voice) && !ws.bar(Bar::AutoArm));
+        // Version 2 files are read as they are.
+        let full = to_json(&presets()[1].2, &Keymap::default(), "x", None).pretty();
+        let (ws, ..) = from_json(&json::parse(&full).unwrap());
+        assert_eq!(ws, presets()[1].2);
     }
 
     #[test]
