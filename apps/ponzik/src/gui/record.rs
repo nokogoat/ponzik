@@ -177,7 +177,7 @@ pub struct RecordState {
     /// Numéro de prise par nom de piste.
     counts: HashMap<String, u32>,
     pub panel: bool,
-    panel_anchor: (f32, f32),
+    pub panel_anchor: (f32, f32),
     panel_rect: Option<Rect>,
     device_list: bool,
     /// Dernière erreur d'ouverture de l'entrée : affichée dans le panneau, et on

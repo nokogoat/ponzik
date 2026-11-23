@@ -706,9 +706,6 @@ msgstr "Historique"
 msgid "DSP load: {:.0}%"
 msgstr "Charge DSP : {:.0} %"
 
-msgid "Project\nDouble-click: rename"
-msgstr "Projet\nDouble-clic : renommer"
-
 msgid "Previous pattern"
 msgstr "Pattern précédent"
 
@@ -8954,8 +8951,8 @@ msgstr "Ouvrez le menu."
 msgid "Open the playlist."
 msgstr "Ouvrez la playlist."
 
-msgid "Open the recording panel: input and level."
-msgstr "Ouvrez le panneau d'enregistrement : entrée et niveau."
+msgid "Open the recording options, then the recording panel."
+msgstr "Ouvrez les options d'enregistrement, puis le panneau d'enregistrement."
 
 msgid "Pan hats and chords a little apart."
 msgstr "Écartez un peu charleston et accords dans l'espace."
@@ -9433,6 +9430,9 @@ msgstr "Aussi d'un clic droit sur annuler"
 msgid "Automation"
 msgstr "Automation"
 
+msgid "Automation mode"
+msgstr "Mode d'automation"
+
 msgid "Button that shows or hides the devices"
 msgstr "Bouton qui affiche ou masque les appareils"
 
@@ -9445,8 +9445,35 @@ msgstr "Ctrl+K : basculer pattern / morceau"
 msgid "Every view, a calm top bar"
 msgstr "Toutes les vues, une barre du haut sobre"
 
+msgid "Input, level, monitoring, latency"
+msgstr "Entrée, niveau, retour, latence"
+
+msgid "Moves are recorded while the song plays"
+msgstr "Les gestes s'enregistrent pendant la lecture du morceau"
+
 msgid "Panel"
 msgstr "Panneau"
+
+msgid "Pattern\nClick: every pattern · scroll or {} / {}: the next one"
+msgstr "Pattern\nClic : tous les patterns · molette ou {} / {} : le suivant"
+
+msgid "Plays the pattern\nClick: the song · right-click: every mode"
+msgstr "Joue le pattern\nClic : le morceau · clic droit : tous les modes"
+
+msgid "Plays the session\nClick: the pattern · right-click: every mode"
+msgstr "Joue la session\nClic : le pattern · clic droit : tous les modes"
+
+msgid "Plays the song\nClick: the pattern · right-click: every mode"
+msgstr "Joue le morceau\nClic : le pattern · clic droit : tous les modes"
+
+msgid "Project\nClick: rename, save, open, export · double-click: rename"
+msgstr "Projet\nClic : renommer, enregistrer, ouvrir, exporter · double-clic : renommer"
+
+msgid "Recording options\nCount-in, metronome, input, voice, automation, typing"
+msgstr "Options d'enregistrement\nPré-compte, métronome, entrée, voix, automation, clavier"
+
+msgid "Recording panel"
+msgstr "Panneau d'enregistrement"
 
 msgid "Save button"
 msgstr "Bouton Enregistrer"
@@ -9456,6 +9483,27 @@ msgstr "Courtes leçons pratiques"
 
 msgid "Simple"
 msgstr "Simple"
+
+msgid "Sing or hum to play the selected instrument"
+msgstr "Chantez ou fredonnez pour jouer l'instrument choisi"
+
+msgid "Snap to scale\nPick a scale first, on its right"
+msgstr "Coller à la gamme\nChoisissez d'abord une gamme, à sa droite"
+
+msgid "Song"
+msgstr "Morceau"
+
+msgid "Tempo at the playhead\nDrag or scroll · Shift: fine · double-click: type it · TAP on its right"
+msgstr "Tempo à la tête de lecture\nGlisser ou molette · Maj : fin · double-clic : le taper · TAP à sa droite"
+
+msgid "The last phrase played becomes a pattern"
+msgstr "La dernière phrase jouée devient un pattern"
+
+msgid "Touch, Latch, Write"
+msgstr "Touch, Latch, Write"
+
+msgid "Undo\nRight-click: history"
+msgstr "Annuler\nClic droit : historique"
 
 msgid "Voice"
 msgstr "Voix"

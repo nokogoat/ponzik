@@ -61,6 +61,7 @@ mod themecss;
 mod themes;
 mod tools;
 mod tree;
+mod topbar;
 mod tour;
 mod voice;
 mod tracks;
