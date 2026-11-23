@@ -11,4 +11,6 @@ ponzik-dsp.workspace = true
 ponzik-engine.workspace = true
 ponzik-clap.workspace = true
 ponzik-vst3.workspace = true
+ponzik-lv2.workspace = true
+ponzik-ladspa.workspace = true
 ponzik-i18n.workspace = true

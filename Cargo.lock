@@ -11,6 +11,8 @@ dependencies = [
  "ponzik-dsp",
  "ponzik-engine",
  "ponzik-i18n",
+ "ponzik-ladspa",
+ "ponzik-lv2",
  "ponzik-midi",
  "ponzik-project",
  "ponzik-ui",
@@ -96,6 +98,8 @@ dependencies = [
  "ponzik-dsp",
  "ponzik-engine",
  "ponzik-i18n",
+ "ponzik-ladspa",
+ "ponzik-lv2",
  "ponzik-vst3",
 ]
 
