@@ -55,6 +55,20 @@ name = "ponzik-i18n"
 version = "0.1.0"
 
 [[package]]
+name = "ponzik-ladspa"
+version = "0.1.0"
+dependencies = [
+ "ponzik-engine",
+]
+
+[[package]]
+name = "ponzik-ladspa-test-plugin"
+version = "0.1.0"
+dependencies = [
+ "ponzik-ladspa",
+]
+
+[[package]]
 name = "ponzik-lv2"
 version = "0.1.0"
 dependencies = [
