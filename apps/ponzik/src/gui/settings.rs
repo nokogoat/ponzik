@@ -707,7 +707,7 @@ impl App {
     pub(super) fn settings_sheet(&mut self, c: &mut Canvas, input: &Input, screen: Rect, tab: usize) -> Option<usize> {
         let t = self.theme;
         let open = self.anim.to(wid("popup", 0, 0), 1.0, T_HOVER);
-        let mut tab = tab.min(3);
+        let mut tab = tab.min(4);
         let mut close = false;
 
         // Clavier : saisie d'une touche, conflit en attente, ou navigation.
