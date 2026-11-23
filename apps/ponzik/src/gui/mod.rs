@@ -53,6 +53,7 @@ mod samplelab;
 mod record;
 mod session;
 mod settings;
+mod start;
 mod sync;
 mod keys_visuals;
 mod visuals;
@@ -262,7 +263,9 @@ impl ClickTracker {
     }
 }
 
-pub fn run(project: ponzik_project::Project, open: Option<std::path::PathBuf>) -> Result<(), String> {
+/// Opens the interface on `project`, then on the file `open` if one is given;
+/// `launch` (a plain `ponzik`) reopens the last project or shows the start screen.
+pub fn run(project: ponzik_project::Project, open: Option<std::path::PathBuf>, launch: bool) -> Result<(), String> {
     // The registration follows this copy (version after an update, AppImage moved).
     crate::install::refresh_at_startup();
     // A downloaded copy: install it, or just run it.
@@ -326,6 +329,8 @@ pub fn run(project: ponzik_project::Project, open: Option<std::path::PathBuf>) -
     // A project double-clicked in the file manager.
     if let Some(path) = open {
         app.open_file(path);
+    } else if launch {
+        app.startup();
     }
     app.start_tour_if_new();
     app.show_whats_new_if_updated();
@@ -333,8 +338,10 @@ pub fn run(project: ponzik_project::Project, open: Option<std::path::PathBuf>) -
     app.start_autosave();
     app.start_library();
     app.start_plugin_scan(false);
-    let (play, find) = (app.key_label(keymap::Shortcut::PlayStop), app.key_label(keymap::Shortcut::Palette));
-    app.toast(&tr_fmt!("{} to play · {} to find anything", play, find));
+    if app.start.is_none() {
+        let (play, find) = (app.key_label(keymap::Shortcut::PlayStop), app.key_label(keymap::Shortcut::Palette));
+        app.toast(&tr_fmt!("{} to play · {} to find anything", play, find));
+    }
     eprintln!("Ponzik · {} · {} Hz · {}", window.backend_name(), config.sample_rate, output_name);
     // PONZIK_VIEW=playlist : vue affichée à l'ouverture ; PONZIK_AUTOPLAY=1 :
     // lecture lancée aussitôt (mesures de charge).
@@ -871,6 +878,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // PONZIK_WORKSPACE=simple|full|beatmaker|sampling|live|minimal[,nopanel]: a profile.
     if let Ok(spec) = std::env::var("PONZIK_WORKSPACE") {
         app.screenshot_workspace(&spec);
+    }
+    // PONZIK_START=1|<folder>[,sel:n]: the start screen, without (or with that
+    // folder's projects as) recent projects; never the user's own list.
+    if let Ok(spec) = std::env::var("PONZIK_START") {
+        app.screenshot_start(&spec);
     }
     // PONZIK_FILEDIALOG=save|open|recent|unsaved[:folder][,flp|als][,sel:n][,q:text][,confirm][,newdir][,path]:
     // the file dialog (see filedialog.rs).

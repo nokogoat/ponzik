@@ -112,7 +112,7 @@ impl Kind {
         }
     }
 
-    fn label(self) -> &'static str {
+    pub(super) fn label(self) -> &'static str {
         match self {
             Kind::Folder => tr("Folder"),
             Kind::Ponzik => tr("Ponzik project"),
@@ -124,7 +124,7 @@ impl Kind {
         }
     }
 
-    fn icon(self) -> Icon {
+    pub(super) fn icon(self) -> Icon {
         match self {
             Kind::Folder => Icon::Folder,
             Kind::Ponzik => Icon::Playlist,
@@ -136,7 +136,7 @@ impl Kind {
         }
     }
 
-    fn color(self, t: &Theme) -> Color {
+    pub(super) fn color(self, t: &Theme) -> Color {
         match self {
             Kind::Folder => t.text2,
             Kind::Ponzik => t.accent,
@@ -719,7 +719,7 @@ fn size_label(bytes: u64) -> String {
 }
 
 /// When a file changed: "just now", "5 min ago"… then the date.
-fn age_label(t: Option<SystemTime>) -> String {
+pub(super) fn age_label(t: Option<SystemTime>) -> String {
     let Some(t) = t else { return String::new() };
     let secs = SystemTime::now().duration_since(t).map_or(0, |d| d.as_secs());
     match secs {
@@ -874,7 +874,9 @@ impl App {
         match then {
             Then::Nothing => {}
             Then::Quit => self.quit_now = true,
-            Then::Open(path) => self.open_file(path),
+            Then::Open(path) => {
+                self.open_file(path);
+            }
             Then::NewFromTemplate(i) => self.new_from_template(i),
             Then::LoadDemo(i) => self.load_demo(i),
         }

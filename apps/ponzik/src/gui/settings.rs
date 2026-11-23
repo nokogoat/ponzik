@@ -377,6 +377,8 @@ pub struct Prefs {
     /// Patterns keep the length picked in the Channel Rack instead of growing
     /// to their last note ("Auto", the default: you hear what you see).
     pub fixed_pattern_len: bool,
+    /// What a launch without a file shows: the last project or the start screen.
+    pub startup: super::start::Startup,
     /// Action that closes the sheet to open its own popup ("Create a translation").
     pending: Option<Action>,
 }
@@ -522,6 +524,7 @@ impl App {
         (self.prefs.buffer_ms, self.prefs.buffer_manual) = buffer_from_json(&j);
         self.prefs.perf.load(&j);
         self.prefs.fixed_pattern_len = j.get("fixed_pattern_length").and_then(Json::as_bool).unwrap_or(false);
+        self.prefs.startup = j.get("startup").and_then(Json::as_str).map_or_else(Default::default, super::start::Startup::from_id);
         self.ctl.global = ponzik_project::midi_map::load_mappings(j.get("midi_map"), usize::MAX);
         self.updates.load(&j);
         self.install.load(&j);
@@ -537,6 +540,7 @@ impl App {
             if self.prefs.fixed_pattern_len {
                 fields.push(("fixed_pattern_length".into(), true.into()));
             }
+            fields.push(("startup".into(), Json::Str(self.prefs.startup.id().into())));
             if self.prefs.hints_seen != 0 {
                 fields.push(("hints_seen".into(), (self.prefs.hints_seen as f64).into()));
             }
@@ -1170,6 +1174,34 @@ impl App {
         }
 
         self.language_choice(c, input, right, y + 96.0, hint);
+        self.startup_choice(c, input, right, hint);
+    }
+
+    /// At startup: the last project, or the start screen (at the bottom of the right column).
+    fn startup_choice(&mut self, c: &mut Canvas, input: &Input, right: Rect, hint: &mut Option<String>) {
+        use super::start::Startup;
+        let y = right.bottom() - 54.0;
+        self.section(c, right.x, y, tr("At startup"));
+        let choices = [
+            (Startup::Reopen, tr("Reopen the last project"), tr("The project you had open comes back as you left it")),
+            (Startup::StartScreen, tr("Start screen"), tr("New project, templates and recent projects to choose from")),
+        ];
+        let mut x = right.x;
+        for (k, (choice, label, desc)) in choices.into_iter().enumerate() {
+            let w = self.fonts.measure(self.f.sans_med, 12.0, label) + 44.0;
+            let r = Rect::new(x, y + 20.0, w, 30.0);
+            let id = wid("set-startup", k, 0);
+            let active = self.prefs.startup == choice;
+            let icon = if active { Icon::Check } else if choice == Startup::Reopen { Icon::History } else { Icon::Layout };
+            if self.pill_button(c, input, id, r, icon, label, active) && !active {
+                self.prefs.startup = choice;
+                self.save_settings();
+            }
+            if self.hovered(input, id, r) {
+                *hint = Some(format!("{label} · {desc}"));
+            }
+            x += w + 8.0;
+        }
     }
 
     /// Langue de l'interface (effet immédiat) : l'anglais par défaut, les

@@ -646,6 +646,8 @@ pub struct App {
     pub pending: Option<super::filedialog::Then>,
     /// The user chose to quit (after the unsaved changes were dealt with).
     pub quit_now: bool,
+    /// The start screen, at launch.
+    pub start: Option<super::start::StartScreen>,
 
     pub view: View,
     pub focus: Focus,
@@ -876,6 +878,7 @@ impl App {
             recent_files: Vec::new(),
             pending: None,
             quit_now: false,
+            start: None,
             view: View::Rack,
             focus: Focus::Channel(0),
             sidebar: true,
@@ -1484,6 +1487,7 @@ impl App {
         self.last_edit = None;
         self.project_path = path;
         self.modified = false;
+        self.start = None;
         self.focus = Focus::Channel(0);
         self.clamp_selection();
         self.piano.fitted_for = None;
@@ -1964,11 +1968,16 @@ impl App {
 
     // --- Fichiers ---
 
-    pub fn open_file(&mut self, path: PathBuf) {
+    /// Opens a project file (FL Studio and Ableton Live ones are imported);
+    /// false if it could not be read.
+    pub fn open_file(&mut self, path: PathBuf) -> bool {
         let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
         if ext == "flp" || ext == "als" {
-            self.remember(&path);
-            return self.import_flp(&path);
+            let ok = self.import_flp(&path);
+            if ok {
+                self.remember(&path);
+            }
+            return ok;
         }
         match compat::load_project(&path) {
             Ok(p) => {
@@ -1976,8 +1985,12 @@ impl App {
                 self.remember(&path);
                 self.replace_project(p, Some(path));
                 self.toast(&tr_fmt!("{} opened", name));
+                true
             }
-            Err(e) => self.toast(&e),
+            Err(e) => {
+                self.toast(&e);
+                false
+            }
         }
     }
 
@@ -2004,7 +2017,7 @@ impl App {
 
     /// Opens an FL Studio project or an Ableton Live set as a new, unsaved
     /// Ponzik project, its report shown.
-    pub fn import_flp(&mut self, path: &std::path::Path) {
+    pub fn import_flp(&mut self, path: &std::path::Path) -> bool {
         let als = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("als"));
         let result = if als { compat::import_als(path) } else { compat::import_flp(path) };
         match result {
@@ -2016,8 +2029,12 @@ impl App {
                 self.report_open = vec![ponzik_project::ReportKind::Approximated];
                 self.import_report = Some(report);
                 self.open_popup(Popup::ImportReport, REPORT_ANCHOR);
+                true
             }
-            Err(e) => self.toast(&e),
+            Err(e) => {
+                self.toast(&e);
+                false
+            }
         }
     }
 
@@ -2225,7 +2242,7 @@ impl App {
         if self.ctl.learn.is_active() && input.keys.iter().any(|(k, _)| *k == Key::Escape) {
             self.ctl.learn.cancel();
         }
-        if self.popup.is_none() && !self.sidebar_focus {
+        if self.popup.is_none() && self.start.is_none() && !self.sidebar_focus {
             self.shortcuts(input);
             self.session_keys(input);
             self.musical_keyboard(input);
@@ -2249,7 +2266,7 @@ impl App {
             || self.learn_rect(w).is_some_and(|r| r.contains(input.x, input.y))
             || self.toast_hits.iter().any(|r| r.contains(input.x, input.y))
             || (self.popup.is_none() && (self.over_tour(input) || self.over_hint(input) || self.over_lesson(input)));
-        let ui = if self.popup.is_some() || over_card {
+        let ui = if self.popup.is_some() || self.start.is_some() || over_card {
             masked = Input {
                 inside: false,
                 pressed: false,
@@ -2294,12 +2311,13 @@ impl App {
         self.float_layer(c, ui);
         self.record_panel(c, ui, Rect::new(0.0, 0.0, w, h));
         self.voice_panel(c, ui, Rect::new(0.0, 0.0, w, h));
+        self.start_layer(c, input, Rect::new(0.0, 0.0, w, h));
         if self.popup.is_none() {
             self.recovery_prompt(c, input, w);
             self.learn_banner(c, input, w);
         }
         self.popup_layer(c, input, Rect::new(0.0, 0.0, w, h));
-        if self.popup.is_none() {
+        if self.popup.is_none() && self.start.is_none() {
             self.tour_layer(c, input, Rect::new(0.0, 0.0, w, h));
             self.lesson_layer(c, input, Rect::new(0.0, 0.0, w, h));
             self.hint_layer(c, input, Rect::new(0.0, 0.0, w, h));
@@ -4338,7 +4356,7 @@ fn recovery_detail(path: &std::path::Path) -> String {
 }
 
 /// Icône d'un modèle de projet, dans l'ordre de [`ponzik_project::templates`].
-fn template_icon(i: usize) -> Icon {
+pub(super) fn template_icon(i: usize) -> Icon {
     match i {
         0 => Icon::Plus,
         1 => Icon::Rack,
