@@ -545,8 +545,9 @@ impl App {
             MenuItem::new(Icon::Save, tr("Save"), Action::Save).detail(key(S::Save)).sep(),
             MenuItem::new(Icon::Duplicate, tr("Save as"), Action::SaveAs).detail(key(S::SaveAs)),
             MenuItem::new(Icon::Folder, tr("Open"), Action::OpenMenu).detail(key(S::Open)),
+            MenuItem::sub_of(Icon::History, tr("Open recent"), Popup::Recent).id("recent"),
             MenuItem::new(Icon::Plus, tr("New"), Action::NewProject).detail(key(S::NewProject)),
-            MenuItem::new(Icon::Export, tr("Export as WAV"), Action::Export).detail(key(S::Export)).sep(),
+            MenuItem::sub(Icon::Export, tr("Export"), self.export_items()).id("export").sep(),
         ];
         (self.project.name.clone(), v)
     }

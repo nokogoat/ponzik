@@ -221,6 +221,8 @@ pub enum Icon {
     NewFolder,
     /// A sheet with a folded corner: a document.
     Document,
+    /// An arrow going down into a tray: import.
+    Import,
 }
 
 /// Diagonal stripes over `r` (clipped to it): offline clips and samples.
@@ -783,6 +785,11 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
         Icon::Export => {
             c.stroke_polyline(&[p(0.0, 3.0), p(0.0, -7.0)], stroke, col);
             c.stroke_polyline(&[p(-4.0, -3.0), p(0.0, -7.0), p(4.0, -3.0)], stroke, col);
+            c.stroke_polyline(&[p(-6.0, 1.0), p(-6.0, 6.5), p(6.0, 6.5), p(6.0, 1.0)], stroke, col);
+        }
+        Icon::Import => {
+            c.stroke_polyline(&[p(0.0, -7.0), p(0.0, 3.0)], stroke, col);
+            c.stroke_polyline(&[p(-4.0, -1.0), p(0.0, 3.0), p(4.0, -1.0)], stroke, col);
             c.stroke_polyline(&[p(-6.0, 1.0), p(-6.0, 6.5), p(6.0, 6.5), p(6.0, 1.0)], stroke, col);
         }
         // The browser: an open folder of sounds, a waveform peeking out.

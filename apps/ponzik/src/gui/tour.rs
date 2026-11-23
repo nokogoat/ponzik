@@ -35,7 +35,7 @@ fn body(step: usize) -> &'static str {
     match step {
         0 => tr("Each row is a sound, each square a sixteenth note. Click squares to switch them on, press Space to hear the loop."),
         1 => tr("Click in the grid to draw notes, drag their end to make them longer, right-click to erase. The arrows above pick the channel."),
-        _ => tr("When it sounds good, open this menu and choose Export as WAV. Ctrl+K finds every other action."),
+        _ => tr("When it sounds good, open this menu, then Export and WAV. Ctrl+K finds every other action."),
     }
 }
 

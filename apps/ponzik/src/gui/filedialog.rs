@@ -785,6 +785,13 @@ impl App {
         store_recent(&self.recent_files);
     }
 
+    /// "Clear the list" of Open recent.
+    pub fn clear_recent(&mut self) {
+        self.recent_files.clear();
+        store_recent(&self.recent_files);
+        self.toast(tr("Recent projects cleared"));
+    }
+
     pub fn file_dialog_open(&self) -> bool {
         self.popup.as_ref().is_some_and(|p| matches!(p.kind, Popup::Files | Popup::Unsaved))
     }

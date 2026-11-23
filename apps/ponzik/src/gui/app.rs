@@ -146,6 +146,10 @@ pub enum Popup {
     ImportMidi(Vec<PathBuf>),
     /// FL Studio projects to import.
     ImportFlp(Vec<PathBuf>),
+    /// Ableton Live sets to import.
+    ImportAls(Vec<PathBuf>),
+    /// The recent projects (a submenu of the main menu).
+    Recent,
     /// Report of the last FL Studio import.
     ImportReport,
     /// "Locate missing files": the offline files, and a folder to search
@@ -382,7 +386,11 @@ pub enum Action {
     ImportMidiMenu,
     ImportMidi(PathBuf),
     ImportFlpMenu,
+    ImportAlsMenu,
+    /// Opens an FL Studio project or an Ableton Live set (as a new project).
     ImportFlp(PathBuf),
+    /// Empties the list of recent projects.
+    ClearRecent,
     /// Folds or unfolds a category of the import report.
     ToggleReportGroup(ponzik_project::ReportKind),
     /// Searches a folder for the offline files, relinks those found and saves.
@@ -472,7 +480,9 @@ pub enum Action {
 }
 
 /// Ligne de menu : une icône (ou la couleur d'un pattern), un nom court, une
-/// valeur à droite ; la description passe en infobulle.
+/// valeur à droite ; la description passe en infobulle. A row can open a
+/// submenu (see `menu.rs`).
+#[derive(Clone)]
 pub struct MenuItem {
     pub icon: Option<Icon>,
     pub color: Option<Color>,
@@ -488,11 +498,51 @@ pub struct MenuItem {
     /// Height of the row: 38 px, less for lines of text (report entries).
     pub height: f32,
     pub action: Action,
+    /// The child menu this row opens (a chevron on its right).
+    pub sub: Option<super::menu::Sub>,
+    /// Stable name of the row, for lessons and captures ("export", "export-wav").
+    pub id: &'static str,
+    /// A small group title ("Audio"), not a button.
+    pub header: bool,
 }
 
 impl MenuItem {
     pub(super) fn plain(name: &str, action: Action) -> Self {
-        Self { icon: None, color: None, name: name.into(), detail: String::new(), tip: String::new(), sep: false, on: false, dim: false, height: 38.0, action }
+        Self {
+            icon: None,
+            color: None,
+            name: name.into(),
+            detail: String::new(),
+            tip: String::new(),
+            sep: false,
+            on: false,
+            dim: false,
+            height: 38.0,
+            action,
+            sub: None,
+            id: "",
+            header: false,
+        }
+    }
+
+    /// A row that opens a submenu of these items.
+    pub(super) fn sub(icon: Icon, name: &str, items: Vec<MenuItem>) -> Self {
+        Self { sub: Some(super::menu::Sub::Items(items)), ..Self::new(icon, name, Action::None) }
+    }
+
+    /// A row that opens the menu of `popup` as its submenu, built only while open.
+    pub(super) fn sub_of(icon: Icon, name: &str, popup: Popup) -> Self {
+        Self { sub: Some(super::menu::Sub::Of(popup)), ..Self::new(icon, name, Action::None) }
+    }
+
+    /// A small title over a group of rows.
+    pub(super) fn header(name: &str) -> Self {
+        Self { header: true, ..Self::plain(name, Action::None) }
+    }
+
+    pub(super) fn id(mut self, id: &'static str) -> Self {
+        self.id = id;
+        self
     }
 
     pub(super) fn new(icon: Icon, name: &str, action: Action) -> Self {
@@ -535,6 +585,8 @@ pub struct PopupState {
     pub anchor: Rect,
     /// Ouvert pendant cette image : le clic qui l'a ouvert ne doit pas le refermer.
     pub fresh: bool,
+    /// Keyboard selection and open submenu of a menu.
+    pub nav: super::menu::MenuNav,
 }
 
 /// Geste en cours : widget saisi et valeurs de départ.
@@ -1055,8 +1107,27 @@ impl App {
 
     /// Ouvre un menu par son nom (captures d'écran).
     pub fn screenshot_popup(&mut self, name: &str) {
+        // <menu>@<n>: that menu with the submenu of its row n open.
+        if let Some((menu, row)) = name.split_once('@')
+            && let Ok(row) = row.parse::<usize>()
+        {
+            self.screenshot_popup(menu);
+            if let Some(p) = self.popup.as_mut() {
+                p.nav.open_sub(row, false);
+            }
+            return;
+        }
         let kind = match name {
             "templates" => Popup::Templates,
+            "effects" => {
+                let track = self.focused_track();
+                self.open_popup(Popup::AddEffect { track }, Rect::new(1470.0, 700.0, 110.0, 26.0));
+                return;
+            }
+            "instruments" => {
+                self.open_popup(Popup::AddInstrument { replace: None }, Rect::new(280.0, 480.0, 240.0, 44.0));
+                return;
+            }
             "scale" => Popup::Scale,
             "stamp" => {
                 self.piano.chord_stamp = true;
@@ -1228,6 +1299,27 @@ impl App {
             "menu" | "themes" => {
                 let kind = if name == "menu" { Popup::MainMenu } else { Popup::Themes };
                 self.open_popup(kind, Rect::new(1600.0 - 44.0, 8.0, 32.0, 32.0));
+                return;
+            }
+            // menu:<row>[:kb]: the main menu with a submenu open (export, import,
+            // recent, theme), the keyboard in it with `:kb`.
+            _ if name.starts_with("menu:") => {
+                let mut parts = name["menu:".len()..].split(':');
+                let id = match parts.next() {
+                    Some("export") => "export",
+                    Some("import") => "import",
+                    Some("recent") => "recent",
+                    _ => "theme",
+                };
+                // PONZIK_RECENT=a.ponzik|b.flp: the recent projects shown.
+                if let Ok(list) = std::env::var("PONZIK_RECENT") {
+                    self.recent_files = list.split('|').filter(|p| !p.is_empty()).map(PathBuf::from).collect();
+                }
+                self.open_popup(Popup::MainMenu, Rect::new(1600.0 - 44.0, 8.0, 32.0, 32.0));
+                if let Some(p) = self.popup.as_mut() {
+                    p.nav.want = Some(id);
+                    p.nav.in_sub = parts.next() == Some("kb");
+                }
                 return;
             }
             // report[:offline,skipped]: the import report, those categories unfolded too.
@@ -2275,7 +2367,13 @@ impl App {
             self.shortcuts(input);
             self.session_keys(input);
             self.musical_keyboard(input);
-        } else if self.popup.is_some() && !self.settings_open() && !self.file_dialog_open() && input.keys.iter().any(|(k, _)| *k == Key::Escape) {
+        } else if self.popup.is_some()
+            && !self.settings_open()
+            && !self.file_dialog_open()
+            && self.popup.as_ref().is_none_or(|p| p.nav.open.is_none())
+            && input.keys.iter().any(|(k, _)| *k == Key::Escape)
+        {
+            // Escape in a submenu closes the submenu only (see `menu.rs`).
             self.popup = None;
         }
         if input.focus_lost {
@@ -3098,13 +3196,13 @@ impl App {
     // --- Menus ---
 
     pub fn open_popup(&mut self, kind: Popup, anchor: Rect) {
-        self.popup = Some(PopupState { kind, anchor, fresh: true });
+        self.popup = Some(PopupState { kind, anchor, fresh: true, nav: Default::default() });
         self.anim.set(wid("popup", 0, 0), 0.0);
         self.anim.set(wid("popup-scroll", 0, 0), 0.0);
     }
 
     /// Lignes d'un menu, sous un titre.
-    fn menu_items(&self, kind: &Popup) -> (String, Vec<MenuItem>) {
+    pub(super) fn menu_items(&self, kind: &Popup) -> (String, Vec<MenuItem>) {
         let p = &self.project;
         let track_name = |t: usize| p.tracks[t].name.clone();
         let bars = |len: u32| format!("{}", len.div_ceil(TICKS_PER_BAR));
@@ -3387,21 +3485,22 @@ impl App {
                 };
                 (tr("Import MIDI").into(), items)
             }
-            Popup::ImportFlp(files) => {
+            Popup::ImportFlp(files) | Popup::ImportAls(files) => {
+                let als = matches!(kind, Popup::ImportAls(_));
                 let items = if files.is_empty() {
-                    vec![MenuItem::new(Icon::Folder, tr("No FL Studio project found"), Action::None)
-                        .tip(&compat::projects_dir().display().to_string())]
+                    let none = if als { tr("No Ableton Live set found") } else { tr("No FL Studio project found") };
+                    vec![MenuItem::new(Icon::Folder, none, Action::None).tip(&compat::projects_dir().display().to_string())]
                 } else {
                     files
                         .iter()
                         .map(|f| {
                             let name = f.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
                             let dir = f.parent().map_or(String::new(), |d| d.display().to_string());
-                            MenuItem::new(Icon::Folder, &name, Action::ImportFlp(f.clone())).tip(&dir)
+                            MenuItem::new(if als { Icon::Session } else { Icon::Folder }, &name, Action::ImportFlp(f.clone())).tip(&dir)
                         })
                         .collect()
                 };
-                (tr("Import an FL Studio project").into(), items)
+                (if als { tr("Import an Ableton Live set") } else { tr("Import an FL Studio project") }.into(), items)
             }
             Popup::ImportReport => {
                 let source = self.import_report.as_ref().map_or("FL Studio", |r| r.source_name()).to_string();
@@ -3477,48 +3576,8 @@ impl App {
                     })
                     .collect(),
             ),
-            Popup::MainMenu => {
-                use super::keymap::Shortcut as S;
-                let key = |s: S| self.key_label(s);
-                let theme = self.theme_label(self.themes.active);
-                let (done, total) = self.lessons.count();
-                let learned = format!("{}/{}", done, total);
-                (
-                    "Ponzik".into(),
-                    vec![
-                        MenuItem::new(Icon::Plus, tr("New"), Action::NewProject).detail(key(S::NewProject)),
-                        MenuItem::new(Icon::Folder, tr("Open"), Action::OpenMenu).detail(key(S::Open)),
-                        MenuItem::new(Icon::Save, tr("Save"), Action::Save).detail(key(S::Save)),
-                        MenuItem::new(Icon::Pencil, tr("Save as"), Action::SaveAs).detail(key(S::SaveAs)),
-                        MenuItem::new(Icon::Export, tr("Export as WAV"), Action::Export).detail(key(S::Export)).sep(),
-                        MenuItem::new(Icon::Export, tr("Export as FLAC"), Action::ExportWith(ponzik_project::ExportOptions::flac()))
-                            .tip(tr("Lossless, 24 bits, about half the size of a WAV")),
-                        MenuItem::new(Icon::Columns, tr("Export stems"), Action::ExportStems(Default::default())).tip(tr("One WAV per mixer track")),
-                        MenuItem::new(Icon::Columns, tr("Export sections"), Action::ExportSections(Default::default()))
-                            .tip(tr("One WAV per arrangement section: \"<project> - <section>.wav\"")),
-                        MenuItem::new(Icon::Piano, tr("Import MIDI"), Action::ImportMidiMenu).sep(),
-                        MenuItem::new(Icon::Folder, tr("Import an FL Studio project"), Action::ImportFlpMenu),
-                        MenuItem::new(Icon::Rack, tr("Export for FL Studio"), Action::SaveCopy(super::filedialog::Format::Flp))
-                            .tip(tr("An .flp copy: patterns, notes, playlist, mixer levels")),
-                        MenuItem::new(Icon::Session, tr("Export for Ableton Live"), Action::SaveCopy(super::filedialog::Format::Als))
-                            .tip(tr("An .als copy: MIDI tracks with their notes, tempo, markers")),
-                        MenuItem::new(Icon::Columns, tr("Export for REAPER"), Action::SaveCopy(super::filedialog::Format::Rpp))
-                            .tip(tr("An .rpp copy: MIDI and audio items, tempo changes, markers")),
-                        MenuItem::new(Icon::Piano, tr("Export as MIDI"), Action::ExportMidi).tip(tr("The current pattern")),
-                        MenuItem::new(Icon::Theme, tr("Theme"), Action::Popup(Popup::Themes)).detail(theme).sep(),
-                        MenuItem::new(Icon::Layout, tr("Settings"), Action::Popup(Popup::Settings { tab: 0 }))
-                            .detail(key(S::Settings))
-                            .tip(tr("Views, panels and shortcuts")),
-                        MenuItem::new(Icon::Learn, tr("Learn"), Action::Lessons(None))
-                            .detail(learned)
-                            .tip(tr("Short hands-on lessons: the basics, then your first tracks")),
-                        MenuItem::new(Icon::Info, tr("What's new"), Action::Update(super::updates::UpdateOp::ShowNews)).tip(tr("The changes of this version")),
-                        MenuItem::new(Icon::Reset, tr("About and updates"), Action::Popup(Popup::Settings { tab: 5 }))
-                            .detail(self.updates_badge())
-                            .tip(tr("Version, build and update settings")),
-                    ],
-                )
-            }
+            Popup::MainMenu => self.main_menu(),
+            Popup::Recent => (tr("Open recent").into(), self.recent_items()),
             Popup::Themes => {
                 let mut items: Vec<MenuItem> = (0..self.themes.entries.len())
                     .map(|i| {
@@ -3527,7 +3586,7 @@ impl App {
                         it
                     })
                     .collect();
-                items.push(MenuItem::new(Icon::Pencil, tr("Edit themes"), Action::Popup(Popup::Settings { tab: 3 })).sep().tip(tr("Colors, corners, text size, theme files")));
+                items.push(MenuItem::new(Icon::Pencil, tr("Edit themes…"), Action::Popup(Popup::Settings { tab: 3 })).sep().tip(tr("Colors, corners, text size, theme files")));
                 (tr("Theme").into(), items)
             }
             Popup::ClipMenu(i) => {
@@ -3878,6 +3937,8 @@ impl App {
             }
             Action::ImportMidiMenu => self.open_popup(Popup::ImportMidi(compat::scan_midi()), anchor),
             Action::ImportFlpMenu => self.open_popup(Popup::ImportFlp(compat::scan_flp()), anchor),
+            Action::ImportAlsMenu => self.open_popup(Popup::ImportAls(compat::scan_als()), anchor),
+            Action::ClearRecent => self.clear_recent(),
             Action::ImportFlp(path) => self.request_open(path),
             Action::ToggleReportGroup(kind) => {
                 if let Some(i) = self.report_open.iter().position(|&k| k == kind) {
@@ -4041,7 +4102,7 @@ impl App {
         if let Popup::Palette { query, selected } = &state.kind {
             let (run, next) = self.palette(c, input, screen, query.clone(), *selected);
             if let Some(kind) = next {
-                self.popup = Some(PopupState { kind, anchor: state.anchor, fresh: false });
+                self.popup = Some(PopupState { kind, anchor: state.anchor, fresh: false, nav: Default::default() });
             }
             if let Some(action) = run {
                 self.run_action(action, Rect::new(screen.w * 0.5 - 150.0, screen.h * 0.2, 300.0, 0.0));
@@ -4191,121 +4252,7 @@ impl App {
             return;
         }
 
-        let (title, mut items) = self.menu_items(&state.kind);
-        for it in &mut items {
-            it.height = t.dense(it.height);
-        }
-        // Assez large pour le plus long libellé et sa valeur (jusqu'à 360 px).
-        let widest = items
-            .iter()
-            .map(|it| self.fonts.measure(self.f.sans_med, 13.0, &it.name) + self.fonts.measure(self.f.mono, 11.0, &it.detail))
-            .fold(0.0f32, f32::max);
-        let w = (widest + 84.0).clamp(260.0, 360.0);
-        let seps = items.iter().filter(|i| i.sep).count() as f32 * 9.0;
-        let rows_h: f32 = items.iter().map(|i| i.height).sum();
-        let h = (44.0 + rows_h + seps + 6.0).min(screen.h - 80.0);
-        let mut x = state.anchor.x;
-        let mut y = state.anchor.bottom() + 8.0;
-        if x + w > screen.right() - 12.0 {
-            x = screen.right() - 12.0 - w;
-        }
-        if y + h > screen.bottom() - 12.0 {
-            y = (state.anchor.y - 8.0 - h).max(TOP_BAR);
-        }
-        let r = Rect::new(x.max(12.0), y + (1.0 - open) * 6.0, w, h);
-        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, t.shade(90.0 * open));
-        c.fill_rrect(r, 14.0, t.panel);
-        c.stroke_rrect(r, 14.0, 1.0, t.hairline.alpha(1.6));
-        self.text_fit(c, self.f.sans_med, 12.0, r.x + 16.0, r.y + 20.0, &title, r.w - 32.0, t.muted);
-
-        // Défilement si le menu est plus long que l'écran.
-        let list_h = r.h - 40.0;
-        let content = rows_h + seps;
-        let key = wid("popup-scroll", 0, 0);
-        let mut scroll = self.anim.get(key).unwrap_or(0.0);
-        if input.inside && r.contains(input.x, input.y) && input.wheel != 0.0 {
-            scroll -= input.wheel * 60.0;
-        }
-        scroll = scroll.clamp(0.0, (content - list_h).max(0.0));
-        self.anim.set(key, scroll);
-
-        let mut chosen = None;
-        let mut hover_tip = None;
-        let list = Rect::new(r.x, r.y + 36.0, r.w, r.h - 40.0);
-        let prev = c.push_clip(list);
-        let has_icons = items.iter().any(|it| it.icon.is_some());
-        let mut ry = r.y + 38.0 - scroll;
-        for (i, it) in items.iter().enumerate() {
-            if it.sep {
-                c.fill_rect(Rect::new(r.x + 12.0, ry + 4.0, r.w - 24.0, 1.0), t.hairline);
-                ry += 9.0;
-            }
-            let row = Rect::new(r.x + 6.0, ry, r.w - 12.0, it.height - 4.0);
-            ry += it.height;
-            let id = wid("popup-row", i, 0);
-            // Lines of text (no action) are not buttons.
-            let line = it.height < t.dense(38.0) && matches!(it.action, Action::None);
-            let over = input.inside && row.contains(input.x, input.y) && list.contains(input.x, input.y);
-            let hov = over && !line;
-            let hv = self.hover_anim(id, hov);
-            let current = it.on;
-            if hv > 0.01 || current {
-                c.fill_rrect(row, 9.0, t.raised.mix(t.raised_hi, hv * 0.6).alpha(hv.max(current as u8 as f32 * 0.7)));
-            }
-            let danger = it.icon == Some(Icon::Trash);
-            let ink = if danger {
-                t.negative
-            } else if it.dim {
-                t.muted.mix(t.text2, hv)
-            } else {
-                t.text2.mix(t.text, hv.max(current as u8 as f32))
-            };
-            let cy = row.y + row.h * 0.5;
-            let mut tx = row.x + 12.0;
-            if let Some(icon) = it.icon {
-                draw_icon(c, icon, row.x + 20.0, cy, 15.0, if danger { t.negative } else { t.muted.mix(t.accent, hv) });
-                tx = row.x + 38.0;
-            } else if let Some(col) = it.color
-                && has_icons
-            {
-                // Parmi des lignes à icône : une pastille à la place de l'icône.
-                c.fill_circle(row.x + 20.0, cy, 6.0, col);
-                tx = row.x + 38.0;
-            } else if let Some(col) = it.color {
-                c.fill_rrect(Rect::new(row.x + 12.0, cy - 7.0, 4.0, 14.0), 2.0, col);
-                tx = row.x + 26.0;
-            }
-            let mut right = row.right() - 12.0;
-            if !it.detail.is_empty() {
-                right = self.text_right(c, self.f.mono, 11.0, right, cy, &it.detail, t.muted) - 10.0;
-            }
-            self.text_fit(c, self.f.sans_med, 13.0, tx, cy, &it.name, right - tx, ink);
-            if over && !it.tip.is_empty() {
-                hover_tip = Some(it.tip.clone());
-            }
-            if hov {
-                self.set_cursor(ponzik_window::Cursor::Hand);
-            }
-            if hov && input.pressed {
-                chosen = Some((i, row));
-            }
-        }
-        c.set_clip(Some(prev));
-        // Les menus gardent leurs infobulles : la description d'un instrument, un chemin.
-        if let Some(tip) = hover_tip {
-            let tw = self.fonts.measure(self.f.sans, 12.0, &tip).min(screen.w * 0.4);
-            let tip_r = Rect::new((r.right() + 8.0).min(screen.right() - tw - 28.0), input.y - 14.0, tw + 20.0, 28.0);
-            c.fill_rrect(tip_r, 8.0, t.raised_hi);
-            c.stroke_rrect(tip_r, 8.0, 1.0, t.hairline.alpha(1.6));
-            self.text_fit(c, self.f.sans, 12.0, tip_r.x + 10.0, tip_r.y + 14.0, &tip, tw, t.text2);
-        }
-
-        let clicked_outside = (input.pressed || input.right_pressed) && !r.contains(input.x, input.y);
-        if let Some((i, row)) = chosen {
-            self.anim.set(key, 0.0);
-            let action = items[i].action.clone();
-            self.run_action(action, Rect::new(r.x, row.y, r.w, row.h));
-        } else if !clicked_outside {
+        if self.menu_popup(c, input, screen, &mut state) && self.popup.is_none() {
             self.popup = Some(state);
         }
     }

@@ -298,6 +298,19 @@ pub fn scan_flp() -> Vec<PathBuf> {
     out
 }
 
+/// Ableton Live sets in the usual folders (Live's projects sit in the music
+/// folder or the documents).
+pub fn scan_als() -> Vec<PathBuf> {
+    let h = home();
+    let mut out = Vec::new();
+    for root in [projects_dir(), music_dir(), h.join("Documents"), h.join("Téléchargements"), h.join("Downloads")] {
+        walk_ext(&root, 0, &["als"], &mut out);
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// Converts the project of another program (FL Studio, Ableton Live,
 /// REAPER, LMMS, Ardour, a MusicXML score); its media are looked up next to it too.
 pub fn import_project(path: &Path) -> Result<(Project, ponzik_project::ImportReport), String> {
