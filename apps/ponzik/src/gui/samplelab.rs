@@ -365,7 +365,7 @@ fn grab_key(g: Grab) -> usize {
 
 /// Dossier des échantillons édités.
 fn samples_dir() -> PathBuf {
-    super::compat::projects_dir().join("Échantillons")
+    super::compat::projects_dir().join("Samples")
 }
 
 /// Nom de fichier propre.
@@ -977,7 +977,7 @@ impl App {
 
     // --- Vers le projet ---
 
-    /// Écrit un échantillon dans `Échantillons/` ; renvoie son chemin.
+    /// Écrit un échantillon dans `Samples/` ; renvoie son chemin.
     fn lab_write(&mut self, sample: Sample, stem: &str) -> Option<String> {
         let dir = samples_dir();
         if let Err(e) = std::fs::create_dir_all(&dir) {
@@ -1013,7 +1013,7 @@ impl App {
     fn lab_save_action(&mut self) {
         if let Some(path) = self.lab_save() {
             let short = Path::new(&path).file_name().map_or(String::new(), |s| s.to_string_lossy().into_owned());
-            self.lab_done(tr_fmt!("Saved as one file: {}", short), tr("It is in the Échantillons folder, with the cuts inside. Find it in the browser's sample list.").into(), Go::Nothing);
+            self.lab_done(tr_fmt!("Saved as one file: {}", short), tr("It is in the Samples folder, with the cuts inside. Find it in the browser's sample list.").into(), Go::Nothing);
         }
     }
 
@@ -1023,7 +1023,7 @@ impl App {
         let saved = (0..n).filter(|&k| self.lab_slice_file(k).is_some()).count();
         if saved > 0 {
             let name = base_name(&self.lab.name);
-            let detail = tr_fmt!("They are in the Échantillons folder as \"{} slice 1\" and so on. Find them in the browser's sample list.", name);
+            let detail = tr_fmt!("They are in the Samples folder as \"{} slice 1\" and so on. Find them in the browser's sample list.", name);
             self.lab_done(tr_fmt!("Saved {} pieces as separate files", saved), detail, Go::Nothing);
         }
     }
@@ -2501,7 +2501,7 @@ impl App {
         // Actions secondaires.
         let y = y.min(main.bottom() - 36.0);
         let mut items = vec![
-            (Icon::Save, tr("Save the pieces as files"), tr("Saves every piece as its own WAV file\nin the Échantillons folder, ready for any sampler")),
+            (Icon::Save, tr("Save the pieces as files"), tr("Saves every piece as its own WAV file\nin the Samples folder, ready for any sampler")),
             (Icon::Export, tr("Save as one file"), tr("Saves the whole edited sound as one WAV file\nThe cuts are kept inside the file")),
         ];
         if source != Source::Browser {

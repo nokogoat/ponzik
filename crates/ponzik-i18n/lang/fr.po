@@ -4748,9 +4748,6 @@ msgstr "Pas de temps net trouvé : saisis plutôt le tempo"
 msgid "Saved as one file: {}"
 msgstr "Enregistré en un seul fichier : {}"
 
-msgid "It is in the Échantillons folder, with the cuts inside. Find it in the browser's sample list."
-msgstr "Il est dans le dossier Échantillons, avec les coupes à l'intérieur. Retrouve-le dans la liste des échantillons du navigateur."
-
 msgid "Saved {} pieces as separate files"
 msgstr "{} morceaux enregistrés en fichiers séparés"
 
@@ -5024,9 +5021,6 @@ msgstr "Quelle touche joue quel morceau"
 msgid "Save the pieces as files"
 msgstr "Enregistrer les morceaux en fichiers"
 
-msgid "Saves every piece as its own WAV file\nin the Échantillons folder, ready for any sampler"
-msgstr "Enregistre chaque morceau dans son propre fichier WAV\ndans le dossier Échantillons, prêt pour n'importe quel sampler"
-
 msgid "Save as one file"
 msgstr "Enregistrer en un seul fichier"
 
@@ -5149,9 +5143,6 @@ msgstr "Joue tout le son à l'envers"
 
 msgid "To cut off the start or the end, drag the brackets at both ends of the wave."
 msgstr "Pour couper le début ou la fin, glisse les crochets aux deux bouts de l'onde."
-
-msgid "They are in the Échantillons folder as \"{} slice 1\" and so on. Find them in the browser's sample list."
-msgstr "Ils sont dans le dossier Échantillons sous les noms « {} slice 1 » et suivants. Retrouve-les dans la liste des échantillons du navigateur."
 
 msgid "Done! \"{}\" is in your channel rack with a pattern"
 msgstr "C'est fait ! « {} » est dans ton Channel Rack avec un pattern"
@@ -8296,6 +8287,15 @@ msgstr "En-tête FL Studio corrompu (PPQ à 0)"
 
 msgid "No event data in this FL Studio project"
 msgstr "Aucune donnée d'événement dans ce projet FL Studio"
+
+msgid "It is in the Samples folder, with the cuts inside. Find it in the browser's sample list."
+msgstr "Il est dans le dossier Samples, avec les coupes à l'intérieur. Retrouve-le dans la liste des échantillons du navigateur."
+
+msgid "Saves every piece as its own WAV file\nin the Samples folder, ready for any sampler"
+msgstr "Enregistre chaque morceau dans son propre fichier WAV\ndans le dossier Samples, prêt pour n'importe quel sampler"
+
+msgid "They are in the Samples folder as \"{} slice 1\" and so on. Find them in the browser's sample list."
+msgstr "Ils sont dans le dossier Samples sous les noms « {} slice 1 » et suivants. Retrouve-les dans la liste des échantillons du navigateur."
 
 msgid "interrupted"
 msgstr "interrompu"

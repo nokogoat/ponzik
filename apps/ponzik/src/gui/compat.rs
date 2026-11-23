@@ -191,6 +191,7 @@ pub fn scan_samples() -> Vec<PathBuf> {
     });
     let roots = [
         projects_dir().join("Samples"),
+        // Where older versions saved the Sample Lab's files.
         projects_dir().join("Échantillons"),
         music_dir(),
         h.join("Téléchargements"),
