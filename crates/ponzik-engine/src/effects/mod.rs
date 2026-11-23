@@ -19,7 +19,7 @@ pub mod fx_rack;
 mod gate;
 mod imager;
 mod limiter;
-mod lofi;
+pub mod lofi;
 mod master_limiter;
 pub mod mix_assistant;
 mod ott;

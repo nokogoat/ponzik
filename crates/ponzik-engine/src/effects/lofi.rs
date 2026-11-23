@@ -73,6 +73,52 @@ fn geometric(range: [f32; 2], t: f32) -> f32 {
     range[0] * (range[1] / range[0]).powf(t)
 }
 
+/// Gain (linear) of the wear filter at `hz` for an `age` (0 to 1): the same
+/// high-pass and low-pass as the sound, for the device's picture.
+pub fn wear_gain(age: f32, hz: f32, sample_rate: f32) -> f32 {
+    if age <= 1e-3 {
+        return 1.0;
+    }
+    let lp = BiquadCoefs::lowpass(geometric(AGE_LOW_PASS, age), 0.707, sample_rate);
+    let hp = BiquadCoefs::highpass(geometric(AGE_HIGH_PASS, age), 0.707, sample_rate);
+    lp.magnitude(hz, sample_rate) * hp.magnitude(hz, sample_rate)
+}
+
+/// Level of the hiss (dBFS RMS), `None` when it is off.
+pub fn hiss_db(hiss: f32) -> Option<f32> {
+    (hiss > 1e-4).then(|| HISS_DB + 20.0 * hiss.log10())
+}
+
+/// Shape of the hiss's spectrum at `hz` (linear, 1 in the treble): tape hiss
+/// is high-passed.
+pub fn hiss_shape(hz: f32) -> f32 {
+    hz / hz.hypot(HISS_LOW_CUT)
+}
+
+/// Quantization noise (dBFS RMS) at the coarsest resolution `bit_loss`
+/// reaches, `None` when it is off.
+pub fn bit_floor_db(bit_loss: f32) -> Option<f32> {
+    (bit_loss > 1e-4).then(|| {
+        let bits = MAX_BITS - (MAX_BITS - MIN_BITS) * bit_loss.min(1.0);
+        let step = 2.0 / bits.exp2();
+        20.0 * (step / 12f32.sqrt()).log10()
+    })
+}
+
+/// Pitch deviation (cents) at time `t` (s) from wow and the regular part of
+/// flutter: the derivative of the tape head's excursion.
+pub fn pitch_cents(wow: f32, flutter: f32, t: f32) -> f32 {
+    use std::f32::consts::TAU;
+    let speed = wow * WOW_DEPTH * TAU * WOW_HZ * (TAU * WOW_HZ * t).cos()
+        + 0.7 * flutter * FLUTTER_DEPTH * TAU * FLUTTER_HZ * (TAU * FLUTTER_HZ * t).cos();
+    1200.0 * (1.0 - speed).log2()
+}
+
+/// Mean number of crackles per second.
+pub fn crackle_rate(crackle: f32) -> f32 {
+    crackle.clamp(0.0, 1.0) * CRACKLE_RATE
+}
+
 struct Channel {
     line: DelayLine,
     low_pass: Biquad,
@@ -401,5 +447,42 @@ mod tests {
     #[test]
     fn stable() {
         assert_stable_at_extremes(|| Box::new(Lofi::default()), 4.0);
+    }
+
+    /// The picture's wear curve is the filter the sound goes through.
+    #[test]
+    fn wear_curve_matches_the_sound() {
+        for (age, hz) in [(1.0, 6_000.0), (0.6, 4_000.0), (1.0, 100.0), (0.0, 10_000.0)] {
+            let mut l = bare();
+            l.set_param(P_AGE, age);
+            let (y, _) = run_mono(&mut l, &sine(hz, 0.5, 24_000));
+            let measured = peak(&y[12_000..]) / 0.5;
+            let drawn = wear_gain(age, hz, DEFAULT_SR);
+            assert!((gain_to_db(measured) - gain_to_db(drawn)).abs() < 0.5, "{age} {hz}: {measured} {drawn}");
+        }
+        // Older: less treble and less bass.
+        assert!(wear_gain(1.0, 8_000.0, DEFAULT_SR) < wear_gain(0.3, 8_000.0, DEFAULT_SR));
+        assert!(wear_gain(1.0, 60.0, DEFAULT_SR) < wear_gain(0.3, 60.0, DEFAULT_SR));
+    }
+
+    #[test]
+    fn floors_follow_their_knobs() {
+        assert_eq!(hiss_db(0.0), None);
+        assert!((hiss_db(1.0).unwrap() - HISS_DB).abs() < 1e-4);
+        assert!((hiss_db(0.25).unwrap() - (HISS_DB - 12.04)).abs() < 0.01);
+        assert!(hiss_shape(10_000.0) > 0.99 && hiss_shape(100.0) < 0.3);
+        assert_eq!(bit_floor_db(0.0), None);
+        let (light, heavy) = (bit_floor_db(0.2).unwrap(), bit_floor_db(1.0).unwrap());
+        assert!(light < heavy && heavy > -32.0 && heavy < -26.0, "{light} {heavy}");
+    }
+
+    #[test]
+    fn pitch_line_follows_wow_and_flutter() {
+        let peak_cents = |wow: f32, flutter: f32| (0..4_000).map(|i| pitch_cents(wow, flutter, i as f32 / 1_000.0).abs()).fold(0.0, f32::max);
+        assert!(peak_cents(0.0, 0.0) < 1e-4);
+        let (half, full) = (peak_cents(0.5, 0.0), peak_cents(1.0, 0.0));
+        assert!((full - 2.0 * half).abs() < 0.2 && full > 10.0 && full < 20.0, "{half} {full}");
+        assert!(peak_cents(0.0, 1.0) > 10.0);
+        assert_eq!(crackle_rate(0.5), CRACKLE_RATE * 0.5);
     }
 }

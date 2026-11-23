@@ -1043,82 +1043,92 @@ impl App {
         }
     }
 
-    /// Bruits et texture : un vinyle qui tourne pendant la lecture (craquements,
-    /// poussière d'âge) et une onde qui pleure, souffle et perd ses bits.
+    /// Bruits et texture, en vrai : en haut, le filtre d'usure sur un signal
+    /// pleine échelle au-dessus du souffle et du plancher de la perte de bits ;
+    /// en bas, la hauteur qui pleure et scintille, et les craquements.
     fn lofi_graph(&mut self, c: &mut Canvas, input: &Input, r: Rect, device: Device, params: &'static [ParamInfo]) {
+        use ponzik_engine::effects::lofi;
         let t = self.theme;
         let v = |app: &App, id| app.value_of(device, params, id);
         let (crackle, hiss, wow) = (v(self, 0), v(self, 1), v(self, 2));
-        let (flutter, bits, age) = (v(self, 3), v(self, 4), v(self, 5));
-        let time = if self.playing { self.time } else { 0.0 };
+        let (flutter, bit_loss, age) = (v(self, 3), v(self, 4), v(self, 5));
+        let sr = self.sample_rate as f32;
 
-        // Disque.
-        let radius = (r.h * 0.5 - 12.0).min(r.w * 0.25);
-        let (cx, cy) = (r.x + 12.0 + radius, r.y + r.h * 0.5);
-        c.fill_circle(cx, cy, radius, t.bg_deep);
-        let mut k = 0.42;
-        while k < 0.97 {
-            c.stroke_circle(cx, cy, radius * k, 1.0, t.text2.alpha(0.07 + 0.04 * (k * 31.0).sin().abs()));
-            k += 0.075;
+        // Spectre : de +6 à −90 dB, axe des fréquences logarithmique.
+        let sp = Rect::new(r.x + 10.0, r.y + 10.0, r.w - 20.0, (r.h * 0.62).round() - 10.0);
+        const TOP: f32 = 6.0;
+        const FLOOR: f32 = -90.0;
+        let y_of = |d: f32| sp.y + (TOP - d.clamp(FLOOR, TOP)) / (TOP - FLOOR) * sp.h;
+        for f in [100.0, 1_000.0, 10_000.0] {
+            c.fill_rect(Rect::new(x_of_freq(sp, f).round(), sp.y, 1.0, sp.h), t.hairline.alpha(0.8));
         }
-        c.stroke_circle(cx, cy, radius, 1.0, t.hairline.alpha(2.0));
-        // 33 tours par minute ; le reflet tourne avec le disque.
-        let angle = time * std::f32::consts::TAU * 0.55;
-        for (a, w) in [(angle, 0.18), (angle + std::f32::consts::PI, 0.1)] {
-            c.stroke_arc(cx, cy, radius * 0.72, a - 0.35, a + 0.35, radius * 0.5, t.text.alpha(w * 0.25));
+        for d in [0.0, -30.0, -60.0] {
+            c.fill_rect(Rect::new(sp.x, y_of(d).round(), sp.w, 1.0), t.hairline.alpha(if d == 0.0 { 1.6 } else { 0.8 }));
         }
-        let label = t.accent.mix(t.muted, age * 0.6);
-        c.fill_circle(cx, cy, radius * 0.3, label);
-        let (dx, dy) = (angle.cos() * radius * 0.18, angle.sin() * radius * 0.18);
-        c.fill_circle(cx + dx, cy + dy, radius * 0.04, t.bg_deep.alpha(0.6));
-        c.fill_circle(cx, cy, 2.0, t.well);
-        // Poussière fixe (âge) et craquements qui scintillent.
-        for i in 0..(age * 24.0) as u32 {
-            let (rr, th) = (radius * (0.35 + 0.6 * hash01(i * 2 + 1)), hash01(i * 2 + 2) * std::f32::consts::TAU + angle);
-            c.fill_circle(cx + th.cos() * rr, cy + th.sin() * rr, 1.0, t.text2.alpha(0.35));
+        let steps = (sp.w / 2.0) as usize;
+        let curve = |gain_db: &dyn Fn(f32) -> f32| -> Vec<(f32, f32)> {
+            (0..=steps)
+                .map(|i| {
+                    let x = sp.x + i as f32 * sp.w / steps as f32;
+                    (x, y_of(gain_db(freq_of_x(sp, x))))
+                })
+                .collect()
+        };
+        let wear = curve(&|f| db(lofi::wear_gain(age, f, sr)));
+        filled_curve(c, &wear, sp.bottom(), t.accent.alpha(0.12), t.accent);
+        if let Some(level) = lofi::hiss_db(hiss) {
+            let pts = curve(&|f| level + db(lofi::hiss_shape(f)));
+            filled_curve_width(c, &pts, sp.bottom(), t.text2.alpha(0.1), t.text2.alpha(0.6), 1.2);
         }
-        let frame = (time * 14.0) as u32;
-        for i in 0..(crackle * 7.0).ceil() as u32 {
-            let seed = frame.wrapping_mul(31).wrapping_add(i * 7);
-            if hash01(seed) > crackle.max(0.05) {
-                continue;
-            }
-            let (rr, th) = (radius * (0.35 + 0.6 * hash01(seed + 3)), hash01(seed + 5) * std::f32::consts::TAU);
-            c.fill_circle(cx + th.cos() * rr, cy + th.sin() * rr, 1.6, t.text.alpha(0.9));
+        if let Some(level) = lofi::bit_floor_db(bit_loss) {
+            c.fill_rect(Rect::new(sp.x, y_of(level).round(), sp.w, 1.0), t.select.alpha(0.85));
         }
 
-        // Onde : pleurage et scintillement déforment le temps, le souffle ajoute du
-        // bruit, la perte de bits l'escalier, l'âge éteint l'amplitude.
-        let wave = Rect::new(cx + radius + 14.0, r.y + 14.0, r.right() - (cx + radius + 24.0), r.h - 28.0);
-        let mid = wave.y + wave.h * 0.5;
-        c.fill_rect(Rect::new(wave.x, mid.round(), wave.w, 1.0), t.hairline.alpha(1.2));
-        let levels = 2f32.powf(16.0 - 12.0 * bits - 1.0);
-        let amp = 0.85 * (1.0 - 0.45 * age);
-        let n = (wave.w / 1.5) as usize;
+        // Deux secondes : la hauteur (±20 centièmes) puis les craquements.
+        const WINDOW: f32 = 2.0;
+        const CENTS: f32 = 20.0;
+        let strip = Rect::new(sp.x, sp.bottom() + 10.0, sp.w, r.bottom() - 10.0 - (sp.bottom() + 10.0));
+        // Même axe du temps pour les deux ; à droite, l'écart le plus large.
+        let pitch = Rect::new(strip.x, strip.y, strip.w - 40.0, (strip.h * 0.62).round());
+        let clicks = Rect::new(strip.x, pitch.bottom() + 3.0, pitch.w, strip.bottom() - pitch.bottom() - 3.0);
+        let t0 = if self.playing { self.time } else { 0.0 };
+        let mid = (pitch.y + pitch.h * 0.5).round();
+        c.fill_rect(Rect::new(pitch.x, mid, pitch.w, 1.0), t.hairline.alpha(1.4));
+        let n = pitch.w as usize;
+        let mut widest = 0.0f32;
         let pts: Vec<(f32, f32)> = (0..=n)
             .map(|i| {
                 let u = i as f32 / n as f32;
-                let warp = wow * 0.12 * (std::f32::consts::TAU * (0.45 * time + u * 0.6)).sin()
-                    + flutter * 0.02 * (std::f32::consts::TAU * (2.0 * time + u * 9.0)).sin();
-                let mut y = amp * (std::f32::consts::TAU * (2.0 * u + warp)).sin();
-                y += hiss * 0.18 * (hash01(i as u32 + frame * 977) - 0.5);
-                y = (y * levels).round() / levels;
-                (wave.x + u * wave.w, mid - y.clamp(-1.0, 1.0) * wave.h * 0.5)
+                let cents = lofi::pitch_cents(wow, flutter, t0 + u * WINDOW);
+                widest = widest.max(cents.abs());
+                (pitch.x + u * pitch.w, mid - (cents / CENTS).clamp(-1.0, 1.0) * pitch.h * 0.5)
             })
             .collect();
-        c.stroke_polyline(&pts, 1.6, t.accent);
-        // Craquements : quelques pointes dans l'onde.
-        for i in 0..(crackle * 4.0).ceil() as u32 {
-            let seed = frame.wrapping_mul(17).wrapping_add(i * 13 + 1);
-            if hash01(seed) > crackle {
+        c.stroke_polyline(&pts, 1.4, t.accent);
+        if widest >= 0.5 {
+            self.text_right(c, self.f.mono, 9.0, strip.right(), mid, &format!("±{widest:.0} ct"), t.muted);
+        }
+        // Craquements : un tirage par créneau, au rythme moyen du moteur ; la
+        // plupart sont de la poussière, quelques-uns de gros grains.
+        c.fill_rect(Rect::new(clicks.x, clicks.bottom().round(), clicks.w, 1.0), t.hairline.alpha(1.4));
+        let slot = 1.0 / lofi::crackle_rate(1.0);
+        let first = (t0 / slot).floor() as i64;
+        let last = ((t0 + WINDOW) / slot).ceil() as i64;
+        for k in first..=last {
+            let seed = (k as u32).wrapping_mul(3);
+            if crackle <= 0.0 || hash01(seed) >= crackle {
                 continue;
             }
-            let x = wave.x + hash01(seed + 2) * wave.w;
-            let h = wave.h * 0.5 * (0.4 + 0.5 * hash01(seed + 4));
-            c.fill_rect(Rect::new(x.round(), mid - h, 1.0, 2.0 * h), t.text.alpha(0.8));
+            let at = (k as f32 + hash01(seed + 1)) * slot;
+            let x = clicks.x + (at - t0) / WINDOW * clicks.w;
+            let size = hash01(seed + 2).powi(4) * (0.3 + 0.7 * crackle);
+            let h = (size * clicks.h).max(1.0);
+            if x >= clicks.x && x < clicks.right() {
+                c.fill_rect(Rect::new(x.round(), clicks.bottom() - h, 1.0, h), t.text2.alpha(0.75));
+            }
         }
         if input.inside && r.contains(input.x, input.y) {
-            self.set_tip(tr("Vinyl: crackle and age\nWave: wow, hiss, bit loss"), "");
+            self.set_tip(tr("Top: wear filter, hiss (grey) and bit loss (teal) floors\nBottom: wow and flutter pitch, crackles"), "");
         }
     }
 
