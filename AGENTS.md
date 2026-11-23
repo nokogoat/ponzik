@@ -1,4 +1,4 @@
-# AGENTS.md — working on Ponzik
+# Working on Ponzik
 
 This file is for anyone changing Ponzik's code, human or AI coding assistant
 (Claude Code, Codex, Cursor, Aider…). Read it before your first change.
@@ -9,8 +9,8 @@ beginners and professionals.
 
 ## Ground rules
 
-1. **No dependencies.** Do not add crates to any `Cargo.toml`. Everything —
-   drivers, windowing, rendering, codecs, JSON, hashing, DSP — is written in this
+1. **No dependencies.** Do not add crates to any `Cargo.toml`. Everything
+   (drivers, windowing, rendering, codecs, JSON, hashing, DSP) is written in this
    repository and talks only to the operating system (FFI to libasound, X11 over a
    socket, Win32/COM, Cocoa through the Objective-C runtime). If you need
    something, write it, with tests. Build tools may use only the Rust standard
@@ -62,8 +62,8 @@ beginners and professionals.
 
 1. Write it in `crates/ponzik-engine/src/instruments/` or `effects/`, implementing
    `Instrument` or `Effect` plus `Params` (parameter descriptions in `ParamInfo`:
-   English names, units, groups — names are translated through `fr.po`).
-2. Register it in `registry.rs` (stable `id` — it is saved in projects).
+   English names, units, groups; names are translated through `fr.po`).
+2. Register it in `registry.rs` (stable `id`: it is saved in projects).
 3. Add factory presets in `assets/presets/<id>/`.
 4. Optionally add a visual in `apps/ponzik/src/gui/` (see `visuals.rs` and the
    per-device files such as `grand.rs`, `pads.rs`).
@@ -94,7 +94,7 @@ cargo run --release -- screenshot /tmp/shot.png <view> [width height]
 Then **open the PNG and look at it**. Many `PONZIK_*` environment variables set up
 a specific state for a capture (open a popup, a panel, a device, a language…);
 they are read in `apps/ponzik/src/gui/mod.rs` (`screenshot`) and
-`App::screenshot_*` functions — grep for `PONZIK_` to find them. Useful ones:
+`App::screenshot_*` functions; grep for `PONZIK_` to find them. Useful ones:
 `PONZIK_LANG=fr`, `PONZIK_POPUP=<name>`, `PONZIK_CHANNEL=0 PONZIK_INSTRUMENT=<id>`,
 `PONZIK_INSERTS="2:compressor"`, `PONZIK_FOCUS_TRACK=<n>`, `PONZIK_SCALE_UI=2`.
 
