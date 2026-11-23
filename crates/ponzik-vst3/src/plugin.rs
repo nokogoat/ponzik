@@ -752,6 +752,12 @@ impl Instrument for Vst3Instrument {
 }
 
 impl Effect for Vst3Effect {
+    /// A plugin does not say how long it may stay quiet before sound comes
+    /// back out: the smart disable gives it a generous margin.
+    fn tail(&self) -> f32 {
+        ponzik_engine::mixer::PLUGIN_TAIL_SECONDS
+    }
+
     fn kind(&self) -> &'static str {
         self.0.kind
     }

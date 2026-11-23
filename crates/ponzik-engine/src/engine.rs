@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::time::Instant;
 
 use ponzik_dsp::util::balance_gains;
@@ -135,6 +135,8 @@ pub enum Command {
     /// master, les inserts qui anticipent (latence non nulle) sont court-circuités
     /// et la compensation de latence ne retarde plus le signal écouté.
     SetLowLatencyMonitoring(bool),
+    /// Smart disable of the inserts (see [`Mixer::set_smart_disable`]).
+    SetSmartDisable(bool),
     /// Tranche d'entrée : gain, coupe-bas, porte.
     SetInputStrip(InputStrip),
     /// Arme l'enregistrement de l'entrée sur `track` dans `buffer`, préalloué
@@ -214,6 +216,7 @@ impl std::fmt::Debug for Command {
             Command::SetInput(_) => "SetInput",
             Command::SetMonitor { .. } => "SetMonitor",
             Command::SetLowLatencyMonitoring(_) => "SetLowLatencyMonitoring",
+            Command::SetSmartDisable(_) => "SetSmartDisable",
             Command::SetInputStrip(_) => "SetInputStrip",
             Command::Record { .. } => "Record",
             Command::RecordChunk { .. } => "RecordChunk",
@@ -274,6 +277,8 @@ struct SharedState {
     track_cpu: Vec<AtomicU32>,
     insert_cpu: Vec<AtomicU32>,
     channel_cpu: Vec<AtomicU32>,
+    /// Sleeping inserts of each track (bit `slot`), see [`Engine::set_smart_disable`].
+    insert_sleep: Vec<AtomicU8>,
     /// Threads de calcul en plus du thread audio.
     workers: AtomicU32,
     /// Les threads de calcul servent en ce moment (choix adaptatif).
@@ -410,6 +415,11 @@ impl EngineHandle {
         load_of(self.state.insert_cpu.get(track * INSERT_SLOTS + slot))
     }
 
+    /// True if the insert sleeps: smart disable on, silence in and out.
+    pub fn insert_asleep(&self, track: usize, slot: usize) -> bool {
+        slot < INSERT_SLOTS && self.state.insert_sleep.get(track).is_some_and(|m| m.load(Ordering::Relaxed) & (1 << slot) != 0)
+    }
+
     /// Charge de calcul de l'instrument d'un canal, en part du temps réel, lissée.
     pub fn channel_cpu(&self, channel: usize) -> f32 {
         load_of(self.state.channel_cpu.get(channel))
@@ -533,6 +543,8 @@ pub struct Engine {
     strip: InputChain,
     /// Écoute de l'entrée, piste par piste.
     low_latency: bool,
+    /// Smart disable of the inserts, kept when the mixer is replaced.
+    smart_disable: bool,
     /// Enregistrements armés, une piste chacun.
     recordings: [Option<Box<RecordBuffer>>; MAX_RECORDINGS],
     /// Calibrage en cours : entrée brute, et trames écoulées depuis son début.
@@ -801,6 +813,7 @@ impl Engine {
             track_cpu: (0..MAX_TRACKS).map(|_| AtomicU32::new(0)).collect(),
             insert_cpu: (0..MAX_TRACKS * INSERT_SLOTS).map(|_| AtomicU32::new(0)).collect(),
             channel_cpu: (0..MAX_CHANNELS).map(|_| AtomicU32::new(0)).collect(),
+            insert_sleep: (0..MAX_TRACKS).map(|_| AtomicU8::new(0)).collect(),
             workers: AtomicU32::new(0),
             parallel: AtomicBool::new(false),
             record_room: std::array::from_fn(|_| AtomicU64::new(0)),
@@ -843,6 +856,7 @@ impl Engine {
             input_r: vec![0.0; MAX_BLOCK],
             strip: InputChain::new(sample_rate),
             low_latency: false,
+            smart_disable: false,
             recordings: std::array::from_fn(|_| None),
             calibration: None,
             cal_clock: 0,
@@ -966,6 +980,20 @@ impl Engine {
             .collect()
     }
 
+    /// Smart disable of the inserts: those fed silence that give silence back
+    /// sleep until sound comes in again ([`Mixer::set_smart_disable`]). Off by
+    /// default, so that offline renders process everything.
+    pub fn set_smart_disable(&mut self, on: bool) {
+        self.smart_disable = on;
+        self.mixer.set_smart_disable(on, self.sample_rate);
+    }
+
+    fn wake_insert(&mut self, track: usize, slot: usize) {
+        if let Some(t) = self.mixer.tracks.get_mut(track) {
+            t.wake(slot);
+        }
+    }
+
     /// Accès direct au mixer, pour préparer l'état avant le premier bloc.
     pub fn mixer_mut(&mut self) -> &mut Mixer {
         &mut self.mixer
@@ -975,6 +1003,7 @@ impl Engine {
     /// (allocates: before the engine goes to the audio thread).
     pub fn set_track_count(&mut self, count: usize) {
         self.mixer = Mixer::with_tracks(count, MAX_BLOCK, max_latency(self.sample_rate));
+        self.mixer.set_smart_disable(self.smart_disable, self.sample_rate);
     }
 
     /// The new mixer takes over the kept tracks; everything that points at a
@@ -1194,8 +1223,11 @@ impl Engine {
             cell.store(new.to_bits(), Ordering::Relaxed);
         };
         let state = &*self.state;
-        self.mixer.take_cpu(|idx, track, inserts| {
+        self.mixer.take_cpu(|idx, track, inserts, asleep| {
             smooth(&state.track_cpu[idx], track);
+            if let Some(cell) = state.insert_sleep.get(idx) {
+                cell.store(asleep, Ordering::Relaxed);
+            }
             for (slot, &ns) in inserts.iter().enumerate() {
                 smooth(&state.insert_cpu[idx * INSERT_SLOTS + slot], ns);
             }
@@ -2013,6 +2045,7 @@ impl Engine {
                 if let Some(t) = self.mixer.tracks.get_mut(track)
                     && slot < INSERT_SLOTS
                 {
+                    t.wake(slot);
                     if let Some(old) = std::mem::replace(&mut t.inserts[slot], effect) {
                         self.trash(Garbage::Effect(old));
                     }
@@ -2036,6 +2069,9 @@ impl Engine {
                 }
             }
             Command::SetEffectParam { track, slot, id, value } => {
+                if let Some(t) = self.mixer.tracks.get_mut(track) {
+                    t.wake(slot);
+                }
                 if let Some(t) = self.mixer.tracks.get_mut(track)
                     && !t.mods.as_mut().is_some_and(|m| m.set_base(slot, id, value))
                     && let Some(Some(fx)) = t.inserts.get_mut(slot)
@@ -2044,11 +2080,13 @@ impl Engine {
                 }
             }
             Command::SetRackLayout { track, slot, layout } => {
+                self.wake_insert(track, slot);
                 if let Some(rack) = self.rack(track, slot) {
                     rack.set_layout(layout);
                 }
             }
             Command::SetRackUnit { track, slot, unit, effect } => {
+                self.wake_insert(track, slot);
                 let rest = match self.rack(track, slot) {
                     Some(rack) => rack.set_unit(unit, effect),
                     None => effect,
@@ -2123,6 +2161,7 @@ impl Engine {
                 }
             }
             Command::SetLowLatencyMonitoring(on) => self.low_latency = on,
+            Command::SetSmartDisable(on) => self.set_smart_disable(on),
             Command::SetInputStrip(strip) => self.strip.set(strip),
             Command::SetVoice(settings) => {
                 let now = self.clock;

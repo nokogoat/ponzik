@@ -351,6 +351,11 @@ impl Effect for EffectRack {
         "rack"
     }
 
+    /// Chains in series at worst: the tails of every device add up.
+    fn tail(&self) -> f32 {
+        self.units.iter().flatten().map(|fx| fx.tail()).sum::<f32>() + MAX_ALIGN_SECONDS
+    }
+
     fn set_sample_rate(&mut self, sample_rate: f32) {
         let len = (sample_rate.max(1.0) * MAX_ALIGN_SECONDS) as usize + SCRATCH;
         if sample_rate != self.sample_rate {

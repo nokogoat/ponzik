@@ -176,6 +176,10 @@ impl Effect for CharDelay {
         "char_delay"
     }
 
+    fn tail(&self) -> f32 {
+        self.time_seconds() + WOW_DEPTH + FLUTTER_DEPTH
+    }
+
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         let max = ((MAX_TIME + WOW_DEPTH + FLUTTER_DEPTH) * sample_rate) as usize + 8;

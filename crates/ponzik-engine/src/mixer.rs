@@ -38,6 +38,26 @@ pub const MAX_TRACKS: usize = 1_000;
 pub const MASTER: usize = 0;
 pub const INSERT_SLOTS: usize = 8;
 pub const SEND_SLOTS: usize = 4;
+/// Below this level (about −94 dBFS) a block counts as silence for the smart
+/// disable of the inserts ([`Mixer::set_smart_disable`]).
+pub const SILENT_LEVEL: f32 = 2e-5;
+/// Silence an insert must give back (silent input, silent output) before it
+/// sleeps, in seconds, on top of its own [`Effect::tail`].
+pub const SLEEP_HOLD_SECONDS: f32 = 0.5;
+/// Silence a plugin (CLAP, VST 3) must give back before it sleeps, on top of
+/// [`SLEEP_HOLD_SECONDS`]: plugins do not tell their tail.
+pub const PLUGIN_TAIL_SECONDS: f32 = 2.0;
+/// `Track::quiet` of a sleeping insert.
+const ASLEEP: u32 = u32::MAX;
+
+/// Smart disable: inserts fed silence that give silence back stop being
+/// processed until sound comes in again (like FL Studio's smart disable).
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Sleep {
+    /// Frames of silence before an insert sleeps; 0: smart disable off.
+    hold: u32,
+    sample_rate: f32,
+}
 
 pub struct Track {
     pub gain: f32,
@@ -75,6 +95,8 @@ pub struct Track {
     /// Temps de calcul accumulé (ns) de la piste et de chaque insert.
     pub(crate) cpu_ns: u64,
     pub(crate) insert_ns: [u64; INSERT_SLOTS],
+    /// Frames each insert has turned silence into silence ([`ASLEEP`]: it sleeps).
+    quiet: [u32; INSERT_SLOTS],
 }
 
 impl Track {
@@ -100,6 +122,19 @@ impl Track {
             key_r: vec![0.0; max_block],
             cpu_ns: 0,
             insert_ns: [0; INSERT_SLOTS],
+            quiet: [0; INSERT_SLOTS],
+        }
+    }
+
+    /// True if the insert in `slot` sleeps (smart disable).
+    pub fn insert_asleep(&self, slot: usize) -> bool {
+        self.quiet.get(slot) == Some(&ASLEEP)
+    }
+
+    /// Wakes the insert in `slot` (replaced, or a parameter changed).
+    pub(crate) fn wake(&mut self, slot: usize) {
+        if let Some(q) = self.quiet.get_mut(slot) {
+            *q = 0;
         }
     }
 
@@ -260,6 +295,7 @@ struct Ctx<'a> {
     silence: &'a [f32],
     meters: &'a [PeakMeter],
     clock: ModClock,
+    sleep: Sleep,
 }
 
 /// Pistes partagées entre les threads du bloc : chaque tâche n'emprunte en
@@ -334,6 +370,7 @@ pub struct Mixer {
     pub(crate) clock: ModClock,
     /// Transport of the block, for the frozen tracks.
     pub(crate) freeze_clock: FreezeClock,
+    sleep: Sleep,
 }
 
 /// Ordre par défaut de `count` pistes : toutes vont directement au master.
@@ -442,7 +479,7 @@ unsafe fn run_inserts(tracks: Tracks, idx: usize, cx: &Ctx, ready: impl Fn(usize
 unsafe fn run_insert_range(tracks: Tracks, idx: usize, cx: &Ctx, ready: &impl Fn(usize) -> bool, a: usize, b: usize) {
     let n = cx.n;
     // SAFETY: voir la fonction.
-    let Track { inserts, bypass, sidechain, l, r, key_l, key_r, insert_ns, .. } = unsafe { &mut *tracks.0.add(idx) };
+    let Track { inserts, bypass, sidechain, l, r, key_l, key_r, insert_ns, quiet, .. } = unsafe { &mut *tracks.0.add(idx) };
     // Latence du signal de la piste à l'entrée de l'insert courant.
     let mut at = cx.lat.arrival[idx];
     for slot in 0..INSERT_SLOTS {
@@ -456,6 +493,15 @@ unsafe fn run_insert_range(tracks: Tracks, idx: usize, cx: &Ctx, ready: &impl Fn
             continue;
         }
         at += fx.latency();
+        // Smart disable: a sleeping insert lets silence through untouched.
+        let sleepy = cx.sleep.hold > 0 && key.is_none();
+        let silent_in = sleepy && is_silent(&l[a..b], &r[a..b]);
+        if sleepy && quiet[slot] == ASLEEP {
+            if silent_in {
+                continue;
+            }
+            quiet[slot] = 0;
+        }
         let started = Instant::now();
         if let Some(k) = key {
             let (kl, kr): (&[f32], &[f32]) = if !ready(k) {
@@ -479,7 +525,21 @@ unsafe fn run_insert_range(tracks: Tracks, idx: usize, cx: &Ctx, ready: &impl Fn
         }
         fx.process(&mut l[a..b], &mut r[a..b]);
         insert_ns[slot] += started.elapsed().as_nanos() as u64;
+        if sleepy {
+            quiet[slot] = if silent_in && is_silent(&l[a..b], &r[a..b]) {
+                let tail = (fx.tail().max(0.0) * cx.sleep.sample_rate) as u32;
+                let q = quiet[slot].saturating_add((b - a) as u32);
+                if q >= cx.sleep.hold.saturating_add(tail) { ASLEEP } else { q }
+            } else {
+                0
+            };
+        }
     }
+}
+
+/// True if both channels stay under [`SILENT_LEVEL`].
+fn is_silent(l: &[f32], r: &[f32]) -> bool {
+    peak(l).max(peak(r)) < SILENT_LEVEL
 }
 
 /// Inserts, fader, crête et historique d'une piste hors master.
@@ -625,6 +685,22 @@ impl Mixer {
             plan: Box::new(Plan::new(count)),
             clock: ModClock::default(),
             freeze_clock: FreezeClock::default(),
+            sleep: Sleep::default(),
+        }
+    }
+
+    /// Smart disable of the inserts: on, an insert fed silence that has given
+    /// silence back for [`SLEEP_HOLD_SECONDS`] plus its [`Effect::tail`] is no
+    /// longer processed (the silence passes through) until sound comes in
+    /// again. Inserts keyed by a sidechain never sleep. Off, every insert runs
+    /// on every block, as an exact render wants.
+    pub fn set_smart_disable(&mut self, on: bool, sample_rate: f32) {
+        let hold = if on { (SLEEP_HOLD_SECONDS * sample_rate.max(1.0)) as u32 } else { 0 };
+        self.sleep = Sleep { hold: hold.max(u32::from(on)), sample_rate };
+        if !on {
+            for t in &mut self.tracks {
+                t.quiet = [0; INSERT_SLOTS];
+            }
         }
     }
 
@@ -665,6 +741,7 @@ impl Mixer {
         }
         self.clock = old.clock;
         self.freeze_clock = old.freeze_clock;
+        self.sleep = old.sleep;
         self.lat.total = old.lat.total;
     }
 
@@ -801,10 +878,10 @@ impl Mixer {
         self.plan_latency();
         self.delay_inputs(n);
         self.plan_vca();
-        let Self { tracks, order, silence, lat, reduced, clock, vca, ready, .. } = self;
+        let Self { tracks, order, silence, lat, reduced, clock, vca, ready, sleep, .. } = self;
         let count = tracks.len();
         let tracks = Tracks(tracks.as_mut_ptr());
-        let cx = Ctx { n, count, lat, reduced, silence, meters, clock: *clock };
+        let cx = Ctx { n, count, lat, reduced, silence, meters, clock: *clock, sleep: *sleep };
         ready.fill(false);
         for &idx in order.iter() {
             if idx == MASTER || idx >= count || ready[idx] {
@@ -910,10 +987,10 @@ impl Mixer {
         self.sync_frozen();
         self.plan_latency();
         self.delay_inputs(n);
-        let Self { tracks, silence, lat, reduced, plan, clock, vca, .. } = self;
+        let Self { tracks, silence, lat, reduced, plan, clock, vca, sleep, .. } = self;
         let count = tracks.len();
         let tracks = Tracks(tracks.as_mut_ptr());
-        let cx = Ctx { n, count, lat, reduced, silence, meters, clock: *clock };
+        let cx = Ctx { n, count, lat, reduced, silence, meters, clock: *clock, sleep: *sleep };
         let plan = &**plan;
         let vca = &**vca;
         let gather = |dst: usize| {
@@ -935,9 +1012,11 @@ impl Mixer {
 
     /// Temps de calcul (ns) de chaque piste et de chacun de ses inserts depuis
     /// le dernier appel, remis à zéro.
-    pub(crate) fn take_cpu(&mut self, mut f: impl FnMut(usize, u64, &[u64; INSERT_SLOTS])) {
+    /// The last argument has bit `slot` set for each sleeping insert.
+    pub(crate) fn take_cpu(&mut self, mut f: impl FnMut(usize, u64, &[u64; INSERT_SLOTS], u8)) {
         for (idx, t) in self.tracks.iter_mut().enumerate() {
-            f(idx, t.cpu_ns, &t.insert_ns);
+            let asleep = (0..INSERT_SLOTS).filter(|&s| t.quiet[s] == ASLEEP).fold(0u8, |m, s| m | 1 << s);
+            f(idx, t.cpu_ns, &t.insert_ns, asleep);
             t.cpu_ns = 0;
             t.insert_ns = [0; INSERT_SLOTS];
         }
@@ -1177,6 +1256,114 @@ mod tests {
         // L'entrée directe du bus 2 attend aussi la piste 1.
         assert_eq!(argmax(&impulse(&mut m, &[2], 2_000, 64)), 2 * lat);
         assert_eq!(m.latency(), 2 * lat);
+    }
+
+    /// Counts its blocks; passes the signal through, plus `hum` (a constant:
+    /// an effect that makes sound out of silence), and says it has `tail` seconds.
+    struct Counter {
+        calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        hum: f32,
+        tail: f32,
+    }
+
+    impl crate::param::Params for Counter {}
+
+    impl Effect for Counter {
+        fn kind(&self) -> &'static str {
+            "counter"
+        }
+
+        fn set_sample_rate(&mut self, _: f32) {}
+
+        fn tail(&self) -> f32 {
+            self.tail
+        }
+
+        fn process(&mut self, l: &mut [f32], r: &mut [f32]) {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            l.iter_mut().chain(r.iter_mut()).for_each(|s| *s += self.hum);
+        }
+    }
+
+    /// A mixer with a [`Counter`] on track 1, smart disable on (or not), and the counter's calls.
+    fn counting(smart: bool, hum: f32, tail: f32) -> (Mixer, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut m = Mixer::new(64, 4_800);
+        m.tracks[1].inserts[0] = Some(Box::new(Counter { calls: calls.clone(), hum, tail }));
+        m.set_smart_disable(smart, SR);
+        (m, calls)
+    }
+
+    /// `blocks` blocks of 64 frames, track 1 fed `level`; the master's last left sample.
+    fn run(m: &mut Mixer, blocks: usize, level: f32) -> f32 {
+        let meters = meters();
+        for _ in 0..blocks {
+            m.clear(64);
+            m.input(1, 64).0.fill(level);
+            m.process(64, &meters);
+        }
+        m.master(64).0[63]
+    }
+
+    #[test]
+    fn silent_inserts_sleep_then_wake_on_sound() {
+        use std::sync::atomic::Ordering::Relaxed;
+        let hold = (SLEEP_HOLD_SECONDS * SR) as usize / 64;
+        let (mut m, calls) = counting(true, 0.0, 0.0);
+        run(&mut m, hold + 10, 0.0);
+        assert!(m.tracks[1].insert_asleep(0), "asleep after the hold");
+        let before = calls.load(Relaxed);
+        assert!((hold..=hold + 1).contains(&before), "processed until it slept: {before}");
+        run(&mut m, 500, 0.0);
+        assert_eq!(calls.load(Relaxed), before, "no processing while asleep");
+        // Sound comes in: the very block is processed, and passes through.
+        let out = run(&mut m, 1, 0.5);
+        assert_eq!(calls.load(Relaxed), before + 1);
+        assert!(!m.tracks[1].insert_asleep(0));
+        assert!(out > 0.3, "{out}");
+        // A sound under the silence level does not wake it.
+        run(&mut m, hold + 10, 0.0);
+        let asleep = calls.load(Relaxed);
+        run(&mut m, 50, SILENT_LEVEL * 0.5);
+        assert_eq!(calls.load(Relaxed), asleep);
+        // Replaced, the insert wakes and runs again.
+        m.tracks[1].wake(0);
+        run(&mut m, 1, 0.0);
+        assert_eq!(calls.load(Relaxed), asleep + 1);
+    }
+
+    #[test]
+    fn smart_disable_respects_tails_generators_keys_and_off() {
+        use std::sync::atomic::Ordering::Relaxed;
+        let hold = (SLEEP_HOLD_SECONDS * SR) as usize / 64;
+        // A delay of 1 s: silent between two echoes, it waits that much longer.
+        let (mut m, _) = counting(true, 0.0, 1.0);
+        run(&mut m, hold + 10, 0.0);
+        assert!(!m.tracks[1].insert_asleep(0), "the echo may still come");
+        run(&mut m, (SR as usize) / 64, 0.0);
+        assert!(m.tracks[1].insert_asleep(0));
+        // Sound out of silence (noise, hum): never asleep.
+        let (mut m, calls) = counting(true, 0.01, 0.0);
+        run(&mut m, 3 * hold, 0.0);
+        assert!(!m.tracks[1].insert_asleep(0));
+        assert_eq!(calls.load(Relaxed), 3 * hold);
+        // Keyed by a sidechain: never asleep.
+        let (mut m, _) = counting(true, 0.0, 0.0);
+        m.tracks[1].sidechain[0] = Some(2);
+        reorder(&mut m);
+        run(&mut m, 3 * hold, 0.0);
+        assert!(!m.tracks[1].insert_asleep(0));
+        // Off (exact renders): every block runs.
+        let (mut m, calls) = counting(false, 0.0, 0.0);
+        run(&mut m, 3 * hold, 0.0);
+        assert_eq!(calls.load(Relaxed), 3 * hold);
+        // Turned off while asleep: wakes.
+        let (mut m, calls) = counting(true, 0.0, 0.0);
+        run(&mut m, 2 * hold, 0.0);
+        let n = calls.load(Relaxed);
+        m.set_smart_disable(false, SR);
+        run(&mut m, 1, 0.0);
+        assert_eq!(calls.load(Relaxed), n + 1);
     }
 
     /// Remplace le signal par la clé reçue.

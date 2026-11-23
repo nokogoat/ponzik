@@ -33,6 +33,14 @@ pub trait Effect: Params + Send {
         0
     }
 
+    /// Longest time, in seconds, the effect may give silence back while
+    /// sound is still on its way out (the gap between two echoes of a delay,
+    /// a pre-delay): the smart disable waits that much longer before putting
+    /// it to sleep. Read on the audio thread: no allocation, no lock.
+    fn tail(&self) -> f32 {
+        0.0
+    }
+
     /// État partagé avec l'interface (analyse, indicateurs), écrit par le thread
     /// audio sans verrou (atomiques). L'interface le récupère avant d'envoyer
     /// l'effet au moteur, puis le lit en le convertissant au type concret.

@@ -115,6 +115,10 @@ impl Effect for Delay {
         "delay"
     }
 
+    fn tail(&self) -> f32 {
+        self.time_seconds()
+    }
+
     fn set_sample_rate(&mut self, sample_rate: f32) {
         let max = (MAX_TIME * sample_rate) as usize + 4;
         // Même fréquence (la ligne existe déjà) : rien à réallouer.

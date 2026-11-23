@@ -102,6 +102,10 @@ impl Effect for Reverb {
         "reverb"
     }
 
+    fn tail(&self) -> f32 {
+        self.values.get(P_PREDELAY)
+    }
+
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         let samples = |ms: f32| (ms * 0.001 * sample_rate).round() as usize;
