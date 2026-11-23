@@ -53,7 +53,7 @@ pub const PONZIK: Theme = {
         hairline: hairline(text),
         text,
         text2: Color::hex(0x98a7a3),
-        muted: Color::hex(0x7a8a86),
+        muted: Color::hex(0x82928e),
         accent: Color::hex(0x3fd45a),
         accent_deep: Color::hex(0x23a83a),
         accent_hot: Color::hex(0xc2ffb9),
@@ -82,7 +82,7 @@ pub const GLACE: Theme = {
         hairline: hairline(text),
         text,
         text2: Color::hex(0x9ba5b3),
-        muted: Color::hex(0x7c8696),
+        muted: Color::hex(0x848e9e),
         accent: Color::hex(0x3ccfe0),
         accent_deep: Color::hex(0x1f9fb3),
         accent_hot: Color::hex(0xc4f6ff),
@@ -111,13 +111,13 @@ pub const AMBRE: Theme = {
         hairline: hairline(text),
         text,
         text2: Color::hex(0xa1a1a6),
-        muted: Color::hex(0x85858b),
+        muted: Color::hex(0x8c8c92),
         accent: Color::hex(0xf5a524),
         accent_deep: Color::hex(0xe38d14),
         accent_hot: Color::hex(0xffd68a),
         on_accent: Color::hex(0x1f1406),
         select: Color::hex(0x7cb7ff),
-        negative: Color::hex(0xe5484d),
+        negative: Color::hex(0xe8525a),
         meter: Color::hex(0xcfcfd2),
         pad_a: Color::hex(0x202022),
         pad_b: Color::hex(0x27272a),
@@ -141,3 +141,42 @@ pub const T_HEAD: f32 = 0.07;
 pub const T_FLASH: f32 = 0.11;
 /// Changements de vue et ouverture des panneaux.
 pub const T_LAYOUT: f32 = 0.075;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// WCAG relative luminance.
+    fn luminance(c: Color) -> f64 {
+        let lin = |v: u8| {
+            let x = v as f64 / 255.0;
+            if x <= 0.039_28 { x / 12.92 } else { ((x + 0.055) / 1.055).powf(2.4) }
+        };
+        0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
+    }
+
+    fn contrast(a: Color, b: Color) -> f64 {
+        let (la, lb) = (luminance(a), luminance(b));
+        (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+    }
+
+    #[test]
+    fn every_theme_reads_well() {
+        for th in THEMES {
+            for (bg, name) in [(th.bg, "bg"), (th.panel, "panel"), (th.raised, "raised"), (th.raised_hi, "raised_hi")] {
+                // Text and secondary text: WCAG AA for small text everywhere.
+                assert!(contrast(th.text, bg) >= 7.0, "{} text on {name}", th.name);
+                assert!(contrast(th.text2, bg) >= 4.5, "{} text2 on {name}", th.name);
+                // Hints and units: AA on the surfaces, nearly so on hovered ones.
+                let min = if name == "raised_hi" { 4.0 } else { 4.5 };
+                assert!(contrast(th.muted, bg) >= min, "{} muted on {name}: {:.2}", th.name, contrast(th.muted, bg));
+            }
+            assert!(contrast(th.on_accent, th.accent) >= 4.5, "{} text on the accent", th.name);
+            // Controls and marks (non-text): 3:1 against the panels.
+            for col in [th.accent, th.select, th.negative] {
+                assert!(contrast(col, th.panel) >= 3.0, "{}", th.name);
+            }
+            assert!(contrast(th.negative, th.panel) >= 4.5, "{} errors", th.name);
+        }
+    }
+}
