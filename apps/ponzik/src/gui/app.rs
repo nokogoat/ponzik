@@ -213,6 +213,8 @@ pub enum Popup {
     RackAdd { track: usize, slot: usize, chain: usize },
     /// Right-click on a device inside a rack.
     RackDevice { track: usize, slot: usize, unit: usize },
+    /// "What's new in Ponzik": the latest changelog section, or all of it.
+    WhatsNew,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -400,6 +402,8 @@ pub enum Action {
     ExtractAudioGroove(usize),
     /// An audio clip's monophonic line into a pattern.
     AudioToNotes(usize),
+    /// Check, install, restart, update settings.
+    Update(super::updates::UpdateOp),
 }
 
 /// Ligne de menu : une icône (ou la couleur d'un pattern), un nom court, une
@@ -523,6 +527,8 @@ struct Toast {
     age: f32,
     /// A button in the toast: its label and what it does.
     action: Option<(String, Action)>,
+    /// Stays 20 s instead of a few: news worth not missing (an update).
+    long: bool,
 }
 
 /// État du piano roll.
@@ -637,6 +643,8 @@ pub struct App {
     pub scan_errors: Vec<ponzik_project::plugins::ScanError>,
     /// Background scan in progress.
     pub plugin_scan: Option<super::plugins::PluginScan>,
+    /// Update checks, downloads and the "What's new" popup.
+    pub updates: super::updates::Updates,
     /// Editors of the plugin instances and their windows.
     pub editors: super::editors::PluginEditors,
     /// Plugin parameter last moved in a plugin window, and its value.
@@ -832,6 +840,7 @@ impl App {
             vst3_plugins: Vec::new(),
             scan_errors: Vec::new(),
             plugin_scan: None,
+            updates: Default::default(),
             editors: Default::default(),
             last_plugin_param: None,
             xrun_watch: Default::default(),
@@ -1029,6 +1038,16 @@ impl App {
                 return;
             }
             "settings" | "keys" => Popup::Settings { tab: usize::from(name == "keys") },
+            "about" => Popup::Settings { tab: 3 },
+            "whatsnew" | "whatsnew-full" => {
+                // As at the first launch after an update: "don't show again" checked.
+                if let Some(latest) = super::whatsnew::sections().into_iter().next() {
+                    self.updates.news_seen = latest.title;
+                }
+                self.open_whats_new();
+                self.updates.news_full = name == "whatsnew-full";
+                return;
+            }
             "conflict" => {
                 self.screenshot_conflict();
                 return;
@@ -1321,7 +1340,7 @@ impl App {
     }
 
     pub fn toast(&mut self, text: &str) {
-        self.toasts.push(Toast { text: text.to_string(), age: 0.0, action: None });
+        self.toasts.push(Toast { text: text.to_string(), age: 0.0, action: None, long: false });
         if self.toasts.len() > 3 {
             self.toasts.remove(0);
         }
@@ -3577,6 +3596,10 @@ impl App {
                         MenuItem::new(Icon::Layout, tr("Settings"), Action::Popup(Popup::Settings { tab: 0 }))
                             .detail(key(S::Settings))
                             .tip(tr("Views, panels and shortcuts")),
+                        MenuItem::new(Icon::Info, tr("What's new"), Action::Update(super::updates::UpdateOp::ShowNews)).tip(tr("The changes of this version")),
+                        MenuItem::new(Icon::Reset, tr("About and updates"), Action::Popup(Popup::Settings { tab: 3 }))
+                            .detail(self.updates_badge())
+                            .tip(tr("Version, build and update settings")),
                     ],
                 )
             }
@@ -3661,7 +3684,8 @@ impl App {
             | Popup::Groove
             | Popup::Tool(_)
             | Popup::StepEdit { .. }
-            | Popup::Settings { .. } => (String::new(), Vec::new()),
+            | Popup::Settings { .. }
+            | Popup::WhatsNew => (String::new(), Vec::new()),
         }
     }
 
@@ -3847,6 +3871,7 @@ impl App {
                 self.panel = true;
             }
             Action::Save => self.save(),
+            Action::Update(op) => self.update_op(op),
             Action::OpenMenu => self.open_popup(Popup::OpenProject(compat::list_projects()), anchor),
             Action::NewProject => self.open_popup(Popup::Templates, anchor),
             Action::NewFromTemplate(i) => {
@@ -4105,6 +4130,12 @@ impl App {
             }
             return;
         }
+        if matches!(state.kind, Popup::WhatsNew) {
+            if self.whats_new_popup(c, input, screen) {
+                self.popup = Some(state);
+            }
+            return;
+        }
         if let Popup::Settings { tab } = state.kind {
             if let Some(tab) = self.settings_sheet(c, input, screen, tab) {
                 self.popup = Some(PopupState { kind: Popup::Settings { tab }, ..state });
@@ -4306,6 +4337,14 @@ impl App {
         }
     }
 
+    /// A toast with a button that stays on screen 20 s.
+    pub fn toast_action_long(&mut self, text: &str, label: &str, action: Action) {
+        self.toast_action(text, label, action);
+        if let Some(last) = self.toasts.last_mut() {
+            last.long = true;
+        }
+    }
+
     fn toast_layer(&mut self, c: &mut Canvas, input: &Input, dt: f32, area: Rect) {
         let t = self.theme;
         let mut y = area.bottom() - 16.0;
@@ -4315,7 +4354,13 @@ impl App {
         while i > 0 {
             i -= 1;
             // A toast with a button stays longer, and while the mouse is on it.
-            let life = if self.toasts[i].action.is_some() { 6.0 } else { 3.0 };
+            let life = if self.toasts[i].long {
+                20.0
+            } else if self.toasts[i].action.is_some() {
+                6.0
+            } else {
+                3.0
+            };
             self.toasts[i].age += dt;
             let age = self.toasts[i].age;
             let alpha = (age / 0.18).min(1.0) * ((life + 0.2 - age) / 0.3).clamp(0.0, 1.0);

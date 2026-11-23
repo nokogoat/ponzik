@@ -53,6 +53,8 @@ mod tools;
 mod tour;
 mod voice;
 mod tracks;
+mod updates;
+mod whatsnew;
 mod widgets;
 
 use std::time::{Duration, Instant};
@@ -295,6 +297,8 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     app.load_settings();
     app.ctl.persist = true;
     app.start_tour_if_new();
+    app.show_whats_new_if_updated();
+    app.start_update_check_at_launch();
     app.start_autosave();
     app.start_library();
     app.start_plugin_scan(false);
@@ -321,6 +325,10 @@ pub fn run(project: ponzik_project::Project) -> Result<(), String> {
     // les panneaux ouverts sont retenus pour la prochaine fois.
     app.close_autosave();
     app.save_settings();
+    // "Restart" after an update: the new build takes over.
+    if result.is_ok() {
+        app.relaunch_if_updated();
+    }
     result
 }
 
@@ -469,6 +477,10 @@ fn event_loop(window: &mut Window, app: &mut App) -> Result<(), String> {
         dirty |= app.library_tick();
         dirty |= app.browser_tick();
         dirty |= app.plugin_scan_tick();
+        dirty |= app.updates_tick();
+        if app.quit_requested() {
+            return Ok(());
+        }
         dirty |= app.editors_tick();
         dirty |= app.xrun_tick(started.elapsed().as_secs_f32());
         if app.rec.output.as_ref().is_some_and(|s| !s.is_running()) {
@@ -764,6 +776,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // a controller lane and a groove in the piano roll.
     if let Ok(spec) = std::env::var("PONZIK_EXPRESS") {
         app.screenshot_express(&spec);
+    }
+    // PONZIK_UPDATE=available|downloading|installed|uptodate|error|offline: a
+    // pretend update state (toast, Settings › About).
+    if let Ok(spec) = std::env::var("PONZIK_UPDATE") {
+        app.screenshot_update(&spec);
     }
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {

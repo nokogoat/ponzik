@@ -98,6 +98,16 @@ impl App {
         add(tr("Settings: workspace").into(), tr("Settings"), k(S::Settings), Action::Popup(Popup::Settings { tab: 0 }));
         add(tr("Settings: keyboard shortcuts").into(), tr("Settings"), none(), Action::Popup(Popup::Settings { tab: 1 }));
         add(tr("Settings: MIDI controller links").into(), tr("Settings"), none(), Action::Popup(Popup::Settings { tab: 2 }));
+        add(tr("Settings: about and updates").into(), tr("Settings"), none(), Action::Popup(Popup::Settings { tab: 3 }));
+        {
+            use super::updates::UpdateOp;
+            add(tr("Check for updates").into(), tr("Help"), none(), Action::Update(UpdateOp::Check));
+            add(tr("What's new in this version").into(), tr("Help"), none(), Action::Update(UpdateOp::ShowNews));
+            add(tr("Full changelog").into(), tr("Help"), none(), Action::Update(UpdateOp::ShowChangelog));
+            if self.updates.phase == super::updates::Phase::Available {
+                add(tr("Install the update and restart").into(), tr("Help"), none(), Action::Update(UpdateOp::Install));
+            }
+        }
         for (i, (name, desc, _)) in super::settings::presets().into_iter().enumerate() {
             add(tr_fmt!("Profile: {} · {}", name, desc.to_lowercase()), tr("Settings"), none(), Action::ApplyPreset(i));
         }

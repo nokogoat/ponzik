@@ -417,6 +417,7 @@ impl App {
         self.prefs.tour_done = j.get("tour_done").and_then(Json::as_bool).unwrap_or(false);
         (self.prefs.buffer_ms, self.prefs.buffer_manual) = buffer_from_json(&j);
         self.ctl.global = ponzik_project::midi_map::load_mappings(j.get("midi_map"), usize::MAX);
+        self.updates.load(&j);
         self.apply_workspace(ws, false);
     }
 
@@ -429,6 +430,7 @@ impl App {
             if !self.ctl.global.is_empty() {
                 fields.push(("midi_map".into(), ponzik_project::midi_map::mappings_json(&self.ctl.global)));
             }
+            self.updates.save(fields);
             if self.prefs.buffer_ms > 0 {
                 fields.push(("audio_buffer_ms".into(), (self.prefs.buffer_ms as f64).into()));
                 fields.push(("audio_buffer_manual".into(), self.prefs.buffer_manual.into()));
@@ -634,7 +636,7 @@ impl App {
     pub(super) fn settings_sheet(&mut self, c: &mut Canvas, input: &Input, screen: Rect, tab: usize) -> Option<usize> {
         let t = self.theme;
         let open = self.anim.to(wid("popup", 0, 0), 1.0, T_HOVER);
-        let mut tab = tab.min(2);
+        let mut tab = tab.min(3);
         let mut close = false;
 
         // Clavier : saisie d'une touche, conflit en attente, ou navigation.
@@ -658,7 +660,7 @@ impl App {
             } else {
                 match key {
                     Key::Escape => close = true,
-                    Key::Tab => tab = (tab + 1) % 3,
+                    Key::Tab => tab = (tab + 1) % 4,
                     _ => {}
                 }
             }
@@ -677,17 +679,18 @@ impl App {
         c.stroke_rrect(r, 18.0, 1.0, t.hairline.alpha(1.8));
 
         // En-tête : deux onglets, et la croix.
-        let tabs = Rect::new(r.x + 16.0, r.y + 14.0, 408.0, 38.0);
+        let tabs = Rect::new(r.x + 16.0, r.y + 14.0, 544.0, 38.0);
         c.fill_rrect(tabs, 11.0, t.bg_deep);
         c.stroke_rrect(tabs, 11.0, 1.0, t.hairline);
         let pos = self.anim.to(wid("set-tabs", 0, 0), tab as f32, T_LAYOUT);
-        let seg_w = (tabs.w - 6.0) / 3.0;
+        let seg_w = (tabs.w - 6.0) / 4.0;
         let knob = Rect::new(tabs.x + 3.0 + pos * seg_w, tabs.y + 3.0, seg_w, tabs.h - 6.0);
         c.fill_rrect(knob, 8.0, t.raised_hi);
         let names = [
             (Icon::Layout, tr("Workspace"), tr("Views, panels and top bar")),
             (Icon::Keyboard, tr("Shortcuts"), tr("Change the keys")),
             (Icon::Midi, tr("MIDI"), tr("Controller links: list, modes, ranges")),
+            (Icon::Info, tr("About"), tr("Version, build and update settings")),
         ];
         let mut hint: Option<String> = None;
         for (i, (icon, name, tip)) in names.into_iter().enumerate() {
@@ -733,7 +736,8 @@ impl App {
         match tab {
             0 => self.workspace_tab(c, input, body, &mut hint),
             1 => self.keys_tab(c, input, body, foot, &mut hint),
-            _ => self.midi_tab(c, input, body, &mut hint),
+            2 => self.midi_tab(c, input, body, &mut hint),
+            _ => self.about_tab(c, input, body, &mut hint),
         }
         if enter < 0.999 {
             c.fill_rect(Rect::new(r.x + 1.0, r.y + 60.0, r.w - 2.0, body.h + 8.0), t.panel.alpha(1.0 - enter));
@@ -745,6 +749,7 @@ impl App {
                 match tab {
                     0 => tr("Click a tile to show or hide it").into(),
                     1 => tr("Click a key, then the new combination · Esc cancels").into(),
+                    3 => tr("Updates come from the GitHub releases of Ponzik; nothing is sent about you").into(),
                     _ => tr("Global links follow the controller in every project; project links are saved with the song").into(),
                 }
             });
@@ -1366,7 +1371,7 @@ impl App {
     }
 
     /// Bouton pilule : pictogramme et mot.
-    fn pill_button(&mut self, c: &mut Canvas, input: &Input, id: u64, r: Rect, icon: Icon, label: &str, accent: bool) -> bool {
+    pub(super) fn pill_button(&mut self, c: &mut Canvas, input: &Input, id: u64, r: Rect, icon: Icon, label: &str, accent: bool) -> bool {
         let t = self.theme;
         let hov = self.hovered(input, id, r);
         let hv = self.hover_anim(id, hov);
