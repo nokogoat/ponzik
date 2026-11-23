@@ -6,7 +6,7 @@
 3. Drag a sound from the browser (left) onto the rack, or drop a WAV/MP3 from your
    file manager.
 4. Press **F7** for the piano roll: click to draw notes, drag their end to make them
-   longer. Pick a scale in the top bar to stay in key.
+   longer. Pick a scale next to the scale button above the notes to stay in key.
 5. Press **F5** for the playlist: paint your patterns, drag a loop in and stretch its
    right edge to repeat it.
 6. Press **F9** for the mixer, then **Ctrl+R** to export.
