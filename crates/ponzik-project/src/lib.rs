@@ -605,6 +605,38 @@ pub struct Marker {
     pub color: u32,
 }
 
+/// What a sampler's tempo sync depends on (its length in beats, the
+/// tempo), `None` when it does not follow the tempo.
+pub fn sync_key(def: &InstrumentDef, bpm: f32) -> Option<(u32, u32)> {
+    use ponzik_engine::instruments::{SAMPLER_BEATS, SAMPLER_SYNC};
+    let beats = def.get(SAMPLER_BEATS).unwrap_or(0.0);
+    (def.kind == "sampler" && def.get(SAMPLER_SYNC).unwrap_or(0.0) > 0.5 && beats > 0.0 && bpm > 0.0).then(|| (beats.to_bits(), bpm.to_bits()))
+}
+
+/// The sample a sampler plays: in tempo sync, its `beats` stretched (pitch
+/// kept, by the warp engine's Beats mode) to last as long at `bpm`.
+pub fn synced_sample(def: &InstrumentDef, sample: Arc<Sample>, bpm: f32) -> Arc<Sample> {
+    use ponzik_engine::instruments::SAMPLER_BEATS;
+    let duration = sample.duration() as f64;
+    if sync_key(def, bpm).is_none() || duration <= 0.0 {
+        return sample;
+    }
+    let beats = def.get(SAMPLER_BEATS).unwrap_or(0.0) as f64;
+    let source_bpm = beats * 60.0 / duration;
+    let clip = AudioClipDef {
+        warp: true,
+        bpm: source_bpm as f32,
+        len: (beats * PPQ as f64).round() as u32,
+        warp_mode: WarpAlgo::Beats,
+        ..Default::default()
+    };
+    let map = TempoMap::constant(bpm);
+    match warp::WarpJob::for_clip(&clip, &sample, &map, sample.sample_rate) {
+        Some(job) => warp::render_cached(&job),
+        None => sample,
+    }
+}
+
 /// Fonction de chargement de fichiers audio (fournie par l'application).
 pub type SampleLoader<'a> = &'a dyn Fn(&str) -> Option<Arc<Sample>>;
 
@@ -979,6 +1011,17 @@ impl Project {
         inst
     }
 
+    /// Like [`make_instrument`](Self::make_instrument), a sampler in tempo
+    /// sync getting its sample stretched to the project tempo.
+    pub fn make_synced_instrument(&self, def: &InstrumentDef, sample_rate: f32, loader: SampleLoader) -> Box<dyn Instrument> {
+        if sync_key(def, self.bpm).is_none() {
+            return Self::make_instrument(def, sample_rate, loader);
+        }
+        let bpm = self.bpm;
+        let synced = |path: &str| loader(path).map(|s| synced_sample(def, s, bpm));
+        Self::make_instrument(def, sample_rate, &synced)
+    }
+
     /// `None` si l'identifiant est inconnu ou si le plugin CLAP ou VST 3 ne se charge pas.
     pub fn make_effect(def: &EffectDef, sample_rate: f32, bpm: f32) -> Option<Box<dyn Effect>> {
         if def.kind == rack::RACK {
@@ -1030,7 +1073,7 @@ impl Project {
             }
             return ch;
         }
-        let mut ch = Channel::new(c.name.clone(), Self::make_instrument(&c.instrument, sample_rate, loader))
+        let mut ch = Channel::new(c.name.clone(), self.make_synced_instrument(&c.instrument, sample_rate, loader))
             .with_gain(c.gain)
             .with_pan(c.pan)
             .with_track(c.track)
@@ -1540,6 +1583,25 @@ mod tests {
         p.insert_gap(96 + 2 * PPQ, PPQ);
         let right = p.audio_clips.iter().find(|c| c.start == 96 + 3 * PPQ).expect("right part");
         assert!((right.offset - 2.5).abs() < 1e-9, "{}", right.offset);
+    }
+
+    #[test]
+    fn a_sampler_in_tempo_sync_gets_its_loop_stretched_to_the_tempo() {
+        use ponzik_engine::instruments::{SAMPLER_BEATS, SAMPLER_SYNC};
+        let left: Vec<f32> = (0..96_000).map(|i| (i as f32 * 0.05).sin() * 0.5).collect();
+        let loop_ = Arc::new(Sample { name: "loop".into(), sample_rate: 48_000.0, right: left.clone(), left, markers: Vec::new() });
+        let mut def = InstrumentDef::new("sampler");
+        assert_eq!(sync_key(&def, 60.0), None);
+        assert!(Arc::ptr_eq(&synced_sample(&def, loop_.clone(), 60.0), &loop_));
+        // Four beats in 2 s (120 BPM), played at 60 BPM: 4 s.
+        def.set(SAMPLER_SYNC, 1.0);
+        def.set(SAMPLER_BEATS, 4.0);
+        assert!(sync_key(&def, 60.0).is_some());
+        assert_ne!(sync_key(&def, 60.0), sync_key(&def, 90.0));
+        let stretched = synced_sample(&def, loop_.clone(), 60.0);
+        assert!((stretched.duration() - 4.0).abs() < 0.01, "{}", stretched.duration());
+        // At its own tempo: as is.
+        assert!((synced_sample(&def, loop_, 120.0).duration() - 2.0).abs() < 0.01);
     }
 
     #[test]

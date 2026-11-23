@@ -37,13 +37,25 @@ const P_TRANSPOSE: u32 = 11;
 const P_CENTS: u32 = 12;
 const P_CUTOFF: u32 = 13;
 const P_VOLUME: u32 = 14;
+const P_SYNC: u32 = 15;
+const P_BEATS: u32 = 16;
 
-static PARAMS: [ParamInfo; 15] = [
+/// « Mode » : 0 one-shot (the whole sample, whatever the note length), 1 melodic.
+pub const SAMPLER_MODE: u32 = P_MODE;
+/// « Tempo Sync » : the sample is stretched to the project tempo (by the
+/// project, which hands the stretched sample over: see `Project::synced_sample`).
+pub const SAMPLER_SYNC: u32 = P_SYNC;
+/// Length of the sample in beats at its own tempo, for the tempo sync.
+pub const SAMPLER_BEATS: u32 = P_BEATS;
+
+static PARAMS: [ParamInfo; 17] = [
     ParamInfo::new(P_ROOT, "Root Note", 0.0, 127.0, 60.0, Unit::None).group("Sample"),
     ParamInfo::choice(P_MODE, "Mode", MODES, 1).group("Sample"),
     ParamInfo::new(P_START, "Start", 0.0, 1.0, 0.0, Unit::Percent).group("Sample"),
     ParamInfo::new(P_END, "End", 0.0, 1.0, 1.0, Unit::Percent).group("Sample"),
     ParamInfo::choice(P_REVERSE, "Reverse", OFF_ON, 0).group("Sample"),
+    ParamInfo::choice(P_SYNC, "Tempo Sync", OFF_ON, 0).group("Tempo"),
+    ParamInfo::new(P_BEATS, "Beats", 0.0, 128.0, 0.0, Unit::None).group("Tempo"),
     ParamInfo::choice(P_LOOP, "Loop", OFF_ON, 0).group("Loop"),
     ParamInfo::new(P_LOOP_START, "Loop Start", 0.0, 1.0, 0.0, Unit::Percent).group("Loop"),
     ParamInfo::new(P_TRANSPOSE, "Transpose", -24.0, 24.0, 0.0, Unit::Semitones).group("Pitch"),
@@ -82,6 +94,8 @@ pub struct Sampler {
     cents: f32,
     cutoff: f32,
     gain: f32,
+    sync: bool,
+    beats: f32,
     sample_rate: f32,
     voices: [Voice; VOICES],
     note_counter: u64,
@@ -111,6 +125,8 @@ impl Sampler {
             cents: 0.0,
             cutoff: 20_000.0,
             gain: 1.0,
+            sync: false,
+            beats: 0.0,
             sample_rate: sr,
             voices: std::array::from_fn(|_| Voice {
                 note: 0,
@@ -157,6 +173,8 @@ impl Params for Sampler {
             P_CENTS => self.cents,
             P_CUTOFF => self.cutoff,
             P_VOLUME => gain_to_db(self.gain),
+            P_SYNC => b(self.sync),
+            P_BEATS => self.beats,
             _ => 0.0,
         }
     }
@@ -180,6 +198,8 @@ impl Params for Sampler {
             P_CENTS => self.cents = v,
             P_CUTOFF => self.cutoff = v,
             P_VOLUME => self.gain = db_to_gain(v),
+            P_SYNC => self.sync = v > 0.5,
+            P_BEATS => self.beats = v.round(),
             _ => {}
         }
         let env = self.env;

@@ -116,10 +116,12 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: Loader) -> V
             }
             continue;
         }
-        if !same_instrument(&a.instrument, &b.instrument) {
+        // A sampler in tempo sync gets its sample stretched again for a new tempo or length.
+        let resync = ponzik_project::sync_key(&a.instrument, old.bpm) != ponzik_project::sync_key(&b.instrument, new.bpm);
+        if !same_instrument(&a.instrument, &b.instrument) || resync {
             cmds.push(Command::ReplaceInstrument {
                 channel: i,
-                instrument: Project::make_instrument(&b.instrument, sample_rate, loader),
+                instrument: new.make_synced_instrument(&b.instrument, sample_rate, loader),
             });
         } else {
             for (id, value) in param_changes(&b.instrument.kind, &a.instrument.params, &b.instrument.params) {
