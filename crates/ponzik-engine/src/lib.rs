@@ -8,6 +8,7 @@
 pub mod audition;
 pub mod codecs;
 pub mod denormal;
+pub mod dylib;
 pub mod effect;
 pub mod editor;
 pub mod effects;
