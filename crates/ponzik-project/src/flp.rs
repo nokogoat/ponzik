@@ -209,25 +209,25 @@ fn u32_at(b: &[u8], at: usize) -> Option<u32> {
 /// event stream keeps the events read so far.
 pub fn parse_container(bytes: &[u8]) -> Result<Container<'_>, String> {
     if bytes.get(0..4) != Some(b"FLhd") {
-        return Err("Not an FL Studio project (missing FLhd header)".into());
+        return Err(tr("Not an FL Studio project (missing FLhd header)").into());
     }
-    let header_len = u32_at(bytes, 4).ok_or("Truncated FL Studio header")? as usize;
+    let header_len = u32_at(bytes, 4).ok_or(tr("Truncated FL Studio header"))? as usize;
     if header_len < 6 {
-        return Err("Corrupted FL Studio header".into());
+        return Err(tr("Corrupted FL Studio header").into());
     }
     let header = Header {
-        format: u16_at(bytes, 8).ok_or("Truncated FL Studio header")? as i16,
-        channels: u16_at(bytes, 10).ok_or("Truncated FL Studio header")?,
-        ppq: u16_at(bytes, 12).ok_or("Truncated FL Studio header")?,
+        format: u16_at(bytes, 8).ok_or(tr("Truncated FL Studio header"))? as i16,
+        channels: u16_at(bytes, 10).ok_or(tr("Truncated FL Studio header"))?,
+        ppq: u16_at(bytes, 12).ok_or(tr("Truncated FL Studio header"))?,
     };
     if header.ppq == 0 {
-        return Err("Corrupted FL Studio header (PPQ is 0)".into());
+        return Err(tr("Corrupted FL Studio header (PPQ is 0)").into());
     }
     // Chunks after the header: skip anything that is not FLdt.
     let mut pos = 8usize.saturating_add(header_len);
     let (data, missing) = loop {
-        let id = bytes.get(pos..pos + 4).ok_or("No event data in this FL Studio project")?;
-        let len = u32_at(bytes, pos + 4).ok_or("No event data in this FL Studio project")? as usize;
+        let id = bytes.get(pos..pos + 4).ok_or(tr("No event data in this FL Studio project"))?;
+        let len = u32_at(bytes, pos + 4).ok_or(tr("No event data in this FL Studio project"))? as usize;
         let start = pos + 8;
         if id == b"FLdt" {
             let declared = start.saturating_add(len);

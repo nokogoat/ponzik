@@ -594,7 +594,7 @@ impl App {
         c.stroke_circle(dx.min(g.right() - 5.0), hy, 4.5 + hv * 1.5, 1.6, t.select);
 
         // Footer: length and channels.
-        let info_line = format!("{:.2} s · {}", sample.duration(), if sample.is_mono() { "mono" } else { "stereo" });
+        let info_line = format!("{} s · {}", ponzik_i18n::num(f64::from(sample.duration()), 2), if sample.is_mono() { tr("Mono") } else { tr("Stereo") });
         self.text_right(c, self.f.mono, 10.0, r.right() - 10.0, kit.y + 12.0, &info_line, t.muted);
     }
 

@@ -104,7 +104,7 @@ impl Bar {
         match self {
             Bar::Mode => Glyph::Icon(Icon::Swap),
             Bar::Pattern => Glyph::Icon(Icon::Rack),
-            Bar::Tap => Glyph::Text("TAP"),
+            Bar::Tap => Glyph::Text(ponzik_i18n::tr_noop("TAP")),
             Bar::Position => Glyph::Text("1.1.1"),
             Bar::Scale => Glyph::Icon(Icon::Scale),
             Bar::Metronome => Glyph::Icon(Icon::Metronome),
@@ -878,7 +878,7 @@ impl App {
         let t = self.theme;
         match g {
             Glyph::Icon(icon) => draw_icon(c, icon, cx, cy, size, col),
-            Glyph::Text(s) => self.text_center(c, self.f.mono_med, size * 0.6, cx, cy, s, col),
+            Glyph::Text(s) => self.text_center(c, self.f.mono_med, size * 0.6, cx, cy, tr(s), col),
             Glyph::Rec => c.fill_circle(cx, cy, size * 0.3, t.negative.alpha(col.a as f32 / 255.0)),
             Glyph::CountIn => {
                 c.stroke_circle(cx, cy, size * 0.42, 1.4, col);

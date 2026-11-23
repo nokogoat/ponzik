@@ -16,7 +16,7 @@ pub fn write_wav_i16(path: impl AsRef<Path>, sample_rate: u32, channels: u16, sa
 
 pub fn encode_wav_i16(w: &mut impl Write, sample_rate: u32, channels: u16, samples: &[f32]) -> io::Result<()> {
     let data_len = u32::try_from(samples.len() * 2)
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "fichier WAV > 4 Go"))?;
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, tr("WAV file larger than 4 GB")))?;
     let block_align = channels * 2;
     w.write_all(b"RIFF")?;
     w.write_all(&(36 + data_len).to_le_bytes())?;
@@ -49,7 +49,7 @@ pub fn encode_sample(w: &mut impl Write, sample: &Sample) -> io::Result<()> {
     let channels: u16 = if sample.is_mono() { 1 } else { 2 };
     let frames = sample.len();
     let data_len = u32::try_from(frames * channels as usize * 3)
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "fichier WAV > 4 Go"))?;
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, tr("WAV file larger than 4 GB")))?;
     let markers: Vec<u32> = sample.markers.iter().filter(|&&m| m < frames).map(|&m| m as u32).collect();
     let cue_len = if markers.is_empty() { 0 } else { 4 + 24 * markers.len() as u32 };
     let cue_chunk = if markers.is_empty() { 0 } else { 8 + cue_len };

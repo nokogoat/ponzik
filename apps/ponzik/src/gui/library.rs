@@ -35,7 +35,7 @@ impl App {
         let result = match rx.try_recv() {
             Ok(r) => r,
             Err(TryRecvError::Empty) => return false,
-            Err(TryRecvError::Disconnected) => Err("interrupted".into()),
+            Err(TryRecvError::Disconnected) => Err(tr("interrupted").into()),
         };
         self.library_build = None;
         match result {

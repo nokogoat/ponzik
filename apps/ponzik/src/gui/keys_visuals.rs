@@ -164,7 +164,7 @@ impl App {
             self.text_right(c, self.f.mono, 9.0, x + 3.0, bars.bottom() - 4.0, &format!("{}", value.round() as i32), t.muted);
         }
         if let Some(i) = hovered_bar {
-            let name = params.get(i).map_or("", |p| p.name);
+            let name = params.get(i).map_or("", |p| tr(p.name));
             self.set_tip(&format!("{name}\n{}", tr("Drag: pull the drawbar out (louder) or push it in")), "");
         }
 

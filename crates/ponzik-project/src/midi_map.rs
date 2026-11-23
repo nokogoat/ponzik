@@ -455,7 +455,7 @@ pub fn source_label(s: CtlSource) -> String {
             const NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
             format!("{}{} · {}", NAMES[key as usize % 12], key as i32 / 12 - 1, channel + 1)
         }
-        CtlSource::PitchBend { channel } => format!("Bend · {}", channel + 1),
+        CtlSource::PitchBend { channel } => ponzik_i18n::tr_fmt!("Bend · {}", channel + 1),
     }
 }
 

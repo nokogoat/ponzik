@@ -8277,3 +8277,31 @@ msgstr "{} versions · vous avez la {}"
 
 msgid "Revision"
 msgstr "Révision"
+# --- Strings found by the English audit ---
+
+msgid "Bend · {}"
+msgstr "Bend · {}"
+
+msgid "Not an FL Studio project (missing FLhd header)"
+msgstr "Ce n'est pas un projet FL Studio (en-tête FLhd absent)"
+
+msgid "Truncated FL Studio header"
+msgstr "En-tête FL Studio tronqué"
+
+msgid "Corrupted FL Studio header"
+msgstr "En-tête FL Studio corrompu"
+
+msgid "Corrupted FL Studio header (PPQ is 0)"
+msgstr "En-tête FL Studio corrompu (PPQ à 0)"
+
+msgid "No event data in this FL Studio project"
+msgstr "Aucune donnée d'événement dans ce projet FL Studio"
+
+msgid "interrupted"
+msgstr "interrompu"
+
+msgid "this device has no state"
+msgstr "cet appareil n'a pas d'état"
+
+msgid "this plugin has no state"
+msgstr "ce plugin n'a pas d'état"

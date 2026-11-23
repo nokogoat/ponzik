@@ -142,7 +142,7 @@ pub trait PluginEditor: Send + Sync {
     /// plugin (same unit as [`EditorEvent::Param`]): the host takes them as
     /// its own values.
     fn load_state(&self, _data: &[u8], _context: StateContext) -> Result<Vec<(u32, f32)>, String> {
-        Err("this plugin has no state".into())
+        Err(ponzik_i18n::tr("this plugin has no state").into())
     }
 }
 

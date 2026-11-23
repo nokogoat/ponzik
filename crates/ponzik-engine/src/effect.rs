@@ -56,7 +56,7 @@ pub trait Effect: Params + Send {
     /// on an instance not sent to the engine yet, before `set_sample_rate`
     /// activates it; the parameter values are read back from the plugin.
     fn load_state(&mut self, _data: &[u8]) -> Result<(), String> {
-        Err("this device has no state".into())
+        Err(ponzik_i18n::tr("this device has no state").into())
     }
 
     /// Traitement sur place d'un bloc stéréo (`left.len() == right.len()`).
