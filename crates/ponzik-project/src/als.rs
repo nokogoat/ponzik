@@ -289,7 +289,7 @@ struct LiveClip {
 
 /// The notes channel `ch` plays in playlist clip `clip`, its pattern looped
 /// over the clip's length from its offset.
-fn clip_notes(p: &Project, clip: &ClipDef, ch: usize) -> Vec<Note> {
+pub(crate) fn clip_notes(p: &Project, clip: &ClipDef, ch: usize) -> Vec<Note> {
     let Some(pat) = p.patterns.get(clip.pattern) else { return Vec::new() };
     let Some(notes) = pat.notes.get(ch).filter(|n| !n.is_empty()) else { return Vec::new() };
     let len = pat.len.max(1);
@@ -807,13 +807,15 @@ pub fn export_als(project: &Project) -> Vec<u8> {
 
 // --- Reading ---
 
-/// An XML element: its name, attributes and child elements (text is not kept:
-/// Live writes none).
+/// An XML element: its name, attributes, child elements and text (the
+/// pieces of text directly inside it, trimmed and joined; Live writes none,
+/// MusicXML and Ardour do).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Element {
     pub name: String,
     pub attrs: Vec<(String, String)>,
     pub children: Vec<Element>,
+    pub text: String,
 }
 
 impl Element {
@@ -835,8 +837,18 @@ impl Element {
         self.at(path)?.attr("Value")
     }
 
-    fn num(&self, path: &[&str]) -> Option<f64> {
+    pub(crate) fn num(&self, path: &[&str]) -> Option<f64> {
         self.value(path)?.trim().parse().ok().filter(|v: &f64| v.is_finite())
+    }
+
+    /// The children named `name`.
+    pub fn children_named<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a Element> + 'a {
+        self.children.iter().filter(move |c| c.name == name)
+    }
+
+    /// Trimmed text of the child `name`.
+    pub fn child_text(&self, name: &str) -> Option<&str> {
+        self.child(name).map(|c| c.text.trim())
     }
 
     /// Every descendant named `name`, depth first (not inside a match).
@@ -894,16 +906,40 @@ fn unescape(s: &str) -> String {
     out
 }
 
-/// Parses an XML document into its root element. Tolerant: text, comments,
+/// Adds a piece of text to an element (whitespace between tags is dropped).
+fn push_text(el: &mut Element, piece: &str) {
+    let piece = piece.trim();
+    if piece.is_empty() {
+        return;
+    }
+    if !el.text.is_empty() {
+        el.text.push(' ');
+    }
+    el.text.push_str(piece);
+}
+
+/// Parses an XML document into its root element. Tolerant: comments,
 /// processing instructions and DOCTYPEs are skipped; unclosed elements close
-/// at the end.
+/// at the end. Text is kept (see [`Element::text`]), CDATA sections too.
 pub fn parse_xml(text: &str) -> Result<Element, String> {
     let b = text.as_bytes();
     let mut stack: Vec<Element> = vec![Element::default()];
     let mut i = 0;
     while i < b.len() {
         if b[i] != b'<' {
-            i += 1;
+            let end = text[i..].find('<').map_or(b.len(), |e| i + e);
+            if stack.len() > 1 {
+                push_text(stack.last_mut().expect("root"), &unescape(&text[i..end]));
+            }
+            i = end;
+            continue;
+        }
+        if let Some(rest) = text[i..].strip_prefix("<![CDATA[") {
+            let len = rest.find("]]>").unwrap_or(rest.len());
+            if stack.len() > 1 {
+                push_text(stack.last_mut().expect("root"), &rest[..len]);
+            }
+            i = (i + 9 + len + 3).min(b.len());
             continue;
         }
         if text[i..].starts_with("<!--") {
@@ -1324,6 +1360,13 @@ mod tests {
         assert!(parse_xml("<A x=1/>").is_err());
         // Unclosed elements close at the end.
         assert_eq!(parse_xml("<A><B>").unwrap().children.len(), 1);
+        // Text, entities and CDATA.
+        let t = parse_xml("<a> <s>C</s>\n <o>4 &amp; 5</o><c><![CDATA[x<y]]></c></a>").unwrap();
+        assert_eq!(t.child_text("s"), Some("C"));
+        assert_eq!(t.child_text("o"), Some("4 & 5"));
+        assert_eq!(t.child_text("c"), Some("x<y"));
+        assert_eq!(t.text, "");
+        assert_eq!(t.children_named("s").count(), 1);
     }
 
     #[test]
