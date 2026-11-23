@@ -299,6 +299,40 @@ impl Window {
     }
 }
 
+/// The system clipboard, for text: what Ctrl+C puts there reaches the other
+/// programs, and theirs comes back with Ctrl+V. On X11 it also holds the
+/// primary selection (selected text, pasted with the middle button).
+pub struct Clipboard {
+    inner: backend::Clipboard,
+}
+
+impl Clipboard {
+    /// `None` without a display (tests, screenshots, unsupported systems).
+    pub fn open() -> Option<Self> {
+        backend::Clipboard::open().ok().map(|inner| Self { inner })
+    }
+
+    /// Puts `text` on the clipboard.
+    pub fn set_text(&mut self, text: &str) {
+        self.inner.set(false, text);
+    }
+
+    /// The clipboard's text, if any (waits a moment for the program that holds it).
+    pub fn text(&mut self) -> Option<String> {
+        self.inner.get(false)
+    }
+
+    /// Makes `text` the primary selection (X11 only; elsewhere nothing happens).
+    pub fn set_selection(&mut self, text: &str) {
+        self.inner.set(true, text);
+    }
+
+    /// The primary selection (X11 only; `None` elsewhere).
+    pub fn selection(&mut self) -> Option<String> {
+        self.inner.get(true)
+    }
+}
+
 /// Native handle of a window.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeHandle {

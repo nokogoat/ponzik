@@ -38,3 +38,15 @@ impl Window {
     }
     pub(crate) fn poll_plugin_events(&mut self, _: &mut Vec<Event>) {}
 }
+
+pub(crate) struct Clipboard;
+
+impl Clipboard {
+    pub(crate) fn open() -> Result<Self, WindowError> {
+        Err(WindowError::UnsupportedPlatform)
+    }
+    pub(crate) fn set(&mut self, _: bool, _: &str) {}
+    pub(crate) fn get(&mut self, _: bool) -> Option<String> {
+        None
+    }
+}
