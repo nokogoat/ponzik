@@ -20,7 +20,7 @@ Legend: **FL** = FL Studio · **AB** = Ableton Live · ✅ done in Ponzik · �
 | Arrangement view: linear timeline, tracks, recording the Session into the Arrangement | AB | 🟡 playlist |
 | Clip View / Device View (clip and effect chain details at the bottom of the screen) | AB | ✅ resizable bottom device panel with a strip of device chips (jump, drag to reorder, bypass, detach, presets), collapsible cards, an effect inserted between two cards, Ctrl+arrows from device to device, keyboard focus (Tab, arrows, Enter); clip panel for the selected clip |
 | Performance mode: launch Playlist clips live | FL | ⬜ |
-| Browser: samples, presets, plugins, projects, favorites, tags, collections | FL · AB | 🟡 instruments, effects, CLAP and VST3 plugins, WAV and FLAC files, search, drag and drop; no favorites or tags |
+| Browser: samples, presets, plugins, projects, favorites, tags, collections | FL · AB | 🟡 instruments, effects, CLAP and VST3 plugins, WAV and FLAC files in a collapsible folder tree, search, favorites, recent items, drag and drop; no presets or collections |
 | Similar-sound search in the browser | AB | ⬜ |
 | Plugin picker, plugin database | FL | 🟡 CLAP and VST3 plugins listed in the browser |
 | Detachable windows, multiple monitors | FL · AB | 🟡 devices in stacked floating windows inside the main window; no multi-monitor |
