@@ -8,7 +8,7 @@ use ponzik_ui::{Canvas, Color, Rect};
 use ponzik_window::Key;
 
 use super::Input;
-use super::app::{Action, App, Popup, View};
+use super::app::{Action, App, Popup, Rename, View};
 use super::compat;
 use super::keymap::{Combo, GROUPS, Keymap, Shortcut};
 use super::theme::*;
@@ -294,6 +294,8 @@ pub struct Prefs {
     pub buffer_ms: u32,
     /// Tampon choisi à la main : jamais relevé automatiquement.
     pub buffer_manual: bool,
+    /// Action that closes the sheet to open its own popup ("Create a translation").
+    pending: Option<Action>,
 }
 
 /// Tampon audio enregistré : (millisecondes, choisi à la main).
@@ -340,7 +342,9 @@ pub fn lang_from_json(j: &Json) -> Option<Lang> {
 
 /// Langue au démarrage, avant de construire quoi que ce soit : `PONZIK_LANG`,
 /// sinon celle des réglages, sinon l'anglais (les traductions se choisissent).
+/// Les traductions de l'utilisateur (`<config>/lang`) sont lues d'abord.
 pub fn init_language() {
+    ponzik_i18n::set_user_dir(Some(compat::translations_dir()));
     let env = std::env::var("PONZIK_LANG").ok().and_then(|v| Lang::from_code(&v));
     let saved = || std::fs::read_to_string(settings_path()).ok().and_then(|t| json::parse(&t).ok()).and_then(|j| lang_from_json(&j));
     ponzik_i18n::set_lang(env.or_else(saved).unwrap_or(Lang::EN));
@@ -503,6 +507,62 @@ impl App {
         ponzik_i18n::set_lang(lang);
         self.save_settings();
         self.toast(&tr_fmt!("Language: {}", lang.name()));
+    }
+
+    // --- Traductions de l'utilisateur ---
+
+    /// Reads the user's translation files again: edits show at once.
+    pub fn reload_translations(&mut self) {
+        let reg = ponzik_i18n::reload();
+        let mine = reg.langs.iter().filter(|l| l.file.is_some()).count();
+        let broken = reg.langs.iter().filter(|l| !l.errors.is_empty()).count();
+        let mut msg = tr_fmt!("Translations reloaded · {} from your folder", mine);
+        if broken > 0 {
+            msg = tr_fmt!("{} · {} with problems (see Settings)", msg, broken);
+        }
+        self.toast(&msg);
+    }
+
+    /// Opens the user's translation folder (created if needed).
+    pub fn open_translations_folder(&mut self) {
+        let dir = compat::translations_dir();
+        let res = std::fs::create_dir_all(&dir).and_then(|_| compat::open_in_file_manager(&dir));
+        if res.is_err() {
+            self.toast(&tr_fmt!("Could not open the folder: {}", dir.display().to_string()));
+        }
+    }
+
+    /// "Create a translation": writes `<code>.po` ready to fill in (or adds the
+    /// missing strings to an existing one), switches to it and shows its folder.
+    pub fn create_translation(&mut self, input: &str) {
+        let dir = compat::translations_dir();
+        let made = match ponzik_i18n::create_translation(&dir, input) {
+            Ok(made) => made,
+            Err(_) if ponzik_i18n::parse_new_language(input).is_none() => {
+                self.toast(tr("Type a language code, such as es or pt_BR, or a language name"));
+                return;
+            }
+            Err(e) => {
+                self.toast(&tr_fmt!("Could not write the translation: {}", e));
+                return;
+            }
+        };
+        ponzik_i18n::reload();
+        if let Some(lang) = ponzik_i18n::Lang::from_code(&made.code) {
+            self.prefs.lang = (lang != Lang::EN).then_some(lang);
+            ponzik_i18n::set_lang(lang);
+            self.save_settings();
+        }
+        let file = made.path.file_name().map_or_else(String::new, |f| f.to_string_lossy().into_owned());
+        let msg = if !made.existed {
+            tr_fmt!("{} created: fill in the msgstr lines, save, then reload the translations", file)
+        } else if made.added > 0 {
+            tr_fmt!("{} already exists: {} new strings added at the end", file, made.added)
+        } else {
+            tr_fmt!("{} already exists and is up to date", file)
+        };
+        self.toast_action(&msg, tr("Reload"), Action::ReloadTranslations);
+        let _ = compat::open_in_file_manager(&dir);
     }
 
     // --- Requêtes ---
@@ -739,6 +799,12 @@ impl App {
             2 => self.midi_tab(c, input, body, &mut hint),
             _ => self.about_tab(c, input, body, &mut hint),
         }
+        if let Some(action) = self.prefs.pending.take() {
+            self.prefs.capture = None;
+            self.prefs.conflict = None;
+            self.run_action(action, Rect::default());
+            return None;
+        }
         if enter < 0.999 {
             c.fill_rect(Rect::new(r.x + 1.0, r.y + 60.0, r.w - 2.0, body.h + 8.0), t.panel.alpha(1.0 - enter));
         }
@@ -963,34 +1029,95 @@ impl App {
             draw_icon(c, v.icon(), cx, y + 56.0, 15.0, t.accent);
         }
 
-        // Langue de l'interface : effet immédiat.
-        let y = (y + 96.0).min(right.bottom() - 58.0);
-        self.section(c, right.x, y, tr("Language"));
-        // Anglais par défaut (aucun choix enregistré), les autres langues sont des traductions.
-        let choices: Vec<(Option<Lang>, String)> =
-            Lang::all().map(|l| (if l == Lang::EN { None } else { Some(l) }, l.name().to_string())).collect();
-        let mut x = right.x;
-        let mut row_y = y + 20.0;
-        for (k, (choice, label)) in choices.into_iter().enumerate() {
+        self.language_choice(c, input, right, y + 96.0, hint);
+    }
+
+    /// Langue de l'interface (effet immédiat) : l'anglais par défaut, les
+    /// traductions livrées et celles de l'utilisateur, avec leur avancement ;
+    /// à droite du titre, créer une traduction, la recharger, ouvrir son dossier.
+    fn language_choice(&mut self, c: &mut Canvas, input: &Input, right: Rect, y: f32, hint: &mut Option<String>) {
+        let t = self.theme;
+        struct Choice {
+            lang: Option<Lang>,
+            label: String,
+            tip: String,
+            broken: bool,
+            w: f32,
+        }
+        let mut choices = Vec::new();
+        for info in &ponzik_i18n::registry().langs {
+            // Rounded down, but a started translation never reads 0%.
+            let pct = ((info.completion * 100.0).floor() as u32).max(u32::from(info.completion > 0.0));
+            let label = if info.lang == Lang::EN || pct >= 100 { info.name.clone() } else { format!("{} · {}%", info.name, pct) };
+            let file = info.file.as_ref().and_then(|p| p.file_name()).map(|f| f.to_string_lossy().into_owned());
+            let tip = match (&file, info.errors.first()) {
+                (Some(f), Some(e)) => tr_fmt!("{}: {} problems, the readable lines are used · first: {}", f, info.errors.len(), e.as_str()),
+                (Some(f), None) if info.embedded => tr_fmt!("Interface in {} · {}% translated · corrected by your file {}", info.name.as_str(), pct, f),
+                (Some(f), None) => tr_fmt!("Interface in {} · {}% translated · your file {}", info.name.as_str(), pct, f),
+                (None, _) if info.lang == Lang::EN => tr_fmt!("Interface in {} · takes effect immediately", info.name.as_str()),
+                (None, _) => tr_fmt!("Interface in {} · {}% translated · takes effect immediately", info.name.as_str(), pct),
+            };
             let w = self.fonts.measure(self.f.sans_med, 12.0, &label) + 44.0;
-            if x + w > right.right() && x > right.x {
+            choices.push(Choice { lang: (info.lang != Lang::EN).then_some(info.lang), label, tip, broken: !info.errors.is_empty(), w });
+        }
+        // Rangées nécessaires : la section remonte pour tenir dans la colonne.
+        let (mut x, mut rows) = (right.x, 1);
+        for ch in &choices {
+            if x + ch.w > right.right() && x > right.x {
+                x = right.x;
+                rows += 1;
+            }
+            x += ch.w + 8.0;
+        }
+        let y = y.min(right.bottom() - 22.0 - rows as f32 * 36.0);
+        self.section(c, right.x, y, tr("Language"));
+        let tools = [
+            (Icon::Plus, tr("Create a translation"), tr("A file with every text of Ponzik to translate, in your translations folder"), 0),
+            (Icon::Reset, tr("Reload translations"), tr("Reads your translation files again: no restart needed"), 1),
+            (Icon::Folder, tr("Open the translations folder"), tr("Where your .po translation files live"), 2),
+        ];
+        let mut tool = None;
+        for (i, (icon, name, desc, k)) in tools.into_iter().enumerate() {
+            let r = Rect::new(right.right() - (3 - i) as f32 * 28.0, y - 6.0, 24.0, 24.0);
+            let id = wid("set-lang-tool", k, 0);
+            if self.icon_button(c, input, id, r, icon, false, (name, "")) {
+                tool = Some(k);
+            }
+            if self.hovered(input, id, r) {
+                *hint = Some(format!("{name} · {desc}"));
+            }
+        }
+        let (mut x, mut row_y) = (right.x, y + 20.0);
+        for (k, ch) in choices.iter().enumerate() {
+            if x + ch.w > right.right() && x > right.x {
                 x = right.x;
                 row_y += 36.0;
             }
-            let r = Rect::new(x, row_y, w, 30.0);
+            let r = Rect::new(x, row_y, ch.w, 30.0);
             let id = wid("set-lang", k, 0);
-            let active = self.prefs.lang == choice;
+            // The language in use (PONZIK_LANG may differ from the saved one).
+            let active = ch.lang.unwrap_or(Lang::EN) == ponzik_i18n::lang();
             let icon = if active { Icon::Check } else { Icon::Globe };
-            if self.pill_button(c, input, id, r, icon, &label, active) && !active {
-                self.set_language(choice);
+            if self.pill_button(c, input, id, r, icon, &ch.label, active) && !active {
+                self.set_language(ch.lang);
+            }
+            if ch.broken {
+                c.fill_circle(r.right() - 7.0, r.y + 7.0, 4.5, t.panel);
+                c.fill_circle(r.right() - 7.0, r.y + 7.0, 3.0, t.negative);
             }
             if self.hovered(input, id, r) {
-                *hint = Some(match choice {
-                    None => tr_fmt!("Interface in {} · takes effect immediately", Lang::EN.name()),
-                    Some(l) => tr_fmt!("Interface in {} · takes effect immediately", l.name()),
-                });
+                *hint = Some(ch.tip.clone());
+                if ch.broken {
+                    self.set_tip(&ch.tip, "");
+                }
             }
-            x += w + 8.0;
+            x += ch.w + 8.0;
+        }
+        match tool {
+            Some(0) => self.prefs.pending = Some(Action::Popup(Popup::Rename { target: Rename::Translation, text: String::new() })),
+            Some(1) => self.reload_translations(),
+            Some(_) => self.open_translations_folder(),
+            None => {}
         }
     }
 

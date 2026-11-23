@@ -30,6 +30,71 @@ msgstr "Interface : {} · effet immédiat"
 msgid "Language: {}"
 msgstr "Langue : {}"
 
+msgid "Interface in {} · {}% translated · takes effect immediately"
+msgstr "Interface : {} · traduite à {} % · effet immédiat"
+
+msgid "Interface in {} · {}% translated · your file {}"
+msgstr "Interface : {} · traduite à {} % · votre fichier {}"
+
+msgid "Interface in {} · {}% translated · corrected by your file {}"
+msgstr "Interface : {} · traduite à {} % · corrigée par votre fichier {}"
+
+msgid "{}: {} problems, the readable lines are used · first: {}"
+msgstr "{} : {} problèmes, les lignes lisibles sont utilisées · premier : {}"
+
+# --- User translations ---
+
+msgid "Create a translation"
+msgstr "Créer une traduction"
+
+msgid "Create a translation of Ponzik"
+msgstr "Créer une traduction de Ponzik"
+
+msgid "A file with every text of Ponzik to translate, in your translations folder"
+msgstr "Un fichier avec tous les textes de Ponzik à traduire, dans votre dossier de traductions"
+
+msgid "Reload translations"
+msgstr "Recharger les traductions"
+
+msgid "Reads your translation files again: no restart needed"
+msgstr "Relit vos fichiers de traduction : pas besoin de redémarrer"
+
+msgid "Open the translations folder"
+msgstr "Ouvrir le dossier des traductions"
+
+msgid "Where your .po translation files live"
+msgstr "Là où vivent vos fichiers de traduction .po"
+
+msgid "New translation · language code or name (es, pt_BR, Deutsch…)"
+msgstr "Nouvelle traduction · code ou nom (es, pt_BR, Deutsch…)"
+
+msgid "Type a language code, such as es or pt_BR, or a language name"
+msgstr "Tapez un code de langue, comme es ou pt_BR, ou le nom d'une langue"
+
+msgid "Could not write the translation: {}"
+msgstr "Impossible d'écrire la traduction : {}"
+
+msgid "Could not open the folder: {}"
+msgstr "Impossible d'ouvrir le dossier : {}"
+
+msgid "{} created: fill in the msgstr lines, save, then reload the translations"
+msgstr "{} créé : remplissez les lignes msgstr, enregistrez, puis rechargez les traductions"
+
+msgid "{} already exists: {} new strings added at the end"
+msgstr "{} existe déjà : {} nouveaux textes ajoutés à la fin"
+
+msgid "{} already exists and is up to date"
+msgstr "{} existe déjà et est à jour"
+
+msgid "Reload"
+msgstr "Recharger"
+
+msgid "Translations reloaded · {} from your folder"
+msgstr "Traductions rechargées · {} de votre dossier"
+
+msgid "{} · {} with problems (see Settings)"
+msgstr "{} · {} avec des problèmes (voir Réglages)"
+
 # --- Parameter values ---
 
 msgid "{}%"

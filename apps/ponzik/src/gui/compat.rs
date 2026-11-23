@@ -44,6 +44,32 @@ pub fn config_dir() -> PathBuf {
     var("XDG_CONFIG_HOME").unwrap_or_else(|| home().join(".config")).join("ponzik")
 }
 
+/// The user's translations (`<config>/lang/*.po`); `PONZIK_LANG_DIR` points
+/// elsewhere (screenshots, translators testing a file).
+pub fn translations_dir() -> PathBuf {
+    std::env::var_os("PONZIK_LANG_DIR").filter(|v| !v.is_empty()).map_or_else(|| config_dir().join("lang"), PathBuf::from)
+}
+
+/// Shows a folder in the system file manager, without waiting for it.
+pub fn open_in_file_manager(path: &Path) -> std::io::Result<()> {
+    let program = if cfg!(windows) {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    let mut child = std::process::Command::new(program)
+        .arg(path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+    // Reaped in the background: no zombie left behind.
+    std::thread::spawn(move || child.wait());
+    Ok(())
+}
+
 pub(super) fn file_name(name: &str) -> String {
     let clean: String = name.chars().map(|c| if c.is_alphanumeric() || " -_".contains(c) { c } else { '_' }).collect();
     let clean = clean.trim();

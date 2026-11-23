@@ -230,6 +230,8 @@ pub enum Rename {
     Marker(usize),
     /// A take of a take group: (group, take).
     Take(usize, usize),
+    /// Language code or name of a new translation file.
+    Translation,
 }
 
 /// Format badge of a plugin device kind (`CLAP`, `VST3`), none for native devices.
@@ -375,6 +377,10 @@ pub enum Action {
     ApplyPreset(usize),
     /// Langue de l'interface (`None` : celle du système).
     SetLanguage(Option<ponzik_i18n::Lang>),
+    /// Reads the user's translation files again.
+    ReloadTranslations,
+    /// Shows the user's translation folder in the file manager.
+    OpenTranslationsFolder,
     /// Affiche ou masque une vue.
     ToggleViewShown(View),
     /// Edit of a Drum Pads pad: channel, pad, operation.
@@ -1046,6 +1052,12 @@ impl App {
                 }
                 self.open_whats_new();
                 self.updates.news_full = name == "whatsnew-full";
+                return;
+            }
+            // translation[:text]: "Create a translation", text already typed.
+            _ if name.starts_with("translation") => {
+                let text = name.split_once(':').map_or("", |(_, t)| t).to_string();
+                self.open_popup(Popup::Rename { target: Rename::Translation, text }, Rect::default());
                 return;
             }
             "conflict" => {
@@ -3901,6 +3913,8 @@ impl App {
             }
             Action::ApplyPreset(i) => self.apply_profile(i),
             Action::SetLanguage(lang) => self.set_language(lang),
+            Action::ReloadTranslations => self.reload_translations(),
+            Action::OpenTranslationsFolder => self.open_translations_folder(),
             Action::ToggleViewShown(v) => self.toggle_view_shown(v),
             Action::Pad(channel, pad, op) => self.pad_action(channel, pad, op),
             Action::RescanPlugins => self.start_plugin_scan(true),
@@ -4049,6 +4063,10 @@ impl App {
                 self.save_preset(device, text);
                 return;
             }
+            Rename::Translation => {
+                self.create_translation(text);
+                return;
+            }
             Rename::Project => self.project.name = text.into(),
             Rename::SaveAs => {
                 self.project.name = text.into();
@@ -4165,13 +4183,13 @@ impl App {
                 }
             }
             let a = state.anchor;
-            let inline = a.w > 1.0 && a.h > 1.0 && !matches!(target, Rename::SaveAs | Rename::Preset(_));
+            let inline = a.w > 1.0 && a.h > 1.0 && !matches!(target, Rename::SaveAs | Rename::Preset(_) | Rename::Translation);
             let field = if inline {
                 let w = a.w.max(200.0);
                 let x = a.x.min(screen.right() - w - 8.0).max(8.0);
                 Rect::new(x, a.y + a.h * 0.5 - 18.0, w, 36.0)
             } else {
-                let w = 360.0;
+                let w = if matches!(target, Rename::Translation) { 480.0 } else { 360.0 };
                 let r = Rect::new((screen.w - w) * 0.5, screen.h * 0.32 + (1.0 - open) * 8.0, w, 92.0);
                 c.fill_rect(screen, Color::rgba(0, 0, 0, (110.0 * open) as u8));
                 c.fill_rrect(r, 16.0, t.panel);
@@ -4179,9 +4197,10 @@ impl App {
                 let title = match target {
                     Rename::SaveAs => tr("Save as"),
                     Rename::Preset(_) => tr("Preset name"),
+                    Rename::Translation => tr("New translation · language code or name (es, pt_BR, Deutsch…)"),
                     _ => tr("Rename"),
                 };
-                self.text(c, self.f.sans_med, 14.0, r.x + 20.0, r.y + 24.0, title, t.text2);
+                self.text_fit(c, self.f.sans_med, 14.0, r.x + 20.0, r.y + 24.0, title, r.w - 40.0, t.text2);
                 Rect::new(r.x + 16.0, r.y + 40.0, r.w - 32.0, 38.0)
             };
             c.fill_rrect(field.translate(0.0, 4.0).inset(-2.0), 12.0, Color::rgba(0, 0, 0, (70.0 * open) as u8));

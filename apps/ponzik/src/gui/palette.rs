@@ -114,6 +114,10 @@ impl App {
         for lang in ponzik_i18n::Lang::all() {
             add(ponzik_i18n::tr_fmt!("Language: {}", lang.name()), tr("Settings"), none(), Action::SetLanguage(if lang == ponzik_i18n::Lang::EN { None } else { Some(lang) }));
         }
+        let translate = Action::Popup(Popup::Rename { target: Rename::Translation, text: String::new() });
+        add(tr("Create a translation of Ponzik").into(), tr("Settings"), none(), translate);
+        add(tr("Reload translations").into(), tr("Settings"), none(), Action::ReloadTranslations);
+        add(tr("Open the translations folder").into(), tr("Settings"), none(), Action::OpenTranslationsFolder);
         for view in View::ALL {
             let title = if self.view_shown(view) { tr_fmt!("Hide the {} view", view.label()) } else { tr_fmt!("Show the {} view", view.label()) };
             add(title, tr("Settings"), none(), Action::ToggleViewShown(view));
