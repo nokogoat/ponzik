@@ -56,6 +56,20 @@ pub fn config_dir() -> PathBuf {
     var("XDG_CONFIG_HOME").unwrap_or_else(|| home().join(".config")).join("ponzik")
 }
 
+/// Files Ponzik can make again (pitch analyses and renders): `$XDG_CACHE_HOME/ponzik`
+/// (or `~/.cache/ponzik`) under Linux, `%LOCALAPPDATA%\Ponzik\Cache` under
+/// Windows, `~/Library/Caches/Ponzik` under macOS.
+pub fn cache_dir() -> PathBuf {
+    let var = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
+    if cfg!(windows) {
+        return var("LOCALAPPDATA").unwrap_or_else(home).join("Ponzik").join("Cache");
+    }
+    if cfg!(target_os = "macos") {
+        return home().join("Library/Caches/Ponzik");
+    }
+    var("XDG_CACHE_HOME").unwrap_or_else(|| home().join(".cache")).join("ponzik")
+}
+
 /// The user's translations (`<config>/lang/*.po`); `PONZIK_LANG_DIR` points
 /// elsewhere (screenshots, translators testing a file).
 pub fn translations_dir() -> PathBuf {

@@ -52,6 +52,7 @@ mod palette;
 mod performance;
 mod plugins;
 mod piano;
+mod pitcheditor;
 mod playlist;
 mod rack;
 mod rackfx;
@@ -65,6 +66,7 @@ mod sync;
 mod keys_visuals;
 mod visuals;
 mod warping;
+mod tunework;
 mod wavetable;
 mod theme;
 mod themecss;
@@ -325,6 +327,8 @@ pub fn run(project: ponzik_project::Project, open: Option<std::path::PathBuf>, l
     app.editors.set_owner(window.native_handle());
     app.samples = samples;
     app.refresh_warps();
+    ponzik_project::tune::set_cache_dir(Some(compat::cache_dir().join("pitch")));
+    app.refresh_tunes();
     app.set_output(stream);
     app.xrun_watch.reopened(0.0, 0);
     app.start_midi_out();
@@ -868,6 +872,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
         app.screenshot_voice(&mode);
         voice::DemoSinger::new(SR as f32)
     });
+    // PONZIK_PITCH=[take:<file>|analysing][,edited][,select:<n>]: the Pitch Editor on a sung take.
+    if let Ok(spec) = std::env::var("PONZIK_PITCH") {
+        app.screenshot_pitch(&spec);
+    }
     // PONZIK_CLIP=audio[,markers|tones|off]|pattern: a clip and its clip panel.
     if let Ok(spec) = std::env::var("PONZIK_CLIP") {
         app.screenshot_clip(&spec);

@@ -356,6 +356,10 @@ impl App {
                 .sep(),
         );
         v.push(
+            MenuItem::new(Icon::PitchBlobs, tr("Edit pitch"), Action::EditPitch(i))
+                .tip(tr("The notes of a sung or played take: move, correct, stretch them (Pitch Editor)")),
+        );
+        v.push(
             MenuItem::new(Icon::Voice, tr("Convert to notes"), Action::AudioToNotes(i))
                 .tip(tr("A sung or played melody (one note at a time) into a pattern on the selected channel")),
         );

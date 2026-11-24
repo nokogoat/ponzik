@@ -444,7 +444,7 @@ impl App {
 
         // Toggles: warp, reverse, loop.
         let ty = ctl.y + 92.0;
-        let b = |k: usize| Rect::new(ctl.x + k as f32 * 44.0, ty, 38.0, 38.0);
+        let b = |k: usize| Rect::new(ctl.x + k as f32 * 40.0, ty, 36.0, 36.0);
         if self.icon_button(
             c,
             input,
@@ -500,6 +500,11 @@ impl App {
             (tr("Edit the audio: cut, clean, stretch, on a copy"), ""),
         ) {
             self.open_in_editor(&clip.path, super::samplelab::Source::Clip(i));
+            return;
+        }
+        let edited = self.project.pitch_edit(&clip.path).is_some();
+        if self.icon_button(c, input, wid("cp-pitch", 0, 0), b(5), Icon::PitchBlobs, edited, (tr("Edit pitch: the notes of the take (Pitch Editor)"), "")) {
+            self.open_pitch_editor(i);
             return;
         }
         if let Some(hex) =
