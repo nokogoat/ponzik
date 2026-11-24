@@ -1192,8 +1192,8 @@ msgstr "Glisser : largeur du navigateur"
 msgid "Drag: panel height"
 msgstr "Glisser : hauteur du panneau"
 
-msgid "{}\nDouble-click: default size"
-msgstr "{}\nDouble-clic : taille par défaut"
+msgid "{}\nDouble-click: default size{}"
+msgstr "{}\nDouble-clic : taille par défaut{}"
 
 msgid "Shift"
 msgstr "Maj"
@@ -10225,3 +10225,36 @@ msgstr "Coller"
 
 msgid "Select all"
 msgstr "Tout sélectionner"
+
+msgid "\nDrag to the edge: fold"
+msgstr "\nTiré jusqu'au bord : replié"
+
+msgid "Maximize\nHide the browser and the devices · double-click a tab does it too"
+msgstr "Agrandir\nMasquer le navigateur et les appareils · un double-clic sur un onglet aussi"
+
+msgid "Maximize the view"
+msgstr "Agrandir la vue"
+
+msgid "Maximize the view, or restore the browser and devices"
+msgstr "Agrandir la vue, ou rendre le navigateur et les appareils"
+
+msgid "More\nThe tools that do not fit here"
+msgstr "Plus\nLes outils qui ne tiennent pas ici"
+
+msgid "Restore\nThe browser and the devices come back"
+msgstr "Rétablir\nLe navigateur et les appareils reviennent"
+
+msgid "Show the browser"
+msgstr "Afficher le navigateur"
+
+msgid "Show the browser · {}"
+msgstr "Afficher le navigateur · {}"
+
+msgid "View maximized"
+msgstr "Vue agrandie"
+
+msgid "View maximized · {} to restore"
+msgstr "Vue agrandie · {} pour rétablir"
+
+msgid "View restored"
+msgstr "Vue rétablie"

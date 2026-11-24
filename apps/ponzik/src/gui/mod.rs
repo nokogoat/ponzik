@@ -56,6 +56,7 @@ mod record;
 mod session;
 mod settings;
 mod start;
+mod split;
 mod sync;
 mod keys_visuals;
 mod visuals;
@@ -924,6 +925,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // PONZIK_FLOAT=n : détache les n premiers appareils du panneau dans des fenêtres.
     if let Some(n) = std::env::var("PONZIK_FLOAT").ok().and_then(|v| v.parse().ok()) {
         app.screenshot_floats(n);
+    }
+    // PONZIK_LAYOUT=sidebar:200,panel:180,lanes:60,key:12,track:40,patterns:150,rack:220,fold:lanes,max:
+    // splitter sizes, zooms, folded areas and a maximized view (see split.rs).
+    if let Ok(spec) = std::env::var("PONZIK_LAYOUT") {
+        app.screenshot_layout(&spec);
     }
     // PONZIK_UI_SIZE=125 : taille de l'interface choisie, en %.
     if let Some(pct) = std::env::var("PONZIK_UI_SIZE").ok().and_then(|v| v.trim().parse::<f32>().ok()) {

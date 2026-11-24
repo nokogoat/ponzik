@@ -352,6 +352,8 @@ pub enum Action {
     SetView(View),
     ToggleSidebar,
     TogglePanel,
+    /// The current view takes the whole window (browser and devices hidden), or gives it back.
+    ToggleMaximize,
     FocusChannel(usize),
     Save,
     OpenMenu,
@@ -724,6 +726,8 @@ pub struct App {
     pub view: View,
     pub focus: Focus,
     pub sidebar: bool,
+    /// The view is maximized: whether the browser and the device panel were open before.
+    pub maximized: Option<(bool, bool)>,
     pub panel: bool,
     pub popup: Option<PopupState>,
     toasts: Vec<Toast>,
@@ -968,6 +972,7 @@ impl App {
             view: View::Rack,
             focus: Focus::Channel(0),
             sidebar: true,
+            maximized: None,
             panel: true,
             popup: None,
             toasts: Vec::new(),
@@ -2451,6 +2456,9 @@ impl App {
         if pn <= 1.0 {
             self.panel_tab(c, under, main);
         }
+        if sb <= 1.0 {
+            self.sidebar_tab(c, under, main);
+        }
         if pn > 1.0 {
             self.with_area(Area::Devices, |s| s.panel_area(c, under, Rect::new(sb, h - pn, w - sb, pn)));
         }
@@ -2594,7 +2602,7 @@ impl App {
         // Onglets des seules vues proposées par l'espace de travail.
         let views = self.shown_views();
         // Narrower tabs when the room is short: the toolbars need it.
-        let tab_w = if r.w < 1_400.0 { 46.0 } else { 54.0 };
+        let tab_w = if r.w < 1_000.0 { 40.0 } else if r.w < 1_400.0 { 46.0 } else { 54.0 };
         let tabs = Rect::new(r.x + PAD, r.y + 12.0, (tab_w * views.len() as f32).min(r.w - 2.0 * PAD), 36.0);
         let icons: Vec<Icon> = views.iter().map(|v| v.icon()).collect();
         let keys: Vec<String> = views.iter().map(|&v| self.key_label(super::keymap::Shortcut::for_view(v))).collect();
@@ -2614,7 +2622,22 @@ impl App {
         if let Some(i) = self.icon_segmented(c, input, wid("tabs", 0, 0), tabs, &icons, &tips, sel) {
             self.set_view(views[i]);
         }
-        let header = Rect::new(tabs.right() + 16.0, r.y + 12.0, r.right() - PAD - tabs.right() - 16.0, 36.0);
+        // Double-click on a tab: the view takes the whole window, or gives it back.
+        if input.double && input.pressed && input.inside && tabs.contains(input.x, input.y) {
+            self.toggle_maximize();
+        }
+        let focus = Rect::new(tabs.right() + 4.0, tabs.y, 32.0, tabs.h);
+        let max = self.maximized.is_some();
+        let (icon, tip) = if max {
+            (Icon::Restore, tr("Restore\nThe browser and the devices come back"))
+        } else {
+            (Icon::Maximize, tr("Maximize\nHide the browser and the devices · double-click a tab does it too"))
+        };
+        let key = self.key_label(super::keymap::Shortcut::Maximize);
+        if self.icon_button(c, input, wid("maximize", 0, 0), focus, icon, max, (tip, &key)) {
+            self.toggle_maximize();
+        }
+        let header = Rect::new(focus.right() + 12.0, r.y + 12.0, r.right() - PAD - focus.right() - 12.0, 36.0);
         let body = Rect::new(r.x + PAD, r.y + 60.0, r.w - 2.0 * PAD, r.h - 60.0 - PAD);
         if body.h < 40.0 || body.w < 100.0 {
             return;
@@ -3909,8 +3932,15 @@ impl App {
             Action::ToggleAutoArm => self.toggle_auto_arm(),
             Action::SetPlayMode(m) => self.set_mode(m),
             Action::SetView(v) => self.set_view(v),
-            Action::ToggleSidebar => self.sidebar = !self.sidebar,
-            Action::TogglePanel => self.panel = !self.panel,
+            Action::ToggleSidebar => {
+                self.sidebar = !self.sidebar;
+                self.maximized = None;
+            }
+            Action::TogglePanel => {
+                self.panel = !self.panel;
+                self.maximized = None;
+            }
+            Action::ToggleMaximize => self.toggle_maximize(),
             Action::FocusChannel(ch) => {
                 self.focus = Focus::Channel(ch);
                 self.panel = true;

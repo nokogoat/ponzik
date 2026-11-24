@@ -522,6 +522,7 @@ impl App {
         }
         self.prefs.keymap = keymap;
         self.prefs.ui_scale = UiScale::from_json(&j);
+        self.layout.sizes = super::split::Sizes::from_json(j.get("layout"));
         self.prefs.tour_done = j.get("tour_done").and_then(Json::as_bool).unwrap_or(false);
         self.lessons.progress = super::lessons::Progress::from_json(j.get("lessons"));
         self.prefs.hints_seen = j.get("hints_seen").and_then(Json::as_f64).map_or(0, |v| if v.is_finite() { v.clamp(0.0, u32::MAX as f64) as u32 } else { 0 });
@@ -540,6 +541,7 @@ impl App {
         let mut j = to_json(&self.prefs.ws, &self.prefs.keymap, self.themes.active_id(), self.prefs.lang);
         if let Json::Obj(fields) = &mut j {
             fields.push(("ui_scale".into(), (self.prefs.ui_scale.percent() as f64 / 100.0).into()));
+            fields.push(("layout".into(), self.layout.sizes.to_json()));
             fields.push(("tour_done".into(), self.prefs.tour_done.into()));
             if self.prefs.fixed_pattern_len {
                 fields.push(("fixed_pattern_length".into(), true.into()));
@@ -577,14 +579,17 @@ impl App {
 
     /// Les bascules faites ailleurs (Alt F8, pré-compte…) rejoignent l'espace de travail.
     fn sync_workspace(&mut self) {
+        // A maximized view is for now: the next session opens as before it.
+        let (browser, panel) = self.maximized.unwrap_or((self.sidebar, self.panel));
         let ws = &mut self.prefs.ws;
-        (ws.browser, ws.panel, ws.count_in) = (self.sidebar, self.panel, self.count_in);
+        (ws.browser, ws.panel, ws.count_in) = (browser, panel, self.count_in);
     }
 
     /// Applique un espace de travail ; la vue en cours change si elle disparaît.
     pub fn apply_workspace(&mut self, mut ws: Workspace, save: bool) {
         ws.fix();
         (self.sidebar, self.panel, self.count_in) = (ws.browser, ws.panel, ws.count_in);
+        self.maximized = None;
         self.prefs.ws = ws;
         if !self.view_shown(self.view)
             && let Some(&v) = self.shown_views().first()
@@ -775,6 +780,7 @@ impl App {
             }
             Shortcut::ToggleBrowser => Action::ToggleSidebar,
             Shortcut::TogglePanel => Action::TogglePanel,
+            Shortcut::Maximize => Action::ToggleMaximize,
             Shortcut::ZoomIn | Shortcut::ZoomOut | Shortcut::ZoomReset => {
                 let s = match s {
                     Shortcut::ZoomReset => UiScale::default(),

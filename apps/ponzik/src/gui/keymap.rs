@@ -209,6 +209,7 @@ pub enum Shortcut {
     NextView,
     ToggleBrowser,
     TogglePanel,
+    Maximize,
     ZoomIn,
     ZoomOut,
     ZoomReset,
@@ -232,7 +233,7 @@ pub enum Shortcut {
 pub const GROUPS: [&str; 5] = [tr_noop("Transport"), tr_noop("Views"), tr_noop("Pattern"), tr_noop("Edit"), tr_noop("File")];
 
 impl Shortcut {
-    pub const ALL: [Shortcut; 33] = [
+    pub const ALL: [Shortcut; 34] = [
         Shortcut::PlayStop,
         Shortcut::ToggleMode,
         Shortcut::Record,
@@ -248,6 +249,7 @@ impl Shortcut {
         Shortcut::NextView,
         Shortcut::ToggleBrowser,
         Shortcut::TogglePanel,
+        Shortcut::Maximize,
         Shortcut::ZoomIn,
         Shortcut::ZoomOut,
         Shortcut::ZoomReset,
@@ -287,6 +289,7 @@ impl Shortcut {
             Shortcut::NextView => "next_view",
             Shortcut::ToggleBrowser => "toggle_browser",
             Shortcut::TogglePanel => "toggle_panel",
+            Shortcut::Maximize => "maximize_view",
             Shortcut::ZoomIn => "ui_zoom_in",
             Shortcut::ZoomOut => "ui_zoom_out",
             Shortcut::ZoomReset => "ui_zoom_reset",
@@ -329,6 +332,7 @@ impl Shortcut {
             Shortcut::NextView => tr("Next view"),
             Shortcut::ToggleBrowser => tr("Browser"),
             Shortcut::TogglePanel => tr("Device panel"),
+            Shortcut::Maximize => tr("Maximize the view"),
             Shortcut::ZoomIn => tr("Enlarge the interface"),
             Shortcut::ZoomOut => tr("Shrink the interface"),
             Shortcut::ZoomReset => tr("Interface at 100%"),
@@ -367,6 +371,7 @@ impl Shortcut {
             Shortcut::NextView => Icon::ChevronRight,
             Shortcut::ToggleBrowser => Icon::Sidebar,
             Shortcut::TogglePanel => Icon::Panel,
+            Shortcut::Maximize => Icon::Maximize,
             Shortcut::ZoomIn | Shortcut::ZoomOut => Icon::Search,
             Shortcut::ZoomReset => Icon::Reset,
             Shortcut::NewPattern => Icon::Plus,
@@ -403,6 +408,7 @@ impl Shortcut {
             | Shortcut::NextView
             | Shortcut::ToggleBrowser
             | Shortcut::TogglePanel
+            | Shortcut::Maximize
             | Shortcut::ZoomIn
             | Shortcut::ZoomOut
             | Shortcut::ZoomReset => "Views",
@@ -437,6 +443,7 @@ impl Shortcut {
             Shortcut::NextView => Combo::key(Tab),
             Shortcut::ToggleBrowser => Combo::alt(F(8)),
             Shortcut::TogglePanel => return None,
+            Shortcut::Maximize => Combo::ctrl_shift(Char('f')),
             Shortcut::ZoomIn => Combo::ctrl(Char('=')),
             Shortcut::ZoomOut => Combo::ctrl(Char('-')),
             Shortcut::ZoomReset => Combo::ctrl(Char('0')),

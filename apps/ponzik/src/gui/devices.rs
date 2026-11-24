@@ -443,7 +443,7 @@ impl App {
         c.set_clip(Some(prev));
         self.mod_drag_layer(c, input);
         // Scroll bar: where the view is in a chain wider than the panel.
-        if lay.total > chain.w + 1.0 {
+        if lay.total > chain.w + 1.0 && chain.h > 40.0 {
             let w = (chain.w * chain.w / lay.total).max(40.0);
             let bx = chain.x + (chain.w - w) * (sx / (lay.total - chain.w)).clamp(0.0, 1.0);
             c.fill_rrect(Rect::new(bx, chain.bottom() + 4.0, w, 4.0), 2.0, t.text2.alpha(0.3));
