@@ -228,6 +228,9 @@ pub struct SessionSlot {
     pub offset: u32,
     /// Non-zero: the clip starts over every `period` ticks (repeat launch).
     pub period: u32,
+    /// Velocity taken off its notes, in percent (a soft launch of a
+    /// velocity-sensitive slot); 0: as written.
+    pub soft: u8,
 }
 
 impl SessionSlot {
@@ -641,24 +644,36 @@ impl Sequence {
                     if a >= b {
                         continue;
                     }
-                    if slot.period == 0 {
-                        self.collect_looped(slot.pattern, pat, slot.start as f64 - slot.offset as f64, a, b, out);
-                        continue;
-                    }
-                    // Repeat: each period plays the pattern again from the offset.
-                    let period = slot.period as f64;
-                    let mut base = slot.start as f64 + ((a - slot.start as f64) / period).floor() * period;
-                    while base < b {
-                        let (x, y) = (a.max(base), b.min(base + period));
-                        if x < y {
-                            self.collect_looped(slot.pattern, pat, base - slot.offset as f64, x, y, out);
+                    let first = out.len();
+                    self.collect_slot(slot, pat, a, b, out);
+                    if slot.soft > 0 {
+                        let k = 1.0 - f32::from(slot.soft.min(100)) / 100.0;
+                        for e in &mut out[first..] {
+                            e.vel *= k;
                         }
-                        base += period;
                     }
                 }
             }
         }
         out.sort_unstable_by(|a, b| a.tick.total_cmp(&b.tick).then(a.channel.cmp(&b.channel)));
+    }
+
+    /// Notes of a launched session clip in [`a`, `b`).
+    fn collect_slot(&self, slot: &SessionSlot, pat: &Pattern, a: f64, b: f64, out: &mut Vec<SeqEvent>) {
+        if slot.period == 0 {
+            self.collect_looped(slot.pattern, pat, slot.start as f64 - slot.offset as f64, a, b, out);
+            return;
+        }
+        // Repeat: each period plays the pattern again from the offset.
+        let period = slot.period as f64;
+        let mut base = slot.start as f64 + ((a - slot.start as f64) / period).floor() * period;
+        while base < b {
+            let (x, y) = (a.max(base), b.min(base + period));
+            if x < y {
+                self.collect_looped(slot.pattern, pat, base - slot.offset as f64, x, y, out);
+            }
+            base += period;
+        }
     }
 
     /// Notes d'un pattern répété à partir de `origin`, dans [`from`, `to`).
@@ -765,15 +780,33 @@ mod tests {
     }
 
     #[test]
+    fn soft_session_launches_play_quieter_notes() {
+        let mut pat = pattern(&[0, 48], 96);
+        for n in pat.notes.iter_mut().flatten() {
+            n.vel = 0.8;
+        }
+        let soft = SessionSlot { pattern: 0, start: 0, end: u32::MAX, soft: 25, ..Default::default() };
+        let full = SessionSlot { pattern: 1, start: 0, end: u32::MAX, ..Default::default() };
+        let seq = Sequence { patterns: vec![pat.clone(), pat], mode: PlayMode::Session, session: vec![soft, full], ..Default::default() };
+        let mut out = Vec::with_capacity(16);
+        seq.collect(0.0, 96.0, &mut out);
+        let mut vels: Vec<f32> = out.iter().map(|e| e.vel).collect();
+        vels.sort_by(f32::total_cmp);
+        assert_eq!(vels.len(), 4);
+        assert!((vels[0] - 0.6).abs() < 1e-6 && (vels[1] - 0.6).abs() < 1e-6, "{vels:?}");
+        assert_eq!(&vels[2..], [0.8, 0.8]);
+    }
+
+    #[test]
     fn session_slots_start_at_their_offset_and_repeat() {
         // Notes every 24 ticks over 96: the legato clip starts 48 ticks in.
         let pat = pattern(&[0, 24, 48, 72], 96);
-        let legato = SessionSlot { pattern: 0, start: 384, end: 480, offset: 48, period: 0 };
+        let legato = SessionSlot { pattern: 0, start: 384, end: 480, offset: 48, period: 0, soft: 0 };
         let seq = Sequence { patterns: vec![pat.clone()], mode: PlayMode::Session, session: vec![legato], ..Default::default() };
         assert_eq!(ticks(&seq, 0.0, 1000.0), [384.0, 408.0, 432.0, 456.0]);
         assert_eq!(seq.automation_tick(AutoScope::Pattern(0), 400.0), Some(64.0));
         // Repeat every 36 ticks: the first two notes, again and again.
-        let repeat = SessionSlot { pattern: 0, start: 0, end: 108, offset: 0, period: 36 };
+        let repeat = SessionSlot { pattern: 0, start: 0, end: 108, offset: 0, period: 36, soft: 0 };
         let seq = Sequence { patterns: vec![pat], mode: PlayMode::Session, session: vec![repeat], ..Default::default() };
         assert_eq!(ticks(&seq, 0.0, 1000.0), [0.0, 24.0, 36.0, 60.0, 72.0, 96.0]);
         // Window by window, the same notes.

@@ -78,8 +78,8 @@ fn session_legato_and_repeat_never_allocate() {
     p.sort();
     let ch = Channel::new("pulse", Box::new(Pulse::new(Default::default()))).with_track(1);
     let session = vec![
-        SessionSlot { pattern: 0, start: 0, end: 4_000, offset: 0, period: 0 },
-        SessionSlot { pattern: 0, start: 4_000, end: u32::MAX, offset: 120, period: TICKS_PER_STEP * 3 },
+        SessionSlot { pattern: 0, start: 0, end: 4_000, offset: 0, period: 0, soft: 0 },
+        SessionSlot { pattern: 0, start: 4_000, end: u32::MAX, offset: 120, period: TICKS_PER_STEP * 3, soft: 40 },
     ];
     let seq = Sequence { patterns: vec![p], mode: PlayMode::Session, session, ..Default::default() };
     let (mut engine, mut handle) = Engine::new(48_000.0, vec![ch], seq);
