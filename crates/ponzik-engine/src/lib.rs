@@ -26,6 +26,7 @@ pub mod mixer;
 pub mod modulation;
 pub mod note_fx;
 pub mod param;
+pub mod pitchedit;
 pub mod pool;
 pub mod rack;
 pub mod registry;

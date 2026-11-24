@@ -21,7 +21,7 @@ mod splice;
 pub mod voice;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use std::any::Any;
 use std::sync::Arc;

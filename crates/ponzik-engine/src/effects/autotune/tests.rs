@@ -401,7 +401,7 @@ fn no_clicks_at_note_changes() {
 }
 
 /// Formants (Hz) of `x` around `at` by LPC (order 18 at 12 kHz).
-fn formants(x: &[f32], at: usize) -> Vec<f32> {
+pub(crate) fn formants(x: &[f32], at: usize) -> Vec<f32> {
     // Decimate to 12 kHz after a crude lowpass (4-sample mean).
     let n = 1_024;
     let seg: Vec<f64> = (0..n).map(|i| x[at + 4 * i..at + 4 * i + 4].iter().map(|&v| f64::from(v)).sum::<f64>() / 4.0).collect();
@@ -437,7 +437,7 @@ fn formants(x: &[f32], at: usize) -> Vec<f32> {
 }
 
 /// The formant nearest `hz`.
-fn near(f: &[f32], hz: f32) -> f32 {
+pub(crate) fn near(f: &[f32], hz: f32) -> f32 {
     f.iter().copied().min_by(|a, b| (a - hz).abs().total_cmp(&(b - hz).abs())).unwrap_or(0.0)
 }
 
