@@ -174,7 +174,7 @@ impl Recorder {
                 continue;
             }
             if project.automation_lane(w.target, AutoScope::Song).is_none() {
-                project.automation.push(AutomationDef { target: w.target, scope: AutoScope::Song, points: Vec::new() });
+                project.automation.push(AutomationDef { target: w.target, scope: AutoScope::Song, points: Vec::new(), muted: false });
             }
             let lane = project.automation_lane_mut(w.target, AutoScope::Song).expect("lane created");
             for seg in segments {

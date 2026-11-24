@@ -293,7 +293,11 @@ fn automation_json(a: &AutomationDef) -> Json {
         AutoScope::Pattern(n) => obj(vec![("pattern", n.into())]),
     };
     let points = a.points.iter().map(|p| Json::Arr(vec![p.tick.into(), p.value.into(), p.curve.into()])).collect();
-    obj(vec![("target", target_json(a.target)), ("scope", scope), ("points", Json::Arr(points))])
+    let mut fields = vec![("target", target_json(a.target)), ("scope", scope), ("points", Json::Arr(points))];
+    if a.muted {
+        fields.push(("muted", true.into()));
+    }
+    obj(fields)
 }
 
 fn audio_clip_json(c: &AudioClipDef) -> Json {
@@ -774,7 +778,8 @@ fn load_automation(v: &Json, channels: usize, patterns: usize) -> Option<Automat
         }
     }
     points.sort_by_key(|p| p.tick);
-    (!points.is_empty()).then_some(AutomationDef { target, scope, points })
+    let muted = bool_or(v.get("muted"), false);
+    (!points.is_empty()).then_some(AutomationDef { target, scope, points, muted })
 }
 
 fn load_audio_clip(v: &Json) -> Option<AudioClipDef> {
@@ -1221,6 +1226,7 @@ mod tests {
         p.add_automation_point(AutoTarget::PitchBend(1), AutoScope::Pattern(0), 12, -0.5);
         p.add_automation_point(AutoTarget::Cc { channel: 2, cc: 74 }, AutoScope::Pattern(1), 24, 0.75);
         p.automation[0].points[0].curve = -0.35;
+        p.automation[2].muted = true;
         p.audio_clips.push(AudioClipDef {
             path: "voix/« refrain ».wav".into(),
             lane: 3,

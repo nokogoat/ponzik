@@ -274,6 +274,8 @@ pub struct AutomationDef {
     pub target: AutoTarget,
     pub scope: AutoScope,
     pub points: Vec<AutoPoint>,
+    /// Kept with its points but not applied (bypassed from the automation list).
+    pub muted: bool,
 }
 
 impl AutomationDef {
@@ -869,7 +871,7 @@ impl Project {
             automation: self
                 .automation
                 .iter()
-                .filter(|a| !a.points.is_empty())
+                .filter(|a| !a.points.is_empty() && !a.muted)
                 .map(|a| AutomationLane { target: a.target, scope: a.scope, points: a.points.clone() })
                 .collect(),
             // The session plays its own audio clips, not the playlist's.
@@ -917,7 +919,7 @@ impl Project {
     /// nouvelle valeur et garde sa tension. Renvoie l'indice du point.
     pub fn add_automation_point(&mut self, target: AutoTarget, scope: AutoScope, tick: u32, value: f32) -> usize {
         if self.automation_lane(target, scope).is_none() {
-            self.automation.push(AutomationDef { target, scope, points: Vec::new() });
+            self.automation.push(AutomationDef { target, scope, points: Vec::new(), muted: false });
         }
         let points = &mut self.automation_lane_mut(target, scope).expect("courbe créée").points;
         let at = points.partition_point(|p| p.tick < tick);
@@ -1986,6 +1988,10 @@ mod tests {
         p.add_automation_point(t, AutoScope::Pattern(0), 0, 0.3);
         assert_eq!(p.automation.len(), 2);
         assert_eq!(p.sequence().automation.len(), 2);
+        // Muted: kept with its points, not played.
+        p.automation_lane_mut(t, AutoScope::Pattern(0)).unwrap().muted = true;
+        assert_eq!(p.sequence().automation.len(), 1);
+        p.automation_lane_mut(t, AutoScope::Pattern(0)).unwrap().muted = false;
 
         assert_eq!(p.remove_automation_point(t, s, 50), None);
         assert_eq!(p.remove_automation_point(t, s, 96).map(|p| p.value), Some(0.7));

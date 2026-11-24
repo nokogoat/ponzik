@@ -392,7 +392,7 @@ impl Project {
         }));
         for (target, pts) in &slice.lanes {
             if self.automation_lane(*target, AutoScope::Song).is_none() {
-                self.automation.push(crate::AutomationDef { target: *target, scope: AutoScope::Song, points: Vec::new() });
+                self.automation.push(crate::AutomationDef { target: *target, scope: AutoScope::Song, points: Vec::new(), muted: false });
             }
             let lane = self.automation_lane_mut(*target, AutoScope::Song).expect("lane created");
             let tail = lane.value_at(end as f64);
