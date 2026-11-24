@@ -55,8 +55,9 @@ impl OnsetAnalysis {
         let bins = fft.bins();
         let (mut re, mut im) = (vec![0.0; bins], vec![0.0; bins]);
         let bands = bands(bins, sample_rate);
-        let mut prev = vec![0.0f32; bands.len()];
-        let mut mag = vec![0.0f32; bands.len()];
+        let nb = bands.len();
+        // Band magnitudes of every frame first: their floor is needed before the flux.
+        let mut mags = vec![0.0f32; frames * nb];
         let mut buf = vec![0.0f32; FRAME];
         let mut flux = Vec::with_capacity(frames);
         let mut level = Vec::with_capacity(frames);
@@ -71,19 +72,45 @@ impl OnsetAnalysis {
                 *b = x * window[i];
             }
             fft.forward(&buf, &mut re, &mut im);
+            for (b, &(lo, hi)) in bands.iter().enumerate() {
+                let e: f32 = (lo..hi).map(|j| re[j] * re[j] + im[j] * im[j]).sum();
+                mags[k * nb + b] = (e / (hi - lo) as f32).sqrt();
+            }
+            level.push(10.0 * (energy / FRAME as f32 + 1e-12).log10());
+        }
+        // Background of each band (hiss, hum, room): three times its quietest
+        // fifth, and never under −80 dB from the loudest band. A band rises
+        // in log steps above that floor only: the noise's own flicker stays
+        // under it, a hit climbs far over it, at any recording level.
+        let loudest = mags.iter().fold(0.0f32, |m, &v| m.max(v));
+        let eps = (loudest * 1e-4).max(1e-9);
+        let floor: Vec<f32> = (0..nb)
+            .map(|b| {
+                let mut v: Vec<f32> = (0..frames).map(|k| mags[k * nb + b]).collect();
+                if v.is_empty() {
+                    return eps;
+                }
+                let at = v.len() / 5;
+                (*v.select_nth_unstable_by(at, f32::total_cmp).1 * 3.0).max(eps)
+            })
+            .collect();
+        let mut prev = vec![0.0f32; nb];
+        let mut mag = vec![0.0f32; nb];
+        for k in 0..frames {
             let mut f = 0.0;
             // Près de la fin, la coupure du signal étale le spectre : pas d'attaque à y voir.
             let tail = k * HOP + FRAME / 2 > signal.len() && k > 0;
-            for (b, &(lo, hi)) in bands.iter().enumerate() {
-                let e: f32 = (lo..hi).map(|j| re[j] * re[j] + im[j] * im[j]).sum();
-                mag[b] = (1.0 + 100.0 * (e / (hi - lo) as f32).sqrt()).ln();
+            for b in 0..nb {
+                mag[b] = (mags[k * nb + b] / floor[b]).max(1.0).ln();
                 f += (mag[b] - prev[b]).max(0.0);
             }
             std::mem::swap(&mut prev, &mut mag);
             flux.push(if tail { 0.0 } else { f });
-            level.push(10.0 * (energy / FRAME as f32 + 1e-12).log10());
         }
-        let top = flux.iter().fold(0.0f32, |m, &f| m.max(f));
+        // Normalised by the strongest rise, but never by less than a clear
+        // hit's (about 20 dB over five bands): a sound with no attack at all
+        // keeps a small flux instead of blowing its wobbles up to hits.
+        let top = flux.iter().fold(0.0f32, |m, &f| m.max(f)).max(12.0);
         if top > 0.0 {
             for f in &mut flux {
                 *f /= top;
@@ -326,6 +353,22 @@ mod tests {
         eprintln!("{} hits, worst error {:.2} ms", at.len(), worst as f32 * 1000.0 / SR);
     }
 
+    /// The same loop over hiss at −48 dBFS: the hits stand out of the noise floor.
+    #[test]
+    fn drum_loop_over_hiss() {
+        let (mut x, at) = drum_loop();
+        let mut noise = WhiteNoise::new(77);
+        for v in &mut x {
+            *v += 0.004 * noise.next_sample();
+        }
+        let a = OnsetAnalysis::new(&x, SR);
+        let found = a.pick(&x, 0.5, 64);
+        let tol = (0.005 * SR) as usize;
+        let hit = at.iter().filter(|&&w| found.iter().any(|o| o.pos.abs_diff(w) <= tol)).count();
+        let false_hits = found.iter().filter(|o| !at.iter().any(|&w| o.pos.abs_diff(w) <= tol)).count();
+        assert_eq!((hit, false_hits), (at.len(), 0), "{found:?}");
+    }
+
     #[test]
     fn min_gap_merges_close_hits() {
         let x = hits(60_000, &[2_000, 3_500, 30_000], 400.0);
@@ -339,6 +382,29 @@ mod tests {
         let x = hits(60_000, &[2_000, 14_000, 26_000, 38_000], 900.0);
         let a = OnsetAnalysis::new(&x, SR);
         assert_eq!(a.pick(&x, 0.5, 2).len(), 2);
+    }
+
+    /// A sung note with vibrato over hiss, faded in, then a jump up a fourth:
+    /// two notes, not a hit per vibrato wobble.
+    #[test]
+    fn vibrato_over_hiss_is_not_a_drum_roll() {
+        let len = (SR * 4.0) as usize;
+        let mut noise = WhiteNoise::new(5);
+        let tau = std::f32::consts::TAU;
+        let mut phase = 0.0f32;
+        let x: Vec<f32> = (0..len)
+            .map(|i| {
+                let t = i as f32 / SR;
+                let on = ((t - 0.6) * 8.0).clamp(0.0, 1.0) * ((3.7 - t) * 6.0).clamp(0.0, 1.0);
+                let f = 220.0 * (1.0 + 0.012 * (t * 5.5 * tau).sin()) * if t > 2.1 { 1.335 } else { 1.0 };
+                phase += f / SR;
+                let v = (phase * tau).sin() * 0.5 + (2.0 * phase * tau).sin() * 0.22 + (3.0 * phase * tau).sin() * 0.12;
+                v * 0.6 * on + 0.03 * noise.next_sample()
+            })
+            .collect();
+        let found = OnsetAnalysis::new(&x, SR).pick(&x, 0.5, 64);
+        eprintln!("{found:?}");
+        assert!(found.len() <= 3, "{} hits: {found:?}", found.len());
     }
 
     #[test]
