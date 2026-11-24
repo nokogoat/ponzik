@@ -24,5 +24,19 @@ The same as FL Studio, and every one of them can be remapped in Settings.
 | Ctrl+G | Group mixer tracks into a bus |
 | Ctrl+Shift+C | Capture the last phrase you played |
 | Ctrl+= · Ctrl+− · Ctrl+0 | Interface size |
+| Ctrl+Shift+F | Maximize the view (browser and devices hidden), again to restore; double-clicking a view tab does it too |
+| Ctrl+wheel | Zoom in time (piano roll, playlist) |
+| Alt+wheel | Key height in the piano roll (or Ctrl+wheel on its keyboard), track height in the playlist |
 | Hold right-click | Erase what you sweep over (steps, notes, clips) |
 | Right-click a control | Automate, link to a MIDI controller, reset |
+
+## Layout
+
+Every border between areas can be dragged: the browser, the device panel, the
+lanes under the piano roll, the playlist's pattern list and the Channel Rack's
+names. Hover a border to see its grip, drag it, double-click it for the default
+size. Drag the browser, the device panel, the piano roll lanes or the pattern
+list to the edge to fold them; a small tab stays to open them again. Sizes and
+zooms are saved with your settings, and each view keeps its own device panel
+height. On a short screen the piano roll, mixer, session and Sample Lab start
+with the device panel shrunk to its header: drag it up to see the devices.
