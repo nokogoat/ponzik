@@ -12,8 +12,25 @@ use crate::onset::OnsetAnalysis;
 const MIN_BPM: f32 = 60.0;
 const MAX_BPM: f32 = 200.0;
 
+/// Tempo estimate with its octave doubt.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TempoEstimate {
+    /// Most likely tempo, in BPM.
+    pub bpm: f32,
+    /// Strength of the beat, 0 to 1 (autocorrelation at the chosen period).
+    pub confidence: f32,
+    /// Half or double tempo that fits almost as well (a drum and bass loop
+    /// at 174 also reads as 87): offered to the user rather than guessed.
+    pub alternative: Option<f32>,
+}
+
 /// Tempo estimé (BPM) d'une fonction d'attaque ; `None` sans rythme net.
 pub fn estimate_bpm(analysis: &OnsetAnalysis, duration: f32) -> Option<f32> {
+    estimate(analysis, duration).map(|e| e.bpm)
+}
+
+/// Tempo, confidence and octave alternative of an onset function.
+pub fn estimate(analysis: &OnsetAnalysis, duration: f32) -> Option<TempoEstimate> {
     let flux = &analysis.flux;
     let rate = analysis.rate();
     if flux.len() < 16 || rate <= 0.0 {
@@ -49,11 +66,11 @@ pub fn estimate_bpm(analysis: &OnsetAnalysis, duration: f32) -> Option<f32> {
             _ => 0.0,
         }
     };
+    let comb = |lag: f32| -> f32 { at(lag) + 0.5 * at(2.0 * lag) + 0.25 * at(4.0 * lag) + 0.2 * at(lag * 0.5) };
     let score = |lag: f32| -> f32 {
-        let comb = at(lag) + 0.5 * at(2.0 * lag) + 0.25 * at(4.0 * lag) + 0.2 * at(lag * 0.5);
         let bpm = 60.0 * rate / lag;
         let octave = (bpm / 120.0).log2();
-        comb * (-0.5 * (octave / 0.9).powi(2)).exp()
+        comb(lag) * (-0.5 * (octave / 0.9).powi(2)).exp()
     };
     let (mut best, mut best_score) = (0usize, f32::MIN);
     for lag in lo..=hi {
@@ -69,8 +86,35 @@ pub fn estimate_bpm(analysis: &OnsetAnalysis, duration: f32) -> Option<f32> {
     let (a, b, c) = (score(best as f32 - 1.0), best_score, score(best as f32 + 1.0));
     let denom = a - 2.0 * b + c;
     let shift = if denom.abs() > 1e-9 { (0.5 * (a - c) / denom).clamp(-0.5, 0.5) } else { 0.0 };
-    let bpm = 60.0 * rate / (best as f32 + shift);
-    Some(snap_to_loop(bpm, duration))
+    let lag = best as f32 + shift;
+    let bpm = 60.0 * rate / lag;
+    // Octave doubt: half and double tempo, at their own autocorrelation peak,
+    // judged on the plain comb (no preference for 120). Most beats fit both
+    // fairly well; the closer one is offered when it scores 60 % or more.
+    let own = comb(lag).max(1e-6);
+    let peak_near = |l: f32| -> f32 {
+        let mut b = (l, at(l));
+        for d in -3..=3 {
+            let c = l + d as f32;
+            if c > 1.0 && at(c) > b.1 {
+                b = (c, at(c));
+            }
+        }
+        b.0
+    };
+    let alternative = [0.5f32, 2.0]
+        .into_iter()
+        .filter_map(|k| {
+            let l = peak_near(lag * k);
+            let alt = 60.0 * rate / l;
+            let ratio = comb(l) / own;
+            (l > 1.0 && (50.0..=230.0).contains(&alt) && ratio >= 0.6).then_some((alt, ratio))
+        })
+        .max_by(|a, b| a.1.total_cmp(&b.1))
+        // Rounded to the exact octave of the chosen tempo.
+        .map(|(alt, _)| if alt > bpm { 2.0 * bpm } else { 0.5 * bpm })
+        .map(|alt| snap_to_loop(alt, duration));
+    Some(TempoEstimate { bpm: snap_to_loop(bpm, duration), confidence: (own / 1.95).clamp(0.0, 1.0), alternative })
 }
 
 /// Tempo d'un signal mono.
@@ -136,6 +180,22 @@ mod tests {
             let x = beat(bpm, 7.3);
             let got = detect_bpm(&x, SR).expect("tempo");
             assert!((got / bpm - 1.0).abs() < 0.02, "{got} au lieu de {bpm}");
+        }
+    }
+
+    /// Every tempo is found, or its half or double with the right one offered.
+    #[test]
+    fn finds_90_120_140_174_or_flags_the_octave() {
+        // Exact loops of 2 and 4 bars, and excerpts that are no loop at all.
+        let cases = [90.0f32, 120.0, 140.0, 174.0].into_iter().flat_map(|b| [(b, 8.0 * 60.0 / b), (b, 16.0 * 60.0 / b), (b, 7.3)]);
+        for (bpm, seconds) in cases {
+            let x = beat(bpm, seconds);
+            let a = OnsetAnalysis::new(&x, SR);
+            let e = estimate(&a, x.len() as f32 / SR).expect("tempo");
+            let near = |v: f32| (v / bpm - 1.0).abs() < 0.02;
+            let ok = near(e.bpm) || ((near(e.bpm * 2.0) || near(e.bpm * 0.5)) && e.alternative.is_some_and(near));
+            eprintln!("{bpm} ({seconds:.2} s): {:.2} (alt {:?}, confidence {:.2})", e.bpm, e.alternative, e.confidence);
+            assert!(ok, "{bpm} ({seconds} s): {e:?}");
         }
     }
 
