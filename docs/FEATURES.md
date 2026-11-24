@@ -31,6 +31,7 @@ Legend: **FL** = FL Studio · **AB** = Ableton Live · ✅ done in Ponzik · �
 | Full undo history | FL · AB | ✅ with a history panel to jump back to any step |
 | Metronome, count-in, tap tempo | FL · AB | ✅ |
 | Computer keyboard played like a piano | FL · AB | ✅ |
+| Text fields with the system clipboard, numeric keypad | FL · AB | ✅ caret, selection (Shift+arrows, mouse drag, double-click word), Ctrl word moves and deletes, Ctrl+A / C / X / V with the system clipboard (X11, Windows, macOS; middle-click pastes the X11 selection), right-click Cut / Copy / Paste menu; keypad digits follow Num Lock |
 | Tempo and time signature changes within a song | FL · AB | ⬜ |
 | Touch support | FL | ⬜ |
 
