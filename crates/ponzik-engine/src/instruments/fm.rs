@@ -3,12 +3,14 @@
 //! Chaque opérateur est un sinus avec sa propre enveloppe ; l'algorithme
 //! décide qui module qui. Les porteuses sont mélangées puis filtrées.
 
+use std::sync::Arc;
+
 use ponzik_dsp::env::{Adsr, AdsrParams};
 use ponzik_dsp::filter::{FilterMode, Svf};
 use ponzik_dsp::util::{db_to_gain, gain_to_db};
 
-use super::common::{Expr, Glide, Tune, fast_sin, glide_coef, pan_gains, pick_voice, soft_clip};
-use crate::{Controller, Instrument, NoteExpression};
+use super::common::{EnvField, Expr, Glide, Tune, fast_sin, glide_coef, pan_gains, pick_voice, publish_env, soft_clip};
+use crate::{Controller, EnvProbe, Instrument, NoteExpression};
 use crate::param::{ParamInfo, Params, Unit};
 
 const VOICES: usize = 8;
@@ -68,7 +70,17 @@ const P_RESO: u32 = 44;
 const P_GLIDE: u32 = 45;
 const P_VOLUME: u32 = 46;
 
-const N_PARAMS: usize = OPS * OP_FIELDS + 7;
+// Envelope parameters after ADSR, added later: id = 50 + 10 × (operator − 1) + field.
+const ENV_BASE: u32 = 50;
+const ENV_FIELDS: [(EnvField, &str); 5] = [
+    (EnvField::Delay, "Delay"),
+    (EnvField::Hold, "Hold"),
+    (EnvField::AttackCurve, "Attack curve"),
+    (EnvField::DecayCurve, "Decay curve"),
+    (EnvField::ReleaseCurve, "Release curve"),
+];
+
+const N_PARAMS: usize = OPS * OP_FIELDS + 7 + OPS * ENV_FIELDS.len();
 static PARAMS: [ParamInfo; N_PARAMS] = build_params();
 
 const fn build_params() -> [ParamInfo; N_PARAMS] {
@@ -102,7 +114,33 @@ const fn build_params() -> [ParamInfo; N_PARAMS] {
     p[k + 4] = ParamInfo::new(P_RESO, "Resonance", 0.5, 10.0, 0.707, Unit::None).log().group("Filter");
     p[k + 5] = ParamInfo::new(P_GLIDE, "Portamento", 0.0, 2.0, 0.0, Unit::Seconds).group("Global");
     p[k + 6] = ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -10.0, Unit::Db).group("Global");
+    let mut k = k + 7;
+    let mut op = 0;
+    while op < OPS {
+        let mut f = 0;
+        while f < ENV_FIELDS.len() {
+            let id = ENV_BASE + op as u32 * 10 + f as u32;
+            let name = ENV_FIELDS[f].1;
+            p[k] = if f < 2 {
+                ParamInfo::new(id, name, 0.0, 2.0, 0.0, Unit::Seconds)
+            } else {
+                ParamInfo::new(id, name, -1.0, 1.0, 0.0, Unit::Percent)
+            }
+            .group(OP_GROUPS[op]);
+            k += 1;
+            f += 1;
+        }
+        op += 1;
+    }
     p
+}
+
+/// Operator and envelope field of an envelope parameter added after ADSR.
+fn env_field(id: u32) -> Option<(usize, EnvField)> {
+    let rel = id.checked_sub(ENV_BASE)?;
+    let (op, f) = (rel as usize / 10, rel as usize % 10);
+    (op < OPS).then_some(())?;
+    ENV_FIELDS.get(f).map(|e| (op, e.0))
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -159,6 +197,8 @@ pub struct FmSynth {
     last_note: Option<u8>,
     /// Pitch bend in semitones.
     bend: f32,
+    /// Operator 1's envelope (a carrier in every algorithm).
+    probe: Arc<EnvProbe>,
 }
 
 impl Default for FmSynth {
@@ -199,6 +239,7 @@ impl FmSynth {
             note_counter: 0,
             last_note: None,
             bend: 0.0,
+            probe: Arc::new(EnvProbe::new()),
         };
         for p in &PARAMS {
             s.set_param(p.id, p.default);
@@ -220,6 +261,9 @@ impl Params for FmSynth {
     }
 
     fn get_param(&self, id: u32) -> f32 {
+        if let Some((op, f)) = env_field(id) {
+            return f.get(&self.ops[op].env);
+        }
         if id < 40 {
             let Some(op) = self.ops.get(id as usize / 10) else { return 0.0 };
             return match id % 10 {
@@ -249,19 +293,24 @@ impl Params for FmSynth {
     fn set_param(&mut self, id: u32, value: f32) {
         let Some(info) = PARAMS.iter().find(|i| i.id == id) else { return };
         let v = info.clamp(value);
-        if id < 40 {
-            let i = id as usize / 10;
+        let extra = env_field(id);
+        if id < 40 || extra.is_some() {
+            let i = extra.map_or(id as usize / 10, |e| e.0);
             let op = &mut self.ops[i];
-            match id % 10 {
-                F_COARSE => op.coarse = v as usize,
-                F_FINE => op.fine = v,
-                F_LEVEL => op.level = v,
-                F_ATTACK => op.env.attack = v,
-                F_DECAY => op.env.decay = v,
-                F_SUSTAIN => op.env.sustain = v,
-                F_RELEASE => op.env.release = v,
-                F_VEL => op.velocity = v,
-                _ => {}
+            if let Some((_, f)) = extra {
+                f.set(&mut op.env, v);
+            } else {
+                match id % 10 {
+                    F_COARSE => op.coarse = v as usize,
+                    F_FINE => op.fine = v,
+                    F_LEVEL => op.level = v,
+                    F_ATTACK => op.env.attack = v,
+                    F_DECAY => op.env.decay = v,
+                    F_SUSTAIN => op.env.sustain = v,
+                    F_RELEASE => op.env.release = v,
+                    F_VEL => op.velocity = v,
+                    _ => {}
+                }
             }
             let env = op.env;
             for voice in &mut self.voices {
@@ -337,6 +386,7 @@ impl Instrument for FmSynth {
             v.fb = [0.0; 2];
         }
         self.last_note = Some(note);
+        self.probe.note_on();
     }
 
     fn note_off(&mut self, note: u8) {
@@ -376,7 +426,18 @@ impl Instrument for FmSynth {
         self.filter_r.reset();
     }
 
+    fn env_probe(&self) -> Option<Arc<EnvProbe>> {
+        Some(self.probe.clone())
+    }
+
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.render_voices(left, right);
+        publish_env(&self.probe, self.voices.iter().map(|v| (v.started_at, &v.env[0])));
+    }
+}
+
+impl FmSynth {
+    fn render_voices(&mut self, left: &mut [f32], right: &mut [f32]) {
         let algo = &ALGOS[self.algo];
         let carriers = algo.carriers;
         if !self.voices.iter().any(|v| v.sounding(carriers)) {
@@ -472,6 +533,16 @@ mod tests {
         let (l, _) = render(&mut fm, 48_000);
         // Un sinus pur à 110 Hz croiserait zéro 110 fois.
         assert!(rising_crossings(&l) > 150);
+    }
+
+    #[test]
+    fn operator_envelope_delay_hold_and_curves() {
+        let mut fm = FmSynth::new();
+        fm.set_param(F_LEVEL + 10, 0.0);
+        super::super::common::test_util::envelope_delay_and_hold(&mut fm, "Operator 1");
+        assert_eq!(env_field(ENV_BASE + 31), Some((3, EnvField::Hold)));
+        assert_eq!(env_field(ENV_BASE + 45), None);
+        assert_eq!(env_field(ENV_BASE + 9), None);
     }
 
     #[test]

@@ -13,8 +13,8 @@ use ponzik_dsp::env::{Adsr, AdsrParams};
 use ponzik_dsp::noise::WhiteNoise;
 use ponzik_dsp::util::{balance_gains, db_to_gain, gain_to_db};
 
-use super::common::{fast_sin, pick_voice, read_cubic, soft_clip};
-use crate::Instrument;
+use super::common::{EnvField, fast_sin, pick_voice, publish_env, read_cubic, soft_clip};
+use crate::{EnvProbe, Instrument};
 use crate::param::{ParamInfo, Params, Unit};
 use crate::sample::Sample;
 
@@ -39,8 +39,22 @@ const P_DECAY: u32 = 9;
 const P_SUSTAIN: u32 = 10;
 const P_RELEASE: u32 = 11;
 const P_VOLUME: u32 = 12;
+const P_DELAY: u32 = 13;
+const P_HOLD: u32 = 14;
+const P_ATTACK_CURVE: u32 = 15;
+const P_DECAY_CURVE: u32 = 16;
+const P_RELEASE_CURVE: u32 = 17;
 
-static PARAMS: [ParamInfo; 13] = [
+/// The amp envelope's parameters after ADSR.
+const AMP_EXTRA: [(u32, EnvField); 5] = [
+    (P_DELAY, EnvField::Delay),
+    (P_HOLD, EnvField::Hold),
+    (P_ATTACK_CURVE, EnvField::AttackCurve),
+    (P_DECAY_CURVE, EnvField::DecayCurve),
+    (P_RELEASE_CURVE, EnvField::ReleaseCurve),
+];
+
+static PARAMS: [ParamInfo; 18] = [
     ParamInfo::new(P_POSITION, "Position", 0.0, 1.0, 0.3, Unit::Percent).group("Grains"),
     ParamInfo::new(P_SPRAY, "Spray", 0.0, 2.0, 0.05, Unit::Seconds).group("Grains"),
     ParamInfo::new(P_SIZE, "Size", 0.005, 0.5, 0.08, Unit::Seconds).log().group("Grains"),
@@ -53,6 +67,11 @@ static PARAMS: [ParamInfo; 13] = [
     ParamInfo::new(P_DECAY, "Decay", 0.005, 8.0, 0.3, Unit::Seconds).log().group("Amp"),
     ParamInfo::new(P_SUSTAIN, "Sustain", 0.0, 1.0, 1.0, Unit::Percent).group("Amp"),
     ParamInfo::new(P_RELEASE, "Release", 0.005, 8.0, 0.3, Unit::Seconds).log().group("Amp"),
+    ParamInfo::new(P_DELAY, "Delay", 0.0, 2.0, 0.0, Unit::Seconds).group("Amp"),
+    ParamInfo::new(P_HOLD, "Hold", 0.0, 2.0, 0.0, Unit::Seconds).group("Amp"),
+    ParamInfo::new(P_ATTACK_CURVE, "Attack curve", -1.0, 1.0, 0.0, Unit::Percent).group("Amp"),
+    ParamInfo::new(P_DECAY_CURVE, "Decay curve", -1.0, 1.0, 0.0, Unit::Percent).group("Amp"),
+    ParamInfo::new(P_RELEASE_CURVE, "Release curve", -1.0, 1.0, 0.0, Unit::Percent).group("Amp"),
     ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -3.0, Unit::Db).group("Output"),
 ];
 
@@ -109,6 +128,7 @@ pub struct Granular {
     voices: [Voice; VOICES],
     grains: [Grain; GRAINS],
     note_counter: u64,
+    probe: Arc<EnvProbe>,
 }
 
 impl Default for Granular {
@@ -144,6 +164,7 @@ impl Granular {
             }),
             grains: [Grain::default(); GRAINS],
             note_counter: 0,
+            probe: Arc::new(EnvProbe::new()),
         };
         for p in &PARAMS {
             g.set_param(p.id, p.default);
@@ -185,7 +206,7 @@ impl Params for Granular {
             P_SUSTAIN => self.env.sustain,
             P_RELEASE => self.env.release,
             P_VOLUME => gain_to_db(self.gain),
-            _ => 0.0,
+            _ => AMP_EXTRA.iter().find(|(i, _)| *i == id).map_or(0.0, |(_, f)| f.get(&self.env)),
         }
     }
 
@@ -206,7 +227,11 @@ impl Params for Granular {
             P_SUSTAIN => self.env.sustain = v,
             P_RELEASE => self.env.release = v,
             P_VOLUME => self.gain = db_to_gain(v),
-            _ => {}
+            _ => {
+                if let Some((_, f)) = AMP_EXTRA.iter().find(|(i, _)| *i == id) {
+                    f.set(&mut self.env, v);
+                }
+            }
         }
         let env = self.env;
         for voice in &mut self.voices {
@@ -248,6 +273,7 @@ impl Instrument for Granular {
         v.started_at = self.note_counter;
         v.countdown = 0.0;
         v.env.gate_on();
+        self.probe.note_on();
     }
 
     fn note_off(&mut self, note: u8) {
@@ -265,7 +291,18 @@ impl Instrument for Granular {
         }
     }
 
+    fn env_probe(&self) -> Option<Arc<EnvProbe>> {
+        Some(self.probe.clone())
+    }
+
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.render_voices(left, right);
+        publish_env(&self.probe, self.voices.iter().map(|v| (v.started_at, &v.env)));
+    }
+}
+
+impl Granular {
+    fn render_voices(&mut self, left: &mut [f32], right: &mut [f32]) {
         let Some(sample) = self.sample.clone() else { return };
         if sample.is_empty() || !self.voices.iter().any(|v| v.env.is_active()) {
             return;
@@ -327,6 +364,13 @@ mod tests {
         let left: Vec<f32> =
             (0..n).map(|i| (std::f32::consts::TAU * 441.0 * i as f32 / 48_000.0).sin() * 0.8).collect();
         Arc::new(Sample { name: "sinus".into(), sample_rate: 48_000.0, right: left.clone(), left, markers: Vec::new() })
+    }
+
+    #[test]
+    fn amp_envelope_delay_hold_and_curves() {
+        let mut g = Granular::new();
+        g.set_sample(sine(2.0));
+        super::super::common::test_util::envelope_delay_and_hold(&mut g, "Amp");
     }
 
     #[test]

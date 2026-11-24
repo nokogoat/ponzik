@@ -1,9 +1,51 @@
 //! Briques partagées par les instruments natifs : sinus rapide, portamento,
 //! choix de voix, écrêtage de sécurité.
 
+use ponzik_dsp::env::{Adsr, AdsrParams, EnvStage};
 use ponzik_dsp::util::{decay_coef, midi_to_hz};
 
-use crate::{NoteExpression, Ramp};
+use crate::{EnvProbe, NoteExpression, Ramp};
+
+/// What an envelope's extra parameter (after ADSR) sets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EnvField {
+    Delay,
+    Hold,
+    AttackCurve,
+    DecayCurve,
+    ReleaseCurve,
+}
+
+impl EnvField {
+    pub fn get(self, p: &AdsrParams) -> f32 {
+        match self {
+            Self::Delay => p.delay,
+            Self::Hold => p.hold,
+            Self::AttackCurve => p.attack_curve,
+            Self::DecayCurve => p.decay_curve,
+            Self::ReleaseCurve => p.release_curve,
+        }
+    }
+
+    pub fn set(self, p: &mut AdsrParams, v: f32) {
+        match self {
+            Self::Delay => p.delay = v,
+            Self::Hold => p.hold = v,
+            Self::AttackCurve => p.attack_curve = v,
+            Self::DecayCurve => p.decay_curve = v,
+            Self::ReleaseCurve => p.release_curve = v,
+        }
+    }
+}
+
+/// Publishes the envelope of the most recently started voice still sounding
+/// (`(started_at, envelope)` pairs), `Idle` when none. Audio thread.
+pub(crate) fn publish_env<'a>(probe: &EnvProbe, voices: impl Iterator<Item = (u64, &'a Adsr)>) {
+    match voices.filter(|(_, e)| e.is_active()).max_by_key(|(t, _)| *t) {
+        Some((_, e)) => probe.publish(e.stage(), e.progress(), e.level()),
+        None => probe.publish(EnvStage::Idle, 0.0, 0.0),
+    }
+}
 
 /// Expression of a voice: tuning (semitones, ramped) and pan.
 #[derive(Clone, Copy, Debug, Default)]
@@ -181,6 +223,50 @@ pub(crate) mod test_util {
     /// Fronts montants : mesure de hauteur.
     pub fn rising_crossings(s: &[f32]) -> usize {
         s.windows(2).filter(|w| w[0] < 0.0 && w[1] >= 0.0).count()
+    }
+
+    /// Sets the parameter `name` of `group`.
+    pub fn set_named(inst: &mut dyn Instrument, group: &str, name: &str, value: f32) {
+        let id = inst.params().iter().find(|p| p.group == group && p.name == name).map(|p| p.id);
+        let id = id.unwrap_or_else(|| panic!("no {name} in {group}"));
+        inst.set_param(id, value);
+        assert_eq!(inst.get_param(id), value, "{group} / {name}");
+    }
+
+    /// The envelope of `group`: a 0.1 s delay keeps the note silent that long,
+    /// a 0.2 s hold keeps it at full level past a short decay to silence, the
+    /// probe sees the note and the curves leave it bounded. 48 kHz.
+    pub fn envelope_delay_and_hold(inst: &mut dyn Instrument, group: &str) {
+        inst.set_sample_rate(48_000.0);
+        let probe = inst.env_probe().expect("an envelope probe");
+        set_named(inst, group, "Delay", 0.1);
+        inst.note_on(60, 1.0);
+        assert_eq!(probe.notes(), 1);
+        assert_eq!(peak(inst, 4_700), 0.0, "{group}: the delay lets sound through");
+        assert_eq!(probe.read().0, ponzik_dsp::env::EnvStage::Delay);
+        assert!(peak(inst, 4_800) > 0.01, "{group}: no sound after the delay");
+        inst.all_notes_off();
+        set_named(inst, group, "Delay", 0.0);
+        set_named(inst, group, "Attack", 0.005);
+        set_named(inst, group, "Decay", 0.01);
+        set_named(inst, group, "Sustain", 0.0);
+        inst.note_on(60, 1.0);
+        render(inst, 4_800);
+        assert!(peak(inst, 256) < 1e-3, "{group}: still sounding without hold");
+        inst.all_notes_off();
+        set_named(inst, group, "Hold", 0.2);
+        for (name, c) in [("Attack curve", 1.0), ("Decay curve", -1.0), ("Release curve", 1.0)] {
+            set_named(inst, group, name, c);
+        }
+        inst.note_on(60, 1.0);
+        render(inst, 4_800);
+        assert!(peak(inst, 256) > 0.01, "{group}: the hold did not hold");
+        let (l, r) = render(inst, 48_000);
+        assert!(l.iter().chain(&r).all(|s| s.is_finite() && s.abs() < 4.0));
+        inst.note_off(60);
+        render(inst, 48_000);
+        assert!(peak(inst, 256) < 1e-3, "{group}: no release");
+        inst.all_notes_off();
     }
 
     /// Paramètres aux extrêmes : la sortie reste finie et bornée.

@@ -1,10 +1,12 @@
+use std::sync::Arc;
+
 use ponzik_dsp::env::{Adsr, AdsrParams};
 use ponzik_dsp::filter::{FilterMode, Svf};
 use ponzik_dsp::osc::{Oscillator, Waveform};
 use ponzik_dsp::util::midi_to_hz;
 
-use super::common::{Expr, pan_gains};
-use crate::{Controller, Instrument, NoteExpression};
+use super::common::{EnvField, Expr, pan_gains, publish_env};
+use crate::{Controller, EnvProbe, Instrument, NoteExpression};
 use crate::param::{ParamInfo, Params, Unit};
 
 const VOICES: usize = 8;
@@ -36,8 +38,22 @@ const P_DECAY: u32 = 7;
 const P_SUSTAIN: u32 = 8;
 const P_RELEASE: u32 = 9;
 const P_VOLUME: u32 = 10;
+const P_DELAY: u32 = 11;
+const P_HOLD: u32 = 12;
+const P_ATTACK_CURVE: u32 = 13;
+const P_DECAY_CURVE: u32 = 14;
+const P_RELEASE_CURVE: u32 = 15;
 
-static PARAMS: [ParamInfo; 11] = [
+/// The amp envelope's parameters after ADSR.
+const AMP_EXTRA: [(u32, EnvField); 5] = [
+    (P_DELAY, EnvField::Delay),
+    (P_HOLD, EnvField::Hold),
+    (P_ATTACK_CURVE, EnvField::AttackCurve),
+    (P_DECAY_CURVE, EnvField::DecayCurve),
+    (P_RELEASE_CURVE, EnvField::ReleaseCurve),
+];
+
+static PARAMS: [ParamInfo; 16] = [
     ParamInfo::choice(P_WAVE, "Wave", WAVES, 1).group("Oscillators"),
     ParamInfo::new(P_DETUNE, "Detune", 0.0, 50.0, 7.0, Unit::Cents).group("Oscillators"),
     ParamInfo::new(P_CUTOFF, "Cutoff", 40.0, 16_000.0, 400.0, Unit::Hz).log().group("Filter"),
@@ -48,6 +64,11 @@ static PARAMS: [ParamInfo; 11] = [
     ParamInfo::new(P_DECAY, "Decay", 0.005, 4.0, 0.2, Unit::Seconds).log().group("Amp"),
     ParamInfo::new(P_SUSTAIN, "Sustain", 0.0, 1.0, 0.6, Unit::Percent).group("Amp"),
     ParamInfo::new(P_RELEASE, "Release", 0.005, 4.0, 0.12, Unit::Seconds).log().group("Amp"),
+    ParamInfo::new(P_DELAY, "Delay", 0.0, 2.0, 0.0, Unit::Seconds).group("Amp"),
+    ParamInfo::new(P_HOLD, "Hold", 0.0, 2.0, 0.0, Unit::Seconds).group("Amp"),
+    ParamInfo::new(P_ATTACK_CURVE, "Attack curve", -1.0, 1.0, 0.0, Unit::Percent).group("Amp"),
+    ParamInfo::new(P_DECAY_CURVE, "Decay curve", -1.0, 1.0, 0.0, Unit::Percent).group("Amp"),
+    ParamInfo::new(P_RELEASE_CURVE, "Release curve", -1.0, 1.0, 0.0, Unit::Percent).group("Amp"),
     ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -8.0, Unit::Db).group("Amp"),
 ];
 
@@ -76,7 +97,7 @@ impl Params for Pulse {
             P_SUSTAIN => p.amp_env.sustain,
             P_RELEASE => p.amp_env.release,
             P_VOLUME => ponzik_dsp::util::gain_to_db(p.gain),
-            _ => 0.0,
+            _ => AMP_EXTRA.iter().find(|(i, _)| *i == id).map_or(0.0, |(_, f)| f.get(&p.amp_env)),
         }
     }
 
@@ -96,7 +117,11 @@ impl Params for Pulse {
             P_SUSTAIN => p.amp_env.sustain = v,
             P_RELEASE => p.amp_env.release = v,
             P_VOLUME => p.gain = ponzik_dsp::util::db_to_gain(v),
-            _ => {}
+            _ => {
+                if let Some((_, f)) = AMP_EXTRA.iter().find(|(i, _)| *i == id) {
+                    f.set(&mut p.amp_env, v);
+                }
+            }
         }
         let (amp, filt, wave) = (p.amp_env, p.filter_env, p.waveform);
         for voice in &mut self.voices {
@@ -147,6 +172,7 @@ pub struct Pulse {
     note_counter: u64,
     /// Pitch bend in semitones.
     bend: f32,
+    probe: Arc<EnvProbe>,
 }
 
 impl Pulse {
@@ -166,7 +192,7 @@ impl Pulse {
                 pitch: 0.0,
             })
             .collect();
-        Self { params, sample_rate, voices, note_counter: 0, bend: 0.0 }
+        Self { params, sample_rate, voices, note_counter: 0, bend: 0.0, probe: Arc::new(EnvProbe::new()) }
     }
 
     fn tune(v: &mut Voice, pitch: f32, detune_cents: f32, sr: f32) {
@@ -218,6 +244,7 @@ impl Instrument for Pulse {
         }
         v.amp_env.gate_on();
         v.filter_env.gate_on();
+        self.probe.note_on();
     }
 
     fn note_off(&mut self, note: u8) {
@@ -251,6 +278,10 @@ impl Instrument for Pulse {
         }
     }
 
+    fn env_probe(&self) -> Option<Arc<EnvProbe>> {
+        Some(self.probe.clone())
+    }
+
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
         let p = self.params;
         let sr = self.sample_rate;
@@ -270,6 +301,7 @@ impl Instrument for Pulse {
                 *r += s * pr;
             }
         }
+        publish_env(&self.probe, self.voices.iter().map(|v| (v.started_at, &v.amp_env)));
     }
 }
 
@@ -351,6 +383,43 @@ mod tests {
         assert!((heard(&l[4_800..6_848]) - 62.0).abs() < 0.05);
         assert!(r.iter().all(|&s| s == 0.0));
         assert!(l.iter().any(|&s| s.abs() > 0.05));
+    }
+
+    #[test]
+    fn amp_envelope_delay_hold_and_curves() {
+        super::super::common::test_util::envelope_delay_and_hold(&mut Pulse::default(), "Amp");
+    }
+
+    #[test]
+    fn probe_follows_the_amp_envelope() {
+        use ponzik_dsp::env::EnvStage;
+        let mut synth = Pulse::default();
+        synth.set_sample_rate(48_000.0);
+        let probe = synth.env_probe().expect("a probe");
+        assert!(Arc::ptr_eq(&probe, &synth.env_probe().unwrap()));
+        synth.set_param(P_ATTACK, 0.05);
+        synth.note_on(57, 1.0);
+        assert_eq!(probe.notes(), 1);
+        let mut seen: Vec<EnvStage> = Vec::new();
+        let mut last_attack = 0.0;
+        let mut run = |synth: &mut Pulse, blocks: usize, seen: &mut Vec<EnvStage>| {
+            for _ in 0..blocks {
+                super::super::common::test_util::render(synth, 128);
+                let (stage, progress, level) = probe.read();
+                if stage == EnvStage::Attack {
+                    assert!(progress > last_attack && (level - progress).abs() < 0.01, "{progress} {level}");
+                    last_attack = progress;
+                }
+                if seen.last() != Some(&stage) {
+                    seen.push(stage);
+                }
+            }
+        };
+        run(&mut synth, 200, &mut seen);
+        synth.note_off(57);
+        run(&mut synth, 100, &mut seen);
+        assert_eq!(seen, [EnvStage::Attack, EnvStage::Decay, EnvStage::Sustain, EnvStage::Release, EnvStage::Idle]);
+        assert_eq!(probe.read(), (EnvStage::Idle, 0.0, 0.0));
     }
 
     #[test]

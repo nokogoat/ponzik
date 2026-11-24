@@ -6,14 +6,15 @@
 //! qui dépasseraient Nyquist. Pas de repliement, même tout en haut du clavier.
 
 use std::f64::consts::TAU;
+use std::sync::Arc;
 
 use ponzik_dsp::env::{Adsr, AdsrParams};
 use ponzik_dsp::filter::{FilterMode, Svf};
 use ponzik_dsp::noise::WhiteNoise;
 use ponzik_dsp::util::{balance_gains, db_to_gain, gain_to_db};
 
-use super::common::{Expr, Glide, Tune, fast_sin, glide_coef, pan_gains, pick_voice, soft_clip};
-use crate::{Controller, Instrument, NoteExpression};
+use super::common::{EnvField, Expr, Glide, Tune, fast_sin, glide_coef, pan_gains, pick_voice, publish_env, soft_clip};
+use crate::{Controller, EnvProbe, Instrument, NoteExpression};
 use crate::param::{ParamInfo, Params, Unit};
 
 const TABLE_LEN: usize = 2048;
@@ -52,8 +53,32 @@ const P_FSUSTAIN: u32 = 32;
 const P_FRELEASE: u32 = 33;
 const P_GLIDE: u32 = 40;
 const P_VOLUME: u32 = 41;
+const P_DELAY: u32 = 24;
+const P_HOLD: u32 = 25;
+const P_ATTACK_CURVE: u32 = 26;
+const P_DECAY_CURVE: u32 = 27;
+const P_RELEASE_CURVE: u32 = 28;
+const P_FDELAY: u32 = 34;
+const P_FHOLD: u32 = 35;
+const P_FATTACK_CURVE: u32 = 36;
+const P_FDECAY_CURVE: u32 = 37;
+const P_FRELEASE_CURVE: u32 = 38;
 
-static PARAMS: [ParamInfo; 20] = [
+/// Parameters after ADSR: (id, filter envelope?, field).
+const ENV_EXTRA: [(u32, bool, EnvField); 10] = [
+    (P_DELAY, false, EnvField::Delay),
+    (P_HOLD, false, EnvField::Hold),
+    (P_ATTACK_CURVE, false, EnvField::AttackCurve),
+    (P_DECAY_CURVE, false, EnvField::DecayCurve),
+    (P_RELEASE_CURVE, false, EnvField::ReleaseCurve),
+    (P_FDELAY, true, EnvField::Delay),
+    (P_FHOLD, true, EnvField::Hold),
+    (P_FATTACK_CURVE, true, EnvField::AttackCurve),
+    (P_FDECAY_CURVE, true, EnvField::DecayCurve),
+    (P_FRELEASE_CURVE, true, EnvField::ReleaseCurve),
+];
+
+static PARAMS: [ParamInfo; 30] = [
     ParamInfo::choice(P_SET, "Table", SETS, 0).group("Oscillator"),
     ParamInfo::new(P_POSITION, "Position", 0.0, 1.0, 0.5, Unit::Percent).group("Oscillator"),
     ParamInfo::new(P_SUB, "Sub Oscillator", 0.0, 1.0, 0.0, Unit::Percent).group("Oscillator"),
@@ -68,10 +93,20 @@ static PARAMS: [ParamInfo; 20] = [
     ParamInfo::new(P_DECAY, "Decay", 0.005, 8.0, 0.3, Unit::Seconds).log().group("Amp"),
     ParamInfo::new(P_SUSTAIN, "Sustain", 0.0, 1.0, 0.7, Unit::Percent).group("Amp"),
     ParamInfo::new(P_RELEASE, "Release", 0.005, 8.0, 0.25, Unit::Seconds).log().group("Amp"),
+    ParamInfo::new(P_DELAY, "Delay", 0.0, 2.0, 0.0, Unit::Seconds).group("Amp"),
+    ParamInfo::new(P_HOLD, "Hold", 0.0, 2.0, 0.0, Unit::Seconds).group("Amp"),
+    ParamInfo::new(P_ATTACK_CURVE, "Attack curve", -1.0, 1.0, 0.0, Unit::Percent).group("Amp"),
+    ParamInfo::new(P_DECAY_CURVE, "Decay curve", -1.0, 1.0, 0.0, Unit::Percent).group("Amp"),
+    ParamInfo::new(P_RELEASE_CURVE, "Release curve", -1.0, 1.0, 0.0, Unit::Percent).group("Amp"),
     ParamInfo::new(P_FATTACK, "Attack", 0.001, 4.0, 0.002, Unit::Seconds).log().group("Filter Envelope"),
     ParamInfo::new(P_FDECAY, "Decay", 0.005, 8.0, 0.4, Unit::Seconds).log().group("Filter Envelope"),
     ParamInfo::new(P_FSUSTAIN, "Sustain", 0.0, 1.0, 0.2, Unit::Percent).group("Filter Envelope"),
     ParamInfo::new(P_FRELEASE, "Release", 0.005, 8.0, 0.3, Unit::Seconds).log().group("Filter Envelope"),
+    ParamInfo::new(P_FDELAY, "Delay", 0.0, 2.0, 0.0, Unit::Seconds).group("Filter Envelope"),
+    ParamInfo::new(P_FHOLD, "Hold", 0.0, 2.0, 0.0, Unit::Seconds).group("Filter Envelope"),
+    ParamInfo::new(P_FATTACK_CURVE, "Attack curve", -1.0, 1.0, 0.0, Unit::Percent).group("Filter Envelope"),
+    ParamInfo::new(P_FDECAY_CURVE, "Decay curve", -1.0, 1.0, 0.0, Unit::Percent).group("Filter Envelope"),
+    ParamInfo::new(P_FRELEASE_CURVE, "Release curve", -1.0, 1.0, 0.0, Unit::Percent).group("Filter Envelope"),
     ParamInfo::new(P_GLIDE, "Portamento", 0.0, 2.0, 0.0, Unit::Seconds).group("Global"),
     ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -10.0, Unit::Db).group("Global"),
 ];
@@ -290,6 +325,7 @@ pub struct WaveSynth {
     last_note: Option<u8>,
     /// Pitch bend in semitones.
     bend: f32,
+    probe: Arc<EnvProbe>,
 }
 
 impl Default for WaveSynth {
@@ -342,6 +378,7 @@ impl WaveSynth {
             note_counter: 0,
             last_note: None,
             bend: 0.0,
+            probe: Arc::new(EnvProbe::new()),
         };
         for p in &PARAMS {
             s.set_param(p.id, p.default);
@@ -388,7 +425,10 @@ impl Params for WaveSynth {
             P_FRELEASE => self.filter_env.release,
             P_GLIDE => self.glide,
             P_VOLUME => gain_to_db(self.gain),
-            _ => 0.0,
+            _ => match ENV_EXTRA.iter().find(|e| e.0 == id) {
+                Some(&(_, filter, f)) => f.get(if filter { &self.filter_env } else { &self.amp_env }),
+                None => 0.0,
+            },
         }
     }
 
@@ -419,7 +459,11 @@ impl Params for WaveSynth {
                 self.glide_coef = glide_coef(v, self.sample_rate);
             }
             P_VOLUME => self.gain = db_to_gain(v),
-            _ => {}
+            _ => {
+                if let Some(&(_, filter, f)) = ENV_EXTRA.iter().find(|e| e.0 == id) {
+                    f.set(if filter { &mut self.filter_env } else { &mut self.amp_env }, v);
+                }
+            }
         }
         if matches!(id, P_UNISON | P_DETUNE | P_SPREAD) {
             self.update_unison();
@@ -482,6 +526,7 @@ impl Instrument for WaveSynth {
         v.amp_env.gate_on();
         v.filter_env.gate_on();
         self.last_note = Some(note);
+        self.probe.note_on();
     }
 
     fn note_off(&mut self, note: u8) {
@@ -513,6 +558,10 @@ impl Instrument for WaveSynth {
             v.amp_env.reset();
             v.filter_env.reset();
         }
+    }
+
+    fn env_probe(&self) -> Option<Arc<EnvProbe>> {
+        Some(self.probe.clone())
     }
 
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
@@ -567,6 +616,7 @@ impl Instrument for WaveSynth {
             *l += soft_clip(ml * self.gain);
             *r += soft_clip(mr * self.gain);
         }
+        publish_env(&self.probe, self.voices.iter().map(|v| (v.started_at, &v.amp_env)));
     }
 }
 
@@ -647,6 +697,23 @@ mod tests {
         w.note_on(60, 1.0);
         let (l, r) = render(&mut w, 4_800);
         assert!(l.iter().zip(&r).any(|(a, b)| (a - b).abs() > 1e-3));
+    }
+
+    #[test]
+    fn envelopes_delay_hold_and_curves() {
+        super::super::common::test_util::envelope_delay_and_hold(&mut WaveSynth::new(), "Amp");
+        let mut w = WaveSynth::new();
+        w.set_param(P_FENV, 60.0);
+        w.set_param(P_CUTOFF, 100.0);
+        w.set_param(P_FDELAY, 0.1);
+        w.set_param(P_FATTACK_CURVE, 1.0);
+        w.note_on(60, 1.0);
+        // The filter stays closed during its envelope's delay: darker at first.
+        let (early, _) = render(&mut w, 4_000);
+        render(&mut w, 1_200);
+        let (late, _) = render(&mut w, 4_000);
+        let hf = |s: &[f32]| s.windows(2).map(|w| (w[1] - w[0]).abs()).sum::<f32>();
+        assert!(hf(&late) > 2.0 * hf(&early), "{} {}", hf(&late), hf(&early));
     }
 
     #[test]
