@@ -398,6 +398,7 @@ pub fn save(project: &Project) -> String {
         ),
         ("midi_map", crate::midi_map::mappings_json(&project.midi_map)),
         ("grooves", Json::Arr(project.grooves.iter().map(|g| obj(groove_json(g))).collect())),
+        ("pitch_edits", crate::tune::edits_json(&project.pitch_edits)),
         (
             "session",
             Json::Arr(
@@ -973,6 +974,7 @@ pub fn load(text: &str) -> Result<Project, String> {
     p.midi_map = crate::midi_map::load_mappings(root.get("midi_map"), n);
     p.clamp_track_refs();
     p.grooves = arr(root.get("grooves")).iter().filter_map(load_groove).collect();
+    p.pitch_edits = crate::tune::load_edits(root.get("pitch_edits"));
     Ok(p)
 }
 

@@ -63,6 +63,7 @@ pub mod session;
 pub mod templates;
 mod tracks;
 pub mod transform;
+pub mod tune;
 pub mod update;
 pub mod voice;
 pub mod warp;
@@ -608,6 +609,8 @@ pub struct Project {
     pub midi_map: Vec<midi_map::MidiMapping>,
     /// Grooves extracted into the project's pool (after the built-in ones).
     pub grooves: Vec<groove::Groove>,
+    /// Note-based pitch and timing edits of recorded files (see [`tune`]).
+    pub pitch_edits: Vec<tune::PitchEditDef>,
 }
 
 /// A named section start on the arrangement lane.
@@ -698,6 +701,7 @@ impl Project {
             markers: Vec::new(),
             midi_map: Vec::new(),
             grooves: Vec::new(),
+            pitch_edits: Vec::new(),
         }
     }
 
@@ -827,6 +831,8 @@ impl Project {
 
     /// Renders needed by the warped clips at this engine rate.
     pub fn warp_jobs(&self, sample_rate: f32, loader: SampleLoader) -> Vec<warp::WarpJob> {
+        let tuned = |p: &str| loader(p).map(|s| self.tuned_sample(p, s));
+        let loader: SampleLoader = &tuned;
         let map = self.tempo_map();
         self.audio_clips
             .iter()
@@ -838,6 +844,9 @@ impl Project {
     /// Full sequence for an engine at `sample_rate`: `warps` gives the render
     /// of each warped clip (`None`: not ready, the clip plays resampled).
     pub fn sequence_for(&self, sample_rate: f32, loader: SampleLoader, warps: WarpLookup) -> Sequence {
+        // Audio clips play their pitch-edited render once it is there.
+        let tuned = |p: &str| loader(p).map(|s| self.tuned_sample(p, s));
+        let loader: SampleLoader = &tuned;
         let map = self.tempo_map();
         let n = self.channels.len();
         let patterns = self
@@ -1099,6 +1108,7 @@ impl Project {
 
     /// Moteur complet dans l'état du projet, warped clips rendered now.
     pub fn build_engine(&self, sample_rate: f32, loader: SampleLoader) -> (Engine, EngineHandle) {
+        self.render_tunes(loader);
         self.build_engine_with(sample_rate, loader, &render_warps)
     }
 
