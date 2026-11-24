@@ -164,6 +164,8 @@ Proprietary instruments cannot be copied, so Ponzik builds its own equivalents.
 | Feature | Where | Ponzik |
 |---|---|---|
 | Automation clips with curves (FL) / automation lanes (AB) | FL · AB | ✅ song lanes with curves |
+| Pattern automation (FL) drawn in the piano roll | FL | ✅ any CC, pitch bend or instrument parameter, as chips above the lane with their shape; several lanes stacked |
+| Finding and managing automation | FL · AB | ✅ automated knobs show their curves on hover and follow them while playing; right-click: show the curve (piano roll or playlist), mute, flatten to the knob, delete; an automation list of every curve |
 | Live automation recording | FL · AB | ✅ Touch, Latch and Write; transport and per-lane arm; one undo step per pass |
 | Clip envelopes (clip-relative modulation) | AB | ⬜ |
 | Mappable macros, macro variations, randomization | AB | ⬜ |
@@ -235,7 +237,8 @@ view, a mixer of up to 1,000 tracks (inserts, sends, routing, solo, sidechain, P
 LUFS and spectrum), devices with visuals in stacked floating windows. 12 native
 instruments (Pulse, DrumSynth, FM, Wave, Sampler, Acid 303, Kick, Slicer,
 Granular, Plucked Strings, Electric Piano, Drum Machine; the envelopes of Pulse, FM,
-Wave, Sampler and Granular have delay, hold and curved attack, decay and release), 27 native effects (EQ,
+Wave, Sampler and Granular have delay, hold and curved attack, decay and release,
+all edited in one shared envelope graph with draggable points and bends), 27 native effects (EQ,
 compressor, bus compressor, limiter, mastering limiter, gate, OTT-style multiband, pump,
 ducking, transients, reverb, algorithmic reverb, shimmer, delay,
 character delay, chorus, phaser, saturator, character saturation, bitcrusher,
