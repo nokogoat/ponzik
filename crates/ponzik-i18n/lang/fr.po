@@ -10265,11 +10265,17 @@ msgstr "Afficher le navigateur"
 msgid "Show the browser · {}"
 msgstr "Afficher le navigateur · {}"
 
+msgid "Show the patterns"
+msgstr "Afficher les patterns"
+
 msgid "Show the velocity and note lanes"
 msgstr "Afficher les couloirs de vélocité et de notes"
 
 msgid "Stamp chords"
 msgstr "Tampon d'accords"
+
+msgid "Track height\nAlt + wheel on the tracks"
+msgstr "Hauteur des pistes\nAlt + molette sur les pistes"
 
 msgid "View maximized"
 msgstr "Vue agrandie"

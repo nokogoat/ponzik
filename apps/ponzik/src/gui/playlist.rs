@@ -10,14 +10,13 @@ use super::Input;
 use super::arrange::{ARRANGE_H, TEMPO_H};
 use super::app::{App, Popup, Rename, View};
 use super::lessons::Spot;
+use super::split::{Axis, PATTERNS_SPAN, Split, TRACK_SPAN, splitter_id};
 use super::clip::ClipSel;
 use super::dnd::DropTarget;
 use super::theme::*;
 use super::widgets::{Icon, draw_icon, hatch, wid};
 
-const PALETTE_W: f32 = 196.0;
 const RULER: f32 = 30.0;
-pub(super) const LANE_H: f32 = 52.0;
 const EDGE: f32 = 8.0;
 const PLAYLIST_HELP: &str = tr_noop("Playlist
 Click: place the chosen pattern · edge: length, a loop repeats
@@ -107,6 +106,8 @@ impl App {
 
     pub(super) fn playlist_view(&mut self, c: &mut Canvas, input: &Input, header: Rect, body: Rect) {
         let t = self.theme;
+        let lane_h = self.layout.sizes.track_h;
+        self.track_height_buttons(c, input, Rect::new(header.x, header.y, 62.0, header.h));
         let snap_box = Rect::new(header.right() - 120.0, header.y, 120.0, header.h);
         let snap_key = wid("pl-snap-v", 0, 0);
         let snap_sel = self.anim.get(snap_key).unwrap_or(0.0) as usize;
@@ -154,8 +155,14 @@ impl App {
         c.stroke_rrect(body, 16.0, 1.0, t.hairline);
         let inner = body.inset(12.0);
 
-        // Palette de patterns : le pattern choisi est celui qu'on pose.
-        let palette = Rect::new(inner.x, inner.y, PALETTE_W - 12.0, inner.h);
+        // Palette de patterns : le pattern choisi est celui qu'on pose ; sa
+        // largeur se tire, et la palette se replie au bord.
+        let sizes = &self.layout.sizes;
+        let pw_want = if sizes.patterns_open { PATTERNS_SPAN.fit(sizes.patterns_w).min(inner.w * 0.4) } else { 0.0 };
+        let pw = self.anim.to(wid("pl-palette-w", 0, 0), pw_want, T_LAYOUT).round();
+        let palette_w = if pw > 1.0 { pw } else { 14.0 };
+        let palette = Rect::new(inner.x, inner.y, (pw - 12.0).max(0.0), inner.h);
+        let palette_clip = c.push_clip(Rect::new(palette.x, palette.y, palette.w, palette.h));
         let mut y = palette.y + 4.0;
         for p in 0..self.project.patterns.len() {
             let row = Rect::new(palette.x, y, palette.w, 40.0);
@@ -215,8 +222,11 @@ impl App {
             }
         }
 
+        c.set_clip(Some(palette_clip));
+        self.palette_splitter(c, input, inner, pw);
+
         // Ligne de temps.
-        let area = Rect::new(inner.x + PALETTE_W, inner.y, inner.w - PALETTE_W, inner.h);
+        let area = Rect::new(inner.x + palette_w, inner.y, inner.w - palette_w, inner.h);
         let arrange_r = Rect::new(area.x, area.y, area.w, ARRANGE_H);
         let ruler = Rect::new(area.x, arrange_r.bottom(), area.w, RULER);
         let tempo_r = Rect::new(area.x, ruler.bottom(), area.w, TEMPO_H);
@@ -235,7 +245,7 @@ impl App {
             .max()
             .unwrap_or(0);
         let autos = self.song_lane_targets().len();
-        let fit = ((lanes_r.h - autos as f32 * super::automation::AUTO_LANE_H) / LANE_H).floor().max(1.0) as usize;
+        let fit = ((lanes_r.h - autos as f32 * super::automation::AUTO_LANE_H) / lane_h).floor().max(1.0) as usize;
         let lanes = (lanes_used + 1).max(fit).min(ponzik_project::PLAYLIST_LANES);
 
         // Bouton du milieu : faire glisser le temps.
@@ -248,8 +258,17 @@ impl App {
             self.anim.set(wid("pl-sx", 0, 0), self.playlist.scroll_x);
         }
         if input.inside && area.contains(input.x, input.y) && input.wheel != 0.0 {
-            if input.mods.shift && !input.mods.ctrl {
-                self.playlist.scroll_y -= input.wheel * LANE_H;
+            if input.mods.alt {
+                // Alt + wheel: taller or shorter tracks, the one under the pointer staying.
+                let k = 1.12f32.powf(input.wheel);
+                let raw = (lane_h * k).round();
+                let new = TRACK_SPAN.fit(if k > 1.0 { raw.max(lane_h + 1.0) } else { raw.min(lane_h - 1.0) });
+                let at = (input.y - lanes_r.y + self.playlist.scroll_y) / lane_h;
+                self.layout.sizes.track_h = new;
+                self.playlist.scroll_y = (at * new - (input.y - lanes_r.y)).max(0.0);
+                self.anim.set(wid("pl-sy", 0, 0), self.playlist.scroll_y);
+            } else if input.mods.shift && !input.mods.ctrl {
+                self.playlist.scroll_y -= input.wheel * lane_h;
             } else if input.mods.ctrl {
                 let at = self.playlist.scroll_x + (input.x - area.x) / self.playlist.zoom * TICKS_PER_BAR as f32;
                 self.playlist.zoom = (self.playlist.zoom * 1.15f32.powf(input.wheel)).clamp(8.0, 400.0);
@@ -286,11 +305,11 @@ impl App {
         for l in 0..lanes {
             let ly = lane_y(l);
             if l % 2 == 1 {
-                c.fill_rect(Rect::new(area.x, ly, area.w, LANE_H), t.lane_alt);
+                c.fill_rect(Rect::new(area.x, ly, area.w, lane_h), t.lane_alt);
             }
-            let takes = lane_y(l + 1) - ly - LANE_H;
+            let takes = lane_y(l + 1) - ly - lane_h;
             if takes > 0.0 {
-                c.fill_rect(Rect::new(area.x, ly + LANE_H, area.w, takes), t.bg_deep.alpha(0.35));
+                c.fill_rect(Rect::new(area.x, ly + lane_h, area.w, takes), t.bg_deep.alpha(0.35));
             }
         }
         c.set_clip(Some(stripes));
@@ -366,7 +385,7 @@ impl App {
             let tick = snap_floor(tick_at(input.x)) as u32;
             let x = x_of(tick as f32);
             // La zone part du point aimanté et contient toujours le curseur.
-            let zone = Rect::new(x, lane_y(lane) + 2.0, (ppt * 96.0 * 4.0).max(input.x - x + 2.0), LANE_H - 4.0);
+            let zone = Rect::new(x, lane_y(lane) + 2.0, (ppt * 96.0 * 4.0).max(input.x - x + 2.0), lane_h - 4.0);
             self.drop_zone(input, zone, DropTarget::Lane { lane, tick });
         }
 
@@ -616,7 +635,7 @@ impl App {
                 x_of(cl.start as f32) + 1.0,
                 lane_y(cl.lane) + 3.0,
                 (cl.len as f32 * ppt - 2.0).max(4.0),
-                LANE_H - 6.0,
+                lane_h - 6.0,
             );
             if r.right() < area.x || r.x > area.right() || r.y > area.bottom() {
                 continue;
@@ -692,7 +711,7 @@ impl App {
                 x_of(cl.start as f32) + 1.0,
                 lane_y(cl.lane) + 3.0,
                 (cl.len as f32 * ppt - 2.0).max(4.0),
-                LANE_H - 6.0,
+                lane_h - 6.0,
             );
             if r.right() < area.x || r.x > area.right() || r.y > area.bottom() {
                 continue;
@@ -841,4 +860,52 @@ fn repeat_mark(c: &mut Canvas, x: f32, r: Rect, col: Color, dim: f32, t: &Theme,
     let mut tri = ponzik_ui::Path::new();
     tri.polygon(&[(x - 4.0, r.y + 19.0), (x + 4.0, r.y + 19.0), (x, r.y + 24.0)]);
     c.fill_path(&tri, col.mix(t.text, 0.5).alpha(0.8 * dim));
+}
+
+impl App {
+    /// Shorter and taller playlist tracks.
+    fn track_height_buttons(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
+        let tip = tr("Track height\nAlt + wheel on the tracks");
+        let h = self.layout.sizes.track_h;
+        let less = Rect::new(r.x, r.y, 30.0, r.h);
+        if self.icon_button(c, input, wid("pl-track-less", 0, 0), less, Icon::Minus, false, (tip, "")) {
+            self.layout.sizes.track_h = TRACK_SPAN.fit((h / 1.25).round());
+        }
+        let more = Rect::new(less.right() + 2.0, r.y, 30.0, r.h);
+        if self.icon_button(c, input, wid("pl-track-more", 0, 0), more, Icon::Plus, false, (tip, "")) {
+            self.layout.sizes.track_h = TRACK_SPAN.fit((h * 1.25).round());
+        }
+    }
+
+    /// The splitter between the patterns and the tracks, or the tab that
+    /// brings the folded patterns back.
+    fn palette_splitter(&mut self, c: &mut Canvas, input: &Input, inner: Rect, pw: f32) {
+        if !self.layout.sizes.patterns_open && pw <= 1.0 && !self.is_dragging(splitter_id("pl-palette")) {
+            let tab = Rect::new(inner.x, inner.y + inner.h * 0.5 - 32.0, 10.0, 64.0);
+            if self.fold_tab(c, input, "pl-palette", tab, Icon::ChevronRight, tr("Show the patterns")) {
+                self.layout.sizes.patterns_open = true;
+                self.save_settings();
+            }
+            return;
+        }
+        let zone = Rect::new(inner.x + pw - 12.0, inner.y, 10.0, inner.h);
+        let span = PATTERNS_SPAN.up_to(PATTERNS_SPAN.max.min(inner.w * 0.4));
+        match self.splitter(c, input, "pl-palette", zone, Axis::Columns, pw, 1.0, span, tr("Drag: width of the patterns")) {
+            Some(Split::Size(w)) => {
+                let s = &mut self.layout.sizes;
+                (s.patterns_w, s.patterns_open) = (w, true);
+                self.anim.set(wid("pl-palette-w", 0, 0), w);
+            }
+            Some(Split::Fold) => self.layout.sizes.patterns_open = false,
+            Some(Split::Reset) => {
+                let s = &mut self.layout.sizes;
+                (s.patterns_w, s.patterns_open) = (PATTERNS_SPAN.default, true);
+                self.save_settings();
+            }
+            None => {}
+        }
+        if self.splitter_released(input, "pl-palette") {
+            self.save_settings();
+        }
+    }
 }
