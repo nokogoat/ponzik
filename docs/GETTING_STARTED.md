@@ -19,3 +19,9 @@
    files, with your recent projects one tab away.
 
 The tour on first launch walks through this, and **Ctrl+K** finds any action by name.
+
+On a small screen, give the editor room: drag the border of the browser or of the
+device panel (drag it to the edge to fold it), or press **Ctrl+Shift+F** to
+maximize the view. In the piano roll, the − and + above the keyboard (or Alt+wheel)
+make the keys taller. **Ctrl+=** and **Ctrl+−** change the size of the whole
+interface. See [Shortcuts](SHORTCUTS.md#layout).
