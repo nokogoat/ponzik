@@ -83,6 +83,16 @@ pub trait Instrument: Params + Send {
     /// ni allocation, ni blocage.
     fn drain_midi(&mut self, _out: &mut dyn FnMut(MidiOutEvent)) {}
 
+    /// Live state of the instrument's amp envelope, for an envelope editor
+    /// that shows where each note is. Instruments that have one create it at
+    /// construction (interface thread); the interface fetches it before the
+    /// instrument is sent to the engine and reads it each frame, the
+    /// instrument publishes into it once per rendered block. `None`: no
+    /// envelope to show.
+    fn env_probe(&self) -> Option<Arc<crate::EnvProbe>> {
+        None
+    }
+
     /// The plugin's own interface (CLAP or VST 3 plugin), fetched by the UI
     /// before the instrument is sent to the engine.
     fn editor(&self) -> Option<crate::Editor> {
