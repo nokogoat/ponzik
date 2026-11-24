@@ -219,15 +219,20 @@ impl EnvGeom {
 }
 
 impl App {
-    fn env_values(&self, device: Device, spec: &EnvSpec) -> EnvValues {
-        let norm = |p: Option<&'static ParamInfo>| p.map_or(0.0, |p| p.to_norm(self.param_value(device, p)));
-        let curve = |p: Option<&'static ParamInfo>| p.map_or(0.0, |p| self.param_value(device, p));
+    /// The envelope's values; with `follow`, those a playing curve gives them.
+    fn env_values(&self, device: Device, spec: &EnvSpec, follow: bool) -> EnvValues {
+        let value = |p: &ParamInfo| {
+            let live = if follow { self.live_auto_value(device_target(device, p.id)) } else { None };
+            live.map_or_else(|| self.param_value(device, p), |v| p.clamp(v))
+        };
+        let norm = |p: Option<&'static ParamInfo>| p.map_or(0.0, |p| p.to_norm(value(p)));
+        let curve = |p: Option<&'static ParamInfo>| p.map_or(0.0, value);
         EnvValues {
             delay: norm(spec.delay),
             attack: norm(spec.attack),
             hold: norm(spec.hold),
             decay: norm(spec.decay),
-            sustain: spec.sustain.map_or(1.0, |p| self.param_value(device, p).clamp(0.0, 1.0)),
+            sustain: spec.sustain.map_or(1.0, |p| value(p).clamp(0.0, 1.0)),
             release: norm(spec.release),
             curves: spec.curves.map(curve),
         }
@@ -238,12 +243,13 @@ impl App {
         let t = self.theme;
         c.fill_rrect(r, 10.0, t.well);
         let g = Rect::new(r.x + 10.0, r.y + 10.0, r.w - 20.0, r.h - 24.0);
-        let v = self.env_values(device, spec);
         let key = device_key(device);
         let base = spec.attack.or(spec.decay).or(spec.release).map_or(0, |p| p.id as usize);
         // Short envelopes zoom in; the zoom holds still while a point is dragged.
         let zid = wid("env-zoom", key, base);
         let busy = self.drag.is_some_and(|d| (0..9).any(|k| d.id == wid("env-h", key, base * 16 + k)));
+        // While a curve plays the envelope's parameters, the graph follows it.
+        let v = self.env_values(device, spec, !busy);
         let zoom = match self.anim.get(zid) {
             Some(z) if busy => z,
             _ => {
