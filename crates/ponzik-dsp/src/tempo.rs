@@ -86,7 +86,19 @@ pub fn estimate(analysis: &OnsetAnalysis, duration: f32) -> Option<TempoEstimate
     let (a, b, c) = (score(best as f32 - 1.0), best_score, score(best as f32 + 1.0));
     let denom = a - 2.0 * b + c;
     let shift = if denom.abs() > 1e-9 { (0.5 * (a - c) / denom).clamp(-0.5, 0.5) } else { 0.0 };
-    let lag = best as f32 + shift;
+    let mut lag = best as f32 + shift;
+    // A loop cut on whole bars tells its tempo by its length: among those
+    // exact tempos, one that scores nearly as well as the best wins (a short
+    // loop has few periods, and its autocorrelation alone may err).
+    let exact = (1..=64)
+        .map(|bars| bars as f32 * 240.0 / duration.max(1e-3))
+        .filter(|b| (MIN_BPM..=MAX_BPM).contains(b))
+        .map(|b| (60.0 * rate / b, score(60.0 * rate / b)))
+        .filter(|&(_, s)| s >= 0.85 * best_score)
+        .max_by(|a, b| a.1.total_cmp(&b.1));
+    if let Some((l, _)) = exact {
+        lag = l;
+    }
     let bpm = 60.0 * rate / lag;
     // Octave doubt: half and double tempo, at their own autocorrelation peak,
     // judged on the plain comb (no preference for 120). Most beats fit both
