@@ -23,6 +23,10 @@ use super::widgets::{Icon, draw_icon, wid};
 const CELL_W: f32 = 72.0;
 const CELL_H: f32 = 76.0;
 const GROUP_GAP: f32 = 18.0;
+/// Knobs an envelope group shows at most before its delay and hold go to the graph only.
+const MAX_ENV_KNOBS: usize = 8;
+/// Narrowest envelope editor.
+const ENV_MIN_W: f32 = 260.0;
 const CARD_GAP: f32 = 10.0;
 const TRANSFER: f32 = 168.0;
 const EQ_W: f32 = 640.0;
@@ -60,7 +64,8 @@ pub enum Device {
 #[derive(Clone, Copy)]
 enum GroupVisual {
     None,
-    Envelope([&'static ParamInfo; 4]),
+    /// The shared envelope editor; `live` shows the last played voice (the amp envelope).
+    Envelope { spec: super::envelope::EnvSpec, live: bool },
     Filter { cutoff: &'static ParamInfo, reso: Option<&'static ParamInfo>, highpass: bool },
 }
 
@@ -112,17 +117,26 @@ fn groups(params: &'static [ParamInfo]) -> Vec<Group> {
         }
     }
     for g in &mut out {
+        if let Some(spec) = super::envelope::EnvSpec::find(g.name, &g.params) {
+            // The envelope's knobs in the order it plays, then the others; its
+            // curves are bent on the graph. Short of room, delay and hold too.
+            let crowded = g.params.iter().filter(|p| !spec.graph_only(p)).count() > MAX_ENV_KNOBS;
+            let in_graph = |p: &ParamInfo| spec.graph_only(p) || (crowded && matches!(p.name, "Delay" | "Hold"));
+            let mut knobs: Vec<&'static ParamInfo> = spec.ordered().into_iter().filter(|p| !in_graph(p)).collect();
+            knobs.extend(g.params.iter().copied().filter(|p| !spec.has(p)));
+            g.params = knobs;
+            g.visual = GroupVisual::Envelope { spec, live: matches!(g.name, "Amp" | "Operator 1") };
+            g.width = (g.params.len() as f32 * CELL_W).max(ENV_MIN_W);
+            continue;
+        }
         let l = &g.params;
-        g.visual = match (find(l, "Attack"), find(l, "Decay"), find(l, "Sustain"), find(l, "Release")) {
-            (Some(a), Some(d), Some(s), Some(r)) => GroupVisual::Envelope([a, d, s, r]),
-            _ => match find(l, "Cutoff") {
-                Some(cutoff) => GroupVisual::Filter {
-                    cutoff,
-                    reso: find(l, "Resonance"),
-                    highpass: find(l, "Type").is_some_and(|t| t.choices.iter().any(|c| c.contains("High"))),
-                },
-                None => GroupVisual::None,
+        g.visual = match find(l, "Cutoff") {
+            Some(cutoff) => GroupVisual::Filter {
+                cutoff,
+                reso: find(l, "Resonance"),
+                highpass: find(l, "Type").is_some_and(|t| t.choices.iter().any(|c| c.contains("High"))),
             },
+            None => GroupVisual::None,
         };
         g.width = match g.visual {
             // Visuel sur la première rangée, tous les réglages sur la seconde.
@@ -673,7 +687,7 @@ impl App {
             let visual = Rect::new(x + 2.0, body.y + 18.0, g.width - 4.0, CELL_H - 8.0);
             let single_row = !matches!(g.visual, GroupVisual::None);
             match g.visual {
-                GroupVisual::Envelope(adsr) => self.envelope_graph(c, input, visual, device, adsr),
+                GroupVisual::Envelope { spec, live } => self.envelope_editor(c, input, visual, device, &spec, live),
                 GroupVisual::Filter { cutoff, reso, highpass } => {
                     let highpass = highpass && find(&g.params, "Type").is_some_and(|tp| self.param_value(device, tp) > 0.5);
                     self.filter_graph(c, input, visual, device, cutoff, reso, highpass)

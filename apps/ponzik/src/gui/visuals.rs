@@ -392,52 +392,6 @@ impl App {
         }
     }
 
-    /// Enveloppe ADSR dessinée : poignées d'attaque, de déclin/maintien et de relâche.
-    pub(super) fn envelope_graph(&mut self, c: &mut Canvas, input: &Input, r: Rect, device: Device, adsr: [&'static ParamInfo; 4]) {
-        let t = self.theme;
-        c.fill_rrect(r, 10.0, t.well);
-        let g = r.inset_xy(10.0, 10.0);
-        let seg = g.w * 0.28;
-        let hold = g.w - 3.0 * seg;
-        let [a, d, s, rl] = adsr;
-        let (na, nd, sv, nr) = (
-            a.to_norm(self.param_value(device, a)),
-            d.to_norm(self.param_value(device, d)),
-            self.param_value(device, s).clamp(0.0, 1.0),
-            rl.to_norm(self.param_value(device, rl)),
-        );
-        let x_a = g.x + na * seg;
-        let x_d = x_a + nd * seg;
-        let x_h = x_d + hold;
-        let x_r = x_h + nr * seg;
-        let y_s = g.bottom() - sv * g.h;
-        let pts = [(g.x, g.bottom()), (x_a, g.y), (x_d, y_s), (x_h, y_s), (x_r, g.bottom())];
-        filled_curve(c, &pts, g.bottom(), t.accent.alpha(0.16), t.accent);
-
-        let handles = [(x_a, g.y, 0usize), (x_d, y_s, 1), (x_r, g.bottom(), 2)];
-        for (hx, hy, k) in handles {
-            let id = wid("env-h", device_key(device), k * 1_000 + a.id as usize);
-            let hit = Rect::new(hx - 10.0, hy - 10.0, 20.0, 20.0);
-            let hov = self.hovered(input, id, hit);
-            if hov && input.pressed {
-                self.begin_drag(id, input, 0.0);
-            }
-            if self.is_dragging(id) {
-                match k {
-                    0 => self.set_param_value(device, a, a.from_norm((input.x - g.x) / seg)),
-                    1 => {
-                        self.set_param_value(device, d, d.from_norm((input.x - x_a) / seg));
-                        self.set_param_value(device, s, ((g.bottom() - input.y) / g.h).clamp(0.0, 1.0));
-                    }
-                    _ => self.set_param_value(device, rl, rl.from_norm((input.x - x_h) / seg)),
-                }
-            }
-            let hv = self.hover_anim(id, hov || self.is_dragging(id));
-            c.fill_circle(hx, hy, 5.0 + hv * 2.0, t.bg_deep);
-            c.stroke_circle(hx, hy, 5.0 + hv * 2.0, 1.6, t.text2.mix(t.select, hv));
-        }
-    }
-
     /// Réponse du filtre : poignée à la coupure, hauteur = résonance.
     pub(super) fn filter_graph(
         &mut self,
