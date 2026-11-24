@@ -10291,3 +10291,733 @@ msgstr "Vue agrandie · {} pour rétablir"
 
 msgid "View restored"
 msgstr "Vue rétablie"
+# --- Audio editor ---
+
+msgid "\"{}\" now plays the edited sound · Ctrl+Z brings the old one back"
+msgstr "« {} » joue maintenant le son modifié · Ctrl+Z ramène l'ancien"
+
+msgid "A new Sampler channel plays the edited sound"
+msgstr "Un nouveau canal Sampler joue le son modifié"
+
+msgid "A new Slicer plays one slice per key, from C5"
+msgstr "Un nouveau Découpeur joue une tranche par touche, à partir de Do5"
+
+msgid "Add a marker"
+msgstr "Ajouter un marqueur"
+
+msgid "Add a marker at the cursor"
+msgstr "Ajouter un marqueur au curseur"
+
+msgid "Add a region"
+msgstr "Ajouter une région"
+
+msgid "Add a slice"
+msgstr "Ajouter une tranche"
+
+msgid "Apply the gain"
+msgstr "Appliquer le gain"
+
+msgid "Audio editor"
+msgstr "Éditeur audio"
+
+msgid "Audio editor: edit, clean, stretch and slice a sound, Edison style"
+msgstr "Éditeur audio : modifier, nettoyer, étirer et découper un son, façon Edison"
+
+msgid "Audio editor: replace clip"
+msgstr "Éditeur audio : remplacer le clip"
+
+msgid "Audio editor: replace sample"
+msgstr "Éditeur audio : remplacer l'échantillon"
+
+msgid "Beats: keeps drum hits sharp"
+msgstr "Beats : garde les coups de batterie nets"
+
+msgid "Change the length, keeping the pitch"
+msgstr "Changer la durée en gardant la hauteur"
+
+msgid "Chop: cut a sound into pieces for pads and patterns"
+msgstr "Découper : couper un son en morceaux pour les pads et les patterns"
+
+msgid "Clear slices"
+msgstr "Effacer les tranches"
+
+msgid "Click to play from here"
+msgstr "Cliquer pour lire à partir d'ici"
+
+msgid "Confidence {}%"
+msgstr "Confiance {} %"
+
+msgid "Convert"
+msgstr "Convertir"
+
+msgid "Convert the sample rate"
+msgstr "Convertir la fréquence d'échantillonnage"
+
+msgid "Converted from {} Hz to {} Hz"
+msgstr "Converti de {} Hz à {} Hz"
+
+msgid "Copied {}"
+msgstr "{} copiés"
+
+msgid "Copy"
+msgstr "Copier"
+
+msgid "Crop"
+msgstr "Rogner"
+
+msgid "Crop: keep only the selection"
+msgstr "Rogner : ne garder que la sélection"
+
+msgid "Cropped to the selection"
+msgstr "Rogné à la sélection"
+
+msgid "Crossfade"
+msgstr "Fondu enchaîné"
+
+msgid "Ctrl+C"
+msgstr "Ctrl+C"
+
+msgid "Ctrl+Del"
+msgstr "Ctrl+Suppr"
+
+msgid "Ctrl+I"
+msgstr "Ctrl+I"
+
+msgid "Ctrl+V"
+msgstr "Ctrl+V"
+
+msgid "Ctrl+X"
+msgstr "Ctrl+X"
+
+msgid "Ctrl+Y"
+msgstr "Ctrl+Y"
+
+msgid "Ctrl+Z"
+msgstr "Ctrl+Z"
+
+msgid "Cut at every hit (spectral flux)"
+msgstr "Couper à chaque coup (flux spectral)"
+
+msgid "Cut the silence at the start and the end"
+msgstr "Couper le silence au début et à la fin"
+
+msgid "Cut to the clipboard"
+msgstr "Coupé dans le presse-papiers"
+
+msgid "DC offset"
+msgstr "Décalage DC"
+
+msgid "DC offset removed ({}%)"
+msgstr "Décalage DC retiré ({} %)"
+
+msgid "Declick"
+msgstr "Déclic"
+
+msgid "Declip"
+msgstr "Désaturer"
+
+msgid "Declip: rebuild flattened peaks"
+msgstr "Désaturer : reconstruire les crêtes écrêtées"
+
+msgid "Delete the selection"
+msgstr "Supprimer la sélection"
+
+msgid "Deleted"
+msgstr "Supprimé"
+
+msgid "Detect slices"
+msgstr "Détecter les tranches"
+
+msgid "Drag to select · Shift+click extends · double-click selects a slice\nRight-click plays from here · wheel zooms, Shift+wheel scrolls"
+msgstr "Glisser pour sélectionner · Maj+clic étend · double-clic choisit une tranche\nClic droit lit d'ici · molette zoome, Maj+molette défile"
+
+msgid "Drop a sound here, open a clip from its panel, or record straight in"
+msgstr "Déposez un son ici, ouvrez un clip depuis son panneau, ou enregistrez directement"
+
+msgid "Drum pattern"
+msgstr "Pattern de batterie"
+
+msgid "Drum pattern from a break"
+msgstr "Pattern de batterie depuis un break"
+
+msgid "Drum pattern rebuilt: {} kicks, {} snares, {} hats on Drum Pads"
+msgstr "Pattern de batterie reconstruit : {} grosses caisses, {} caisses claires, {} charlestons sur Drum Pads"
+
+msgid "Edit the audio: cut, clean, stretch, on a copy"
+msgstr "Modifier l'audio : couper, nettoyer, étirer, sur une copie"
+
+msgid "Equal power: the natural crossfade"
+msgstr "Puissance constante : le fondu naturel"
+
+msgid "Every slice as its own WAV file, next to the project"
+msgstr "Chaque tranche dans son propre fichier WAV, à côté du projet"
+
+msgid "Everything is below the threshold"
+msgstr "Tout est sous le seuil"
+
+msgid "Example loop"
+msgstr "Boucle d'exemple"
+
+msgid "Export slices"
+msgstr "Exporter les tranches"
+
+msgid "Fade the selection in, from silence\nCtrl+Shift+I"
+msgstr "Fondu d'entrée sur la sélection, depuis le silence\nCtrl+Maj+I"
+
+msgid "Fade the selection out, to silence\nCtrl+Shift+O"
+msgstr "Fondu de sortie sur la sélection, jusqu'au silence\nCtrl+Maj+O"
+
+msgid "Fast start"
+msgstr "Départ rapide"
+
+msgid "Find clicks and pops and bridge them smoothly"
+msgstr "Trouver les clics et les craquements et les combler en douceur"
+
+msgid "Find the tempo from the hits (autocorrelation)"
+msgstr "Trouver le tempo à partir des coups (autocorrélation)"
+
+msgid "Gain {} dB"
+msgstr "Gain {} dB"
+
+msgid "Gain, normalize, fades, reverse, DC offset"
+msgstr "Gain, normalisation, fondus, inversion, décalage DC"
+
+msgid "Half or double tempo: the beat fits both, pick the one you hear"
+msgstr "Moitié ou double : le rythme colle aux deux, choisissez celui que vous entendez"
+
+msgid "Higher catches smaller clicks"
+msgstr "Plus haut attrape des clics plus petits"
+
+msgid "Higher finds quieter hits"
+msgstr "Plus haut trouve des coups plus faibles"
+
+msgid "Highest peak after normalizing"
+msgstr "Crête la plus haute après normalisation"
+
+msgid "Hits closer than this count as one"
+msgstr "Des coups plus proches que ceci comptent pour un"
+
+msgid "How far the noise goes down"
+msgstr "De combien le bruit descend"
+
+msgid "How long the end blends into the start"
+msgstr "Durée pendant laquelle la fin se fond dans le début"
+
+msgid "Insert silence"
+msgstr "Insérer du silence"
+
+msgid "Insert silence at the cursor (or silence the selection)"
+msgstr "Insérer du silence au curseur (ou rendre la sélection muette)"
+
+msgid "Keep the selection as a loop whose end flows into its start"
+msgstr "Garder la sélection comme une boucle dont la fin coule dans le début"
+
+msgid "Learn noise"
+msgstr "Apprendre"
+
+msgid "Learn the noise first: select noise alone, then Learn"
+msgstr "Apprenez d'abord le bruit : sélectionnez du bruit seul, puis Apprendre"
+
+msgid "Learn the noise from the selection\nSelect a stretch with only the noise (hiss, hum, room)"
+msgstr "Apprendre le bruit depuis la sélection\nSélectionnez un passage avec le bruit seul (souffle, ronflement, pièce)"
+
+msgid "Linear"
+msgstr "Linéaire"
+
+msgid "Loop the selection while playing"
+msgstr "Lire la sélection en boucle"
+
+msgid "Loudness"
+msgstr "Sonie"
+
+msgid "Loudness: the integrated loudness (EBU R128) reaches the target"
+msgstr "Sonie : la sonie intégrée (EBU R128) atteint la cible"
+
+msgid "Make a drum pattern from a break: kicks, snares and hats on pads, the break's rhythm in a pattern"
+msgstr "Faire un pattern de batterie depuis un break : grosses caisses, caisses claires et charlestons sur des pads, le rythme du break dans un pattern"
+
+msgid "Make a region of the selection"
+msgstr "Faire une région de la sélection"
+
+msgid "Make a seamless loop"
+msgstr "Faire une boucle sans couture"
+
+msgid "Make loop"
+msgstr "Boucler"
+
+msgid "Make mono"
+msgstr "Passer en mono"
+
+msgid "Margin over the learnt noise: higher removes more, and may eat quiet details"
+msgstr "Marge au-dessus du bruit appris : plus haut retire plus, au risque de manger les détails discrets"
+
+msgid "Marker {}"
+msgstr "Marqueur {}"
+
+msgid "Match project"
+msgstr "Caler au projet"
+
+msgid "Match the project tempo ({} BPM)"
+msgstr "Caler au tempo du projet ({} BPM)"
+
+msgid "Minimum gap"
+msgstr "Écart minimal"
+
+msgid "Mix both channels into one"
+msgstr "Mélanger les deux canaux en un"
+
+msgid "Mono: both channels are their mix"
+msgstr "Mono : les deux canaux sont leur mélange"
+
+msgid "More: calmer, no warbling (musical noise) · less: more precise"
+msgstr "Plus : plus calme, sans gazouillis (bruit musical) · moins : plus précis"
+
+msgid "New length: 50% is twice as fast, 200% twice as slow"
+msgstr "Nouvelle durée : 50 % va deux fois plus vite, 200 % deux fois plus lentement"
+
+msgid "No clear beat"
+msgstr "Pas de rythme net"
+
+msgid "No clear beat found"
+msgstr "Aucun rythme net trouvé"
+
+msgid "No click found (raise the sensitivity to catch smaller ones)"
+msgstr "Aucun clic trouvé (montez la sensibilité pour attraper les plus petits)"
+
+msgid "No clipping found"
+msgstr "Aucune saturation trouvée"
+
+msgid "No microphone: check the input in the recording panel"
+msgstr "Pas de micro : vérifiez l'entrée dans le panneau d'enregistrement"
+
+msgid "No silence at the edges"
+msgstr "Pas de silence aux bords"
+
+msgid "Noise learnt from {}: now select what to clean, or nothing for everything"
+msgstr "Bruit appris sur {} : sélectionnez maintenant ce qu'il faut nettoyer, ou rien pour tout"
+
+msgid "Noise lowered by up to {} dB"
+msgstr "Bruit baissé de {} dB au plus"
+
+msgid "Noise reduction"
+msgstr "Réduction de bruit"
+
+msgid "Noise reduction, declick, declip, trim silence"
+msgstr "Réduction de bruit, déclic, désaturation, rognage des silences"
+
+msgid "Normalize"
+msgstr "Normaliser"
+
+msgid "Normalized to {} LUFS ({} dB)"
+msgstr "Normalisé à {} LUFS ({} dB)"
+
+msgid "Normalized to {} dBFS ({} dB)"
+msgstr "Normalisé à {} dBFS ({} dB)"
+
+msgid "Nothing to normalize: the sound is silent"
+msgstr "Rien à normaliser : le son est muet"
+
+msgid "Nothing to paste: copy or cut something first"
+msgstr "Rien à coller : copiez ou coupez d'abord quelque chose"
+
+msgid "Nothing was recorded: no input signal"
+msgstr "Rien n'a été enregistré : pas de signal en entrée"
+
+msgid "One slice per pad (16 at most)"
+msgstr "Une tranche par pad (16 au plus)"
+
+msgid "One slice: no hit found (raise the sensitivity)"
+msgstr "Une seule tranche : aucun coup trouvé (montez la sensibilité)"
+
+msgid "Open a drum loop to try the editor"
+msgstr "Ouvrir une boucle de batterie pour essayer l'éditeur"
+
+msgid "Paste"
+msgstr "Coller"
+
+msgid "Paste: replaces the selection, or goes in at the cursor"
+msgstr "Coller : remplace la sélection, ou s'insère au curseur"
+
+msgid "Pasted"
+msgstr "Collé"
+
+msgid "Peak: the loudest sample reaches the target"
+msgstr "Crête : l'échantillon le plus fort atteint la cible"
+
+msgid "Pitch shift"
+msgstr "Transposition"
+
+msgid "Pitch shifted {} semitones"
+msgstr "Transposé de {} demi-tons"
+
+msgid "Place the edited sound as an audio clip in the playlist"
+msgstr "Poser le son modifié comme clip audio dans la playlist"
+
+msgid "Play backwards\nCtrl+R"
+msgstr "Jouer à l'envers\nCtrl+R"
+
+msgid "Play from the cursor"
+msgstr "Lire depuis le curseur"
+
+msgid "Play the selection"
+msgstr "Lire la sélection"
+
+msgid "Press R or the record button to stop: the take opens here"
+msgstr "Appuyez sur R ou sur le bouton d'enregistrement pour arrêter : la prise s'ouvre ici"
+
+msgid "Quieter than this counts as silence"
+msgstr "Plus faible que ceci compte comme du silence"
+
+msgid "Re-pitch"
+msgstr "Re-pitch"
+
+msgid "Re-pitch: speed and pitch move together, like a turntable"
+msgstr "Re-pitch : vitesse et hauteur bougent ensemble, comme une platine"
+
+msgid "Rebuild the tops of clipped peaks, then lower the level to fit"
+msgstr "Reconstruire le sommet des crêtes écrêtées, puis baisser le niveau pour que ça tienne"
+
+msgid "Record from the microphone into the editor"
+msgstr "Enregistrer depuis le micro dans l'éditeur"
+
+msgid "Recorded: trim it, clean it, then save or send it"
+msgstr "Enregistré : rognez, nettoyez, puis enregistrez ou envoyez"
+
+msgid "Recording {}"
+msgstr "Enregistrement {}"
+
+msgid "Recording · {} / {}"
+msgstr "Enregistrement · {} / {}"
+
+msgid "Redo in the editor"
+msgstr "Rétablir dans l'éditeur"
+
+msgid "Reduce noise"
+msgstr "Réduire le bruit"
+
+msgid "Region {}"
+msgstr "Région {}"
+
+msgid "Remove DC offset"
+msgstr "Retirer le décalage DC"
+
+msgid "Remove a marker"
+msgstr "Retirer un marqueur"
+
+msgid "Remove a region"
+msgstr "Retirer une région"
+
+msgid "Remove a slice"
+msgstr "Retirer une tranche"
+
+msgid "Remove every slice cut"
+msgstr "Retirer toutes les coupes"
+
+msgid "Remove the DC offset: centres the waveform on zero"
+msgstr "Retirer le décalage DC : recentre la forme d'onde sur zéro"
+
+msgid "Remove the learnt noise from the selection, or everything"
+msgstr "Retirer le bruit appris de la sélection, ou de tout"
+
+msgid "Repair"
+msgstr "Réparer"
+
+msgid "Replace the channel's sample: it plays the edited sound\nCtrl+Z in the project brings the old one back"
+msgstr "Remplacer l'échantillon du canal : il joue le son modifié\nCtrl+Z dans le projet ramène l'ancien"
+
+msgid "Replace the clip's audio: the playlist clip plays the edited sound\nCtrl+Z in the project brings the old one back"
+msgstr "Remplacer l'audio du clip : le clip de la playlist joue le son modifié\nCtrl+Z dans le projet ramène l'ancien"
+
+msgid "Replace the original: only for a sound opened from a channel or a clip"
+msgstr "Remplacer l'original : seulement pour un son ouvert depuis un canal ou un clip"
+
+msgid "Resample to the chosen rate (windowed sinc, no aliasing)"
+msgstr "Rééchantillonner à la fréquence choisie (sinc fenêtré, sans repliement)"
+
+msgid "Reversed"
+msgstr "Inversé"
+
+msgid "S-curve: slow at both ends"
+msgstr "Courbe en S : lente aux deux bouts"
+
+msgid "Sample rate to convert to"
+msgstr "Fréquence d'échantillonnage visée"
+
+msgid "Save FLAC"
+msgstr "Enregistrer en FLAC"
+
+msgid "Save WAV"
+msgstr "Enregistrer en WAV"
+
+msgid "Save as a new FLAC file next to the project\nLossless and smaller; the original is kept"
+msgstr "Enregistrer dans un nouveau fichier FLAC à côté du projet\nSans perte et plus léger ; l'original est gardé"
+
+msgid "Save as a new WAV file next to the project\n24 bits, slice cuts included; the original is kept"
+msgstr "Enregistrer dans un nouveau fichier WAV à côté du projet\n24 bits, coupes comprises ; l'original est gardé"
+
+msgid "Saved as {}"
+msgstr "Enregistré sous {}"
+
+msgid "Seamless loop"
+msgstr "Boucle sans couture"
+
+msgid "Seamless loop: the end flows into the start"
+msgstr "Boucle sans couture : la fin coule dans le début"
+
+msgid "Select a stretch of noise alone first (no voice, no music)"
+msgstr "Sélectionnez d'abord un passage de bruit seul (sans voix ni musique)"
+
+msgid "Select at least {} of noise"
+msgstr "Sélectionnez au moins {} de bruit"
+
+msgid "Select something to copy first"
+msgstr "Sélectionnez d'abord quelque chose à copier"
+
+msgid "Select the span of the region first"
+msgstr "Sélectionnez d'abord l'étendue de la région"
+
+msgid "Select where the fade goes first"
+msgstr "Sélectionnez d'abord l'endroit du fondu"
+
+msgid "Semitones up or down, keeping the length\nShift: finer"
+msgstr "Demi-tons vers le haut ou le bas, en gardant la durée\nMaj : plus fin"
+
+msgid "Send the sound"
+msgstr "Envoyer le son"
+
+msgid "Shift the pitch, keeping the length"
+msgstr "Transposer en gardant la durée"
+
+msgid "Shift+M"
+msgstr "Maj+M"
+
+msgid "Shift+S"
+msgstr "Maj+S"
+
+msgid "Slice cut\nDrag to move · right-click to remove"
+msgstr "Coupe de tranche\nGlisser pour déplacer · clic droit pour retirer"
+
+msgid "Slice lane\nClick to add a slice cut here"
+msgstr "Bande des tranches\nCliquer pour ajouter une coupe ici"
+
+msgid "Slice to MIDI"
+msgstr "Tranches en MIDI"
+
+msgid "Slicer and pattern ready: {} slices on the keys from C5, in their original rhythm"
+msgstr "Découpeur et pattern prêts : {} tranches sur les touches à partir de Do5, dans leur rythme d'origine"
+
+msgid "Slicer plus a pattern that replays the slices in their original rhythm"
+msgstr "Découpeur et pattern qui rejoue les tranches dans leur rythme d'origine"
+
+msgid "Slices cleared"
+msgstr "Tranches effacées"
+
+msgid "Slices to Drum Pads"
+msgstr "Tranches vers Drum Pads"
+
+msgid "Slices to the Slicer"
+msgstr "Tranches vers le Découpeur"
+
+msgid "Slow start"
+msgstr "Départ lent"
+
+msgid "Snap to the beat (sixteenths of the sound's tempo)"
+msgstr "Aimanter au temps (doubles croches du tempo du son)"
+
+msgid "Snap to the beat: detect the tempo first (Slices tab)"
+msgstr "Aimanter au temps : détectez d'abord le tempo (onglet Tranches)"
+
+msgid "Snap to zero crossings: cuts never click\nHold Alt to place freely"
+msgstr "Aimanter aux passages à zéro : les coupes ne claquent jamais\nAlt pour placer librement"
+
+msgid "Spectrogram: frequencies over time, bass at the bottom"
+msgstr "Spectrogramme : les fréquences dans le temps, les basses en bas"
+
+msgid "Stop recording"
+msgstr "Arrêter l'enregistrement"
+
+msgid "Stretch and pitch"
+msgstr "Durée et hauteur"
+
+msgid "Stretch from the sound's tempo to the project's"
+msgstr "Étirer du tempo du son à celui du projet"
+
+msgid "Stretch to the project tempo ({} BPM)"
+msgstr "Étirer au tempo du projet ({} BPM)"
+
+msgid "Stretch, pitch, seamless loop, sample rate"
+msgstr "Étirement, hauteur, boucle sans couture, fréquence"
+
+msgid "Stretched to {}%"
+msgstr "Étiré à {} %"
+
+msgid "Target"
+msgstr "Cible"
+
+msgid "Tempo: {} BPM"
+msgstr "Tempo : {} BPM"
+
+msgid "Tempo: {} BPM (or {})"
+msgstr "Tempo : {} BPM (ou {})"
+
+msgid "The learnt noise, bass on the left"
+msgstr "Le bruit appris, basses à gauche"
+
+msgid "The playlist clip now plays the edited sound · Ctrl+Z brings the old one back"
+msgstr "Le clip de la playlist joue maintenant le son modifié · Ctrl+Z ramène l'ancien"
+
+msgid "The tempo of the sound is unknown: detect it first"
+msgstr "Le tempo du son est inconnu : détectez-le d'abord"
+
+msgid "The whole sound\nClick or drag to move the view"
+msgstr "Le son entier\nCliquer ou glisser pour déplacer la vue"
+
+msgid "The whole sound in a new Sampler"
+msgstr "Le son entier dans un nouveau Sampler"
+
+msgid "This sound came from no channel or clip: use Save or Send instead"
+msgstr "Ce son ne vient d'aucun canal ni clip : utilisez plutôt Enregistrer ou Envoyer"
+
+msgid "Time stretch"
+msgstr "Étirement"
+
+msgid "To Drum Pads"
+msgstr "Vers Drum Pads"
+
+msgid "To Sampler"
+msgstr "Vers Sampler"
+
+msgid "To Slicer"
+msgstr "Vers Découpeur"
+
+msgid "Tones: smooth on chords, pads and voices"
+msgstr "Tones : doux sur les accords, les nappes et les voix"
+
+msgid "Too short or too quiet to measure its loudness (needs 0.4 s)"
+msgstr "Trop court ou trop faible pour mesurer sa sonie (il faut 0,4 s)"
+
+msgid "Tools work {}"
+msgstr "Les outils agissent {}"
+
+msgid "Transients, tempo, slices to Slicer, pads or MIDI"
+msgstr "Transitoires, tempo, tranches vers Découpeur, pads ou MIDI"
+
+msgid "Trim silence"
+msgstr "Rogner les silences"
+
+msgid "Trimmed {} of silence"
+msgstr "{} de silence rognés"
+
+msgid "Undo in the editor"
+msgstr "Annuler dans l'éditeur"
+
+msgid "Use the slices"
+msgstr "Utiliser les tranches"
+
+msgid "Volume change, −24 to +24 dB"
+msgstr "Changement de volume, de −24 à +24 dB"
+
+msgid "Waveform"
+msgstr "Forme d'onde"
+
+msgid "Zoom to the selection"
+msgstr "Zoomer sur la sélection"
+
+msgid "edit copy, the original is kept"
+msgstr "copie de travail, l'original est gardé"
+
+msgid "hat"
+msgstr "charleston"
+
+msgid "kick"
+msgstr "grosse caisse"
+
+msgid "no noise learnt yet"
+msgstr "aucun bruit appris"
+
+msgid "on the selection"
+msgstr "sur la sélection"
+
+msgid "on the whole sound"
+msgstr "sur tout le son"
+
+msgid "or {}"
+msgstr "ou {}"
+
+msgid "slice"
+msgstr "tranche"
+
+msgid "slices"
+msgstr "tranches"
+
+msgid "snare"
+msgstr "caisse claire"
+
+msgid "{}\nClick: select it · right-click: remove it"
+msgstr "{}\nClic : la sélectionner · clic droit : la retirer"
+
+msgid "{}\nDrag to move · click: put the cursor there · right-click: remove"
+msgstr "{}\nGlisser pour déplacer · clic : y mettre le curseur · clic droit : retirer"
+
+msgid "{} Hz"
+msgstr "{} Hz"
+
+msgid "{} LUFS"
+msgstr "{} LUFS"
+
+msgid "{} MIDI"
+msgstr "{} MIDI"
+
+msgid "{} beat"
+msgstr "{} rythme"
+
+msgid "{} clicks repaired"
+msgstr "{} clics réparés"
+
+msgid "{} clipped peaks rebuilt"
+msgstr "{} crêtes écrêtées reconstruites"
+
+msgid "{} dB"
+msgstr "{} dB"
+
+msgid "{} dBFS"
+msgstr "{} dBFS"
+
+msgid "{} drums"
+msgstr "{} batterie"
+
+msgid "{} kit"
+msgstr "{} kit"
+
+msgid "{} of silence"
+msgstr "{} de silence"
+
+msgid "{} pad {}"
+msgstr "{} pad {}"
+
+msgid "{} pads filled, one slice each"
+msgstr "{} pads remplis, une tranche chacun"
+
+msgid "{} removed"
+msgstr "{} retiré"
+
+msgid "{} samples across"
+msgstr "{} échantillons à l'écran"
+
+msgid "{} slices in a new Slicer, on the keys from C5"
+msgstr "{} tranches dans un nouveau Découpeur, sur les touches à partir de Do5"
+
+msgid "{} slices saved as files, next to the project"
+msgstr "{} tranches enregistrées en fichiers, à côté du projet"
+
+msgid "{} st"
+msgstr "{} dt"
+
+msgid "{} · {} samples"
+msgstr "{} · {} échantillons"
+
+msgid "−14 LUFS: streaming · −23: broadcast · −9: loud club"
+msgstr "−14 LUFS : streaming · −23 : diffusion · −9 : club fort"
+
+msgid "Clean up"
+msgstr "Nettoyer"

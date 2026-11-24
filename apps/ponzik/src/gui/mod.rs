@@ -13,6 +13,8 @@ mod autotune;
 mod automation;
 mod capture;
 mod autorec;
+mod audioedit;
+mod audioedit_view;
 mod browser;
 mod clip;
 mod comp;
@@ -826,6 +828,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // PONZIK_SAMPLELAB=demo|<wav> : ouvre l'Atelier sur un échantillon.
     if let Ok(spec) = std::env::var("PONZIK_SAMPLELAB") {
         app.screenshot_lab(&spec);
+    }
+    // PONZIK_AUDIOEDIT=demo|tone|empty|<file>[,tab:n][,zoom][,deep][,rec][,noise]: the
+    // audio editor (PONZIK_AUDIOEDIT_SPECTRUM=1: the spectrogram).
+    if let Ok(spec) = std::env::var("PONZIK_AUDIOEDIT") {
+        app.screenshot_audio_edit(&spec);
     }
     // PONZIK_RECORD=1 : piste armée et panneau d'enregistrement ; =takes : avec des prises
     // en boucle ; =devices : la liste des entrées.
