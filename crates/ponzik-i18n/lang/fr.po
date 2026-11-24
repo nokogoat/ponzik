@@ -3285,7 +3285,7 @@ msgid "Peak"
 msgstr "Crête"
 
 msgid "Hold"
-msgstr "Maintien"
+msgstr "Tenue"
 
 msgid "Frequency"
 msgstr "Fréquence"
@@ -3481,6 +3481,15 @@ msgstr "Transitoires"
 
 msgid "Sustain"
 msgstr "Maintien"
+
+msgid "Attack curve"
+msgstr "Courbe d'attaque"
+
+msgid "Decay curve"
+msgstr "Courbe de déclin"
+
+msgid "Release curve"
+msgstr "Courbe de relâche"
 
 msgid "Stereo"
 msgstr "Stéréo"

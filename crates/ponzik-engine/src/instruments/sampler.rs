@@ -10,8 +10,8 @@ use ponzik_dsp::env::{Adsr, AdsrParams};
 use ponzik_dsp::filter::{FilterMode, Svf};
 use ponzik_dsp::util::{db_to_gain, gain_to_db};
 
-use super::common::{pick_voice, read_cubic, soft_clip};
-use crate::Instrument;
+use super::common::{EnvField, pick_voice, publish_env, read_cubic, soft_clip};
+use crate::{EnvProbe, Instrument};
 use crate::param::{ParamInfo, Params, Unit};
 use crate::sample::Sample;
 
@@ -39,6 +39,20 @@ const P_CUTOFF: u32 = 13;
 const P_VOLUME: u32 = 14;
 const P_SYNC: u32 = 15;
 const P_BEATS: u32 = 16;
+const P_DELAY: u32 = 17;
+const P_HOLD: u32 = 18;
+const P_ATTACK_CURVE: u32 = 19;
+const P_DECAY_CURVE: u32 = 20;
+const P_RELEASE_CURVE: u32 = 21;
+
+/// The amp envelope's parameters after ADSR.
+const AMP_EXTRA: [(u32, EnvField); 5] = [
+    (P_DELAY, EnvField::Delay),
+    (P_HOLD, EnvField::Hold),
+    (P_ATTACK_CURVE, EnvField::AttackCurve),
+    (P_DECAY_CURVE, EnvField::DecayCurve),
+    (P_RELEASE_CURVE, EnvField::ReleaseCurve),
+];
 
 /// « Mode » : 0 one-shot (the whole sample, whatever the note length), 1 melodic.
 pub const SAMPLER_MODE: u32 = P_MODE;
@@ -48,7 +62,7 @@ pub const SAMPLER_SYNC: u32 = P_SYNC;
 /// Length of the sample in beats at its own tempo, for the tempo sync.
 pub const SAMPLER_BEATS: u32 = P_BEATS;
 
-static PARAMS: [ParamInfo; 17] = [
+static PARAMS: [ParamInfo; 22] = [
     ParamInfo::new(P_ROOT, "Root Note", 0.0, 127.0, 60.0, Unit::None).group("Sample"),
     ParamInfo::choice(P_MODE, "Mode", MODES, 1).group("Sample"),
     ParamInfo::new(P_START, "Start", 0.0, 1.0, 0.0, Unit::Percent).group("Sample"),
@@ -65,6 +79,11 @@ static PARAMS: [ParamInfo; 17] = [
     ParamInfo::new(P_DECAY, "Decay", 0.005, 8.0, 0.2, Unit::Seconds).log().group("Amp"),
     ParamInfo::new(P_SUSTAIN, "Sustain", 0.0, 1.0, 1.0, Unit::Percent).group("Amp"),
     ParamInfo::new(P_RELEASE, "Release", 0.005, 8.0, 0.1, Unit::Seconds).log().group("Amp"),
+    ParamInfo::new(P_DELAY, "Delay", 0.0, 2.0, 0.0, Unit::Seconds).group("Amp"),
+    ParamInfo::new(P_HOLD, "Hold", 0.0, 2.0, 0.0, Unit::Seconds).group("Amp"),
+    ParamInfo::new(P_ATTACK_CURVE, "Attack curve", -1.0, 1.0, 0.0, Unit::Percent).group("Amp"),
+    ParamInfo::new(P_DECAY_CURVE, "Decay curve", -1.0, 1.0, 0.0, Unit::Percent).group("Amp"),
+    ParamInfo::new(P_RELEASE_CURVE, "Release curve", -1.0, 1.0, 0.0, Unit::Percent).group("Amp"),
     ParamInfo::new(P_VOLUME, "Volume", -40.0, 6.0, -3.0, Unit::Db).group("Amp"),
 ];
 
@@ -99,6 +118,7 @@ pub struct Sampler {
     sample_rate: f32,
     voices: [Voice; VOICES],
     note_counter: u64,
+    probe: Arc<EnvProbe>,
 }
 
 impl Default for Sampler {
@@ -138,6 +158,7 @@ impl Sampler {
                 filter: std::array::from_fn(|_| Svf::new(FilterMode::LowPass, 20_000.0, 0.707, sr)),
             }),
             note_counter: 0,
+            probe: Arc::new(EnvProbe::new()),
         };
         for p in &PARAMS {
             s.set_param(p.id, p.default);
@@ -175,7 +196,7 @@ impl Params for Sampler {
             P_VOLUME => gain_to_db(self.gain),
             P_SYNC => b(self.sync),
             P_BEATS => self.beats,
-            _ => 0.0,
+            _ => AMP_EXTRA.iter().find(|(i, _)| *i == id).map_or(0.0, |(_, f)| f.get(&self.env)),
         }
     }
 
@@ -200,7 +221,11 @@ impl Params for Sampler {
             P_VOLUME => self.gain = db_to_gain(v),
             P_SYNC => self.sync = v > 0.5,
             P_BEATS => self.beats = v.round(),
-            _ => {}
+            _ => {
+                if let Some((_, f)) = AMP_EXTRA.iter().find(|(i, _)| *i == id) {
+                    f.set(&mut self.env, v);
+                }
+            }
         }
         let env = self.env;
         for voice in &mut self.voices {
@@ -246,6 +271,7 @@ impl Instrument for Sampler {
         v.playing = true;
         v.pos = 0.0;
         v.env.gate_on();
+        self.probe.note_on();
     }
 
     fn note_off(&mut self, note: u8) {
@@ -265,7 +291,18 @@ impl Instrument for Sampler {
         }
     }
 
+    fn env_probe(&self) -> Option<Arc<EnvProbe>> {
+        Some(self.probe.clone())
+    }
+
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.render_voices(left, right);
+        publish_env(&self.probe, self.voices.iter().map(|v| (v.started_at, &v.env)));
+    }
+}
+
+impl Sampler {
+    fn render_voices(&mut self, left: &mut [f32], right: &mut [f32]) {
         let Some(sample) = self.sample.as_deref() else { return };
         if sample.is_empty() {
             return;
@@ -400,6 +437,14 @@ mod tests {
         s.note_on(60, 1.0);
         render(&mut s, 48_000);
         assert!(peak(&mut s, 2_400) > 0.05, "la boucle s'est arrêtée");
+    }
+
+    #[test]
+    fn amp_envelope_delay_hold_and_curves() {
+        let mut s = Sampler::new();
+        s.set_sample(sine(441.0, 48_000.0, 3.0));
+        s.set_param(P_LOOP, 1.0);
+        super::super::common::test_util::envelope_delay_and_hold(&mut s, "Amp");
     }
 
     #[test]
