@@ -301,7 +301,7 @@ impl Default for WaveSynth {
 impl WaveSynth {
     pub fn new() -> Self {
         let sr = 48_000.0;
-        let env = AdsrParams { attack: 0.005, decay: 0.3, sustain: 0.7, release: 0.25 };
+        let env = AdsrParams::new(0.005, 0.3, 0.7, 0.25);
         let mut s = Self {
             set: 0,
             position: 0.5,

@@ -99,7 +99,7 @@ impl Default for Slicer {
 impl Slicer {
     pub fn new() -> Self {
         let sr = 48_000.0;
-        let env = AdsrParams { attack: 0.001, decay: 0.001, sustain: 1.0, release: 0.02 };
+        let env = AdsrParams::new(0.001, 0.001, 1.0, 0.02);
         let mut s = Self {
             sample: None,
             energy: Vec::new(),
