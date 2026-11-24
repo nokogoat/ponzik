@@ -90,6 +90,12 @@ impl App {
         add(tr("Computer typing keyboard").into(), tr("Transport"), k(S::TypingKeyboard), Action::ToggleTyping);
         add(tr("Capture MIDI: the last phrase played becomes a pattern").into(), tr("Transport"), k(S::Capture), Action::CaptureMidi);
         add(tr("Record automation: Touch, Latch, Write").into(), tr("Transport"), none(), Action::Popup(Popup::AutoMode));
+        add(tr("Automation list: every curve of the project").into(), tr("Automation"), none(), Action::Popup(Popup::AutomationList));
+        for row in self.curve_rows() {
+            if let Some((name, _)) = self.target_info(row.target) {
+                add(tr_fmt!("Show the curve: {} · {}", name, self.scope_label(row.scope)), tr("Automation"), none(), Action::ShowCurve(row.target, row.scope));
+            }
+        }
         // What the calm top bar keeps in the record menu, reachable by name too.
         add(tr("Recording panel: input, level, monitoring, latency").into(), tr("Transport"), none(), Action::ToggleRecordPanel);
         add(tr("Voice to notes: sing or hum to play an instrument").into(), tr("Transport"), none(), Action::ToggleVoice);

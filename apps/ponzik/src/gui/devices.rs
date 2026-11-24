@@ -685,10 +685,13 @@ impl App {
                 let cell = Rect::new(x + col as f32 * CELL_W, body.y + 16.0 + row as f32 * CELL_H, CELL_W, CELL_H);
                 let value = self.param_value(device, p);
                 let id = wid("prm", key, p.id as usize);
+                // While a curve plays, the knob follows it (grabbing it starts from there).
+                let target = device_target(device, p.id);
+                let shown = if self.is_dragging(id) { value } else { self.live_auto_value(target).map_or(value, |v| p.clamp(v)) };
                 let mut changed = if p.unit == Unit::Choice {
-                    self.choice(c, input, id, cell, p, value)
+                    self.choice(c, input, id, cell, p, shown)
                 } else {
-                    self.knob(c, input, id, cell, p, value)
+                    self.knob(c, input, id, cell, p, shown)
                 };
                 if let Device::RackUnit { track, slot, unit } = device {
                     self.macro_range_knob(c, cell, id, track, slot, unit, p, &mut changed, input.mods.alt);
@@ -698,7 +701,6 @@ impl App {
                     self.set_param_value(device, p, v);
                 }
                 // Clic droit : automatiser, valeur par défaut ; point sarcelle si automatisé.
-                let target = device_target(device, p.id);
                 // Enter on a focused knob: type its value.
                 if p.unit != Unit::Choice && self.kb_enter(id) {
                     self.open_popup(Popup::Rename { target: super::app::Rename::Value(target), text: String::new() }, Rect::new(cell.x - 60.0, cell.y + 20.0, cell.w + 120.0, 36.0));
@@ -708,9 +710,7 @@ impl App {
                     self.open_popup(popup, Rect::new(input.x, input.y, 0.0, 0.0));
                 }
                 self.param_mark(c, cell, target);
-                if self.is_automated(target) {
-                    c.fill_circle(cell.right() - 10.0, cell.y + 6.0, 3.0, t.select);
-                }
+                self.auto_mark(c, input, (cell.right() - 10.0, cell.y + 6.0), Rect::new(cell.x, cell.y + 8.0, cell.w, 54.0), target);
             }
             x += g.width + GROUP_GAP;
         }

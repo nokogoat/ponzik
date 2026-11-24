@@ -175,6 +175,8 @@ pub enum Popup {
     PianoLanes,
     /// The piano roll's tools folded for lack of room (bits, see `piano_view`).
     PianoMore(u16),
+    /// Every automation curve of the project: show, mute, delete.
+    AutomationList,
     /// Keys detected, best first, to apply to the project.
     KeyDetect { source: super::groove::KeySource, guesses: Vec<ponzik_project::harmony::KeyGuess> },
     /// Groove pool of the current pattern.
@@ -406,7 +408,14 @@ pub enum Action {
     LocateIn(PathBuf),
     ExportMidi,
     AssignSession(usize, usize, usize),
-    RemoveAutomation(ponzik_engine::AutoTarget),
+    /// Opens the view where a curve is drawn, with it shown.
+    ShowCurve(ponzik_engine::AutoTarget, ponzik_engine::AutoScope),
+    /// Deletes the curves of a parameter (only one scope's if given).
+    DeleteCurve(ponzik_engine::AutoTarget, Option<ponzik_engine::AutoScope>),
+    /// Mutes (true) or plays again the curves of a parameter.
+    MuteCurve(ponzik_engine::AutoTarget, Option<ponzik_engine::AutoScope>, bool),
+    /// The curves of a parameter go flat at its knob's value.
+    FlattenCurve(ponzik_engine::AutoTarget),
     /// Humanise les notes du piano roll : écart de début (ticks), écart relatif de vélocité.
     Humanize(u32, f32),
     /// Opens a MIDI tool's panel.
@@ -690,6 +699,8 @@ pub struct PianoState {
     pub line_tool: bool,
     /// Where the drawing of a controller lane started or last went: (tick, value).
     pub lane_anchor: Option<(u32, f32)>,
+    /// Controller lanes shown too, stacked under the lane shown (room allowing).
+    pub stack: Vec<super::lanes::PianoLane>,
 }
 
 pub struct PlaylistState {
@@ -905,6 +916,8 @@ pub struct App {
     midi_events: Vec<ponzik_midi::MidiEvent>,
     pub midi_out: super::midiout::MidiOutState,
     pub tips: TipState,
+    /// The curve just jumped to, the automation list's scroll.
+    pub auto_ui: super::automation::AutoUi,
     /// Glisser-déposer depuis le navigateur, et les zones de dépôt de l'image.
     pub dnd: Option<super::dnd::Dnd>,
     pub drops: Vec<(Rect, super::dnd::DropTarget)>,
@@ -1004,6 +1017,7 @@ impl App {
                 slide_mode: false,
                 line_tool: false,
                 lane_anchor: None,
+                stack: Vec::new(),
             },
             playlist: PlaylistState { scroll_x: 0.0, scroll_y: 0.0, zoom: 44.0, brush: 0, selected: None, paint: false },
             sidebar_scroll: 0.0,
@@ -1093,6 +1107,7 @@ impl App {
             midi_events: Vec::new(),
             midi_out: Default::default(),
             tips: TipState::default(),
+            auto_ui: Default::default(),
             dnd: None,
             drops: Vec::new(),
             pan: None,
@@ -3533,9 +3548,10 @@ impl App {
             }
             Popup::Param { target, value, default } => {
                 let label = self.target_info(*target).map_or(String::new(), |(l, _)| l);
-                let mut v = vec![MenuItem::new(Icon::Automation, tr("Automate"), Action::Automate(*target, *value)).tip(tr("A curve in the playlist"))];
-                if self.is_automated(*target) {
-                    v.push(MenuItem::new(Icon::Trash, tr("Delete the automation"), Action::RemoveAutomation(*target)));
+                let mut v = self.curve_menu_items(*target);
+                if self.project.automation_lane(*target, ponzik_engine::AutoScope::Song).is_none() {
+                    let it = MenuItem::new(Icon::Automation, tr("Automate"), Action::Automate(*target, *value)).tip(tr("A curve in the playlist"));
+                    v.push(if v.is_empty() { it } else { it.sep() });
                 }
                 let typed = Popup::Rename { target: Rename::Value(*target), text: String::new() };
                 v.push(MenuItem::new(Icon::Pencil, tr("Type a value…"), Action::Popup(typed)).tip(tr("Enter: apply · Escape: cancel")).detail(tr("Enter").into()));
@@ -3741,6 +3757,7 @@ impl App {
             Popup::Signature(tick) => self.signature_menu(*tick),
             Popup::Tools => self.tools_menu(),
             Popup::Rename { .. }
+            | Popup::AutomationList
             | Popup::Palette { .. }
             | Popup::Scale
             | Popup::Chord
@@ -4104,10 +4121,10 @@ impl App {
             Action::AudioToNotes(i) => self.audio_clip_to_notes(i),
             Action::OpenTool(tool) => self.open_tool(tool, anchor),
             Action::JumpHistory(n) => self.jump_history(n),
-            Action::RemoveAutomation(target) => {
-                self.project.automation.retain(|a| a.target != target);
-                self.commit(tr("Remove an automation"));
-            }
+            Action::ShowCurve(target, scope) => self.show_curve(target, scope),
+            Action::DeleteCurve(target, scope) => self.delete_curve(target, scope),
+            Action::MuteCurve(target, scope, muted) => self.mute_curve(target, scope, muted),
+            Action::FlattenCurve(target) => self.flatten_curve(target),
             Action::SetParamValue(target, v) => {
                 use ponzik_engine::AutoTarget as T;
                 match target {
@@ -4254,6 +4271,12 @@ impl App {
         }
         if matches!(state.kind, Popup::Unsaved) {
             if self.unsaved_popup(c, input, screen) && self.popup.is_none() {
+                self.popup = Some(state);
+            }
+            return;
+        }
+        if matches!(state.kind, Popup::AutomationList) {
+            if self.automation_list_popup(c, input, screen) && self.popup.is_none() {
                 self.popup = Some(state);
             }
             return;

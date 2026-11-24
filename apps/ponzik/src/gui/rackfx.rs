@@ -225,9 +225,7 @@ impl App {
                 self.open_popup(Popup::Param { target, value, default: p.default }, Rect::new(input.x, input.y, 0.0, 0.0));
             }
             self.param_mark(c, cell, target);
-            if self.is_automated(target) {
-                c.fill_circle(cell.right() - 10.0, cell.y + 6.0, 3.0, t.select);
-            }
+            self.auto_mark(c, input, (cell.right() - 10.0, cell.y + 6.0), Rect::new(cell.x, cell.y + 8.0, cell.w, 54.0), target);
         }
 
         // Chains.
