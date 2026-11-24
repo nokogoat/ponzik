@@ -439,6 +439,7 @@ mod tests {
             apply_gain(&mut a, g);
             apply_gain(&mut b, g);
             let got = integrated_lufs(&a, &b, SR).unwrap();
+            eprintln!("LUFS target {target}: {got:.3}");
             assert!((got - target).abs() < 0.1, "{got} for {target}");
         }
         assert!(integrated_lufs(&[0.1; 1000], &[0.1; 1000], SR).is_none(), "too short");
@@ -461,6 +462,7 @@ mod tests {
             fade_out(&mut y[4_800..], shape);
             assert!(y[0].abs() < 1e-6, "{shape:?} starts at {}", y[0]);
             assert!(y[9_599].abs() < 0.01, "{shape:?} ends at {}", y[9_599]);
+            eprintln!("fade {shape:?}: largest step {:.4} (tone alone {:.4})", worst_step(&y), src_step);
             assert!(worst_step(&y) <= src_step * 1.05, "{shape:?}: step {} vs {}", worst_step(&y), src_step);
             // The joint in the middle is continuous: both fades are near unity there.
             assert!((y[4_799] - x[4_799]).abs() < 0.01 && (y[4_800] - x[4_800]).abs() < 0.01, "{shape:?}");
@@ -555,6 +557,7 @@ mod tests {
             let (l, _) = stretch(&x, &x, SR, factor, algo);
             assert_eq!(l.len(), (48_000.0 * factor).round() as usize);
             let c = cents(pitch_of(&l), 440.0);
+            eprintln!("stretch {factor} {algo:?}: {c:+.2} cents");
             assert!(c.abs() < 5.0, "{factor} {algo:?}: {c} cents");
         }
     }
@@ -567,6 +570,7 @@ mod tests {
             assert_eq!(l.len(), x.len());
             let want = 440.0 * (st / 12.0).exp2();
             let c = cents(pitch_of(&l), want);
+            eprintln!("pitch {st:+} st: {c:+.2} cents");
             assert!(c.abs() < 5.0, "{st}: {c} cents");
         }
         let (l, _) = pitch_shift(&x, &x, SR, 12.0, WarpAlgo::RePitch);
