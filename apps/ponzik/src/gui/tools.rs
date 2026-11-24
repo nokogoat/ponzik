@@ -4,7 +4,7 @@
 
 use ponzik_engine::{Note, NoteCond, ParamInfo, TICKS_PER_BAR, TICKS_PER_STEP, Unit};
 use ponzik_i18n::{tr, tr_fmt, tr_fmt_n, tr_noop};
-use ponzik_project::ScaleKind;
+use ponzik_project::{ChordKind, ScaleKind};
 use ponzik_project::generate::{self, BassRhythm, Contour, MelodySpec, Mood, ProgressionSpec, RhythmStyle};
 use ponzik_project::transform::{self, ArpDir};
 use ponzik_ui::{Canvas, Rect};
@@ -208,6 +208,8 @@ pub fn cond_index(c: NoteCond) -> usize {
 
 const ARP_DIR: ParamInfo = ParamInfo::choice(0, tr_noop("Direction"), &[tr_noop("Up"), tr_noop("Down"), tr_noop("Up-down"), tr_noop("Random")], 0);
 const RATE: ParamInfo = ParamInfo::choice(0, tr_noop("Rate"), &RATE_LABELS, 2);
+const ARP_CHORD: ParamInfo =
+    ParamInfo::choice(0, tr_noop("Single notes"), &[tr_noop("Keep"), tr_noop("Triad"), tr_noop("Seventh"), tr_noop("Octave")], 1);
 const GRID: ParamInfo = ParamInfo::choice(0, tr_noop("Grid"), &RATE_LABELS, 2);
 const SPREAD: ParamInfo = ParamInfo::choice(0, tr_noop("Spread"), &SPREAD_LABELS, 1);
 const STRUM_DIR: ParamInfo = ParamInfo::choice(0, tr_noop("Direction"), &[tr_noop("Up"), tr_noop("Down")], 0);
@@ -259,6 +261,9 @@ pub struct ToolState {
     pub seed: u64,
     pub arp_dir: ArpDir,
     pub arp_rate: usize,
+    /// What a lone note becomes before the arpeggio: 0 itself, 1 the triad
+    /// of the scale on it, 2 its seventh chord, 3 itself and its octave.
+    pub arp_chord: usize,
     pub strum_spread: usize,
     pub strum_up: bool,
     pub flam: usize,
@@ -294,6 +299,7 @@ impl Default for ToolState {
             seed: 1,
             arp_dir: ArpDir::Up,
             arp_rate: 2,
+            arp_chord: 1,
             strum_spread: 1,
             strum_up: true,
             flam: 1,
@@ -375,7 +381,22 @@ impl App {
         let root = self.project.channels[ch].root_note;
         let seed = st.seed;
         let after = match tool {
-            Tool::Arpeggiate => transform::arpeggiate(&before, st.arp_dir, RATES[st.arp_rate].1, seed),
+            Tool::Arpeggiate => {
+                // A melody arpeggiates too: each lone note through a chord built on it.
+                let chord = |root: u8| -> Vec<u8> {
+                    let shaped = |kind| {
+                        let v = scale.shaped_chord(key, root, kind);
+                        if v.contains(&root) { v } else { ponzik_project::chord(root, kind) }
+                    };
+                    match st.arp_chord {
+                        1 => shaped(ChordKind::Major),
+                        2 => shaped(ChordKind::Major7),
+                        _ => vec![root, if root <= 115 { root + 12 } else { root - 12 }],
+                    }
+                };
+                let notes = if st.arp_chord == 0 { before.clone() } else { transform::fill_chords(&before, chord) };
+                transform::arpeggiate(&notes, st.arp_dir, RATES[st.arp_rate].1, seed)
+            }
             Tool::Strum => transform::strum(&before, SPREADS[st.strum_spread].1, st.strum_up),
             Tool::Flam => transform::flam(&before, FLAMS[st.flam], st.grace),
             Tool::Legato => transform::legato(&before),
@@ -496,6 +517,9 @@ impl App {
                 }
                 if let Some(i) = self.tool_choice(c, input, 1, cell(1), &RATE, st.arp_rate) {
                     s.arp_rate = i.min(RATES.len() - 1);
+                }
+                if let Some(i) = self.tool_choice(c, input, 2, cell(2), &ARP_CHORD, st.arp_chord) {
+                    s.arp_chord = i.min(3);
                 }
             }
             Tool::Strum => {

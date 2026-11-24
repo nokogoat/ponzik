@@ -6673,6 +6673,12 @@ msgstr "Aucune note"
 msgid "No notes to transform"
 msgstr "Aucune note à transformer"
 
+msgid "Single notes"
+msgstr "Notes seules"
+
+msgid "Keep"
+msgstr "Garder"
+
 msgid "No settings: what you see is what you get"
 msgstr "Aucun réglage : le résultat est sous vos yeux"
 
