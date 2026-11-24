@@ -438,7 +438,12 @@ fn real_take() {
         s.sample_rate,
         a.notes.len()
     );
-    let off = |v: &[f32]| v.iter().map(|c| ((c - c.round()) * 100.0).abs()).sum::<f32>() / v.len().max(1) as f32;
+    // Median distance (cents) of note centres to their targets; octave slips of the re-analysis left out.
+    let off = |d: Vec<f32>| {
+        let mut d: Vec<f32> = d.into_iter().map(|c| (c * 100.0).abs()).filter(|c| *c < 600.0).collect();
+        d.sort_by(f32::total_cmp);
+        d.get(d.len() / 2).copied().unwrap_or(0.0)
+    };
     for n in &a.notes {
         eprintln!(
             "  {:6.3}-{:6.3} s  {:5.2} ({:+3.0} c)  vib {:4.0} c  {:5.1} dB",
@@ -450,24 +455,93 @@ fn real_take() {
             n.level
         );
     }
+    // Frames of the notes held (30 ms off each edge): cents from a target per note.
+    let held = |an: &Analysis, target: &dyn Fn(usize) -> f32| -> (f32, f32) {
+        let mut d = Vec::new();
+        for (i, n) in a.notes.iter().enumerate() {
+            let (fa, fb) = an.frames_of(n.start + 0.03, n.end - 0.03);
+            d.extend(an.pitch[fa..fb].iter().filter(|p| p.is_finite()).map(|p| ((p - target(i)) * 100.0).abs()));
+        }
+        d.sort_by(f32::total_cmp);
+        let within = d.iter().filter(|c| **c <= 10.0).count() as f32 / d.len().max(1) as f32;
+        (d.get(d.len() / 2).copied().unwrap_or(0.0), within * 100.0)
+    };
+    let nearest = |i: usize| a.notes[i].centre.round();
+    let (m0, w0) = held(&a, &nearest);
+    eprintln!("take as sung: frames {m0:.1} cents from their note (median), {w0:.0} % within 10 cents");
     let mut edits: Vec<NoteEdit> = a.notes.iter().map(NoteEdit::from_note).collect();
-    for e in &mut edits {
-        correct_pitch(e, 0, 1.0);
-        e.drift = 0.5;
+    for drift in [0.5f32, 1.0] {
+        for e in &mut edits {
+            *e = NoteEdit::from_note(&Note { start: e.start, end: e.end, centre: e.centre, vibrato: 0.0, level: 0.0 });
+            correct_pitch(e, 0, 1.0);
+            e.drift = drift;
+        }
+        let t = std::time::Instant::now();
+        let out = render(&s, &a, &edits);
+        let rsecs = t.elapsed().as_secs_f64();
+        crate::wav::write_sample(format!("/tmp/ponzik_take_corrected_drift{}.wav", (drift * 100.0) as u32), &out).expect("write");
+        let b = analyze(&out.left, &out.right, out.sample_rate);
+        let before: Vec<f32> = a.notes.iter().map(|n| n.centre).collect();
+        // The same spans measured again in the render.
+        let after: Vec<f32> = a.notes.iter().zip(&edits).filter_map(|(n, e)| Some(b.stats(n.start, n.end)?.centre - e.pitch)).collect();
+        let (m1, w1) = held(&b, &nearest);
+        if std::env::var_os("PONZIK_TAKE_NOTES").is_some() {
+            for (n, e) in a.notes.iter().zip(&edits) {
+                let got = b.stats(n.start, n.end).map_or(f32::NAN, |s| s.centre);
+                eprintln!("  {:6.3}-{:6.3}  {:6.2} -> {:6.2} got {:6.2} ({:+4.0} c)  vib {:3.0}", n.start, n.end, n.centre, e.pitch, got, (got - e.pitch) * 100.0, n.vibrato);
+            }
+        }
+        let peak = out.left.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        let rms = |x: &[f32]| (x.iter().map(|v| v * v).sum::<f32>() / x.len() as f32).sqrt();
+        eprintln!("take: largest second difference {:.4} in the render, {:.4} in the recording", d2_all(&out.left), d2_all(&s.left));
+        eprintln!(
+            "take, centres 100 %, drift {:.0} %: rendered in {rsecs:.2} s; note centres {:.1} -> {:.1} cents off their target (median); frames {m1:.1} cents (median), {w1:.0} % within 10 cents; {} notes found again; level {:+.2} dB, peak {peak:.3}",
+            drift * 100.0,
+            off(before.iter().map(|c| c - c.round()).collect()),
+            off(after),
+            b.notes.len(),
+            20.0 * (rms(&out.left) / rms(&s.left)).log10()
+        );
+        // One note moved again: only its region is redone.
+        let old = edits.clone();
+        let k = edits.len() / 2;
+        edits[k].pitch += 2.0;
+        let t = std::time::Instant::now();
+        let (_, regions) = render_regions(&s, &a, &edits, Some((&old, &out)), None, None).unwrap();
+        eprintln!(
+            "take: one note moved again, re-rendered {} region(s), {:.2} s of audio, in {:.3} s",
+            regions.len(),
+            regions.iter().map(|r| r.1 - r.0).sum::<f64>(),
+            t.elapsed().as_secs_f64()
+        );
+        edits = old;
     }
-    let t = std::time::Instant::now();
-    let out = render(&s, &a, &edits);
-    let rsecs = t.elapsed().as_secs_f64();
-    crate::wav::write_sample("/tmp/ponzik_take_corrected.wav", &out).expect("write");
-    let b = analyze(&out.left, &out.right, out.sample_rate);
-    let before: Vec<f32> = a.notes.iter().map(|n| n.centre).collect();
-    // The same spans measured again in the render.
-    let after: Vec<f32> = a.notes.iter().filter_map(|n| b.stats(n.start, n.end)).map(|n| n.centre).collect();
-    let peak = out.left.iter().fold(0.0f32, |m, v| m.max(v.abs()));
-    eprintln!(
-        "take: rendered in {rsecs:.2} s; mean distance to the nearest semitone {:.1} cents before, {:.1} after ({} notes found again); peak {peak:.3}",
-        off(&before),
-        off(&after),
-        b.notes.len()
-    );
+}
+
+#[test]
+fn correct_drift_flattens_the_curve() {
+    // Slow drift of ±40 cents, no vibrato: flattened, the pitch holds the centre.
+    let style = Style { vibrato_cents: 0.0, drift_cents: 40.0, glide: 0.05, ..Style::default() };
+    let m = [sung(0.1, 1.5, 60.3, 0)];
+    let x = sing(SR, &m, &style, 1.8);
+    let a = analyze(&x, &x, SR);
+    assert_eq!(a.notes.len(), 1);
+    let s = sample(x.clone());
+    let spread = |b: &Analysis| {
+        let (fa, fb) = b.frames_of(0.3, 1.45);
+        let v: Vec<f32> = b.pitch[fa..fb].iter().copied().filter(|p| p.is_finite()).collect();
+        let mean = v.iter().sum::<f32>() / v.len() as f32;
+        let dev = v.iter().map(|p| (p - mean).abs()).fold(0.0f32, f32::max) * 100.0;
+        (mean, dev)
+    };
+    let (_, before) = spread(&a);
+    for drift in [0.5f32, 1.0] {
+        let mut e = NoteEdit::from_note(&a.notes[0]);
+        correct_pitch(&mut e, 0, 1.0);
+        e.drift = drift;
+        let out = render(&s, &a, &[e]);
+        let b = analyze(&out.left, &out.right, SR);
+        let (mean, after) = spread(&b);
+        eprintln!("pitch edit: drift {:.0} %: deviation {before:.1} -> {after:.1} cents, mean {:.1} cents off 60", drift * 100.0, (mean - 60.0) * 100.0);
+    }
 }
