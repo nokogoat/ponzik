@@ -10232,6 +10232,12 @@ msgstr "\nTiré jusqu'au bord : replié"
 msgid "Drag: height of the lanes"
 msgstr "Glisser : hauteur des couloirs"
 
+msgid "Drag: width of the channel names"
+msgstr "Glisser : largeur des noms de canaux"
+
+msgid "Drag: width of the patterns"
+msgstr "Glisser : largeur des patterns"
+
 msgid "From this pattern's notes, then apply it to the project"
 msgstr "D'après les notes de ce pattern, puis l'appliquer au projet"
 
