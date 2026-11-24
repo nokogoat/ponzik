@@ -447,9 +447,12 @@ impl Keymap {
 
     /// Keysym of a keypad key as the protocol defines it: with Num Lock on,
     /// the second keysym (the digit) unless Shift is held, else the first one
-    /// (Home, the arrows…). `None` for the other keys.
+    /// (Home, the arrows…). `None` for the other keys. A key whose first
+    /// keysym moves (KP_Home to KP_Delete) counts too, even when its second
+    /// is a plain character: the French keypad's Delete key types a `.`.
     fn keypad_sym(&self, keycode: u8, state: u16) -> Option<u32> {
-        let second = self.sym(keycode, 1).filter(|&s| is_keypad(s))?;
+        let moves = self.sym(keycode, 0).is_some_and(|s| (0xff95..=0xff9f).contains(&s));
+        let second = self.sym(keycode, 1).filter(|&s| is_keypad(s) || moves)?;
         let numlock = state & self.numlock != 0;
         let shift = state & 0x1 != 0;
         Some(if numlock && !shift { second } else { self.sym(keycode, 0).unwrap_or(second) })
@@ -470,7 +473,10 @@ impl Keymap {
     /// Caractère produit par la touche selon Maj, Verr. Maj et AltGr (Mod5).
     fn text(&self, keycode: u8, state: u16) -> Option<char> {
         if let Some(sym) = self.keypad_sym(keycode, state) {
-            return keypad_char(sym);
+            return keypad_char(sym).or_else(|| match sym {
+                0x20..=0x7e | 0xa0..=0xff => char::from_u32(sym),
+                _ => None,
+            });
         }
         let shift = state & 0x1 != 0;
         let caps = state & 0x2 != 0;
@@ -1683,6 +1689,27 @@ mod tests {
             assert_eq!((k.key(kc, NUM), k.text(kc, NUM)), (Some(Key::Char(c)), Some(c)));
             assert_eq!((k.key(kc, 0), k.text(kc, 0)), (Some(Key::Char(c)), Some(c)), "without Num Lock too");
         }
+    }
+
+    /// The French layout as XWayland maps it: Delete / `.`, and operators
+    /// whose second keysym is a Unicode sign (Shift gives "−", not Num Lock).
+    #[test]
+    fn french_keypad_types_a_point_and_plain_operators() {
+        let k = Keymap {
+            min_keycode: 91,
+            per_keycode: 7,
+            syms: vec![
+                0xff9f, 0x2e, 0xff9f, 0x2e, 0x2c, 0x100202f, 0x2c, // 91: Delete / .
+                0xffad, 0x1002212, 0xffad, 0x1002212, 0x1002212, 0xffffff, 0x1008fe23, // 92: -
+                0xff95, 0xffb7, 0xff95, 0xffb7, 0x1002196, 0x10021d6, 0x1002196, // 93: 7 / Home
+            ],
+            numlock: 0x10,
+        };
+        assert_eq!((k.key(91, 0x10), k.text(91, 0x10)), (Some(Key::Char('.')), Some('.')));
+        assert_eq!((k.key(91, 0), k.text(91, 0)), (Some(Key::Delete), None));
+        assert_eq!((k.key(92, 0x10), k.text(92, 0x10)), (Some(Key::Char('-')), Some('-')));
+        assert_eq!((k.key(92, 0), k.text(92, 0)), (Some(Key::Char('-')), Some('-')));
+        assert_eq!((k.key(93, 0x10), k.text(93, 0x10)), (Some(Key::Char('7')), Some('7')));
     }
 
     #[test]
