@@ -357,6 +357,14 @@ fn has_chords(notes: &[Note]) -> bool {
     starts.windows(2).any(|w| w[0] == w[1])
 }
 
+/// Height of the preview in a tool's panel.
+const TOOL_PREVIEW_H: f32 = 150.0;
+
+/// The Apply (or Generate) button of a tool's panel `r`.
+fn tool_apply_rect(r: Rect) -> Rect {
+    Rect::new(r.right() - 14.0 - 120.0, r.bottom() - 46.0, 120.0, 34.0)
+}
+
 fn pick<T: Copy + PartialEq>(all: &[T], v: T) -> usize {
     all.iter().position(|&x| x == v).unwrap_or(0)
 }
@@ -884,18 +892,23 @@ impl App {
 
     /// A tool's panel: settings, live preview, re-roll and apply. Returns
     /// false when it closes.
+    /// Where a tool's panel opens, under `anchor` and on screen.
+    pub(super) fn tool_panel_rect(&self, tool: Tool, anchor: Rect, screen: Rect) -> Rect {
+        let w = 440.0;
+        let h = 74.0 + TOOL_PREVIEW_H + 14.0 + self.tool_rows(tool) as f32 * 70.0 + 58.0;
+        let x = anchor.x.min(screen.right() - 12.0 - w).max(12.0);
+        let mut y = anchor.bottom() + 8.0;
+        if y + h > screen.bottom() - 8.0 {
+            y = (screen.bottom() - 8.0 - h).max(8.0);
+        }
+        Rect::new(x, y, w, h)
+    }
+
     pub(super) fn tool_popup(&mut self, c: &mut Canvas, input: &Input, tool: Tool, anchor: Rect, screen: Rect) -> bool {
         let t = self.theme;
         let open = self.anim.to(wid("popup", 0, 0), 1.0, T_HOVER);
-        let rows = self.tool_rows(tool);
-        let (w, preview_h) = (440.0, 150.0);
-        let h = 74.0 + preview_h + 14.0 + rows as f32 * 70.0 + 58.0;
-        let x = anchor.x.min(screen.right() - 12.0 - w).max(12.0);
-        let mut y0 = anchor.bottom() + 8.0;
-        if y0 + h > screen.bottom() - 8.0 {
-            y0 = (screen.bottom() - 8.0 - h).max(8.0);
-        }
-        let r = Rect::new(x, y0 + (1.0 - open) * 6.0, w, h);
+        let r = self.tool_panel_rect(tool, anchor, screen).translate(0.0, (1.0 - open) * 6.0);
+        let (w, preview_h) = (r.w, TOOL_PREVIEW_H);
         c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, t.shade(90.0 * open));
         c.fill_rrect(r, 14.0, t.panel);
         c.stroke_rrect(r, 14.0, 1.0, t.hairline.alpha(1.6));
@@ -961,7 +974,7 @@ impl App {
             }
             self.text(c, self.f.mono, 11.0, b.right() + 10.0, foot_y + 17.0, &format!("#{}", self.piano.tool.seed % 10_000), t.muted);
         }
-        let apply_r = Rect::new(r.right() - 14.0 - 120.0, foot_y, 120.0, 34.0);
+        let apply_r = tool_apply_rect(r);
         let can = res.is_some();
         let label = if tool.generator() { tr("Generate") } else { tr("Apply") };
         // With nothing to change the button stays, quiet: a click says why.
@@ -1173,3 +1186,351 @@ mod tests {
     }
 }
 
+/// The tools as a user reaches them: the wand of the piano roll, a row of
+/// its menu, then the Apply button of the panel, all through `App::frame`.
+#[cfg(test)]
+mod ui_tests {
+    use std::sync::OnceLock;
+
+    use super::*;
+    use crate::gui::app::{Focus, View};
+
+    const W: usize = 1600;
+    const H: usize = 960;
+    const CH: usize = 4;
+
+    struct Ui {
+        app: App,
+        c: Canvas,
+        i: Input,
+    }
+
+    fn n(start: u32, len: u32, key: u8) -> Note {
+        Note::new(start, len, key, 0.8)
+    }
+
+    fn sk(notes: &[Note]) -> Vec<(u32, u32, u8)> {
+        notes.iter().map(|n| (n.start, n.len, n.key)).collect()
+    }
+
+    impl Ui {
+        /// The piano roll on channel `CH`, which holds `notes`.
+        fn new(notes: &[Note]) -> Self {
+            let project = ponzik_project::demo_project();
+            let (_engine, handle) = project.build_engine(48_000.0, &|_| None);
+            let mut app = App::new(handle, project, 48_000);
+            app.view = View::Piano;
+            app.focus = Focus::Channel(CH);
+            app.project.scale = ScaleKind::Chromatic;
+            let pat = app.project.current_pattern;
+            app.project.patterns[pat].notes[CH] = notes.to_vec();
+            app.commit("Notes");
+            app.break_undo_merge();
+            let mut ui = Self { app, c: Canvas::new(W, H), i: Input::default() };
+            ui.frames(5);
+            ui
+        }
+
+        fn frame(&mut self) {
+            self.app.frame(&mut self.c, &self.i, 1.0 / 60.0);
+            self.i.keys.clear();
+            (self.i.pressed, self.i.released) = (false, false);
+        }
+
+        fn frames(&mut self, k: usize) {
+            for _ in 0..k {
+                self.frame();
+            }
+        }
+
+        /// Moves there, presses, releases: as a mouse does, one event a frame.
+        fn click(&mut self, (x, y): (f32, f32)) {
+            (self.i.x, self.i.y, self.i.inside) = (x, y, true);
+            self.frame();
+            (self.i.pressed, self.i.down) = (true, true);
+            self.frame();
+            (self.i.released, self.i.down) = (true, false);
+            self.frame();
+        }
+
+        fn popup(&self) -> Option<&Popup> {
+            self.app.popup.as_ref().map(|p| &p.kind)
+        }
+
+        /// Opens `tool`'s panel from the wand and its menu.
+        fn open(&mut self, tool: Tool) {
+            self.click(wand());
+            assert!(matches!(self.popup(), Some(Popup::Tools)), "the wand opens the tools menu");
+            let row = Tool::TRANSFORMS.into_iter().chain(Tool::GENERATORS).position(|t| t == tool).unwrap();
+            let rect = self.app.popup.as_ref().unwrap().nav.rows[row];
+            self.click(rect.center());
+            assert!(matches!(self.popup(), Some(Popup::Tool(t)) if *t == tool), "its row opens the panel");
+            // Its fade-in done.
+            self.frames(20);
+        }
+
+        fn panel(&self) -> Rect {
+            let p = self.app.popup.as_ref().expect("the panel is open");
+            let Popup::Tool(tool) = p.kind else { panic!("not a tool panel") };
+            self.app.tool_panel_rect(tool, p.anchor, Rect::new(0.0, 0.0, W as f32, H as f32))
+        }
+
+        fn apply_button(&self) -> (f32, f32) {
+            tool_apply_rect(self.panel()).center()
+        }
+
+        fn notes(&self) -> Vec<Note> {
+            self.app.notes(CH).to_vec()
+        }
+
+        /// Applies `tool` with a click on Apply: one undo step, sent to the
+        /// engine, what the preview showed; undoing it restores the notes.
+        /// Returns the notes it gave.
+        fn apply(&mut self, tool: Tool) -> Vec<Note> {
+            let before = self.app.project.clone();
+            let old = self.notes();
+            let steps = self.app.history_len();
+            self.open(tool);
+            let preview = self.app.tool_result(tool).expect("something to work on");
+            assert!(!preview.unchanged(), "{tool:?} changes these notes");
+            self.click(self.apply_button());
+            assert!(self.popup().is_none(), "Apply closes the panel");
+            let after = self.notes();
+            assert_ne!(after, old, "{tool:?} changed nothing");
+            assert_eq!(self.app.history_len(), steps + 1, "{tool:?}: one undo step");
+            assert!(self.app.synced == self.app.project, "{tool:?}: the engine has it");
+            let cmds = crate::gui::sync::diff(&before, &self.app.project, 48_000.0, &|_| None);
+            assert!(cmds.iter().any(|c| format!("{c:?}").contains("SetSequence")), "{tool:?}: the notes reach the engine");
+            // What the preview showed is what it did.
+            let mut gone = preview.replaced.clone();
+            gone.sort_unstable();
+            let mut expected = old.clone();
+            for i in gone.into_iter().rev() {
+                expected.remove(i);
+            }
+            expected.extend(preview.after);
+            expected.sort_by_key(|n| (n.start, n.key));
+            assert_eq!(sk(&after), sk(&expected), "{tool:?}: the preview was right");
+
+            self.app.undo();
+            assert!(self.app.project == before, "{tool:?}: undo restores the notes");
+            assert!(self.app.synced == self.app.project, "{tool:?}: and the engine follows");
+            after
+        }
+    }
+
+    /// The wand of the piano roll toolbar, found by clicking along it.
+    fn wand() -> (f32, f32) {
+        static AT: OnceLock<(f32, f32)> = OnceLock::new();
+        *AT.get_or_init(|| {
+            let mut x = W as f32 - 120.0;
+            while x > W as f32 * 0.4 {
+                let mut ui = Ui::new(&[]);
+                ui.click((x, 86.0));
+                if matches!(ui.popup(), Some(Popup::Tools)) {
+                    // Its right edge: the middle is a little to the left.
+                    return (x - 16.0, 86.0);
+                }
+                x -= 12.0;
+            }
+            panic!("no tools button in the piano roll");
+        })
+    }
+
+    fn chord_c() -> Vec<Note> {
+        vec![n(0, 96, 48), n(0, 96, 52), n(0, 96, 55)]
+    }
+
+    #[test]
+    fn arpeggiate_from_the_wand() {
+        let mut notes = chord_c();
+        notes.push(n(192, 48, 60));
+        let mut ui = Ui::new(&notes);
+        ui.app.piano.selected = vec![0, 1, 2];
+        let after = ui.apply(Tool::Arpeggiate);
+        // The chord walks up in sixteenths; the note left out stays.
+        assert_eq!(sk(&after), [(0, 24, 48), (24, 24, 52), (48, 24, 55), (72, 24, 48), (192, 48, 60)]);
+    }
+
+    #[test]
+    fn arpeggiate_a_melody_without_selection() {
+        // What a user writes first: single notes, nothing selected.
+        let mut ui = Ui::new(&[n(0, 48, 60), n(48, 48, 62)]);
+        let after = ui.apply(Tool::Arpeggiate);
+        assert_eq!(sk(&after), [(0, 24, 60), (24, 24, 64), (48, 24, 62), (72, 24, 66)]);
+        // In a scale, the chord is the scale's: D minor in C major.
+        let mut ui = Ui::new(&[n(0, 72, 62)]);
+        ui.app.project.key = 0;
+        ui.app.project.scale = ScaleKind::Major;
+        ui.app.commit("Scale");
+        let after = ui.apply(Tool::Arpeggiate);
+        assert_eq!(sk(&after), [(0, 24, 62), (24, 24, 65), (48, 24, 69)]);
+    }
+
+    #[test]
+    fn strum_from_the_wand() {
+        let mut ui = Ui::new(&chord_c());
+        assert_eq!(sk(&ui.apply(Tool::Strum)), [(0, 96, 48), (6, 90, 52), (12, 84, 55)]);
+    }
+
+    #[test]
+    fn flam_from_the_wand() {
+        let mut ui = Ui::new(&[n(24, 48, 60)]);
+        let after = ui.apply(Tool::Flam);
+        assert_eq!(sk(&after), [(18, 6, 60), (24, 48, 60)]);
+        assert!((after[0].vel - 0.4).abs() < 1e-6, "a softer grace note");
+    }
+
+    #[test]
+    fn legato_from_the_wand() {
+        let mut ui = Ui::new(&[n(0, 24, 60), n(48, 24, 62), n(96, 24, 64)]);
+        assert_eq!(sk(&ui.apply(Tool::Legato)), [(0, 48, 60), (48, 48, 62), (96, 24, 64)]);
+    }
+
+    #[test]
+    fn staccato_from_the_wand() {
+        let mut ui = Ui::new(&[n(0, 48, 60), n(48, 96, 62)]);
+        assert_eq!(sk(&ui.apply(Tool::Staccato)), [(0, 24, 60), (48, 48, 62)]);
+    }
+
+    #[test]
+    fn reverse_from_the_wand() {
+        let mut ui = Ui::new(&[n(0, 24, 60), n(48, 48, 62)]);
+        assert_eq!(sk(&ui.apply(Tool::Reverse)), [(0, 48, 62), (72, 24, 60)]);
+    }
+
+    #[test]
+    fn invert_from_the_wand() {
+        let mut ui = Ui::new(&[n(0, 24, 60), n(24, 24, 64), n(48, 24, 67)]);
+        // Around the middle key (63), in semitones without a scale.
+        assert_eq!(sk(&ui.apply(Tool::Invert)), [(0, 24, 66), (24, 24, 62), (48, 24, 59)]);
+    }
+
+    #[test]
+    fn stretch_from_the_wand() {
+        let mut ui = Ui::new(&[n(0, 24, 60), n(24, 24, 62)]);
+        assert_eq!(sk(&ui.apply(Tool::Stretch)), [(0, 48, 60), (48, 48, 62)]);
+    }
+
+    #[test]
+    fn glue_from_the_wand() {
+        let mut ui = Ui::new(&[n(0, 48, 60), n(24, 48, 60), n(96, 24, 64)]);
+        assert_eq!(sk(&ui.apply(Tool::Glue)), [(0, 72, 60), (96, 24, 64)]);
+    }
+
+    #[test]
+    fn quantize_from_the_wand() {
+        let mut ui = Ui::new(&[n(5, 24, 60), n(30, 24, 62)]);
+        assert_eq!(sk(&ui.apply(Tool::Quantize)), [(0, 24, 60), (24, 24, 62)]);
+    }
+
+    #[test]
+    fn humanize_from_the_wand() {
+        let notes: Vec<Note> = (0..8).map(|i| n(i * 48 + 24, 24, 60)).collect();
+        let mut ui = Ui::new(&notes);
+        let after = ui.apply(Tool::Humanize);
+        assert_eq!(after.len(), notes.len());
+        // A quarter of a step at most, by default.
+        assert!(after.iter().zip(&notes).all(|(a, b)| a.start.abs_diff(b.start) <= TICKS_PER_STEP / 4));
+    }
+
+    #[test]
+    fn fit_to_scale_from_the_wand() {
+        let mut ui = Ui::new(&[n(0, 24, 61), n(24, 24, 60), n(48, 24, 66)]);
+        ui.app.project.key = 9;
+        ui.app.project.scale = ScaleKind::Minor;
+        ui.app.commit("Scale");
+        let after = ui.apply(Tool::ScaleCorrect);
+        assert!(after.iter().all(|n| ScaleKind::Minor.contains(9, n.key)), "{:?}", sk(&after));
+        assert_eq!(after.iter().filter(|n| n.key == 60).count(), 1 + usize::from(ScaleKind::Minor.snap(9, 61) == 60));
+    }
+
+    #[test]
+    fn euclid_from_the_wand() {
+        let mut ui = Ui::new(&[n(0, 24, 60)]);
+        let after = ui.apply(Tool::Euclid);
+        // Three pulses over eight sixteenths, in place of the note.
+        let starts: Vec<u32> = after.iter().map(|n| n.start).take_while(|&s| s < 8 * TICKS_PER_STEP).collect();
+        assert_eq!(starts, [0, 72, 144]);
+    }
+
+    #[test]
+    fn drum_rhythm_from_the_wand() {
+        let mut ui = Ui::new(&[]);
+        assert!(!ui.apply(Tool::Rhythm).is_empty());
+    }
+
+    #[test]
+    fn melody_from_the_wand() {
+        let mut ui = Ui::new(&[]);
+        ui.app.project.key = 9;
+        ui.app.project.scale = ScaleKind::Minor;
+        ui.app.commit("Scale");
+        let after = ui.apply(Tool::Melody);
+        assert!(!after.is_empty());
+        assert!(after.iter().all(|n| ScaleKind::Minor.contains(9, n.key)));
+    }
+
+    #[test]
+    fn bassline_from_the_wand() {
+        let mut ui = Ui::new(&[]);
+        let bar = TICKS_PER_BAR;
+        let pat = ui.app.project.current_pattern;
+        ui.app.project.patterns[pat].len = 2 * bar;
+        ui.app.project.patterns[pat].notes[3] =
+            [(0, 48), (0, 52), (0, 55), (bar, 45), (bar, 48), (bar, 52)].map(|(s, k)| n(s, bar, k)).to_vec();
+        ui.app.commit("Chords");
+        ui.app.break_undo_merge();
+        ui.app.piano.tool.bass_rhythm = BassRhythm::Sustained;
+        let after = ui.apply(Tool::Bassline);
+        // It follows the chords of channel 3: C then A.
+        assert_eq!(after.iter().map(|n| (n.start, n.key)).take(2).collect::<Vec<_>>(), [(0, 36), (bar, 45)]);
+    }
+
+    #[test]
+    fn chord_progression_from_the_wand() {
+        let mut ui = Ui::new(&[]);
+        assert!(has_chords(&ui.apply(Tool::Chords)));
+    }
+
+    #[test]
+    fn enter_applies_too() {
+        let mut ui = Ui::new(&chord_c());
+        let steps = ui.app.history_len();
+        ui.open(Tool::Arpeggiate);
+        ui.i.keys.push((Key::Enter, Default::default()));
+        ui.frame();
+        assert!(ui.popup().is_none());
+        assert_eq!(ui.notes().len(), 4);
+        assert_eq!(ui.app.history_len(), steps + 1);
+    }
+
+    #[test]
+    fn a_tool_with_nothing_to_change_says_why_and_stays_open() {
+        // Single notes have no chord to strum.
+        let notes = [n(0, 48, 60), n(48, 48, 62)];
+        let mut ui = Ui::new(&notes);
+        let steps = ui.app.history_len();
+        ui.open(Tool::Strum);
+        assert!(ui.app.tool_result(Tool::Strum).unwrap().unchanged());
+        ui.click(ui.apply_button());
+        assert!(matches!(ui.popup(), Some(Popup::Tool(Tool::Strum))), "still open, to change something");
+        assert_eq!(ui.notes(), notes);
+        assert_eq!(ui.app.history_len(), steps, "no empty undo step");
+
+        // An arpeggio that keeps single notes as they are does nothing either…
+        let mut ui = Ui::new(&notes);
+        ui.app.piano.tool.arp_chord = 0;
+        ui.open(Tool::Arpeggiate);
+        ui.click(ui.apply_button());
+        assert_eq!(ui.notes(), notes);
+        // …until the Single notes setting (third field) turns them into triads.
+        let r = ui.panel();
+        let field = (r.x + 14.0 + 2.0 * 104.0 + 80.0, r.y + 62.0 + TOOL_PREVIEW_H + 14.0 + 35.0);
+        ui.click(field);
+        assert_eq!(ui.app.piano.tool.arp_chord, 1);
+        ui.click(ui.apply_button());
+        assert!(ui.popup().is_none());
+        assert_eq!(ui.notes().len(), 4);
+    }
+}
