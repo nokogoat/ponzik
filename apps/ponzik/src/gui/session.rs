@@ -427,7 +427,7 @@ impl App {
                 // Progression dans la boucle du clip.
                 if let Some(l) = live.iter().find(|l| l.row == r && (l.start as f64) <= self.position && self.position < l.end as f64) {
                     let len = self.project.session_len(k, r).max(1) as f64;
-                    let slot_pos = ponzik_engine::SessionSlot { pattern: 0, start: l.start, end: l.end, offset: l.offset, period: l.period };
+                    let slot_pos = ponzik_engine::SessionSlot { pattern: 0, start: l.start, end: l.end, offset: l.offset, period: l.period, soft: 0 };
                     let f = (slot_pos.local(self.position).max(0.0) % len / len) as f32;
                     c.fill_rrect(Rect::new(cell.x + 6.0, cell.bottom() - 6.0, (cell.w - 12.0) * f, 3.0), 1.5, t.text);
                 }

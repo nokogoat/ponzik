@@ -388,7 +388,7 @@ impl Project {
             .iter()
             .filter_map(|l| {
                 let pattern = self.session_pattern(l.col, l.row)?;
-                Some(SessionSlot { pattern, start: l.start, end: l.end, offset: l.offset, period: l.period })
+                Some(SessionSlot { pattern, start: l.start, end: l.end, offset: l.offset, period: l.period, soft: 0 })
             })
             .collect()
     }
@@ -468,7 +468,7 @@ impl Project {
             if t.end <= t.start {
                 continue;
             }
-            let live = SessionSlot { pattern: 0, start: t.start, end: t.end, offset: t.offset, period: t.period };
+            let live = SessionSlot { pattern: 0, start: t.start, end: t.end, offset: t.offset, period: t.period, soft: 0 };
             // Pieces: one per repeat, else the whole take.
             let mut pieces = Vec::new();
             if t.period > 0 {
@@ -541,7 +541,7 @@ pub struct Playing {
 
 impl Playing {
     fn slot(&self) -> SessionSlot {
-        SessionSlot { pattern: 0, start: self.start, end: u32::MAX, offset: self.offset, period: self.period }
+        SessionSlot { pattern: 0, start: self.start, end: u32::MAX, offset: self.offset, period: self.period, soft: 0 }
     }
 }
 
