@@ -475,6 +475,10 @@ pub fn from_json(j: &Json) -> (Workspace, Keymap, Option<String>) {
 }
 
 fn settings_path() -> std::path::PathBuf {
+    // Tests drag splitters and change settings: never over the user's own file.
+    if cfg!(test) {
+        return std::env::temp_dir().join(format!("ponzik-test-{}", std::process::id())).join("settings.json");
+    }
     compat::config_dir().join("settings.json")
 }
 
