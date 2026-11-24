@@ -547,10 +547,10 @@ impl App {
         }
     }
 
-    /// `PONZIK_CURVES=attack,release,cutoff,bend,song,stack,muted,list,other,param:<name>,show:<n>`:
+    /// `PONZIK_CURVES=attack,release,cutoff,bend,song,stack,muted,list,menu,other,param:<name>,show:<n>`:
     /// curves drawn in the current pattern on the piano roll's channel (its
     /// parameters by name), a song curve, the second stacked under the first,
-    /// the last one muted, the automation list open, a curve on another
+    /// the last one muted, the automation list or the first curve's knob menu open, a curve on another
     /// channel; `show:n` jumps to the n-th curve of the list.
     pub fn screenshot_curves(&mut self, spec: &str) {
         let Some(ch) = self.piano_channel() else { return };
@@ -618,6 +618,16 @@ impl App {
                     }
                 }
                 "list" => self.open_popup(super::app::Popup::AutomationList, Rect::default()),
+                "menu" => {
+                    // The first curve's knob menu, as a right-click opens it.
+                    if let Some(target) = drawn.first().and_then(|l| l.target(ch))
+                        && let Some((_, info)) = self.target_info(target)
+                    {
+                        let value = self.auto_value(target).unwrap_or(info.default);
+                        let popup = super::app::Popup::Param { target, value, default: info.default };
+                        self.open_popup(popup, Rect::new(780.0, 560.0, 0.0, 0.0));
+                    }
+                }
                 p => {
                     if let Some(n) = p.strip_prefix("show:").and_then(|n| n.parse::<usize>().ok())
                         && let Some(row) = self.curve_rows().get(n).cloned()
