@@ -6673,11 +6673,41 @@ msgstr "Aucune note"
 msgid "No notes to transform"
 msgstr "Aucune note à transformer"
 
+msgid "No change"
+msgstr "Aucun changement"
+
+msgid "No change with these settings"
+msgstr "Aucun changement avec ces réglages"
+
 msgid "Single notes"
 msgstr "Notes seules"
 
 msgid "Keep"
 msgstr "Garder"
+
+msgid "No chords: try Single notes · Triad"
+msgstr "Pas d'accord : essayez Notes seules · Triade"
+
+msgid "Notes shorter than the rate: pick a faster one"
+msgstr "Notes plus courtes que la vitesse : accélérez-la"
+
+msgid "No chords to strum"
+msgstr "Aucun accord à gratter"
+
+msgid "Each note already reaches the next"
+msgstr "Chaque note touche déjà la suivante"
+
+msgid "No overlapping notes of the same pitch"
+msgstr "Aucune note superposée de même hauteur"
+
+msgid "Already on the grid"
+msgstr "Déjà sur la grille"
+
+msgid "Every note is already in the scale"
+msgstr "Toutes les notes sont déjà dans la gamme"
+
+msgid "Backwards, these notes are the same"
+msgstr "À l'envers, ces notes restent les mêmes"
 
 msgid "No settings: what you see is what you get"
 msgstr "Aucun réglage : le résultat est sous vos yeux"

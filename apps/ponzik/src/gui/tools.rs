@@ -339,6 +339,24 @@ pub struct ToolResult {
     pub after: Vec<Note>,
 }
 
+impl ToolResult {
+    /// Applying it changes nothing: the same notes come back, in any order.
+    pub fn unchanged(&self) -> bool {
+        let order = |mut v: Vec<Note>| {
+            v.sort_by(|a, b| (a.start, a.key, a.len).cmp(&(b.start, b.key, b.len)).then(a.vel.total_cmp(&b.vel)));
+            v
+        };
+        order(self.before.clone()) == order(self.after.clone())
+    }
+}
+
+/// True when some notes start together.
+fn has_chords(notes: &[Note]) -> bool {
+    let mut starts: Vec<u32> = notes.iter().map(|n| n.start).collect();
+    starts.sort_unstable();
+    starts.windows(2).any(|w| w[0] == w[1])
+}
+
 fn pick<T: Copy + PartialEq>(all: &[T], v: T) -> usize {
     all.iter().position(|&x| x == v).unwrap_or(0)
 }
@@ -449,12 +467,35 @@ impl App {
         self.open_popup(Popup::Tool(tool), anchor);
     }
 
-    /// Applies `tool`: one undo step.
+    /// Why `tool` leaves these notes as they are (to translate).
+    fn no_change_reason(&self, tool: Tool, res: &ToolResult) -> &'static str {
+        match tool {
+            Tool::Arpeggiate if self.piano.tool.arp_chord == 0 && !has_chords(&res.before) => {
+                tr_noop("No chords: try Single notes · Triad")
+            }
+            Tool::Arpeggiate => tr_noop("Notes shorter than the rate: pick a faster one"),
+            Tool::Strum if !has_chords(&res.before) => tr_noop("No chords to strum"),
+            Tool::Legato => tr_noop("Each note already reaches the next"),
+            Tool::Glue => tr_noop("No overlapping notes of the same pitch"),
+            Tool::Quantize => tr_noop("Already on the grid"),
+            Tool::ScaleCorrect if self.project.scale == ScaleKind::Chromatic => tr_noop("Pick a scale first, at the top"),
+            Tool::ScaleCorrect => tr_noop("Every note is already in the scale"),
+            Tool::Reverse => tr_noop("Backwards, these notes are the same"),
+            _ => tr_noop("No change with these settings"),
+        }
+    }
+
+    /// Applies `tool`: one undo step. Nothing happens (and a toast says why)
+    /// when it would leave the notes as they are.
     pub(super) fn apply_tool(&mut self, tool: Tool) {
         let Some(r) = self.tool_result(tool) else {
             self.toast(tr("No notes to transform"));
             return;
         };
+        if r.unchanged() {
+            self.toast(tr(self.no_change_reason(tool, &r)));
+            return;
+        }
         let mut gone = r.replaced.clone();
         gone.sort_unstable();
         let count = r.after.len();
@@ -866,8 +907,10 @@ impl App {
         self.text(c, self.f.sans_med, 15.0, badge.right() + 10.0, r.y + 24.0, tr(tool.name()), t.text);
         self.text_fit(c, self.f.sans, 12.0, badge.right() + 10.0, r.y + 42.0, tr(tool.tip()), w - 80.0 - 120.0, t.muted);
         let res = self.tool_result(tool);
+        let same = res.as_ref().is_some_and(ToolResult::unchanged);
         let target = match (&res, tool.generator()) {
             (None, _) => tr("No notes").to_string(),
+            (Some(_), _) if same => tr("No change").to_string(),
             (Some(res), true) if !res.before.is_empty() => {
                 tr_fmt_n!("Replaces {} note", "Replaces {} notes", res.before.len(), res.before.len())
             }
@@ -887,6 +930,15 @@ impl App {
                     roll = Rect::new(ring.right() + 8.0, preview.y, preview.w - ring.w - 8.0, preview.h);
                 }
                 self.tool_preview(c, roll, res, tool.generator(), reveal);
+                if same {
+                    // Why nothing moves, over the preview.
+                    let why = tr(self.no_change_reason(tool, res));
+                    let tw = self.fonts.measure(self.f.sans, 12.0, why).min(preview.w - 40.0);
+                    let tag = Rect::new(preview.x + (preview.w - tw) * 0.5 - 12.0, preview.bottom() - 34.0, tw + 24.0, 26.0);
+                    c.fill_rrect(tag, 8.0, t.raised_hi);
+                    c.stroke_rrect(tag, 8.0, 1.0, t.hairline.alpha(1.6));
+                    self.text_fit(c, self.f.sans, 12.0, tag.x + 12.0, tag.y + 13.0, why, tw, t.text2);
+                }
             }
             None => {
                 c.fill_rrect(preview, 10.0, t.well);
@@ -912,7 +964,9 @@ impl App {
         let apply_r = Rect::new(r.right() - 14.0 - 120.0, foot_y, 120.0, 34.0);
         let can = res.is_some();
         let label = if tool.generator() { tr("Generate") } else { tr("Apply") };
-        let apply = can && self.lab_button(c, input, wid("tool-apply", 0, 0), apply_r, Some(Icon::Check), label, 1, tr("Enter"));
+        // With nothing to change the button stays, quiet: a click says why.
+        let style = if same { 0 } else { 1 };
+        let apply = can && self.lab_button(c, input, wid("tool-apply", 0, 0), apply_r, Some(Icon::Check), label, style, tr("Enter"));
         let enter = can && input.keys.iter().any(|(k, _)| *k == Key::Enter);
         if rerolled {
             self.piano.tool.seed = ponzik_engine::splitmix(self.piano.tool.seed ^ (self.time.to_bits() as u64)) % 1_000_000 + 1;
@@ -922,7 +976,10 @@ impl App {
         }
         if apply || enter {
             self.apply_tool(tool);
-            return false;
+            // Left open when nothing changed, to pick other settings.
+            if !same {
+                return false;
+            }
         }
         let clicked = input.pressed || input.right_pressed;
         !clicked || r.contains(input.x, input.y) || anchor.contains(input.x, input.y)
@@ -1115,3 +1172,4 @@ mod tests {
         assert_eq!(app.notes(4).iter().map(|n| (n.start, n.key)).collect::<Vec<_>>(), [(0, 36), (bar, 45)]);
     }
 }
+
