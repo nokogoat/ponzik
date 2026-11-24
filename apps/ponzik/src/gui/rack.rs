@@ -8,13 +8,13 @@ use ponzik_window::Cursor;
 use super::Input;
 use super::app::{App, Focus, Popup, Rename, View};
 use super::lessons::Spot;
+use super::split::{Axis, RACK_SPAN, Split};
 use super::dnd::DropTarget;
 use super::theme::*;
 use super::widgets::{Icon, draw_icon, wid};
 
 const ROW_H: f32 = 56.0;
 const ROW_GAP: f32 = 6.0;
-const LEFT: f32 = 252.0;
 const MAX_STEPS: usize = 64;
 
 pub fn note_name(note: u8) -> String {
@@ -105,7 +105,8 @@ impl App {
         self.drop_zone(input, body, DropTarget::Rack);
         let inner = body.inset(16.0);
         let steps = self.steps_in_pattern();
-        let pads = Rect::new(inner.x + LEFT, inner.y, inner.w - LEFT, inner.h);
+        let left_w = self.rack_left();
+        let pads = Rect::new(inner.x + left_w, inner.y, inner.w - left_w, inner.h);
         let geom = |i: usize| -> (f32, f32) {
             let groups = steps.div_ceil(4);
             let gaps = (steps - groups) as f32 * 4.0 + (groups - 1) as f32 * 12.0;
@@ -180,7 +181,7 @@ impl App {
             self.tour_anchor(0, Rect::new(pads.x, top.max(rows.y), pads.w, bottom - top.max(rows.y)));
             self.spot(Spot::RackSteps, Rect::new(pads.x, top.max(rows.y), pads.w, bottom - top.max(rows.y)));
         }
-        let add = Rect::new(rows.x, y + 2.0, LEFT - 12.0, 44.0);
+        let add = Rect::new(rows.x, y + 2.0, left_w - 12.0, 44.0);
         let id = wid("rack-add", 0, 0);
         let hov = self.hovered(input, id, add);
         let hv = self.hover_anim(id, hov);
@@ -199,6 +200,29 @@ impl App {
             self.empty_state(c, Rect::new(pads.x, rows.y, pads.w, 160.0), Icon::Instrument, tr("Drop an instrument here"));
         }
         c.set_clip(Some(prev));
+        self.rack_splitter(c, input, inner);
+    }
+
+    /// Width of the names column (channel, volume and pan), dragged at its edge.
+    fn rack_left(&self) -> f32 {
+        RACK_SPAN.fit(self.layout.sizes.rack_w)
+    }
+
+    /// The splitter at the right of the channel names.
+    fn rack_splitter(&mut self, c: &mut Canvas, input: &Input, inner: Rect) {
+        let left_w = self.rack_left();
+        let zone = Rect::new(inner.x + left_w - 11.0, inner.y, 10.0, inner.h);
+        match self.splitter(c, input, "rack-names", zone, Axis::Columns, left_w, 1.0, RACK_SPAN, tr("Drag: width of the channel names")) {
+            Some(Split::Size(w)) => self.layout.sizes.rack_w = w,
+            Some(Split::Reset) => {
+                self.layout.sizes.rack_w = RACK_SPAN.default;
+                self.save_settings();
+            }
+            _ => {}
+        }
+        if self.splitter_released(input, "rack-names") {
+            self.save_settings();
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -217,7 +241,8 @@ impl App {
         self.drop_zone(input, row, DropTarget::Channel(ch));
         let selected = self.selected_channel() == Some(ch);
         let sel = self.anim.to(wid("row-sel", ch, 0), selected as u8 as f32, T_HOVER);
-        let left = Rect::new(row.x, row.y, LEFT - 12.0, row.h);
+        let left_w = self.rack_left();
+        let left = Rect::new(row.x, row.y, left_w - 12.0, row.h);
         if sel > 0.01 {
             c.fill_rrect(left, 12.0, t.raised.alpha(sel));
             c.fill_rrect(Rect::new(left.x, left.y + 14.0, 3.0, left.h - 28.0), 1.5, t.select.alpha(sel));
@@ -247,7 +272,7 @@ impl App {
         }
 
         // Nom : clic pour sélectionner (et pré-écouter), double-clic pour renommer.
-        let name_r = Rect::new(row.x + 46.0, row.y, LEFT - 46.0 - 12.0 - 64.0 - 30.0, row.h);
+        let name_r = Rect::new(row.x + 46.0, row.y, left_w - 46.0 - 12.0 - 64.0 - 30.0, row.h);
         let nid = wid("ch-name", ch, 0);
         let nhov = self.hovered(input, nid, name_r);
         if nhov && input.right_pressed {
@@ -356,8 +381,8 @@ impl App {
         }
 
         // Volume et pan du canal, petits potards.
-        let vol_c = (row.x + LEFT - 12.0 - 52.0, cy);
-        let pan_c = (row.x + LEFT - 12.0 - 20.0, cy);
+        let vol_c = (row.x + left_w - 12.0 - 52.0, cy);
+        let pan_c = (row.x + left_w - 12.0 - 20.0, cy);
         let gain = self.project.channels[ch].gain;
         if let Some(v) = self.mini_knob(c, input, wid("ch-vol", ch, 0), vol_c, (gain / 1.25).clamp(0.0, 1.0), false) {
             self.project.channels[ch].gain = v * 1.25;
