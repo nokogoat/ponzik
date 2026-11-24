@@ -479,6 +479,8 @@ pub enum Action {
     ExtractAudioGroove(usize),
     /// An audio clip's monophonic line into a pattern.
     AudioToNotes(usize),
+    /// The Pitch Editor on an audio clip.
+    EditPitch(usize),
     /// Check, install, restart, update settings.
     Update(super::updates::UpdateOp),
     /// Loop, repeat or duplicate a playlist clip.
@@ -780,6 +782,9 @@ pub struct App {
     pub samples: HashMap<String, Arc<Sample>>,
     /// Background renders of the warped audio clips.
     pub warping: super::warping::Warping,
+    /// The Pitch Editor and its background analyses and renders.
+    pub pitch: super::pitcheditor::PitchEditor,
+    pub tuning: super::tunework::Tuning,
     /// Keyboard focus in the device panel and the transport.
     pub kb: super::kbfocus::KbFocus,
     /// Devices folded to a slim card in the panel.
@@ -1038,6 +1043,8 @@ impl App {
             mixer_reveal: None,
             samples: HashMap::new(),
             warping: Default::default(),
+            pitch: Default::default(),
+            tuning: Default::default(),
             onsets: HashMap::new(),
             clip_panel: None,
             clip_grab: (0.0, 0.0),
@@ -1511,7 +1518,11 @@ impl App {
         let warps = self.synced.audio_clips != self.project.audio_clips
             || self.synced.session_slots != self.project.session_slots
             || self.synced.tempo_map() != self.project.tempo_map();
+        let tunes = self.synced.pitch_edits != self.project.pitch_edits || warps;
         self.synced = self.project.clone();
+        if tunes {
+            self.refresh_tunes();
+        }
         if warps {
             self.refresh_warps();
         }
@@ -2236,6 +2247,7 @@ impl App {
     fn poll_engine(&mut self, dt: f32) {
         self.engine.collect_garbage();
         self.poll_warps();
+        self.poll_tunes();
         self.record_tick(dt);
         self.voice_tick();
         self.position = self.engine.position();
@@ -2319,6 +2331,9 @@ impl App {
             if self.view == View::Lab && self.lab_key(key, mods) {
                 continue;
             }
+            if self.pitch_key(key, mods) {
+                continue;
+            }
             if key == Key::Escape {
                 self.popup = None;
                 self.mixer_sel.clear();
@@ -2367,6 +2382,8 @@ impl App {
     }
 
     pub fn set_view(&mut self, v: View) {
+        // Choosing a view (even the one under it) closes the Pitch Editor.
+        self.close_pitch_editor();
         if !self.view_shown(v) {
             self.toast(&tr_fmt!("{} is hidden · ☰ Settings to show it", v.label()));
             return;
@@ -2680,6 +2697,8 @@ impl App {
         let body_shifted = body.translate(0.0, rise);
         let prev = c.push_clip(Rect::new(r.x, header.y, r.w, r.bottom() - header.y));
         match self.view {
+            // The Pitch Editor takes the view's place while it is open.
+            _ if self.pitch.open.is_some() => self.pitch_view(c, input, header, body_shifted),
             View::Rack => self.with_area(Area::Rack, |s| s.rack_view(c, input, header, body_shifted)),
             View::Piano => self.with_area(Area::Piano, |s| s.piano_view(c, input, header, body_shifted)),
             View::Playlist => self.with_area(Area::Playlist, |s| s.playlist_view(c, input, header, body_shifted)),
@@ -4119,6 +4138,7 @@ impl App {
             Action::DetectKey(source) => self.detect_key(source, anchor),
             Action::ExtractAudioGroove(i) => self.extract_audio_groove(i),
             Action::AudioToNotes(i) => self.audio_clip_to_notes(i),
+            Action::EditPitch(i) => self.open_pitch_editor(i),
             Action::OpenTool(tool) => self.open_tool(tool, anchor),
             Action::JumpHistory(n) => self.jump_history(n),
             Action::ShowCurve(target, scope) => self.show_curve(target, scope),

@@ -176,6 +176,7 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: Loader) -> V
         || old.swing != new.swing
         || old.automation != new.automation
         || old.audio_clips != new.audio_clips
+        || old.pitch_edits != new.pitch_edits
         || old.take_groups != new.take_groups
         || old.session_live != new.session_live
         || old.loop_range != new.loop_range

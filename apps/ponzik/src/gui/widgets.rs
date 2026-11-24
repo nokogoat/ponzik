@@ -193,6 +193,8 @@ pub enum Icon {
     Detect,
     /// A microphone and a note: voice to notes.
     Voice,
+    /// Two note blobs, a pitch line wavering through them: the Pitch Editor.
+    PitchBlobs,
     /// A paint brush over a row of blocks: paint copies of a clip.
     Brush,
     /// Two chevrons pointing inward: collapse.
@@ -548,6 +550,21 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
             c.stroke_polyline(&[p(-7.8, 6.8), p(-2.8, 6.8)], stroke * 0.9, col);
             c.fill_circle(cx + 3.4 * s, cy + 4.6 * s, 2.5 * s, col);
             c.stroke_polyline(&[p(5.6, 4.4), p(5.6, -6.8), p(8.2, -3.8)], stroke, col);
+        }
+        Icon::PitchBlobs => {
+            // A low blob, a higher one, the sung line gliding from one to the other.
+            c.fill_rrect(rr(-8.0, 1.6, 7.2, 4.4), 2.2 * s, col.alpha(0.45));
+            c.fill_rrect(rr(1.2, -5.8, 7.0, 4.4), 2.2 * s, col.alpha(0.45));
+            let line: Vec<(f32, f32)> = (0..=16)
+                .map(|k| {
+                    let x = -8.0 + k as f32;
+                    let glide = ((x + 1.0) / 2.6).clamp(0.0, 1.0);
+                    let glide = glide * glide * (3.0 - 2.0 * glide);
+                    let wobble = 0.7 * (x * 1.9).sin() * (1.0 - glide * 0.4);
+                    p(x, 3.8 - 7.4 * glide + wobble)
+                })
+                .collect();
+            c.stroke_polyline(&line, stroke, col);
         }
         Icon::Detect => {
             c.stroke_circle(cx - 1.5 * s, cy - 1.5 * s, 5.2 * s, stroke, col);

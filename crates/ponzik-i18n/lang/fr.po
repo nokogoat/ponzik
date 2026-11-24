@@ -11176,3 +11176,182 @@ msgstr "Haut et bas : le niveau maintenu"
 
 msgid "{}\n{} · double-click: default · right-click: automate, type"
 msgstr "{}\n{} · double-clic : défaut · clic droit : automatiser, saisir"
+msgid "Pitch Editor"
+msgstr "Éditeur de hauteur"
+
+msgid "Pitch Editor\nDrag a note: pitch (snaps · Alt: free)\nDrag its edges: timing · double-click: cut\nDrag the background: select · Ctrl+A: all\nUp / Down: a semitone · Delete: reset\nWheel: scroll · Shift: time · Ctrl: zoom"
+msgstr "Éditeur de hauteur\nGlisser une note : hauteur (aimantée · Alt : libre)\nGlisser ses bords : placement · double-clic : couper\nGlisser le fond : sélectionner · Ctrl+A : tout\nHaut / Bas : un demi-ton · Suppr : rétablir\nMolette : défiler · Maj : temps · Ctrl : zoom"
+
+msgid "Edit pitch"
+msgstr "Éditer la hauteur"
+
+msgid "Edit pitch: the notes of the take (Pitch Editor)"
+msgstr "Éditer la hauteur : les notes de la prise (Éditeur de hauteur)"
+
+msgid "The notes of a sung or played take: move, correct, stretch them (Pitch Editor)"
+msgstr "Les notes d'une prise chantée ou jouée : les déplacer, les corriger, les étirer (Éditeur de hauteur)"
+
+msgid "The clip's file is missing: nothing to edit"
+msgstr "Le fichier du clip est introuvable : rien à éditer"
+
+msgid "Could not analyse the recording"
+msgstr "Impossible d'analyser l'enregistrement"
+
+msgid "Analysing"
+msgstr "Analyse"
+
+msgid "Rendering"
+msgstr "Rendu"
+
+msgid "{} {} %"
+msgstr "{} {} %"
+
+msgid "Working in the background · the playlist plays the take meanwhile"
+msgstr "Travail en arrière-plan · la playlist joue la prise en attendant"
+
+msgid "Finding the notes of the take…"
+msgstr "Recherche des notes de la prise…"
+
+msgid "Pitch every 2 ms, notes, vibrato and level · once per file"
+msgstr "Hauteur toutes les 2 ms, notes, vibrato et niveau · une fois par fichier"
+
+msgid "Edited"
+msgstr "Éditée"
+
+msgid "Original"
+msgstr "Originale"
+
+msgid "Edited: the take as you corrected it"
+msgstr "Éditée : la prise telle que vous l'avez corrigée"
+
+msgid "Original: the take as recorded, to compare"
+msgstr "Originale : la prise telle qu'enregistrée, pour comparer"
+
+msgid "Semitone"
+msgstr "Demi-ton"
+
+msgid "Dragged notes land on semitones"
+msgstr "Les notes glissées se posent sur les demi-tons"
+
+msgid "Dragged notes land on the project's scale"
+msgstr "Les notes glissées se posent sur la gamme du projet"
+
+msgid "Dragged notes move freely (Alt does it too)"
+msgstr "Les notes glissées bougent librement (Alt aussi)"
+
+msgid "Play the song from the selection (or the clip's start)"
+msgstr "Jouer le morceau depuis la sélection (ou le début du clip)"
+
+msgid "Close the Pitch Editor"
+msgstr "Fermer l'Éditeur de hauteur"
+
+msgid "Click: play from here"
+msgstr "Clic : jouer à partir d'ici"
+
+msgid "Drag: the note's start or end, the rest stays in place"
+msgstr "Glisser : le début ou la fin de la note, le reste ne bouge pas"
+
+msgid "Drag: pitch (Alt: free) · double-click: cut"
+msgstr "Glisser : hauteur (Alt : libre) · double-clic : couper"
+
+msgid "Move pitch"
+msgstr "Déplacer la hauteur"
+
+msgid "Note timing"
+msgstr "Placement de note"
+
+msgid "Cut note"
+msgstr "Couper la note"
+
+msgid "Join notes"
+msgstr "Joindre les notes"
+
+msgid "Select two notes or more to join them"
+msgstr "Sélectionnez au moins deux notes pour les joindre"
+
+msgid "Reset notes"
+msgstr "Rétablir les notes"
+
+msgid "Correct pitch"
+msgstr "Corriger la justesse"
+
+msgid "Correct"
+msgstr "Corriger"
+
+msgid "Correct all"
+msgstr "Tout corriger"
+
+msgid "Pitch centre"
+msgstr "Centre"
+
+msgid "Pitch drift"
+msgstr "Dérive"
+
+msgid "How far each centre goes to the nearest note of the scale"
+msgstr "Jusqu'où chaque centre va vers la note la plus proche de la gamme"
+
+msgid "How much of the slow wandering around the centre is flattened"
+msgstr "Quelle part des écarts lents autour du centre est aplanie"
+
+msgid "Pulls the notes to the scale and flattens their drift, by the amounts above"
+msgstr "Ramène les notes sur la gamme et aplanit leur dérive, selon les quantités ci-dessus"
+
+msgid "The project's scale: notes are pulled to it (the top bar changes it)"
+msgstr "La gamme du projet : les notes y sont ramenées (la barre du haut la change)"
+
+msgid "Note"
+msgstr "Note"
+
+msgid "Note level"
+msgstr "Niveau de note"
+
+msgid "Select notes to change their vibrato, formants and level"
+msgstr "Sélectionnez des notes pour changer leur vibrato, leurs formants et leur niveau"
+
+msgid "Cut the selected note in two\nOr double-click a note where to cut"
+msgstr "Couper la note sélectionnée en deux\nOu double-cliquer une note là où couper"
+
+msgid "Join the selected notes into one"
+msgstr "Joindre les notes sélectionnées en une seule"
+
+msgid "Back as recorded: the selection, or every note"
+msgstr "Comme enregistrée : la sélection, ou toutes les notes"
+
+msgid "Select all the notes"
+msgstr "Sélectionner toutes les notes"
+
+msgid "No note selected"
+msgstr "Aucune note sélectionnée"
+
+msgid "Click a note or drag a box"
+msgstr "Cliquez une note ou tracez un cadre"
+
+msgid "{} notes in the take"
+msgstr "{} notes dans la prise"
+
+msgid "{} notes selected"
+msgstr "{} notes sélectionnées"
+
+msgid "Edits apply to all of them"
+msgstr "Les réglages s'appliquent à toutes"
+
+msgid "{:+} cents"
+msgstr "{:+} cents"
+
+msgid "{} s · vibrato {} c"
+msgstr "{} s · vibrato {} c"
+
+msgid "How far the notes sit from the scale, in cents, by length\nBars: as edited · outlines: as recorded · figure: within 10 cents"
+msgstr "L'écart des notes à la gamme, en cents, selon leur durée\nBarres : éditées · contours : enregistrées · chiffre : à moins de 10 cents"
+
+msgid "Playing the take as recorded"
+msgstr "Lecture de la prise telle qu'enregistrée"
+
+msgid "No edit yet · the take plays as recorded"
+msgstr "Aucune édition · la prise joue telle qu'enregistrée"
+
+msgid "{} notes edited · they play in the playlist"
+msgstr "{} notes éditées · elles jouent dans la playlist"
+
+msgid "Intonation"
+msgstr "Justesse"
