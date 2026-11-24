@@ -30,6 +30,7 @@ use crate::input::InputSource;
 use crate::meter::{PeakMeter, peak};
 use crate::modulation::{MOD_CHUNK, ModClock, ModInput, ModSet};
 use crate::pool::{Graph, MAX_TASKS, WorkerPool};
+use crate::xfader::Side;
 
 /// Pistes d'un nouveau projet : le master + 32.
 pub const DEFAULT_TRACKS: usize = 33;
@@ -99,6 +100,12 @@ pub struct Track {
     quiet: [u32; INSERT_SLOTS],
     /// The block's output (post-fader) is all zeros: routing it adds nothing.
     silent: bool,
+    /// Side of the crossfader the track listens to.
+    pub xfade: Side,
+    /// Cue: the track is heard on the cue bus (post-fader, before the crossfader).
+    pub cue: bool,
+    cue_l: Vec<f32>,
+    cue_r: Vec<f32>,
 }
 
 impl Track {
@@ -126,6 +133,10 @@ impl Track {
             insert_ns: [0; INSERT_SLOTS],
             quiet: [0; INSERT_SLOTS],
             silent: false,
+            xfade: Side::None,
+            cue: false,
+            cue_l: vec![0.0; max_block],
+            cue_r: vec![0.0; max_block],
         }
     }
 
@@ -302,6 +313,8 @@ struct Ctx<'a> {
     clock: ModClock,
     sleep: Sleep,
     notes: &'a [ChannelNotes],
+    /// Crossfader gains (start and end of the block) by [`Side::index`].
+    xf: [(f32, f32); 3],
 }
 
 /// Pistes partagées entre les threads du bloc : chaque tâche n'emprunte en
@@ -380,6 +393,16 @@ pub struct Mixer {
     /// Notes held on each channel of the rack this block, for the inserts
     /// that follow a channel ([`Effect::channel_notes`]).
     pub(crate) notes: Vec<ChannelNotes>,
+    /// Crossfader gains by [`Side::index`] (see [`crate::xfader::table`]),
+    /// and those the last block ended on (ramped from one to the other).
+    pub xf_gain: [f32; 3],
+    xf_prev: [f32; 3],
+    /// Cue bus blended into what the device plays: 0 the master only, 1 the cue only.
+    pub cue_mix: f32,
+    /// What the device plays when a track is cued (master and cue blended).
+    heard_l: Vec<f32>,
+    heard_r: Vec<f32>,
+    cueing: bool,
 }
 
 /// Ordre par défaut de `count` pistes : toutes vont directement au master.
@@ -588,6 +611,29 @@ unsafe fn process_track(tracks: Tracks, idx: usize, cx: &Ctx, vca: f32, ready: i
     for i in 0..n {
         t.l[i] *= gl;
         t.r[i] *= gr;
+    let (gl, gr) = if t.muted { (0.0, 0.0) } else { (gl * t.gain * vca, gr * t.gain * vca) };
+    if t.cue {
+        // Cue: post-fader, before the crossfader.
+        for i in 0..n {
+            t.cue_l[i] = t.l[i] * gl;
+            t.cue_r[i] = t.r[i] * gr;
+        }
+    }
+    let (x0, x1) = cx.xf[t.xfade.index()];
+    if x0 == x1 {
+        let (gl, gr) = (gl * x1, gr * x1);
+        for i in 0..n {
+            t.l[i] *= gl;
+            t.r[i] *= gr;
+        }
+    } else {
+        // A crossfader move: ramped over the block.
+        let step = (x1 - x0) / n.max(1) as f32;
+        for i in 0..n {
+            let x = x0 + step * (i + 1) as f32;
+            t.l[i] *= gl * x;
+            t.r[i] *= gr * x;
+        }
     }
     let (pl, pr) = (peak(&t.l[..n]), peak(&t.r[..n]));
     t.silent = pl == 0.0 && pr == 0.0;
@@ -706,6 +752,12 @@ impl Mixer {
             freeze_clock: FreezeClock::default(),
             sleep: Sleep::default(),
             notes: vec![ChannelNotes::EMPTY; crate::engine::MAX_CHANNELS],
+            xf_gain: [1.0; 3],
+            xf_prev: [1.0; 3],
+            cue_mix: 1.0,
+            heard_l: vec![0.0; max_block],
+            heard_r: vec![0.0; max_block],
+            cueing: false,
         }
     }
 
@@ -766,6 +818,9 @@ impl Mixer {
         self.freeze_clock = old.freeze_clock;
         self.sleep = old.sleep;
         self.lat.total = old.lat.total;
+        self.xf_gain = old.xf_gain;
+        self.xf_prev = old.xf_prev;
+        self.cue_mix = old.cue_mix;
     }
 
     /// Latency of what [`crate::Tap::Track`] captures, as of the last block:
@@ -922,6 +977,11 @@ impl Mixer {
         let count = tracks.len();
         let tracks = Tracks(tracks.as_mut_ptr());
         let cx = Ctx { n, count, lat, reduced, monitor, silence, meters, clock: *clock, sleep: *sleep, notes };
+        let xf = self.xf_ramps();
+        let Self { tracks, order, silence, lat, reduced, clock, vca, ready, sleep, notes, .. } = self;
+        let count = tracks.len();
+        let tracks = Tracks(tracks.as_mut_ptr());
+        let cx = Ctx { n, count, lat, reduced, silence, meters, clock: *clock, sleep: *sleep, notes, xf };
         ready.fill(false);
         for &idx in order.iter() {
             if idx == MASTER || idx >= count || ready[idx] {
@@ -1031,6 +1091,11 @@ impl Mixer {
         let count = tracks.len();
         let tracks = Tracks(tracks.as_mut_ptr());
         let cx = Ctx { n, count, lat, reduced, monitor, silence, meters, clock: *clock, sleep: *sleep, notes };
+        let xf = self.xf_ramps();
+        let Self { tracks, silence, lat, reduced, plan, clock, vca, sleep, notes, .. } = self;
+        let count = tracks.len();
+        let tracks = Tracks(tracks.as_mut_ptr());
+        let cx = Ctx { n, count, lat, reduced, silence, meters, clock: *clock, sleep: *sleep, notes, xf };
         let plan = &**plan;
         let vca = &**vca;
         let gather = |dst: usize| {
@@ -1076,6 +1141,47 @@ impl Mixer {
         (&m.l[..n], &m.r[..n])
     }
 
+    /// Crossfader gains of the block: from where the last block ended to the target.
+    fn xf_ramps(&self) -> [(f32, f32); 3] {
+        std::array::from_fn(|k| (self.xf_prev[k], self.xf_gain[k]))
+    }
+
+    /// Ends the block: the crossfader ramps are done, and the cue bus (the
+    /// cued tracks summed) is blended with the master into what the device plays.
+    pub(crate) fn end_block(&mut self, n: usize) {
+        self.xf_prev = self.xf_gain;
+        let count = self.tracks.len();
+        self.cueing = self.tracks[1.min(count)..].iter().any(|t| t.cue);
+        if !self.cueing {
+            return;
+        }
+        let k = self.cue_mix.clamp(0.0, 1.0);
+        let (hl, hr) = (&mut self.heard_l[..n], &mut self.heard_r[..n]);
+        {
+            let m = &self.tracks[MASTER];
+            for i in 0..n {
+                hl[i] = m.l[i] * (1.0 - k);
+                hr[i] = m.r[i] * (1.0 - k);
+            }
+        }
+        for t in self.tracks[1..].iter().filter(|t| t.cue) {
+            for i in 0..n {
+                hl[i] += t.cue_l[i] * k;
+                hr[i] += t.cue_r[i] * k;
+            }
+        }
+        for i in 0..n {
+            hl[i] = if hl[i].is_finite() { hl[i].clamp(-1.0, 1.0) } else { 0.0 };
+            hr[i] = if hr[i].is_finite() { hr[i].clamp(-1.0, 1.0) } else { 0.0 };
+        }
+    }
+
+    /// What the device plays: the master, or the master and the cue bus
+    /// blended while a track is cued (the master itself stays the full mix).
+    pub fn heard(&self, n: usize) -> (&[f32], &[f32]) {
+        if self.cueing { (&self.heard_l[..n], &self.heard_r[..n]) } else { self.master(n) }
+    }
+
     /// Sortie du master après traitement, pour y ajouter un signal hors mixage.
     pub(crate) fn master_mut(&mut self, n: usize) -> (&mut [f32], &mut [f32]) {
         let m = &mut self.tracks[MASTER];
@@ -1118,6 +1224,61 @@ mod tests {
 
         edges[3] = vec![1];
         assert!(routing_order(&edges).is_none(), "1 → 3 → 1 est une boucle");
+    }
+
+    #[test]
+    fn crossfader_and_cue() {
+        use crate::xfader::{Curve, Side, table};
+        let mut m = Mixer::new(8, 1_024);
+        let meters: Vec<PeakMeter> = (0..DEFAULT_TRACKS).map(|_| PeakMeter::default()).collect();
+        m.tracks[1].xfade = Side::A;
+        m.tracks[2].xfade = Side::B;
+        let feed = |m: &mut Mixer| {
+            m.clear(8);
+            m.input(1, 8).0.fill(0.2);
+            m.input(2, 8).0.fill(0.4);
+            m.input(3, 8).0.fill(0.1);
+        };
+        // All the way to A: B is silent, the unassigned track plays on.
+        m.xf_gain = table(0.0, Curve::Power);
+        feed(&mut m);
+        m.process(8, &meters);
+        m.end_block(8);
+        // First block ramps from unity (no move before) to the new gains.
+        assert!((m.master(8).0[7] - 0.3).abs() < 1e-6, "{}", m.master(8).0[7]);
+        feed(&mut m);
+        m.process(8, &meters);
+        m.end_block(8);
+        assert!(m.master(8).0.iter().all(|&x| (x - 0.3).abs() < 1e-6));
+        // To B, ramped over the block: no jump on the first sample.
+        m.xf_gain = table(1.0, Curve::Power);
+        feed(&mut m);
+        m.process(8, &meters);
+        m.end_block(8);
+        let l = m.master(8).0;
+        assert!(l.windows(2).all(|w| w[1] >= w[0]), "{l:?}");
+        assert!((l[0] - (0.1 + 0.2 * 7.0 / 8.0 + 0.4 / 8.0)).abs() < 1e-5, "{}", l[0]);
+        assert!((l[7] - 0.5).abs() < 1e-6);
+        assert_eq!(m.heard(8).0, m.master(8).0, "no cue: the device plays the master");
+
+        // Cue on track 1, faded out by the crossfader: heard, never in the master.
+        m.tracks[1].cue = true;
+        m.cue_mix = 1.0;
+        feed(&mut m);
+        m.process(8, &meters);
+        m.end_block(8);
+        assert!(m.master(8).0.iter().all(|&x| (x - 0.5).abs() < 1e-6), "the master keeps the full mix");
+        assert!(m.heard(8).0.iter().all(|&x| (x - 0.2).abs() < 1e-6), "{:?}", m.heard(8).0);
+        m.cue_mix = 0.5;
+        feed(&mut m);
+        m.process(8, &meters);
+        m.end_block(8);
+        assert!(m.heard(8).0.iter().all(|&x| (x - 0.35).abs() < 1e-6));
+        m.tracks[1].cue = false;
+        feed(&mut m);
+        m.process(8, &meters);
+        m.end_block(8);
+        assert_eq!(m.heard(8).0, m.master(8).0);
     }
 
     #[test]

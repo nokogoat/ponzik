@@ -36,6 +36,7 @@ pub mod sequence;
 pub mod tempo_map;
 pub mod voice;
 pub mod wav;
+pub mod xfader;
 
 pub use editor::{Editor, EditorEvent, EditorSize, ParentWindow, PluginEditor, RunLoop, StateContext};
 pub use denormal::FlushDenormals;

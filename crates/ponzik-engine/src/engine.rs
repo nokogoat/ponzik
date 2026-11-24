@@ -91,6 +91,14 @@ pub enum Command {
     /// Piste VCA qui pilote le volume de `track`, ou aucune.
     SetTrackVca { track: usize, vca: Option<usize> },
     SetTrackSend { track: usize, slot: usize, target: usize, amount: f32 },
+    /// Side of the crossfader a track listens to.
+    SetTrackXfade { track: usize, side: crate::xfader::Side },
+    /// Crossfader gains by side ([`crate::xfader::table`]), ramped over the next block.
+    SetCrossfader([f32; 3]),
+    /// Cue (prelisten) of a track: heard on the cue bus, never in the master.
+    SetTrackCue { track: usize, on: bool },
+    /// Blend of the cue bus into what the device plays (0: master, 1: cue).
+    SetCueMix(f32),
     SetRoutingOrder(Box<[usize]>),
     /// New track layout (tracks added, deleted or moved): the engine moves
     /// the state of the kept tracks into the new mixer and renumbers what
@@ -210,6 +218,10 @@ impl std::fmt::Debug for Command {
             Command::SetTrackOutput { .. } => "SetTrackOutput",
             Command::SetTrackVca { .. } => "SetTrackVca",
             Command::SetTrackSend { .. } => "SetTrackSend",
+            Command::SetTrackXfade { .. } => "SetTrackXfade",
+            Command::SetCrossfader(_) => "SetCrossfader",
+            Command::SetTrackCue { .. } => "SetTrackCue",
+            Command::SetCueMix(_) => "SetCueMix",
             Command::SetRoutingOrder(_) => "SetRoutingOrder",
             Command::RemapTracks(_) => "RemapTracks",
             Command::SetInsert { .. } => "SetInsert",
@@ -1204,7 +1216,7 @@ impl Engine {
             self.follow_tempo();
             let direct = if in_channels > 0 { input.get(done * in_channels..).unwrap_or(&[]) } else { &[] };
             self.process_chunk(n, direct, in_channels);
-            let (l, r) = self.mixer.master(n);
+            let (l, r) = self.mixer.heard(n);
             let block = &mut out[done * channels..(done + n) * channels];
             write_interleaved(block, channels, l, r);
             if let Some(voice) = self.audition.as_mut()
@@ -1570,6 +1582,7 @@ impl Engine {
             self.metronome_click(pos_start, n, t0, spt, true);
         }
         self.calibration_clicks(n);
+        self.mixer.end_block(n);
         self.feed_scope(n);
         self.clock += n as u64;
         if self.playing {
@@ -2119,6 +2132,20 @@ impl Engine {
                 self.trash(Garbage::Routing(old));
             }
             Command::RemapTracks(remap) => self.remap_tracks(remap),
+            Command::SetTrackXfade { track, side } => {
+                if let Some(t) = self.mixer.tracks.get_mut(track).filter(|_| track != MASTER) {
+                    t.xfade = side;
+                }
+            }
+            Command::SetCrossfader(gains) => {
+                self.mixer.xf_gain = gains.map(|g| if g.is_finite() { g.clamp(0.0, 1.0) } else { 1.0 });
+            }
+            Command::SetTrackCue { track, on } => {
+                if let Some(t) = self.mixer.tracks.get_mut(track).filter(|_| track != MASTER) {
+                    t.cue = on;
+                }
+            }
+            Command::SetCueMix(mix) => self.mixer.cue_mix = if mix.is_finite() { mix.clamp(0.0, 1.0) } else { 1.0 },
             Command::SetInsert { track, slot, mut effect } => {
                 if let Some(fx) = effect.as_mut() {
                     fx.set_tempo(self.bpm as f32);
