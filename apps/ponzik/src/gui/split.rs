@@ -111,10 +111,11 @@ pub fn auto_lanes(body: f32) -> f32 {
 /// Velocity and note lane heights in `total` (gap of 8 between them).
 /// Short, only the velocities show.
 pub fn lane_split(total: f32) -> (f32, f32) {
-    if total < 112.0 {
+    if total < 130.0 {
         return (total, 0.0);
     }
-    let lane = ((total - 8.0) * 0.46).round().max(52.0);
+    // The note lane carries its row of chips (`lanes::CHIPS_H`) above its curve.
+    let lane = ((total - 8.0) * 0.55).round().max(64.0);
     (total - 8.0 - lane, lane)
 }
 

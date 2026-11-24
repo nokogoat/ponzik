@@ -1071,7 +1071,7 @@ impl App {
     fn note_lane(&mut self, c: &mut Canvas, input: &Input, ch: usize, tabs: Rect, lane: Rect, x_of: &dyn Fn(f32) -> f32, tick_at: &dyn Fn(f32) -> f32) {
         use super::tools::{COND_LABELS, CONDS, cond_index, cond_label};
         let t = self.theme;
-        self.lane_selector(c, input, ch, tabs);
+        let lane = self.lane_area(c, input, ch, tabs, lane, x_of, tick_at);
         if let Some(target) = self.piano.lane.target(ch) {
             self.event_lane(c, input, target, lane, x_of, tick_at);
             return;

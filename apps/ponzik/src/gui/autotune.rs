@@ -474,9 +474,7 @@ impl App {
         let label = if v < 0.0005 { tr("Hard").to_string() } else { p.format(v) };
         self.text_center(c, self.f.mono_med, 12.0, cx, cy, &label, t.text);
         let target = device_target(device, p.id);
-        if self.is_automated(target) {
-            c.fill_circle(hit.right() - 4.0, hit.y + 4.0, 3.0, t.select);
-        }
+        self.auto_mark(c, input, (hit.right() - 4.0, hit.y + 4.0), hit, target);
         if let Some(v) = changed {
             self.set_param_value(device, p, v);
         }
@@ -549,7 +547,6 @@ impl App {
 
     /// One knob or choice, with automation and modulation like any device's.
     fn at_cell(&mut self, c: &mut Canvas, input: &Input, cell: Rect, device: Device, p: &'static ParamInfo) {
-        let t = self.theme;
         let value = self.param_value(device, p);
         let id = wid("prm", device_key(device), p.id as usize);
         let mut changed = if p.unit == Unit::Choice { self.choice(c, input, id, cell, p, value) } else { self.knob(c, input, id, cell, p, value) };
@@ -565,9 +562,7 @@ impl App {
             self.open_popup(Popup::Param { target, value, default: p.default }, Rect::new(input.x, input.y, 0.0, 0.0));
         }
         self.param_mark(c, cell, target);
-        if self.is_automated(target) {
-            c.fill_circle(cell.right() - 10.0, cell.y + 6.0, 3.0, t.select);
-        }
+        self.auto_mark(c, input, (cell.right() - 10.0, cell.y + 6.0), Rect::new(cell.x, cell.y + 8.0, cell.w, 54.0), target);
     }
 
     /// The channel whose notes are the target: its name; click for the next one.

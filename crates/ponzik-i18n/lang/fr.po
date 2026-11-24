@@ -913,9 +913,6 @@ msgstr "Automatiser"
 msgid "A curve in the playlist"
 msgstr "Une courbe dans la playlist"
 
-msgid "Delete the automation"
-msgstr "Supprimer l'automation"
-
 msgid "Default value"
 msgstr "Valeur par défaut"
 
@@ -9529,9 +9526,6 @@ msgstr "Voix en notes : chantez ou fredonnez pour jouer un instrument"
 msgid "Auto length\nThe pattern ends with its last note: you hear what you see"
 msgstr "Longueur auto\nLe pattern s'arrête à sa dernière note : on entend ce qu'on voit"
 
-msgid "Lane\n{} other curves are drawn in this pattern and keep playing: open the menu to see them"
-msgstr "Couloir\n{} autres courbes sont dessinées dans ce pattern et jouent toujours : ouvrez le menu pour les voir"
-
 msgid "\"{}\" has unsaved changes: they are lost if Ponzik closes now."
 msgstr "« {} » a des modifications non enregistrées : elles sont perdues si Ponzik se ferme maintenant."
 
@@ -11021,3 +11015,134 @@ msgstr "−14 LUFS : streaming · −23 : diffusion · −9 : club fort"
 
 msgid "Clean up"
 msgstr "Nettoyer"
+msgid "Add a lane\nPitch bend, a CC or any parameter of the instrument"
+msgstr "Ajouter un couloir\nPitch bend, un CC ou n'importe quel paramètre de l'instrument"
+
+msgid "Automated"
+msgstr "Automatisé"
+
+msgid "Automation list"
+msgstr "Liste des automations"
+
+msgid "Automation list\nEvery curve of the project"
+msgstr "Liste des automations\nToutes les courbes du projet"
+
+msgid "Automation list: every curve of the project"
+msgstr "Liste des automations : toutes les courbes du projet"
+
+msgid "Click: show it in the piano roll"
+msgstr "Clic : la montrer dans le piano roll"
+
+msgid "Click: show it in the playlist"
+msgstr "Clic : la montrer dans la playlist"
+
+msgid "Curve muted"
+msgstr "Courbe coupée"
+
+msgid "Delete a curve"
+msgstr "Supprimer une courbe"
+
+msgid "Delete the curve"
+msgstr "Supprimer la courbe"
+
+msgid "Delete the curve\n{}"
+msgstr "Supprimer la courbe\n{}"
+
+msgid "Empty: draw it in the lane"
+msgstr "Vide : dessinez-la dans le couloir"
+
+msgid "Every curve of the project: show, mute or delete it"
+msgstr "Toutes les courbes du projet : les montrer, les couper ou les supprimer"
+
+msgid "In the piano roll, in the lane under the notes"
+msgstr "Dans le piano roll, dans le couloir sous les notes"
+
+msgid "In the playlist, under the clips"
+msgstr "Dans la playlist, sous les clips"
+
+msgid "Keeps its points; the knob's value plays"
+msgstr "Garde ses points ; la valeur du potard joue"
+
+msgid "Mute a curve"
+msgstr "Couper une courbe"
+
+msgid "Mute the curve"
+msgstr "Couper la courbe"
+
+msgid "Mute the curve\nKeeps its points; the knob's value plays"
+msgstr "Couper la courbe\nGarde ses points ; la valeur du potard joue"
+
+msgid "Muted: kept but not played"
+msgstr "Coupée : gardée mais pas jouée"
+
+msgid "No curve yet"
+msgstr "Aucune courbe pour l'instant"
+
+msgid "Pattern {} · {}"
+msgstr "Pattern {} · {}"
+
+msgid "Play a curve again"
+msgstr "Rejouer une courbe"
+
+msgid "Play the curve again"
+msgstr "Rejouer la courbe"
+
+msgid "Plays with the pattern"
+msgstr "Joue avec le pattern"
+
+msgid "Reset a curve to the knob value"
+msgstr "Remettre une courbe à la valeur du potard"
+
+msgid "Reset to the knob value"
+msgstr "Remettre à la valeur du potard"
+
+msgid "Right-click a knob > Automate, or draw in a piano roll lane"
+msgstr "Clic droit sur un potard > Automatiser, ou dessinez dans un couloir du piano roll"
+
+msgid "Show the curve"
+msgstr "Montrer la courbe"
+
+msgid "Show the curve: {} · {}"
+msgstr "Montrer la courbe : {} · {}"
+
+msgid "Song · {}"
+msgstr "Morceau · {}"
+
+msgid "The points stay, flat at the knob's value"
+msgstr "Les points restent, à plat sur la valeur du potard"
+
+msgid "This pattern curve has no lane in the piano roll: it plays with the pattern"
+msgstr "Cette courbe de pattern n'a pas de couloir dans le piano roll : elle joue avec le pattern"
+
+msgid "muted"
+msgstr "coupée"
+
+msgid "{}\nA setting of each note"
+msgstr "{}\nUn réglage de chaque note"
+
+msgid "{}\n{} · Shift+click: stack it under the lane shown · right-click: more"
+msgstr "{}\n{} · Maj+clic : l'empiler sous le couloir affiché · clic droit : plus"
+
+msgid "{}\n{} · right-click: show, mute or delete the curve"
+msgstr "{}\n{} · clic droit : montrer, couper ou supprimer la courbe"
+
+msgid "{} curve"
+msgstr "{} courbe"
+
+msgid "{} curves"
+msgstr "{} courbes"
+
+msgid "{} curve on other channels\nThis pattern plays it too · click: the automation list"
+msgstr "{} courbe sur d'autres canaux\nCe pattern la joue aussi · clic : la liste des automations"
+
+msgid "{} curves on other channels\nThis pattern plays them too · click: the automation list"
+msgstr "{} courbes sur d'autres canaux\nCe pattern les joue aussi · clic : la liste des automations"
+
+msgid "{} point"
+msgstr "{} point"
+
+msgid "{} points"
+msgstr "{} points"
+
+msgid "{} · {} muted"
+msgstr "{} · {} coupées"

@@ -383,7 +383,10 @@ impl App {
     }
 
     /// Right-click on a small knob centred on (`cx`, `cy`): its parameter menu.
-    pub(super) fn knob_menu(&mut self, input: &Input, (cx, cy): (f32, f32), r: f32, target: AutoTarget) {
+    /// Also draws its automation mark, with its curves on hover.
+    pub(super) fn knob_menu(&mut self, c: &mut Canvas, input: &Input, (cx, cy): (f32, f32), r: f32, target: AutoTarget) {
+        let hit = Rect::new(cx - r, cy - r, 2.0 * r, 2.0 * r);
+        self.auto_mark(c, input, (cx + r * 0.8, cy - r * 0.8), hit, target);
         if input.right_pressed && input.inside && self.drag.is_none() && Rect::new(cx - r, cy - r, 2.0 * r, 2.0 * r).contains(input.x, input.y) {
             let Some((_, info)) = self.target_info(target) else { return };
             let value = self.auto_value(target).unwrap_or(info.default);

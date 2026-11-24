@@ -10,6 +10,7 @@ mod appearance;
 mod arrange;
 mod assistant;
 mod autotune;
+mod autolist;
 mod automation;
 mod capture;
 mod autorec;
@@ -915,6 +916,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // the file dialog (see filedialog.rs).
     if let Ok(spec) = std::env::var("PONZIK_FILEDIALOG") {
         app.screenshot_file_dialog(&spec);
+    }
+    // PONZIK_CURVES=attack,release,stack,song,list,show:0…: pattern curves on the
+    // piano roll's channel, their chips, the automation list (see `screenshot_curves`).
+    if let Ok(spec) = std::env::var("PONZIK_CURVES") {
+        app.screenshot_curves(&spec);
     }
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {

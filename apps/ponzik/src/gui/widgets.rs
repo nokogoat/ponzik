@@ -40,6 +40,8 @@ pub struct TipState {
     blocked: bool,
     /// Une infobulle attend son délai : l'image doit continuer de tourner.
     pub waiting: bool,
+    /// The tooltip asked this frame also shows the curves of this parameter.
+    pub curve: Option<ponzik_engine::AutoTarget>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1127,6 +1129,7 @@ impl App {
     pub(super) fn set_tip(&mut self, label: &str, key: &str) {
         if !label.is_empty() && self.drag.is_none() {
             self.tips.want = Some((label.to_string(), key.to_string()));
+            self.tips.curve = None;
         }
     }
 
@@ -1153,6 +1156,7 @@ impl App {
     pub(super) fn tooltip_layer(&mut self, c: &mut Canvas, input: &Input, screen: Rect) {
         let t = self.theme;
         let want = self.tips.want.take();
+        let curve = self.tips.curve.take();
         let Some(want) = want else {
             self.tips.current = None;
             self.tips.waiting = false;
@@ -1186,7 +1190,11 @@ impl App {
         let key_w = if key.is_empty() { 0.0 } else { self.fonts.measure(self.f.mono, 11.0, &key) + 12.0 + 10.0 };
         let first_w = self.fonts.measure(self.f.sans_med, 12.0, lines.first().copied().unwrap_or("")) + key_w;
         w = w.max(first_w) + 20.0;
-        let h = 12.0 + lines.len() as f32 * 18.0 + if lines.len() > 1 { 2.0 } else { 0.0 };
+        let curves_h = curve.map_or(0.0, |target| self.tip_curves_h(target));
+        if curves_h > 0.0 {
+            w = w.max(240.0);
+        }
+        let h = 12.0 + lines.len() as f32 * 18.0 + if lines.len() > 1 { 2.0 } else { 0.0 } + curves_h;
         let mut x = input.x + 12.0;
         let mut y = input.y + 22.0;
         if x + w > screen.right() - 8.0 {
@@ -1209,6 +1217,10 @@ impl App {
             } else {
                 self.text(c, self.f.sans, 12.0, r.x + 10.0, cy, l, t.tooltip_text2.alpha(a));
             }
+        }
+        if let Some(target) = curve.filter(|_| curves_h > 0.0) {
+            let area = Rect::new(r.x + 8.0, r.bottom() - curves_h - 6.0, r.w - 16.0, curves_h);
+            self.tip_curves(c, area, target, a);
         }
     }
 

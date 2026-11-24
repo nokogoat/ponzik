@@ -410,6 +410,9 @@ impl App {
                 .detail(self.theme_label(self.themes.active))
                 .id("theme")
                 .sep(),
+            MenuItem::new(Icon::Automation, tr("Automation list"), Action::Popup(Popup::AutomationList))
+                .detail(self.curve_rows().len().to_string())
+                .tip(tr("Every curve of the project: show, mute or delete it")),
             MenuItem::new(Icon::Layout, tr("Settings"), Action::Popup(Popup::Settings { tab: 0 }))
                 .detail(key(S::Settings))
                 .tip(tr("Views, panels and shortcuts")),

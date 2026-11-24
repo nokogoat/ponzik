@@ -870,7 +870,7 @@ impl App {
             self.project.tracks[tr].pan = ((v * 2.0 - 1.0) * 100.0).round() / 100.0;
             self.commit(ponzik_i18n::tr("Track pan"));
         }
-        self.knob_menu(input, (inner.x + 18.0, pan_y), 14.0, ponzik_engine::AutoTarget::TrackPan(tr));
+        self.knob_menu(c, input, (inner.x + 18.0, pan_y), 14.0, ponzik_engine::AutoTarget::TrackPan(tr));
         self.ctl_mark(c, (inner.x + 18.0, pan_y), 11.0, ponzik_project::midi_map::ControlTarget::Param(ponzik_engine::AutoTarget::TrackPan(tr)));
         let pan_text = fmt_pan(pan);
         self.text_right(c, self.f.mono, 11.0, inner.right(), pan_y, &pan_text, t.text2);
@@ -1060,8 +1060,8 @@ impl App {
                 self.project.tracks[tr].pan = ((v * 2.0 - 1.0) * 100.0).round() / 100.0;
                 self.commit(ponzik_i18n::tr("Track pan"));
             }
-            self.knob_menu(input, (cx, pan_y), 14.0, ponzik_engine::AutoTarget::TrackPan(tr));
             self.tip_zone(input, Rect::new(inner.x, pan_y - 14.0, inner.w, 28.0), &tr_fmt!("Pan {}", fmt_pan(pan)), "");
+            self.knob_menu(c, input, (cx, pan_y), 14.0, ponzik_engine::AutoTarget::TrackPan(tr));
         }
 
         // Bottom: mute and solo; the value above; the fader between.
@@ -1298,6 +1298,7 @@ impl App {
             let popup = Popup::Param { target, value: gain, default: 1.0 };
             self.open_popup(popup, Rect::new(input.x, input.y, 0.0, 0.0));
         }
+        self.auto_mark(c, input, (track_x + 2.0, area.y - 2.0), area, target);
 
         for d in DB_TICKS.iter().copied().filter(|_| !compact) {
             let y = y_of(gain_to_pos(10f32.powf(d / 20.0)));
