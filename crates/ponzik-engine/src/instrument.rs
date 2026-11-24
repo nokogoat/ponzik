@@ -43,6 +43,10 @@ pub trait Instrument: Params + Send {
 
     fn set_sample_rate(&mut self, sample_rate: f32);
 
+    /// Current tempo, for the tempo-synced devices an instrument holds (an
+    /// Instrument Rack's note effects and effects). Audio thread.
+    fn set_tempo(&mut self, _bpm: f32) {}
+
     /// Échantillon à jouer, pour les instruments qui en utilisent un.
     fn set_sample(&mut self, _sample: Arc<Sample>) {}
 
@@ -104,6 +108,11 @@ pub trait Instrument: Params + Send {
     /// activates it; the parameter values are read back from the plugin.
     fn load_state(&mut self, _data: &[u8]) -> Result<(), String> {
         Err(ponzik_i18n::tr("this device has no state").into())
+    }
+
+    /// The Instrument Rack behind this instrument, for the commands that edit it.
+    fn as_inst_rack(&mut self) -> Option<&mut crate::instruments::InstrumentRack> {
+        None
     }
 }
 

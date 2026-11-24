@@ -111,6 +111,13 @@ pub enum Command {
     SetRackUnit { track: usize, slot: usize, unit: usize, effect: Option<Box<dyn Effect>> },
     /// Sets (or clears) one macro mapping of a rack.
     SetRackMapping { track: usize, slot: usize, index: usize, map: Option<MacroMap> },
+    /// Places (or removes) a device of the Instrument Rack of a channel,
+    /// already at the sample rate; the old one comes back as garbage.
+    SetLayerDevice { channel: usize, unit: usize, device: crate::instruments::inst_rack::LayerDevice },
+    /// Zones, switches and bypasses of one chain of a channel's Instrument Rack.
+    SetLayerZone { channel: usize, chain: usize, zone: crate::instruments::inst_rack::ChainZone },
+    /// Sets (or clears) one macro mapping of a channel's Instrument Rack.
+    SetLayerMapping { channel: usize, index: usize, map: Option<MacroMap> },
     /// Modulators of a track (targets: its inserts); the old set comes back as
     /// [`Garbage::Modulators`], its running state carried over.
     SetTrackModulators { track: usize, mods: Option<Box<ModSet>> },
@@ -212,6 +219,9 @@ impl std::fmt::Debug for Command {
             Command::SetRackLayout { .. } => "SetRackLayout",
             Command::SetRackUnit { .. } => "SetRackUnit",
             Command::SetRackMapping { .. } => "SetRackMapping",
+            Command::SetLayerDevice { .. } => "SetLayerDevice",
+            Command::SetLayerZone { .. } => "SetLayerZone",
+            Command::SetLayerMapping { .. } => "SetLayerMapping",
             Command::SetTrackModulators { .. } => "SetTrackModulators",
             Command::SetChannelModulators { .. } => "SetChannelModulators",
             Command::SetChannelFrozen { .. } => "SetChannelFrozen",
@@ -1962,7 +1972,8 @@ impl Engine {
             Command::AddChannel(mut ch) => {
                 if self.channels.len() < MAX_CHANNELS {
                     // Le canal sort de sa boîte ; la boîte et son bouche-trou repartent.
-                    let channel = std::mem::replace(&mut *ch, Channel::new(String::new(), Box::new(Silence)));
+                    let mut channel = std::mem::replace(&mut *ch, Channel::new(String::new(), Box::new(Silence)));
+                    channel.set_tempo(self.bpm as f32);
                     self.channels.push(channel);
                 }
                 self.trash(Garbage::Channel(ch));
@@ -1983,6 +1994,7 @@ impl Engine {
                     slot.silence();
                     drain_midi(&mut self.midi, &mut *slot.instrument, self.clock);
                     std::mem::swap(slot, &mut *ch);
+                    slot.set_tempo(self.bpm as f32);
                 }
                 self.trash(Garbage::Channel(ch));
             }
@@ -1990,6 +2002,7 @@ impl Engine {
                 if let Some(ch) = self.channels.get_mut(channel) {
                     ch.silence();
                     let mut old = std::mem::replace(&mut ch.instrument, instrument);
+                    ch.instrument.set_tempo(self.bpm as f32);
                     drain_midi(&mut self.midi, &mut *old, self.clock);
                     self.trash(Garbage::Instrument(old));
                 } else {
@@ -2160,6 +2173,32 @@ impl Engine {
                 };
                 if let Some(old) = rest {
                     self.trash(Garbage::Effect(old));
+                }
+            }
+            Command::SetLayerDevice { channel, unit, device } => {
+                use crate::instruments::inst_rack::LayerDevice;
+                let rest = match self.channels.get_mut(channel).and_then(|c| c.instrument.as_inst_rack()) {
+                    Some(rack) => rack.set_device(unit, device),
+                    None => device,
+                };
+                match rest {
+                    LayerDevice::None => {}
+                    LayerDevice::Instrument(mut old) => {
+                        drain_midi(&mut self.midi, &mut *old, self.clock);
+                        self.trash(Garbage::Instrument(old));
+                    }
+                    LayerDevice::NoteFx(old) => self.trash(Garbage::NoteFx(old)),
+                    LayerDevice::Effect(old) => self.trash(Garbage::Effect(old)),
+                }
+            }
+            Command::SetLayerZone { channel, chain, zone } => {
+                if let Some(rack) = self.channels.get_mut(channel).and_then(|c| c.instrument.as_inst_rack()) {
+                    rack.set_zone(chain, zone);
+                }
+            }
+            Command::SetLayerMapping { channel, index, map } => {
+                if let Some(rack) = self.channels.get_mut(channel).and_then(|c| c.instrument.as_inst_rack()) {
+                    rack.set_mapping(index, map);
                 }
             }
             Command::SetRackMapping { track, slot, index, map } => {

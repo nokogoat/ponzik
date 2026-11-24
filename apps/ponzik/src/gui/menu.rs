@@ -354,6 +354,7 @@ pub fn category_icon(cat: &str) -> Icon {
         "Keys" => Icon::Piano,
         "Acoustic" => Icon::Instrument,
         "External" => Icon::Midi,
+        "Racks" => Icon::Rack,
         "EQ & Filters" => Icon::Spectral,
         "Dynamics" => Icon::Normalize,
         "Space" => Icon::Send,
