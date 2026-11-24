@@ -223,6 +223,16 @@ pub enum Icon {
     Document,
     /// An arrow going down into a tray: import.
     Import,
+    /// Four corners pointing out: maximize the view.
+    Maximize,
+    /// Four corners pointing in: restore the layout.
+    Restore,
+    /// A chevron pointing up.
+    ChevronUp,
+    /// Three dots: more controls, folded away for lack of room.
+    More,
+    /// A bar: less, smaller.
+    Minus,
 }
 
 /// Diagonal stripes over `r` (clipped to it): offline clips and samples.
@@ -787,6 +797,21 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
             c.stroke_polyline(&[p(-4.0, -3.0), p(0.0, -7.0), p(4.0, -3.0)], stroke, col);
             c.stroke_polyline(&[p(-6.0, 1.0), p(-6.0, 6.5), p(6.0, 6.5), p(6.0, 1.0)], stroke, col);
         }
+        Icon::Maximize | Icon::Restore => {
+            // Corner brackets, open toward the outside (maximize) or the inside.
+            let k = if icon == Icon::Maximize { 1.0 } else { -1.0 };
+            for (sx, sy) in [(-1.0f32, -1.0f32), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+                let (x, y) = if k > 0.0 { (sx * 7.0, sy * 6.5) } else { (sx * 2.0, sy * 1.5) };
+                let (dx, dy) = (-sx * 4.5 * k, -sy * 4.5 * k);
+                c.stroke_polyline(&[p(x + dx, y), p(x, y), p(x, y + dy)], stroke, col);
+            }
+        }
+        Icon::More => {
+            for x in [-5.5, 0.0, 5.5] {
+                c.fill_circle(cx + x * s, cy, 1.7 * s, col);
+            }
+        }
+        Icon::Minus => c.fill_rrect(Rect::new(cx - 6.0 * s, cy - 0.8 * s, 12.0 * s, 1.6 * s), 0.8, col),
         Icon::Import => {
             c.stroke_polyline(&[p(0.0, -7.0), p(0.0, 3.0)], stroke, col);
             c.stroke_polyline(&[p(-4.0, -1.0), p(0.0, 3.0), p(4.0, -1.0)], stroke, col);
@@ -816,6 +841,7 @@ pub fn draw_icon(c: &mut Canvas, icon: Icon, cx: f32, cy: f32, size: f32, col: C
         }
         Icon::ChevronLeft => c.stroke_polyline(&[p(2.5, -5.0), p(-2.5, 0.0), p(2.5, 5.0)], stroke, col),
         Icon::ChevronRight => c.stroke_polyline(&[p(-2.5, -5.0), p(2.5, 0.0), p(-2.5, 5.0)], stroke, col),
+        Icon::ChevronUp => c.stroke_polyline(&[p(-5.0, 2.5), p(0.0, -2.5), p(5.0, 2.5)], stroke, col),
         Icon::ChevronDown => c.stroke_polyline(&[p(-5.0, -2.5), p(0.0, 2.5), p(5.0, -2.5)], stroke, col),
         Icon::Search => {
             c.stroke_circle(cx - 1.5 * s, cy - 1.5 * s, 5.0 * s, stroke, col);

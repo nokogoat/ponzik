@@ -877,6 +877,18 @@ impl App {
         w
     }
 
+    /// While the browser is hidden: a small tab on the left edge of the main
+    /// area brings it back.
+    pub(super) fn sidebar_tab(&mut self, c: &mut Canvas, input: &Input, main: Rect) {
+        let r = Rect::new(main.x + 2.0, main.y + main.h * 0.5 - 32.0, 11.0, 64.0);
+        let k = self.key_label(S::ToggleBrowser);
+        let tip = if k.is_empty() { tr("Show the browser").to_string() } else { tr_fmt!("Show the browser · {}", k) };
+        if self.fold_tab(c, input, "sidebar", r, Icon::ChevronRight, &tip) {
+            self.sidebar = true;
+            self.maximized = None;
+        }
+    }
+
     /// While the devices panel is hidden: a small tab at the bottom of the
     /// main area brings it back.
     pub(super) fn panel_tab(&mut self, c: &mut Canvas, input: &Input, main: Rect) {
@@ -898,6 +910,7 @@ impl App {
             self.set_cursor(ponzik_window::Cursor::Hand);
             if input.pressed {
                 self.panel = true;
+                self.maximized = None;
             }
         }
     }

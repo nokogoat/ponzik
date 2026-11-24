@@ -25,12 +25,7 @@ const MIN_H: f32 = 120.0;
 const TEAR: f32 = 18.0;
 /// Coin de redimensionnement.
 const RESIZE: f32 = 18.0;
-/// Demi-épaisseur de la prise d'un séparateur.
-const GRIP: f32 = 4.0;
-const SIDEBAR_MIN: f32 = 190.0;
-const SIDEBAR_MAX: f32 = 460.0;
-const PANEL_MIN: f32 = 180.0;
-const PANEL_MAX: f32 = 620.0;
+use super::split::{GRIP, PANEL_SPAN, SIDEBAR_SPAN, Sizes, auto_panel, draw_grip, panel_drag, panel_fit};
 /// Largeur de la carte qui reste dans le panneau quand l'appareil flotte.
 pub const PLACEHOLDER_W: f32 = 112.0;
 
@@ -53,7 +48,7 @@ enum Gesture {
     Move { id: usize, dx: f32, dy: f32 },
     Resize { id: usize, x0: f32, y0: f32, w0: f32, h0: f32 },
     Sidebar { x0: f32, w0: f32 },
-    Panel { y0: f32, h0: f32 },
+    Panel { y0: f32, h0: f32, view: super::app::View },
 }
 
 /// Disposition de l'interface : tailles des zones et fenêtres flottantes.
@@ -62,8 +57,8 @@ pub struct Layout {
     pub wins: Vec<FloatWin>,
     gesture: Option<Gesture>,
     next: usize,
-    pub sidebar_w: f32,
-    pub panel_h: f32,
+    /// Sizes of the areas and zooms, saved in the settings.
+    pub sizes: Sizes,
     /// Tailles retenues pour cette image (bornées par la fenêtre), panneaux ouverts.
     pub sidebar_open: f32,
     pub panel_open: f32,
@@ -85,8 +80,7 @@ impl Default for Layout {
             wins: Vec::new(),
             gesture: None,
             next: 0,
-            sidebar_w: SIDEBAR,
-            panel_h: PANEL,
+            sizes: Sizes::default(),
             sidebar_open: SIDEBAR,
             panel_open: PANEL,
             owner: None,
@@ -272,23 +266,34 @@ impl App {
     /// Renvoie (largeur du navigateur, hauteur du panneau, souris captée par une
     /// fenêtre ou un séparateur).
     pub(super) fn layout_begin(&mut self, input: &Input, w: f32, h: f32) -> (f32, f32, bool) {
-        let panel_max = PANEL_MAX.min(h - TOP_BAR - 160.0).max(PANEL_MIN);
-        let sidebar_max = SIDEBAR_MAX.min(w * 0.4).max(SIDEBAR_MIN);
+        let avail = h - TOP_BAR;
+        let panel_span = PANEL_SPAN.up_to(PANEL_SPAN.max.min(avail - 160.0));
+        let sidebar_span = SIDEBAR_SPAN.up_to(SIDEBAR_SPAN.max.min(w * 0.4));
+        let view = self.view;
 
-        // Séparateurs tirés : la taille suit la souris sans retard.
+        // Séparateurs tirés : la taille suit la souris sans retard ; tirés
+        // jusqu'au bord, ils se replient (et se rouvrent en revenant).
         match self.layout.gesture {
             Some(Gesture::Sidebar { x0, w0 }) => {
-                self.layout.sidebar_w = (w0 + input.x - x0).clamp(SIDEBAR_MIN, sidebar_max).round();
-                self.anim.set(wid("sidebar", 0, 0), self.layout.sidebar_w);
+                let v = sidebar_span.drag(w0 + input.x - x0);
+                self.sidebar = v > 0.0;
+                if v > 0.0 {
+                    self.layout.sizes.sidebar_w = v;
+                    self.anim.set(wid("sidebar", 0, 0), v);
+                }
             }
-            Some(Gesture::Panel { y0, h0 }) => {
-                self.layout.panel_h = (h0 + y0 - input.y).clamp(PANEL_MIN, panel_max).round();
-                self.anim.set(wid("panel", 0, 0), self.layout.panel_h);
+            Some(Gesture::Panel { y0, h0, view: v0 }) if v0 == view => {
+                let v = panel_drag(panel_span, h0 + y0 - input.y);
+                self.panel = v > 0.0;
+                if v > 0.0 {
+                    self.layout.sizes.set_panel(view, Some(v));
+                    self.anim.set(wid("panel", 0, 0), v);
+                }
             }
             _ => {}
         }
-        let sidebar_w = self.layout.sidebar_w.min(sidebar_max);
-        let panel_h = self.layout.panel_h.min(panel_max);
+        let sidebar_w = sidebar_span.fit(self.layout.sizes.sidebar_w);
+        let panel_h = panel_fit(panel_span, self.layout.sizes.panel(view).unwrap_or_else(|| auto_panel(view, avail)));
         let sb = self.anim.to(wid("sidebar", 0, 0), if self.sidebar { sidebar_w } else { 0.0 }, T_LAYOUT).round();
         let pn = self.anim.to(wid("panel", 0, 0), if self.panel { panel_h } else { 0.0 }, T_LAYOUT).round();
 
@@ -297,8 +302,11 @@ impl App {
         l.main = Rect::new(sb, TOP_BAR, w - sb, h - TOP_BAR - pn);
         // Panneau fermé : on réancre quand même en visant le bas de la fenêtre.
         l.panel = Rect::new(sb, h - pn.max(56.0), w - sb, pn.max(56.0));
-        l.sidebar_edge = (self.sidebar && sb > 1.0).then(|| Rect::new(sb - GRIP, TOP_BAR, 2.0 * GRIP, h - TOP_BAR));
-        l.panel_edge = (self.panel && pn > 1.0).then(|| Rect::new(sb + GRIP, h - pn - GRIP, w - sb - GRIP, 2.0 * GRIP));
+        // A splitter still held keeps its edge while its area is folded.
+        let held_sidebar = matches!(l.gesture, Some(Gesture::Sidebar { .. }));
+        let held_panel = matches!(l.gesture, Some(Gesture::Panel { .. }));
+        l.sidebar_edge = ((self.sidebar && sb > 1.0) || held_sidebar).then(|| Rect::new(sb - GRIP, TOP_BAR, 2.0 * GRIP, h - TOP_BAR));
+        l.panel_edge = ((self.panel && pn > 1.0) || held_panel).then(|| Rect::new(sb + GRIP, h - pn - GRIP, w - sb - GRIP, 2.0 * GRIP));
 
         // Fenêtres : celles dont l'appareil a disparu se ferment ; les autres restent attrapables.
         let alive: Vec<bool> = self.layout.wins.iter().map(|w| self.device_alive(w.device, &w.kind)).collect();
@@ -331,12 +339,13 @@ impl App {
         if input.pressed && (on_sidebar || on_panel) {
             if input.double {
                 // Double-clic : taille par défaut, en douceur.
-                if on_sidebar { self.layout.sidebar_w = SIDEBAR } else { self.layout.panel_h = PANEL }
+                if on_sidebar { self.layout.sizes.sidebar_w = SIDEBAR } else { self.layout.sizes.set_panel(view, None) }
+                self.save_settings();
             } else if on_sidebar {
                 self.layout.gesture = Some(Gesture::Sidebar { x0: input.x, w0: sidebar_w });
                 self.begin_drag(wid("split", 0, 0), input, 0.0);
             } else {
-                self.layout.gesture = Some(Gesture::Panel { y0: input.y, h0: panel_h });
+                self.layout.gesture = Some(Gesture::Panel { y0: input.y, h0: panel_h, view });
                 self.begin_drag(wid("split", 1, 0), input, 0.0);
             }
         }
@@ -410,7 +419,10 @@ impl App {
                     self.layout.gesture = None;
                 }
             }
-            Some(Gesture::Sidebar { .. } | Gesture::Panel { .. }) if !input.down => self.layout.gesture = None,
+            Some(Gesture::Sidebar { .. } | Gesture::Panel { .. }) if !input.down => {
+                self.layout.gesture = None;
+                self.save_settings();
+            }
             _ => {}
         }
 
@@ -503,19 +515,13 @@ impl App {
             }
             if hov {
                 let tip = if k == 0 { tr("Drag: browser width") } else { tr("Drag: panel height") };
-                self.set_tip(&tr_fmt!("{}\nDouble-click: default size", tip), "");
+                self.set_tip(&tr_fmt!("{}\nDouble-click: default size{}", tip, tr("\nDrag to the edge: fold")), "");
             }
             if hv < 0.01 {
                 continue;
             }
-            let (cx, cy) = e.center();
-            if k == 0 {
-                c.fill_rect(Rect::new(cx - 1.0, e.y, 2.0, e.h), t.accent.alpha(0.35 * hv));
-                c.fill_rrect(Rect::new(cx - 2.5, cy - 18.0, 5.0, 36.0), 2.5, t.accent.alpha(hv));
-            } else {
-                c.fill_rect(Rect::new(e.x, cy - 1.0, e.w, 2.0), t.accent.alpha(0.35 * hv));
-                c.fill_rrect(Rect::new(cx - 18.0, cy - 2.5, 36.0, 5.0), 2.5, t.accent.alpha(hv));
-            }
+            let axis = if k == 0 { super::split::Axis::Columns } else { super::split::Axis::Rows };
+            draw_grip(c, e, axis, t.accent, hv);
         }
     }
 
@@ -611,10 +617,51 @@ mod tests {
         step(&mut app, &mut c, &mut i, SIDEBAR, 600.0, true);
         step(&mut app, &mut c, &mut i, SIDEBAR + 70.0, 600.0, true);
         step(&mut app, &mut c, &mut i, SIDEBAR + 70.0, 600.0, false);
-        assert_eq!(app.layout.sidebar_w, SIDEBAR + 70.0);
+        assert_eq!(app.layout.sizes.sidebar_w, SIDEBAR + 70.0);
+        // Under the minimum: held there; near the edge: folded, its width kept.
         step(&mut app, &mut c, &mut i, SIDEBAR + 70.0, 600.0, true);
+        step(&mut app, &mut c, &mut i, 140.0, 600.0, true);
+        assert_eq!(app.layout.sizes.sidebar_w, SIDEBAR_SPAN.min);
+        assert!(app.sidebar);
         step(&mut app, &mut c, &mut i, 40.0, 600.0, true);
         step(&mut app, &mut c, &mut i, 40.0, 600.0, false);
-        assert_eq!(app.layout.sidebar_w, SIDEBAR_MIN);
+        assert!(!app.sidebar);
+        assert_eq!(app.layout.sizes.sidebar_w, SIDEBAR_SPAN.min);
+        // Its tab on the left edge opens it again, at the same width.
+        for _ in 0..30 {
+            step(&mut app, &mut c, &mut i, 7.0, 300.0, false);
+        }
+        let (_, ty) = app.layout.main.center();
+        step(&mut app, &mut c, &mut i, 7.0, ty, false);
+        step(&mut app, &mut c, &mut i, 7.0, ty, true);
+        step(&mut app, &mut c, &mut i, 7.0, ty, false);
+        assert!(app.sidebar);
+    }
+
+    #[test]
+    fn panel_stops_and_maximize() {
+        let mut app = app();
+        let mut c = Canvas::new(1280, 720);
+        let mut i = Input::default();
+        app.view = super::super::app::View::Piano;
+        for _ in 0..30 {
+            step(&mut app, &mut c, &mut i, 10.0, 10.0, false);
+        }
+        // A short window: the piano roll gets the room, the panel its header.
+        assert_eq!(app.layout.panel_open, super::super::split::PANEL_PEEK);
+        let (px, py) = app.layout.panel_edge.expect("panel open").center();
+        step(&mut app, &mut c, &mut i, px, py, false);
+        step(&mut app, &mut c, &mut i, px, py, true);
+        step(&mut app, &mut c, &mut i, px, py - 200.0, true);
+        step(&mut app, &mut c, &mut i, px, py - 200.0, false);
+        let h = app.layout.sizes.panel(app.view).expect("chosen");
+        assert_eq!(h, super::super::split::PANEL_PEEK + 200.0);
+        // Other views keep their own height.
+        assert_eq!(app.layout.sizes.panel(super::super::app::View::Rack), None);
+        // Maximize hides both sides, and gives them back.
+        app.toggle_maximize();
+        assert!(!app.sidebar && !app.panel);
+        app.toggle_maximize();
+        assert!(app.sidebar && app.panel);
     }
 }
