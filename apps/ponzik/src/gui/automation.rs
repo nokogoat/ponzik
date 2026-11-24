@@ -447,6 +447,14 @@ impl App {
             let val_at = |y: f32| info.from_norm((g.bottom() - y) / g.h);
 
             let points = self.project.automation_lane(target, AutoScope::Song).map(|a| a.points.clone()).unwrap_or_default();
+            // Muted: grey, kept; just jumped to: outlined for a moment.
+            let muted = self.project.automation_lane(target, AutoScope::Song).is_some_and(|a| a.muted);
+            let ink = if muted { t.muted } else { t.select };
+            let flash = self.curve_flash(target, AutoScope::Song);
+            if flash > 0.0 {
+                c.stroke_rrect(row, 4.0, 2.0, t.select.alpha(flash));
+            }
+            let label = if muted { format!("{label} · {}", tr("muted")) } else { label };
             let lane_id = wid("auto-lane", k, 0);
             if points.is_empty() {
                 // Created by the pass being recorded: its name and what it holds so far.
@@ -467,8 +475,8 @@ impl App {
             fill.push((area.x, g.bottom()));
             let mut path = Path::new();
             path.polygon(&fill);
-            c.fill_path(&path, t.select.alpha(0.12));
-            c.stroke_polyline(&pts, 1.6, t.select);
+            c.fill_path(&path, ink.alpha(0.12));
+            c.stroke_polyline(&pts, 1.6, ink);
 
             let hover_point = points.iter().position(|p| {
                 (input.x - x_of(p.tick as f32)).abs() < POINT_HIT && (input.y - y_of(p.value)).abs() < POINT_HIT
@@ -479,7 +487,7 @@ impl App {
             let tw = self.fonts.measure(self.f.sans_med, 11.0, &label) + 16.0;
             let chip = Rect::new(area.x + 6.0, row.y + 4.0, tw, 18.0);
             c.fill_rrect(chip, 6.0, t.bg_deep.alpha(0.85));
-            self.text(c, self.f.sans_med, 11.0, chip.x + 8.0, chip.y + 9.0, &label, t.select);
+            self.text(c, self.f.sans_med, 11.0, chip.x + 8.0, chip.y + 9.0, &label, ink);
             if self.lane_arm(c, input, k, chip.right() + 12.0, chip.y + 9.0, target) {
                 continue;
             }
@@ -529,7 +537,7 @@ impl App {
                 }
                 let hot = hover_point == Some(i) && over;
                 c.fill_circle(px, py, if hot { 5.5 } else { 4.0 }, t.bg_deep);
-                c.stroke_circle(px, py, if hot { 5.5 } else { 4.0 }, 1.6, t.select);
+                c.stroke_circle(px, py, if hot { 5.5 } else { 4.0 }, 1.6, ink);
             }
             if over && let Some(i) = hover_point {
                 let text = info.format(points[i].value);
