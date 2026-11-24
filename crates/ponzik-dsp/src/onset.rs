@@ -15,7 +15,7 @@ pub const FRAME: usize = 1024;
 /// Pas entre deux trames.
 pub const HOP: usize = 256;
 /// Écart minimal entre deux attaques, en secondes.
-const MIN_GAP: f32 = 0.045;
+pub const MIN_GAP: f32 = 0.045;
 /// Demi-largeur de la médiane du seuil adaptatif, en trames.
 const MEDIAN_SPAN: usize = 12;
 /// Trames sous ce niveau (dB sous la trame la plus forte) : silence, pas d'attaque.
@@ -54,8 +54,9 @@ impl OnsetAnalysis {
         hann(&mut window);
         let bins = fft.bins();
         let (mut re, mut im) = (vec![0.0; bins], vec![0.0; bins]);
-        let mut prev = vec![0.0f32; bins];
-        let mut mag = vec![0.0f32; bins];
+        let bands = bands(bins, sample_rate);
+        let mut prev = vec![0.0f32; bands.len()];
+        let mut mag = vec![0.0f32; bands.len()];
         let mut buf = vec![0.0f32; FRAME];
         let mut flux = Vec::with_capacity(frames);
         let mut level = Vec::with_capacity(frames);
@@ -73,9 +74,10 @@ impl OnsetAnalysis {
             let mut f = 0.0;
             // Près de la fin, la coupure du signal étale le spectre : pas d'attaque à y voir.
             let tail = k * HOP + FRAME / 2 > signal.len() && k > 0;
-            for j in 1..bins {
-                mag[j] = (1.0 + 100.0 * (re[j] * re[j] + im[j] * im[j]).sqrt()).ln();
-                f += (mag[j] - prev[j]).max(0.0);
+            for (b, &(lo, hi)) in bands.iter().enumerate() {
+                let e: f32 = (lo..hi).map(|j| re[j] * re[j] + im[j] * im[j]).sum();
+                mag[b] = (1.0 + 100.0 * (e / (hi - lo) as f32).sqrt()).ln();
+                f += (mag[b] - prev[b]).max(0.0);
             }
             std::mem::swap(&mut prev, &mut mag);
             flux.push(if tail { 0.0 } else { f });
@@ -123,8 +125,14 @@ impl OnsetAnalysis {
     /// Attaques au-dessus du seuil, dans l'ordre ; au plus `max` (les plus
     /// fortes sont gardées). Les positions sont affinées dans `signal`.
     pub fn pick(&self, signal: &[f32], sensitivity: f32, max: usize) -> Vec<Onset> {
+        self.pick_with(signal, sensitivity, MIN_GAP, max)
+    }
+
+    /// [`Self::pick`] with the shortest gap between two hits, in seconds
+    /// (the stronger of two closer hits wins).
+    pub fn pick_with(&self, signal: &[f32], sensitivity: f32, min_gap: f32, max: usize) -> Vec<Onset> {
         let n = self.flux.len();
-        let gap = ((MIN_GAP * self.rate()) as usize).max(1);
+        let gap = ((min_gap.max(0.0) * self.rate()) as usize).max(1);
         let mut found: Vec<(usize, f32)> = Vec::new();
         for k in 0..n {
             let f = self.flux[k];
@@ -160,6 +168,22 @@ impl OnsetAnalysis {
         }
         out
     }
+}
+
+/// Third-octave bands from 30 Hz, as bin ranges (at least one bin each): a
+/// kick's two low bins weigh as much as a snare's hundreds of high ones.
+fn bands(bins: usize, sample_rate: f32) -> Vec<(usize, usize)> {
+    let hz = sample_rate / (2.0 * (bins - 1) as f32);
+    let mut out: Vec<(usize, usize)> = Vec::new();
+    let mut lo = 1usize;
+    let mut f = 30.0f32;
+    while lo < bins {
+        f *= 2f32.powf(1.0 / 3.0);
+        let hi = ((f / hz).round() as usize).clamp(lo + 1, bins);
+        out.push((lo, hi));
+        lo = hi;
+    }
+    out
 }
 
 /// Début de l'attaque repérée vers l'image `center` : début de la montée de
@@ -234,6 +258,80 @@ mod tests {
         let counts: Vec<usize> = [0.0, 0.5, 1.0].iter().map(|&s| a.pick(&x, s, 64).len()).collect();
         assert!(counts[0] <= counts[1] && counts[1] <= counts[2], "{counts:?}");
         assert!(counts[0] >= 1 && counts[2] == 4, "{counts:?}");
+    }
+
+    /// A two-bar drum loop at 100 BPM: kick, snare, closed hats, a ghost
+    /// snare and an open hat, over a held bass note.
+    fn drum_loop() -> (Vec<f32>, Vec<usize>) {
+        let beat = 60.0 / 100.0 * SR;
+        let len = (beat * 8.0) as usize;
+        let mut x = vec![0.0f32; len];
+        let mut noise = WhiteNoise::new(21);
+        let tau = std::f32::consts::TAU;
+        // (time in 16ths, kind, level): 0 kick, 1 snare, 2 closed hat, 3 open hat.
+        let hits: [(f32, u8, f32); 17] = [
+            (0.0, 0, 1.0), (2.0, 2, 0.5), (4.0, 1, 0.9), (6.0, 2, 0.5), (7.0, 0, 0.7), (8.0, 0, 0.9), (10.0, 2, 0.5),
+            (12.0, 1, 0.95), (14.0, 3, 0.5), (16.0, 0, 1.0), (18.0, 2, 0.5), (20.0, 1, 0.9), (22.0, 2, 0.45),
+            (23.0, 1, 0.35), (24.0, 0, 0.85), (26.0, 0, 0.6), (28.0, 1, 1.0),
+        ];
+        let mut at = Vec::new();
+        for (t, kind, vel) in hits {
+            let start = (t * beat / 4.0) as usize;
+            at.push(start);
+            let (mut phase, mut hp) = (0.0f32, 0.0f32);
+            for i in 0..((0.4 * SR) as usize).min(len - start) {
+                let tt = i as f32 / SR;
+                let v = match kind {
+                    0 => {
+                        phase += (50.0 + 90.0 * (-tt * 30.0).exp()) / SR;
+                        (phase * tau).sin() * (-tt * 8.0).exp()
+                    }
+                    1 => {
+                        phase += 190.0 / SR;
+                        0.5 * (phase * tau).sin() * (-tt * 30.0).exp() + 0.6 * noise.next_sample() * (-tt * 16.0).exp()
+                    }
+                    _ => {
+                        let w = noise.next_sample();
+                        let y = w - hp;
+                        hp = w;
+                        y * 0.4 * (-tt * if kind == 2 { 60.0 } else { 8.0 }).exp()
+                    }
+                };
+                x[start + i] += v * vel * 0.7;
+            }
+        }
+        for (i, v) in x.iter_mut().enumerate() {
+            *v += 0.1 * (i as f32 * 55.0 * tau / SR).sin();
+        }
+        (x, at)
+    }
+
+    #[test]
+    fn drum_loop_hits_within_5_ms_and_nothing_else() {
+        let (x, at) = drum_loop();
+        let a = OnsetAnalysis::new(&x, SR);
+        let found = a.pick(&x, 0.5, 64);
+        let tol = (0.005 * SR) as usize;
+        let mut worst = 0usize;
+        for &want in &at {
+            let d = found.iter().map(|o| o.pos.abs_diff(want)).min().unwrap();
+            worst = worst.max(d);
+            assert!(d <= tol, "hit at {want} found {d} frames away: {found:?}");
+        }
+        // No false positive: every detection belongs to a hit.
+        for o in &found {
+            assert!(at.iter().any(|&w| o.pos.abs_diff(w) <= tol), "false hit at {}", o.pos);
+        }
+        assert_eq!(found.len(), at.len());
+        eprintln!("{} hits, worst error {:.2} ms", at.len(), worst as f32 * 1000.0 / SR);
+    }
+
+    #[test]
+    fn min_gap_merges_close_hits() {
+        let x = hits(60_000, &[2_000, 3_500, 30_000], 400.0);
+        let a = OnsetAnalysis::new(&x, SR);
+        assert_eq!(a.pick_with(&x, 0.5, 0.02, 64).len(), 3);
+        assert_eq!(a.pick_with(&x, 0.5, 0.1, 64).len(), 2);
     }
 
     #[test]
