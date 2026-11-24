@@ -246,6 +246,22 @@ fn row_h(it: &MenuItem) -> f32 {
     if it.header { HEADER_H } else { it.height }
 }
 
+/// Rows are never packed under this height.
+const PACK_MIN: f32 = 30.0;
+
+/// Factor for the rows (those of `PACK_MIN` or more) so the menu fits in
+/// `room`: 1 when it fits, never so small a row goes under `PACK_MIN`.
+fn pack_rows(items: &[MenuItem], room: f32) -> f32 {
+    let packable = |it: &&MenuItem| !it.header && it.height >= PACK_MIN;
+    let tall: f32 = items.iter().filter(packable).map(|it| it.height).sum();
+    let fixed: f32 = items.iter().filter(|it| !packable(it)).map(row_h).sum::<f32>() + items.iter().filter(|i| i.sep).count() as f32 * 9.0;
+    let shortest = items.iter().filter(packable).map(|it| it.height).fold(f32::MAX, f32::min);
+    if tall <= 0.0 {
+        return 1.0;
+    }
+    ((room - fixed) / tall).clamp((PACK_MIN / shortest).min(1.0), 1.0)
+}
+
 /// Rows of a menu drawn in `r`: their rectangles, scrolled.
 fn layout(r: Rect, top: f32, items: &[MenuItem], scroll: f32) -> Vec<Rect> {
     let mut ry = r.y + top - scroll;
@@ -666,7 +682,12 @@ impl App {
         for it in &mut items {
             it.height = t.dense(it.height);
         }
-        let dense38 = t.dense(38.0);
+        // A menu taller than the window packs its rows before it scrolls.
+        let k = pack_rows(&items, screen.h - 80.0 - 38.0 - 6.0);
+        for it in items.iter_mut().filter(|it| !it.header && it.height >= PACK_MIN) {
+            it.height = (it.height * k).round();
+        }
+        let dense38 = (t.dense(38.0) * k).round();
         let rows_k: Vec<RowKind> = items.iter().map(RowKind::of).collect();
         let nav = &mut state.nav;
 
@@ -869,6 +890,17 @@ mod tests {
 
     fn rows(kinds: &[(bool, bool)]) -> Vec<RowKind> {
         kinds.iter().map(|&(selectable, has_sub)| RowKind { selectable, has_sub }).collect()
+    }
+
+    #[test]
+    fn long_menus_pack_their_rows_before_scrolling() {
+        let items: Vec<MenuItem> = (0..20).map(|_| MenuItem::plain("x", Action::None)).collect();
+        // 20 rows of 38 = 760: room for all, nothing changes.
+        assert_eq!(pack_rows(&items, 800.0), 1.0);
+        // 684 of room: rows of 34.2.
+        assert!((pack_rows(&items, 684.0) * 38.0 - 34.2).abs() < 0.01);
+        // Never under 30 px: past that, the menu scrolls.
+        assert!((pack_rows(&items, 300.0) * 38.0 - PACK_MIN).abs() < 0.01);
     }
 
     #[test]
