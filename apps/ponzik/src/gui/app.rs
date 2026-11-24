@@ -932,6 +932,8 @@ pub struct App {
     pub prefs: super::settings::Prefs,
     /// Atelier : échantillon ouvert et son édition.
     pub lab: super::samplelab::Lab,
+    /// The audio editor, the Lab's second mode.
+    pub audio_edit: super::audioedit::AudioEditor,
     /// Device open in each rack: (track, slot) → unit.
     pub rack_sel: HashMap<(usize, usize), usize>,
     /// Device chip dragged inside a rack.
@@ -1115,6 +1117,7 @@ impl App {
             cursor: Default::default(),
             prefs: Default::default(),
             lab: Default::default(),
+            audio_edit: Default::default(),
             rack_sel: HashMap::new(),
             rack_chip: None,
             mod_ui: Default::default(),
@@ -2284,6 +2287,7 @@ impl App {
             || self.track_meters.iter().any(Meter::active)
             || self.channel_meters.iter().any(Meter::active)
             || self.rec.needs_redraw()
+            || self.audio_edit.needs_redraw()
             || self.voice.needs_redraw()
             || self.lessons.active()
     }
@@ -2355,6 +2359,7 @@ impl App {
         if v != self.view {
             if self.view == View::Lab {
                 self.lab_stop();
+                self.ae_stop();
             }
             self.view = v;
             self.anim.set(wid("view-enter", 0, 0), 0.0);

@@ -545,6 +545,11 @@ impl App {
             self.open_channel_in_lab(ch);
             return;
         }
+        let edit = open.translate(-30.0, 0.0);
+        if self.icon_button(c, input, wid("smp-edit", device_key(device), 0), edit, super::widgets::Icon::Pencil, false, (tr("Edit the audio: cut, clean, stretch, on a copy"), "")) {
+            self.open_channel_in_editor(ch);
+            return;
+        }
 
         // Marqueurs : début et fin (et début de boucle si présent), en pourcentage.
         let find = |n: &str| params.iter().find(|p| p.name == n);

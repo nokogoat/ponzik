@@ -490,6 +490,18 @@ impl App {
             self.open_in_lab(&clip.path, super::samplelab::Source::Clip(i));
             return;
         }
+        if self.icon_button(
+            c,
+            input,
+            wid("cp-edit", 0, 0),
+            b(4),
+            Icon::Pencil,
+            false,
+            (tr("Edit the audio: cut, clean, stretch, on a copy"), ""),
+        ) {
+            self.open_in_editor(&clip.path, super::samplelab::Source::Clip(i));
+            return;
+        }
         if let Some(hex) =
             self.swatches(c, input, "cp-color", ctl.x, ctl.bottom() - 12.0, clip.color)
         {

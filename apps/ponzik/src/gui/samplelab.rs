@@ -317,6 +317,13 @@ pub struct Lab {
     picks: Option<(usize, Vec<Pick>)>,
 }
 
+impl Lab {
+    /// The working sample, if one is open.
+    pub(super) fn doc_sample(&self) -> Option<Arc<Sample>> {
+        self.doc.as_ref().map(|d| d.sample.clone())
+    }
+}
+
 impl Default for Lab {
     fn default() -> Self {
         Self {
@@ -773,6 +780,9 @@ impl App {
 
     /// Raccourcis de l'Atelier ; vrai si la touche est prise.
     pub fn lab_key(&mut self, key: Key, mods: Modifiers) -> bool {
+        if self.audio_edit.active {
+            return self.ae_key(key, mods);
+        }
         if self.lab.doc.is_none() {
             return false;
         }
@@ -1147,11 +1157,16 @@ impl App {
     // --- Vue ---
 
     pub(super) fn lab_view(&mut self, c: &mut Canvas, input: &Input, header: Rect, body: Rect) {
+        // Second mode: the audio editor.
+        if self.audio_edit.active {
+            return self.ae_view(c, input, header, body);
+        }
         if !input.down {
             self.lab.grab = None;
         }
         // Un échantillon glissé depuis le navigateur s'ouvre ici.
         self.drop_zone(input, body, DropTarget::Lab);
+        let header = self.ae_mode_switch(c, input, header);
         self.lab_steps(c, input, header);
         let step = if self.lab.doc.is_some() { self.lab.step } else { Step::Sample };
         if step == Step::Sample {
@@ -1487,7 +1502,7 @@ impl App {
 
     /// Curseur horizontal : libellé, valeur, piste. Renvoie la nouvelle position (0 à 1).
     #[allow(clippy::too_many_arguments)]
-    fn lab_slider(&mut self, c: &mut Canvas, input: &Input, id: u64, r: Rect, label: &str, norm: f32, text: &str, default: f32, tip: &str) -> Option<f32> {
+    pub(super) fn lab_slider(&mut self, c: &mut Canvas, input: &Input, id: u64, r: Rect, label: &str, norm: f32, text: &str, default: f32, tip: &str) -> Option<f32> {
         let t = self.theme;
         let track = Rect::new(r.x, r.y + 26.0, r.w, 4.0);
         let hit = Rect::new(r.x - 4.0, r.y, r.w + 8.0, r.h);

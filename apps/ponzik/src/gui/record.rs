@@ -286,7 +286,7 @@ impl App {
     }
 
     /// Ouvre l'entrée choisie et la branche sur la sortie. Renvoie faux en cas d'échec.
-    fn open_input(&mut self) -> bool {
+    pub(super) fn open_input(&mut self) -> bool {
         if self.rec.input.is_some() {
             return true;
         }
@@ -398,7 +398,7 @@ impl App {
     /// À chaque image : niveaux, latences, tampons du moteur, prises et calibrage revenus.
     pub(super) fn record_tick(&mut self, dt: f32) {
         // L'entrée reste ouverte tant qu'on en a besoin (piste armée, panneau ouvert).
-        let want_input = !self.rec.armed.is_empty() || self.rec.panel || self.voice.enabled;
+        let want_input = !self.rec.armed.is_empty() || self.rec.panel || self.voice.enabled || self.audio_edit.capture.is_some();
         if want_input && self.rec.input.is_none() && self.rec.output.is_some() && !self.rec.demo && self.rec.input_error.is_none() {
             // Échec : le panneau reste ouvert sur la liste des micros, avec l'erreur ;
             // on ne réessaie qu'au prochain choix de micro ou à la réouverture.

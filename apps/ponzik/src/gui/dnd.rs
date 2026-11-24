@@ -248,7 +248,7 @@ impl App {
                 let path = path.to_string_lossy().into_owned();
                 match self.view {
                     View::Playlist => self.add_audio_clip(&path, None),
-                    View::Lab => self.open_in_lab(&path, super::samplelab::Source::Browser),
+                    View::Lab => self.open_in_lab_mode(&path),
                     _ => self.add_sample_channel(&path),
                 }
             }
@@ -299,7 +299,7 @@ impl App {
                 self.load_pad_sample(channel, pad, &path.to_string_lossy(), add_layer);
             }
             (Payload::Sample(path), DropTarget::Lab) => {
-                self.open_in_lab(&path.to_string_lossy(), super::samplelab::Source::Browser);
+                self.open_in_lab_mode(&path.to_string_lossy());
             }
             (Payload::Sample(path), DropTarget::Lane { lane, tick }) => {
                 self.add_audio_clip(&path.to_string_lossy(), Some((lane, tick)));
@@ -341,14 +341,14 @@ impl App {
                 Some(DropTarget::Pad { channel, pad, add_layer }) => {
                     self.load_pad_sample(channel, pad + if add_layer { 0 } else { i }, &p, add_layer)
                 }
-                Some(DropTarget::Lab) if i == 0 => self.open_in_lab(&p, super::samplelab::Source::Browser),
+                Some(DropTarget::Lab) if i == 0 => self.open_in_lab_mode(&p),
                 // Several files fill the slots below.
                 Some(DropTarget::SessionSlot { col, row }) if row + i < ponzik_project::SESSION_SCENES => self.add_session_audio(&p, col, row + i),
                 Some(DropTarget::Channel(ch)) if i == 0 => self.drop_payload(Payload::Sample(path.clone()), DropTarget::Channel(ch)),
                 Some(DropTarget::Lab | DropTarget::Channel(_) | DropTarget::Rack) => self.add_sample_channel(&p),
                 _ => match self.view {
                     View::Playlist => self.add_audio_clip(&p, None),
-                    View::Lab if i == 0 => self.open_in_lab(&p, super::samplelab::Source::Browser),
+                    View::Lab if i == 0 => self.open_in_lab_mode(&p),
                     _ => self.add_sample_channel(&p),
                 },
             }
