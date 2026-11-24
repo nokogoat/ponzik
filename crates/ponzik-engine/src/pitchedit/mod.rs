@@ -111,6 +111,11 @@ impl Analysis {
         let (a, b) = self.frames_of(start, end);
         let pitch = self.pitch[a..b].to_vec();
         let slow = smooth_voiced(&pitch, (DRIFT_WINDOW / HOP / 2.0).round() as usize);
+        // A note too short for a cycle of vibrato has none: all its motion is
+        // drift (fully from 0.2 s down, the split as is from two cycles up).
+        let len = (b - a) as f64 * HOP;
+        let keep = ((len - 0.2) / (2.0 * DRIFT_WINDOW - 0.2)).clamp(0.0, 1.0) as f32;
+        let slow: Vec<f32> = pitch.iter().zip(&slow).map(|(p, s)| if p.is_finite() { p + (s - p) * keep } else { *s }).collect();
         let drift = slow.iter().map(|s| if s.is_finite() { s - centre } else { 0.0 }).collect();
         let vibrato = pitch.iter().zip(&slow).map(|(p, s)| if p.is_finite() && s.is_finite() { p - s } else { 0.0 }).collect();
         NoteCurves { first: a, pitch, drift, vibrato }
