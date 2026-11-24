@@ -345,7 +345,10 @@ fn load_render(key: u64, source: &Sample) -> Option<Sample> {
 fn store_render(key: u64, content: u64, notes: &[NoteEdit], s: Sample, write: bool) -> Arc<Sample> {
     if write && let Some(file) = render_file(key) {
         let _ = file.parent().map(std::fs::create_dir_all);
-        let _ = ponzik_engine::wav::write_sample(file, &s);
+        let _ = ponzik_engine::wav::write_sample(&file, &s);
+        if let Some(dir) = file.parent() {
+            prune_dir(dir, DISK_RENDERS);
+        }
     }
     let s = Arc::new(s);
     with_cache(|c| {
@@ -355,6 +358,27 @@ fn store_render(key: u64, content: u64, notes: &[NoteEdit], s: Sample, write: bo
         c.last.insert(content, (notes.to_vec(), s.clone()));
     });
     s
+}
+
+/// Renders kept in the cache folder (the newest; each is a whole take).
+const DISK_RENDERS: usize = 32;
+
+/// Deletes the oldest renders of `dir` beyond `keep`.
+fn prune_dir(dir: &std::path::Path, keep: usize) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let mut renders: Vec<(std::time::SystemTime, PathBuf)> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "wav"))
+        .filter_map(|p| Some((std::fs::metadata(&p).ok()?.modified().ok()?, p)))
+        .collect();
+    if renders.len() <= keep {
+        return;
+    }
+    renders.sort_by_key(|r| std::cmp::Reverse(r.0));
+    for (_, p) in renders.into_iter().skip(keep) {
+        let _ = std::fs::remove_file(p);
+    }
 }
 
 /// Forgets the renders nobody needs: keeps `wanted` and the `spare` most
@@ -406,6 +430,39 @@ mod tests {
         let n = p.pitch_edits[0].notes[0];
         assert_eq!((n.new_start, n.new_end, n.vibrato, n.gain), (1.0, 2.0, 1.0, 0.0));
         assert_eq!(p.pitch_edits[0].notes.len(), 1);
+    }
+
+    #[test]
+    fn analyses_and_renders_are_kept_on_disk() {
+        let dir = std::env::temp_dir().join(format!("ponzik-tune-test-{}", std::process::id()));
+        set_cache_dir(Some(dir.clone()));
+        // A take of its own (its content is its key).
+        let mut x = take().left.clone();
+        x.iter_mut().for_each(|v| *v *= 0.9);
+        let s = Arc::new(Sample { name: "disk".into(), sample_rate: SR, right: x.clone(), left: x, markers: Vec::new() });
+        let a = analyze(&s, None, None).expect("analysed");
+        let mut notes: Vec<NoteEdit> = a.notes.iter().map(NoteEdit::from_note).collect();
+        notes[0].pitch -= 1.0;
+        let job = TuneJob::new("disk.wav", s.clone(), notes);
+        let r = job.run(None, None).expect("rendered");
+        let back = Analysis::from_bytes(&std::fs::read(dir.join(format!("{:016x}.pzpa", content_key(&s)))).unwrap()).unwrap();
+        assert_eq!(back.notes, a.notes);
+        let loaded = load_render(job.key, &s).expect("render on disk");
+        assert_eq!(loaded.len(), r.len());
+        // 24-bit files: within a quantization step.
+        let worst = loaded.left.iter().zip(&r.left).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+        assert!(worst < 1e-5, "{worst}");
+        // The folder keeps the newest renders only.
+        let sub = dir.join("prune");
+        std::fs::create_dir_all(&sub).unwrap();
+        for k in 0..3 {
+            std::fs::write(sub.join(format!("old{k}.wav")), b"x").unwrap();
+        }
+        prune_dir(&sub, 2);
+        let left = std::fs::read_dir(&sub).unwrap().flatten().filter(|e| e.path().extension().is_some_and(|x| x == "wav")).count();
+        assert_eq!(left, 2);
+        set_cache_dir(None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
