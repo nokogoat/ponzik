@@ -4,8 +4,8 @@
 //!
 //! Aucune allocation après construction, aucune dépendance : tout ici est utilisable
 //! directement dans le thread audio, sauf les outils d'édition hors ligne
-//! ([`onset`], [`tempo`], [`stretch`], [`warp`], [`chroma`], [`edit`], [`denoise`])
-//! qui allouent leurs résultats.
+//! ([`onset`], [`tempo`], [`stretch`], [`warp`], [`chroma`], [`edit`], [`denoise`],
+//! [`spectrogram`]) qui allouent leurs résultats.
 
 #![forbid(unsafe_code)]
 
@@ -26,6 +26,7 @@ pub mod onset;
 pub mod osc;
 pub mod oversample;
 pub mod smooth;
+pub mod spectrogram;
 pub mod spectrum;
 pub mod stretch;
 pub mod tempo;
