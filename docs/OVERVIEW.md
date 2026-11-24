@@ -52,6 +52,12 @@
   declick, declip, trim silence, stretch, shift the pitch, make a seamless loop.
   Slice at the transients, find the tempo, then send the slices to a Slicer,
   Drum Pads, a MIDI pattern or a drum pattern rebuilt from the break.
+- **Pitch Editor** (Melodyne and Newtone style): the notes of a recorded take as blobs
+  on a pitch grid with the sung curve through them; move them to another note (snaps
+  to semitones or to the scale), correct the pitch and drift to the scale by an amount,
+  change vibrato, formants and level per note, cut and join notes, stretch their start
+  and end in time. Non-destructive and undoable, rendered in the background, A/B with
+  the original.
 - **Warp**: audio clips follow the project tempo (Beats, Tones and Re-Pitch modes),
   with warp markers and independent transpose.
 - **Drag files from your file manager**: WAV, FLAC, MP3 and Ogg Vorbis.
