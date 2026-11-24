@@ -787,6 +787,16 @@ impl App {
 
     /// The piano roll's scale button: a click on the icon snaps notes to the
     /// scale, a click on the name picks the key and the scale. Returns its width.
+    /// Width of the piano roll's scale button (see `piano_scale_button`).
+    pub(super) fn piano_scale_width(&self) -> f32 {
+        if self.bar_shown(Bar::Scale) {
+            return 36.0;
+        }
+        let scaled = self.project.scale != ScaleKind::Chromatic;
+        let label = if scaled { scale_label(self.project.key, self.project.scale) } else { tr("Scale").to_string() };
+        36.0 + (self.fonts.measure(self.f.sans_med, 12.0, &label) + 32.0).min(132.0).round()
+    }
+
     pub(super) fn piano_scale_button(&mut self, c: &mut Canvas, input: &Input, r: Rect) -> f32 {
         let t = self.theme;
         let scaled = self.project.scale != ScaleKind::Chromatic;
