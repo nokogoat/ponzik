@@ -170,7 +170,7 @@ impl Default for FmSynth {
 impl FmSynth {
     pub fn new() -> Self {
         let sr = 48_000.0;
-        let env = AdsrParams { attack: 0.002, decay: 0.5, sustain: 0.5, release: 0.3 };
+        let env = AdsrParams::new(0.002, 0.5, 0.5, 0.3);
         let op = Operator { coarse: 1, fine: 0.0, level: 0.0, env, velocity: 0.5 };
         let mut s = Self {
             ops: [op; OPS],

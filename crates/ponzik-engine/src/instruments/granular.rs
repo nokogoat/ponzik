@@ -120,7 +120,7 @@ impl Default for Granular {
 impl Granular {
     pub fn new() -> Self {
         let sr = 48_000.0;
-        let env = AdsrParams { attack: 0.02, decay: 0.3, sustain: 1.0, release: 0.3 };
+        let env = AdsrParams::new(0.02, 0.3, 1.0, 0.3);
         let mut g = Self {
             sample: None,
             position: 0.3,

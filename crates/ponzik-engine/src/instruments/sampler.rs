@@ -110,7 +110,7 @@ impl Default for Sampler {
 impl Sampler {
     pub fn new() -> Self {
         let sr = 48_000.0;
-        let env = AdsrParams { attack: 0.001, decay: 0.2, sustain: 1.0, release: 0.1 };
+        let env = AdsrParams::new(0.001, 0.2, 1.0, 0.1);
         let mut s = Self {
             sample: None,
             root: 60.0,

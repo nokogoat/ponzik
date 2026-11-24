@@ -20,7 +20,7 @@ const ACCENT_DECAY: f32 = 0.2;
 /// Ouverture maximale du filtre par l'enveloppe, en octaves.
 const ENV_OCTAVES: f32 = 5.0;
 const HELD: usize = 16;
-const AMP_ENV: AdsrParams = AdsrParams { attack: 0.003, decay: 0.01, sustain: 1.0, release: 0.012 };
+const AMP_ENV: AdsrParams = AdsrParams::new(0.003, 0.01, 1.0, 0.012);
 
 const WAVES: &[&str] = &["Saw", "Square"];
 

@@ -118,8 +118,8 @@ impl Default for PulseParams {
             cutoff_hz: 400.0,
             resonance: 1.2,
             filter_env_hz: 3_000.0,
-            amp_env: AdsrParams { attack: 0.004, decay: 0.2, sustain: 0.6, release: 0.12 },
-            filter_env: AdsrParams { attack: 0.001, decay: 0.25, sustain: 0.0, release: 0.2 },
+            amp_env: AdsrParams::new(0.004, 0.2, 0.6, 0.12),
+            filter_env: AdsrParams::new(0.001, 0.25, 0.0, 0.2),
             gain: 0.4,
         }
     }
@@ -310,7 +310,7 @@ mod tests {
             detune_cents: 0.0,
             cutoff_hz: 16_000.0,
             filter_env_hz: 0.0,
-            amp_env: AdsrParams { attack: 0.001, decay: 0.1, sustain: 1.0, release: 0.05 },
+            amp_env: AdsrParams::new(0.001, 0.1, 1.0, 0.05),
             ..Default::default()
         });
         synth.set_sample_rate(48_000.0);
