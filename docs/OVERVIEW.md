@@ -45,6 +45,13 @@
 
 - **Sample Lab**: drop a loop, cut it automatically (or on the beat, or by hand),
   then play the pieces on pads or rebuild the loop as a pattern to flip it.
+- **Audio editor** (the Lab's Edit mode, like Edison): open any clip, sample or
+  recording, or record straight in, and edit a copy with undo. Zoom to single
+  samples or switch to a spectrogram; cut, paste, crop, normalize (peak or
+  LUFS), fade with five curve shapes, remove noise learnt from a quiet stretch,
+  declick, declip, trim silence, stretch, shift the pitch, make a seamless loop.
+  Slice at the transients, find the tempo, then send the slices to a Slicer,
+  Drum Pads, a MIDI pattern or a drum pattern rebuilt from the break.
 - **Warp**: audio clips follow the project tempo (Beats, Tones and Re-Pitch modes),
   with warp markers and independent transpose.
 - **Drag files from your file manager**: WAV, FLAC, MP3 and Ogg Vorbis.

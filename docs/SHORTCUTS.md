@@ -40,3 +40,24 @@ list to the edge to fold them; a small tab stays to open them again. Sizes and
 zooms are saved with your settings, and each view keeps its own device panel
 height. On a short screen the piano roll, mixer, session and Sample Lab start
 with the device panel shrunk to its header: drag it up to see the devices.
+## Audio editor (Sample Lab, Edit mode)
+
+Like Edison; while the editor is shown, these keys go to it first.
+
+| Key | Action |
+|---|---|
+| Space | Play the selection (or from the cursor) |
+| L | Loop the selection while playing |
+| R | Record the microphone into the editor |
+| Ctrl+X · Ctrl+C · Ctrl+V | Cut · copy · paste (replaces the selection, or goes in at the cursor) |
+| Del · Ctrl+Del | Delete the selection · crop to it |
+| Ctrl+I | Insert silence |
+| Ctrl+N · Ctrl+R | Normalize · reverse |
+| Ctrl+Shift+I · Ctrl+Shift+O | Fade in · fade out |
+| Ctrl+A | Select everything |
+| M · Shift+M | Add a marker · make a region of the selection |
+| Z · Home | Zoom to the selection · see the whole sound |
+| Shift+S | Waveform or spectrogram |
+| Ctrl+Z · Ctrl+Y | Undo · redo in the editor |
+| Wheel · Shift+wheel | Zoom · scroll |
+| Alt while dragging | No snapping |
