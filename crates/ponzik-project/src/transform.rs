@@ -124,6 +124,27 @@ pub fn arpeggiate(notes: &[Note], dir: ArpDir, rate: u32, seed: u64) -> Vec<Note
     sorted(out)
 }
 
+/// Lone notes (nothing else starts with them) become the chord `chord` builds
+/// on their pitch, so an arpeggio has something to walk through; chords stay.
+pub fn fill_chords(notes: &[Note], chord: impl Fn(u8) -> Vec<u8>) -> Vec<Note> {
+    let mut out = Vec::with_capacity(notes.len() * 3);
+    for group in chords(notes) {
+        match group[..] {
+            [n] => {
+                let mut keys = chord(n.key);
+                if !keys.contains(&n.key) {
+                    keys.push(n.key);
+                }
+                keys.sort_unstable();
+                keys.dedup();
+                out.extend(keys.into_iter().map(|key| Note { key, ..n }));
+            }
+            _ => out.extend(group),
+        }
+    }
+    sorted(out)
+}
+
 /// Spreads the notes of each chord over `spread` ticks, from the lowest
 /// (`up`) or the highest; their ends stay in place.
 pub fn strum(notes: &[Note], spread: u32, up: bool) -> Vec<Note> {
@@ -330,6 +351,20 @@ mod tests {
         // The last step is cut at the chord's end; a lone note stays.
         let odd = arpeggiate(&[n(0, 40, 60), n(0, 40, 64), n(96, 24, 50)], ArpDir::Up, 24, 0);
         assert_eq!(sk(&odd), [(0, 24, 60), (24, 16, 64), (96, 24, 50)]);
+    }
+
+    #[test]
+    fn lone_notes_become_chords_to_arpeggiate() {
+        let triad = |k: u8| vec![k, k + 4, k + 7];
+        // A melody: each note gets its chord; a chord stays as written.
+        let melody = [n(0, 48, 60), n(48, 48, 62), n(96, 48, 50), n(96, 48, 53)];
+        let full = fill_chords(&melody, triad);
+        assert_eq!(sk(&full), [(0, 48, 60), (0, 48, 64), (0, 48, 67), (48, 48, 62), (48, 48, 66), (48, 48, 69), (96, 48, 50), (96, 48, 53)]);
+        // A chord without the note itself still keeps it, without doubles.
+        assert_eq!(sk(&fill_chords(&[n(0, 24, 61)], |_| vec![60, 64, 64])), [(0, 24, 60), (0, 24, 61), (0, 24, 64)]);
+        // So a melody arpeggiates.
+        let arp = arpeggiate(&fill_chords(&melody[..1], triad), ArpDir::Up, 12, 0);
+        assert_eq!(sk(&arp), [(0, 12, 60), (12, 12, 64), (24, 12, 67), (36, 12, 60)]);
     }
 
     #[test]
