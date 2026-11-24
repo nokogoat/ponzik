@@ -11155,3 +11155,24 @@ msgstr "{} points"
 
 msgid "{} · {} muted"
 msgstr "{} · {} coupées"
+
+msgid "Drag up or down to bend it"
+msgstr "Glisser vers le haut ou le bas pour la courber"
+
+msgid "Drag: its time"
+msgstr "Glisser : sa durée"
+
+msgid "Drag: its time · Shift+drag: hold"
+msgstr "Glisser : sa durée · Maj+glisser : la tenue"
+
+msgid "Envelope\nDrag a point: its time or level · drag a segment: its curve · right-click: automate"
+msgstr "Enveloppe\nGlisser un point : sa durée ou son niveau · glisser un segment : sa courbe · clic droit : automatiser"
+
+msgid "Sideways: decay time · up and down: sustain level"
+msgstr "De côté : durée du déclin · haut et bas : niveau de maintien"
+
+msgid "Up and down: the level held"
+msgstr "Haut et bas : le niveau maintenu"
+
+msgid "{}\n{} · double-click: default · right-click: automate, type"
+msgstr "{}\n{} · double-clic : défaut · clic droit : automatiser, saisir"

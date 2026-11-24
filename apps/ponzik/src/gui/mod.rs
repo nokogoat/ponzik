@@ -24,6 +24,7 @@ mod devices;
 mod devstrip;
 mod dnd;
 mod editors;
+mod envelope;
 mod filedialog;
 mod dropouts;
 mod float;
@@ -921,6 +922,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // piano roll's channel, their chips, the automation list (see `screenshot_curves`).
     if let Ok(spec) = std::env::var("PONZIK_CURVES") {
         app.screenshot_curves(&spec);
+    }
+    // PONZIK_ENVELOPE=shaped: delay, hold and curves on the selected channel's envelopes.
+    if let Ok(spec) = std::env::var("PONZIK_ENVELOPE") {
+        app.screenshot_envelope(&spec);
     }
     // PONZIK_POPUP : ouvre un menu pour la capture.
     if let Ok(name) = std::env::var("PONZIK_POPUP") {

@@ -36,6 +36,8 @@ struct OpenWindow {
 pub struct PluginEditors {
     /// By channel (`None`: not a plugin).
     channels: Vec<Option<Editor>>,
+    /// Envelope probes of the native synths, by channel (shown by the envelope editor).
+    probes: Vec<Option<std::sync::Arc<ponzik_engine::EnvProbe>>>,
     inserts: HashMap<(usize, usize), Editor>,
     open: Vec<OpenWindow>,
     /// Where each device's window was last, for this session.
@@ -50,6 +52,7 @@ impl PluginEditors {
     /// Editors of an engine about to start.
     pub fn from_engine(engine: &mut Engine) -> Self {
         let channels = engine.channels().iter().map(|c| c.instrument.editor()).collect();
+        let probes = engine.channels().iter().map(|c| c.instrument.env_probe()).collect();
         let mut inserts = HashMap::new();
         for (t, track) in engine.mixer_mut().tracks.iter().enumerate() {
             for (s, fx) in track.inserts.iter().enumerate() {
@@ -58,20 +61,32 @@ impl PluginEditors {
                 }
             }
         }
-        Self { channels, inserts, ..Self::default() }
+        Self { channels, probes, inserts, ..Self::default() }
     }
 
     pub fn set_owner(&mut self, owner: NativeHandle) {
         self.owner = Some(owner);
     }
 
+    /// The envelope probe of a channel's instrument, if it has one.
+    pub fn env_probe(&self, channel: usize) -> Option<&std::sync::Arc<ponzik_engine::EnvProbe>> {
+        self.probes.get(channel)?.as_ref()
+    }
+
     /// Follows a command about to be sent to the engine.
     pub fn capture(&mut self, cmd: &Command) {
         match cmd {
-            Command::AddChannel(ch) => self.channels.push(ch.instrument.editor()),
+            Command::AddChannel(ch) => {
+                self.channels.push(ch.instrument.editor());
+                self.probes.resize(self.channels.len() - 1, None);
+                self.probes.push(ch.instrument.env_probe());
+            }
             Command::RemoveChannel(i) => {
                 let i = *i;
                 self.discard(Device::Instrument(i));
+                if i < self.probes.len() {
+                    self.probes.remove(i);
+                }
                 if i < self.channels.len() {
                     self.channels.remove(i);
                 }
@@ -97,6 +112,10 @@ impl PluginEditors {
                     self.channels.resize(*channel + 1, None);
                 }
                 self.channels[*channel] = instrument.editor();
+                if self.probes.len() <= *channel {
+                    self.probes.resize(*channel + 1, None);
+                }
+                self.probes[*channel] = instrument.env_probe();
             }
             Command::SetInsert { track, slot, effect } => {
                 self.discard(Device::Effect { track: *track, slot: *slot });
