@@ -173,6 +173,8 @@ pub enum Popup {
     Chord,
     /// Lane under the piano roll's velocities.
     PianoLanes,
+    /// The piano roll's tools folded for lack of room (bits, see `piano_view`).
+    PianoMore(u16),
     /// Keys detected, best first, to apply to the project.
     KeyDetect { source: super::groove::KeySource, guesses: Vec<ponzik_project::harmony::KeyGuess> },
     /// Groove pool of the current pattern.
@@ -354,6 +356,11 @@ pub enum Action {
     TogglePanel,
     /// The current view takes the whole window (browser and devices hidden), or gives it back.
     ToggleMaximize,
+    /// Piano roll: chord stamp on or off, slide notes, portamento (s), detect the key.
+    PianoChordStamp,
+    PianoSlide,
+    PianoPorta(f32),
+    PianoDetectKey,
     FocusChannel(usize),
     Save,
     OpenMenu,
@@ -1164,6 +1171,8 @@ impl App {
                 return;
             }
             "tools" => Popup::Tools,
+            // The piano roll's "More" menu, with every foldable tool in it.
+            "more" => Popup::PianoMore(0b101_1111_1100),
             _ if name.starts_with("tool:") => {
                 // tool:<name>[:all|:chords] — the panel of a tool, on a selection of a few
                 // notes, all of them, or a chord progression written first.
@@ -3637,6 +3646,7 @@ impl App {
                 (tr("History").into(), v)
             }
             Popup::PianoLanes => self.lane_menu(),
+            Popup::PianoMore(folded) => self.piano_more_menu(*folded),
             Popup::KeyDetect { source, guesses } => self.key_menu(*source, guesses),
             Popup::Humanize => (
                 tr("Humanize").into(),
@@ -3941,6 +3951,18 @@ impl App {
                 self.maximized = None;
             }
             Action::ToggleMaximize => self.toggle_maximize(),
+            Action::PianoChordStamp => self.piano.chord_stamp = !self.piano.chord_stamp,
+            Action::PianoSlide => {
+                if let Some(ch) = self.piano_channel() {
+                    self.piano_toggle_slide(ch);
+                }
+            }
+            Action::PianoPorta(s) => {
+                if let Some(ch) = self.piano_channel() {
+                    self.set_porta(ch, s);
+                }
+            }
+            Action::PianoDetectKey => self.detect_key(super::groove::KeySource::Pattern, anchor),
             Action::FocusChannel(ch) => {
                 self.focus = Focus::Channel(ch);
                 self.panel = true;

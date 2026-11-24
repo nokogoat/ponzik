@@ -10229,6 +10229,18 @@ msgstr "Tout sélectionner"
 msgid "\nDrag to the edge: fold"
 msgstr "\nTiré jusqu'au bord : replié"
 
+msgid "Drag: height of the lanes"
+msgstr "Glisser : hauteur des couloirs"
+
+msgid "From this pattern's notes, then apply it to the project"
+msgstr "D'après les notes de ce pattern, puis l'appliquer au projet"
+
+msgid "Key height\nAlt + wheel on the notes, or Ctrl + wheel on the keys"
+msgstr "Hauteur des touches\nAlt + molette sur les notes, ou Ctrl + molette sur le clavier"
+
+msgid "MIDI tools"
+msgstr "Outils MIDI"
+
 msgid "Maximize\nHide the browser and the devices · double-click a tab does it too"
 msgstr "Agrandir\nMasquer le navigateur et les appareils · un double-clic sur un onglet aussi"
 
@@ -10237,6 +10249,9 @@ msgstr "Agrandir la vue"
 
 msgid "Maximize the view, or restore the browser and devices"
 msgstr "Agrandir la vue, ou rendre le navigateur et les appareils"
+
+msgid "More"
+msgstr "Plus"
 
 msgid "More\nThe tools that do not fit here"
 msgstr "Plus\nLes outils qui ne tiennent pas ici"
@@ -10249,6 +10264,12 @@ msgstr "Afficher le navigateur"
 
 msgid "Show the browser · {}"
 msgstr "Afficher le navigateur · {}"
+
+msgid "Show the velocity and note lanes"
+msgstr "Afficher les couloirs de vélocité et de notes"
+
+msgid "Stamp chords"
+msgstr "Tampon d'accords"
 
 msgid "View maximized"
 msgstr "Vue agrandie"

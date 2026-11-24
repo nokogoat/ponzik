@@ -7,18 +7,15 @@ use ponzik_ui::{Canvas, Rect};
 use ponzik_window::{Cursor, Key};
 
 use super::Input;
-use super::app::{App, Focus, Popup, Rename, View};
+use super::app::{Action, App, Focus, MenuItem, Popup, Rename, View};
 use super::lessons::Spot;
 use super::rack::note_name;
+use super::split::{Axis, KEY_SPAN, LANES_SPAN, NOTES_MIN, Split, auto_lanes, fit_toolbar, lane_split, splitter_id};
 use super::theme::*;
 use super::widgets::{Icon, draw_icon, wid};
 
-const KEY_H: f32 = 16.0;
 const KEYBOARD: f32 = 64.0;
 const RULER: f32 = 28.0;
-const VELOCITY: f32 = 76.0;
-/// Lane of chances, conditions or repeats, under the velocities.
-const LANE: f32 = 64.0;
 /// Chord names, between the ruler and the notes.
 const CHORDS: f32 = 20.0;
 const EDGE: f32 = 7.0;
@@ -343,7 +340,24 @@ impl App {
         // Le pattern édité devant le canal, quand la barre du haut ne l'affiche pas.
         let tag_w = self.piano_pattern_tag(c, input, header);
         let chan_x = if tag_w > 0.0 { header.x + tag_w + 6.0 } else { header.x };
-        let chan_w = if header.w < 1_200.0 { if tag_w > 0.0 { 156.0 } else { 180.0 } } else { 220.0 };
+        let chan_w = if header.w < 760.0 { 140.0 } else if header.w < 1_200.0 { if tag_w > 0.0 { 156.0 } else { 180.0 } } else { 220.0 };
+        // What does not fit folds into the "More" menu, the least needed first.
+        let snap_w = if header.w < 820.0 { 164.0 } else if header.w < 1_100.0 { 196.0 } else { 236.0 };
+        let items = [
+            (chan_x - header.x + chan_w + 12.0, 0),
+            (self.piano_scale_width() + 4.0, 0),
+            (38.0 + 64.0 + 12.0, 1),
+            (40.0, 3),
+            (40.0, 1),
+            (48.0, 2),
+            (84.0, 4),
+            (38.0, 4),
+            (38.0, 3),
+            (snap_w + 30.0, 0),
+            (40.0, 5),
+        ];
+        let shown = fit_toolbar(header.w, &items, 44.0);
+        let folded: u16 = shown.iter().enumerate().filter(|(_, s)| !**s).fold(0, |m, (i, _)| m | 1 << i);
         let chan_box = Rect::new(chan_x, header.y, chan_w, header.h);
         c.fill_rrect(chan_box, 10.0, t.raised);
         c.stroke_rrect(chan_box, 10.0, 1.0, t.hairline);
@@ -374,6 +388,7 @@ impl App {
         let mut hx = chan_box.right() + 12.0;
         hx += self.piano_scale_button(c, input, Rect::new(hx, header.y, 0.0, header.h)) + 4.0;
         let stamp = self.piano.chord_stamp;
+        if shown[2] {
         self.spot(Spot::PianoChord, Rect::new(hx, header.y, 36.0, header.h));
         if self.icon_button(c, input, wid("pr-chord", 0, 0), Rect::new(hx, header.y, 36.0, header.h), Icon::Chord, stamp, (tr("Stamp chords\nOne click: a whole chord"), "")) {
             self.piano.chord_stamp = !stamp;
@@ -410,42 +425,67 @@ impl App {
         if self.piano.chord_inv > 0 {
             c.fill_circle(chip.right() - 4.0, chip.y + 4.0, 2.5, t.accent);
         }
-
         hx += chip.w + 12.0;
-        let hum = Rect::new(hx, header.y, 36.0, header.h);
-        if self.icon_button(c, input, wid("pr-humanize", 0, 0), hum, Icon::Dice, false, (tr("Humanize\nThe selection, or else the whole channel"), "")) {
-            self.open_popup(Popup::Humanize, hum);
         }
-        let tools = Rect::new(hum.right() + 4.0, header.y, 36.0, header.h);
-        let tools_open = matches!(self.popup.as_ref().map(|p| &p.kind), Some(Popup::Tools | Popup::Tool(_)));
-        let tip = (tr("MIDI tools\nArpeggiate, strum, invert… and generators"), "");
-        if self.icon_button(c, input, wid("pr-tools", 0, 0), tools, Icon::Wand, tools_open, tip) {
-            self.open_popup(Popup::Tools, tools);
-        }
-        self.piano_expression_header(c, input, ch, Rect::new(tools.right() + 10.0, header.y, 0.0, header.h));
 
-        let snap_w = if header.w < 1_100.0 { 196.0 } else { 236.0 };
+        if shown[3] {
+            let hum = Rect::new(hx, header.y, 36.0, header.h);
+            if self.icon_button(c, input, wid("pr-humanize", 0, 0), hum, Icon::Dice, false, (tr("Humanize\nThe selection, or else the whole channel"), "")) {
+                self.open_popup(Popup::Humanize, hum);
+            }
+            hx += 40.0;
+        }
+        if shown[4] {
+            let tools = Rect::new(hx, header.y, 36.0, header.h);
+            let tools_open = matches!(self.popup.as_ref().map(|p| &p.kind), Some(Popup::Tools | Popup::Tool(_)));
+            let tip = (tr("MIDI tools\nArpeggiate, strum, invert… and generators"), "");
+            if self.icon_button(c, input, wid("pr-tools", 0, 0), tools, Icon::Wand, tools_open, tip) {
+                self.open_popup(Popup::Tools, tools);
+            }
+            hx += 40.0;
+        }
+        hx = self.piano_expression_header(c, input, ch, Rect::new(hx + 6.0, header.y, 0.0, header.h), [shown[5], shown[6], shown[7], shown[8]]);
+        if folded != 0 {
+            let more = Rect::new(hx, header.y, 36.0, header.h);
+            let open = matches!(self.popup.as_ref().map(|p| &p.kind), Some(Popup::PianoMore(_)));
+            if self.icon_button(c, input, wid("pr-more", 0, 0), more, Icon::More, open, (tr("More\nThe tools that do not fit here"), "")) {
+                self.open_popup(Popup::PianoMore(folded), more);
+            }
+        }
+
         let snap_box = Rect::new(header.right() - snap_w, header.y, snap_w, header.h);
         let snap_sel = SNAPS.iter().position(|&s| s == self.piano.snap).unwrap_or(2);
         let tips = [(tr("Snap to 1/4"), ""), (tr("Snap to 1/8"), ""), (tr("Snap to 1/16"), ""), (tr("Snap to 1/32"), "")];
         if let Some(i) = self.segmented_tips(c, input, wid("pr-snap", 0, 0), snap_box, &["1/4", "1/8", "1/16", "1/32"], &tips, snap_sel) {
             self.piano.snap = SNAPS[i];
         }
-        draw_icon(c, Icon::Magnet, snap_box.x - 18.0, header.y + header.h * 0.5, 15.0, t.muted);
-        let help = Rect::new(snap_box.x - 74.0, header.y, 36.0, header.h);
-        self.icon_button(c, input, wid("pr-help", 0, 0), help, Icon::Info, false, (tr(PIANO_HELP), ""));
+        draw_icon(c, Icon::Magnet, snap_box.x - 16.0, header.y + header.h * 0.5, 15.0, t.muted);
+        if shown[10] {
+            let help = Rect::new(snap_box.x - 30.0 - 38.0, header.y, 36.0, header.h);
+            self.icon_button(c, input, wid("pr-help", 0, 0), help, Icon::Info, false, (tr(PIANO_HELP), ""));
+        }
 
         c.fill_rrect(body, 16.0, t.panel);
         c.stroke_rrect(body, 16.0, 1.0, t.hairline);
         let inner = body.inset(12.0);
-        let keys = Rect::new(inner.x, inner.y + RULER + CHORDS, KEYBOARD, inner.h - RULER - CHORDS - VELOCITY - LANE - 16.0);
+        // The notes take most of the height; the lanes under them have their
+        // own splitter, fold away, and fit the editor until resized.
+        let sizes = &self.layout.sizes;
+        let lanes_max = (inner.h - RULER - CHORDS - NOTES_MIN - 8.0).max(LANES_SPAN.min);
+        let lanes_want = if sizes.lanes_open { sizes.lanes_h.unwrap_or_else(|| auto_lanes(inner.h)).min(lanes_max) } else { 0.0 };
+        let lanes_h = self.anim.to(wid("pr-lanes", 0, 0), lanes_want, T_LAYOUT).round();
+        let (vel_h, lane_h) = lane_split(lanes_h);
+        // Folded: a thin strip for the tab that opens them again.
+        let under_grid = if lanes_h > 1.0 { lanes_h + 8.0 } else { 0.0 };
+        let kh = self.layout.sizes.key_h;
+        let keys = Rect::new(inner.x, inner.y + RULER + CHORDS, KEYBOARD, inner.h - RULER - CHORDS - under_grid);
         let grid = Rect::new(keys.right(), keys.y, inner.w - KEYBOARD, keys.h);
         let ruler = Rect::new(grid.x, inner.y, grid.w, RULER);
         let chords = Rect::new(grid.x, inner.y + RULER, grid.w, CHORDS);
         self.tour_anchor(1, grid);
         self.spot(Spot::PianoGrid, grid);
-        let vel_lane = Rect::new(grid.x, grid.bottom() + 8.0, grid.w, VELOCITY);
-        let note_lane = Rect::new(grid.x, vel_lane.bottom() + 8.0, grid.w, LANE);
+        let vel_lane = Rect::new(grid.x, grid.bottom() + 8.0, grid.w, vel_h);
+        let note_lane = Rect::new(grid.x, vel_lane.bottom() + 8.0, grid.w, lane_h);
         let pat_len = self.project.patterns[pat].len.max(TICKS_PER_BAR) as f32;
 
         // Cadrage initial sur le pattern et les notes du canal.
@@ -459,7 +499,7 @@ impl App {
             } else {
                 notes.iter().map(|n| n.key as f32).sum::<f32>() / notes.len() as f32
             };
-            self.piano.scroll_y = (center + grid.h / KEY_H * 0.5).round().clamp(grid.h / KEY_H, 127.0);
+            self.piano.scroll_y = (center + grid.h / kh * 0.5).round().clamp(grid.h / kh, 127.0);
         }
 
         // Bouton du milieu : faire glisser la vue dans les deux sens.
@@ -469,49 +509,53 @@ impl App {
         }
         if let Some((_, x0, y0, sx0, sy0)) = self.pan.filter(|p| p.0 == pan_id) {
             self.piano.scroll_x = (sx0 - (input.x - x0) / self.piano.zoom).max(0.0);
-            self.piano.scroll_y = (sy0 + (input.y - y0) / KEY_H).clamp(grid.h / KEY_H, 127.0);
+            self.piano.scroll_y = (sy0 + (input.y - y0) / kh).clamp(grid.h / kh, 127.0);
             self.anim.set(wid("pr-sx", 0, 0), self.piano.scroll_x);
             self.anim.set(wid("pr-sy", 0, 0), self.piano.scroll_y);
         }
-        // Molette : défilement vertical, Maj horizontal, Ctrl zoom.
-        if input.inside && (grid.contains(input.x, input.y) || keys.contains(input.x, input.y)) && input.wheel != 0.0 {
-            if input.mods.ctrl {
+        // Molette : défilement vertical, Maj horizontal, Ctrl zoom ; hauteur des
+        // touches avec Alt, ou Ctrl sur le clavier.
+        let on_keys = input.inside && keys.contains(input.x, input.y);
+        if input.inside && (grid.contains(input.x, input.y) || on_keys) && input.wheel != 0.0 {
+            if input.mods.alt || (input.mods.ctrl && on_keys) {
+                self.piano_key_zoom(1.12f32.powf(input.wheel), input.y, grid);
+            } else if input.mods.ctrl {
                 let at = self.piano.scroll_x + (input.x - grid.x) / self.piano.zoom;
                 self.piano.zoom = (self.piano.zoom * 1.15f32.powf(input.wheel)).clamp(0.05, 8.0);
                 self.piano.scroll_x = (at - (input.x - grid.x) / self.piano.zoom).max(0.0);
             } else if input.mods.shift {
                 self.piano.scroll_x = (self.piano.scroll_x - input.wheel * 60.0 / self.piano.zoom).max(0.0);
             } else {
-                self.piano.scroll_y = (self.piano.scroll_y + input.wheel * 3.0).clamp(grid.h / KEY_H, 127.0);
+                self.piano.scroll_y = (self.piano.scroll_y + input.wheel * 3.0).clamp(grid.h / kh, 127.0);
             }
         }
         let sx = self.anim.to(wid("pr-sx", 0, 0), self.piano.scroll_x, T_LAYOUT);
         let sy = self.anim.to(wid("pr-sy", 0, 0), self.piano.scroll_y, T_LAYOUT);
         let zoom = self.piano.zoom;
         let x_of = |tick: f32| grid.x + (tick - sx) * zoom;
-        let y_of = |key: f32| grid.y + (sy - key) * KEY_H;
+        let y_of = |key: f32| grid.y + (sy - key) * kh;
         let tick_at = |x: f32| sx + (x - grid.x) / zoom;
-        let key_at = |y: f32| (sy - ((y - grid.y) / KEY_H).floor()).clamp(0.0, 127.0);
+        let key_at = |y: f32| (sy - ((y - grid.y) / kh).floor()).clamp(0.0, 127.0);
 
         // Fond : rangées, puis lignes de pas, temps, mesures.
         let prev = c.push_clip(grid);
         let top_key = sy.floor() as i32;
-        let rows = (grid.h / KEY_H).ceil() as i32 + 2;
+        let rows = (grid.h / kh).ceil() as i32 + 2;
         let scaled = self.project.scale != ScaleKind::Chromatic;
         for k in (top_key - rows..=top_key + 1).filter(|k| (0..128).contains(k)) {
             let y = y_of(k as f32);
             let col = if is_black(k as u8) { t.piano_row_black } else { t.piano_row };
-            c.fill_rect(Rect::new(grid.x, y, grid.w, KEY_H), col);
+            c.fill_rect(Rect::new(grid.x, y, grid.w, kh), col);
             // Gamme du projet : rangées hors gamme assombries, tonique teintée.
             if scaled {
                 if !self.project.in_scale(k as u8) {
-                    c.fill_rect(Rect::new(grid.x, y, grid.w, KEY_H), t.bg_deep.alpha(0.55));
+                    c.fill_rect(Rect::new(grid.x, y, grid.w, kh), t.bg_deep.alpha(0.55));
                 } else if (k as u8 + 12 - self.project.key % 12) % 12 == 0 {
-                    c.fill_rect(Rect::new(grid.x, y, grid.w, KEY_H), t.accent.alpha(0.05));
+                    c.fill_rect(Rect::new(grid.x, y, grid.w, kh), t.accent.alpha(0.05));
                 }
             }
             if k % 12 == 0 {
-                c.fill_rect(Rect::new(grid.x, y + KEY_H - 1.0, grid.w, 1.0), t.piano_grid.alpha(2.0));
+                c.fill_rect(Rect::new(grid.x, y + kh - 1.0, grid.w, 1.0), t.piano_grid.alpha(2.0));
             }
         }
         let first = (sx / TICKS_PER_STEP as f32).floor() as u32;
@@ -542,7 +586,7 @@ impl App {
                 continue;
             }
             for n in notes {
-                let r = Rect::new(x_of(n.start as f32), y_of(n.key as f32) + 2.0, (n.len as f32 * zoom).max(3.0), KEY_H - 4.0);
+                let r = Rect::new(x_of(n.start as f32), y_of(n.key as f32) + 2.0, (n.len as f32 * zoom).max(3.0), kh - 4.0);
                 if r.right() > grid.x && r.x < grid.right() {
                     c.stroke_rrect(r, 3.0, 1.0, t.text.alpha(0.1));
                 }
@@ -683,19 +727,19 @@ impl App {
 
         // Rangée survolée : un léger bandeau guide l'œil vers la hauteur visée.
         if over_grid && self.drag.is_none() {
-            let row = Rect::new(grid.x, y_of(key_at(input.y)), grid.w, KEY_H);
+            let row = Rect::new(grid.x, y_of(key_at(input.y)), grid.w, kh);
             c.fill_rect(row, t.text.alpha(0.035));
         }
 
         // Notes du canal.
-        let melodic_labels = KEY_H >= 14.0;
+        let melodic_labels = kh >= 14.0;
         let grooved: Vec<u32> = if self.project.patterns[pat].groove.is_some() {
             self.project.played_notes(pat, ch).iter().map(|n| n.start).collect()
         } else {
             Vec::new()
         };
         for (i, n) in self.notes(ch).to_vec().into_iter().enumerate() {
-            let r = Rect::new(x_of(n.start as f32), y_of(n.key as f32) + 1.0, (n.len as f32 * zoom).max(4.0), KEY_H - 2.0);
+            let r = Rect::new(x_of(n.start as f32), y_of(n.key as f32) + 1.0, (n.len as f32 * zoom).max(4.0), kh - 2.0);
             if r.right() < grid.x || r.x > grid.right() || r.bottom() < grid.y || r.y > grid.bottom() {
                 continue;
             }
@@ -790,7 +834,7 @@ impl App {
         }
         for &(n, at) in &self.piano.erased {
             let k = ((now - at) / 0.22).clamp(0.0, 1.0);
-            let r = Rect::new(x_of(n.start as f32), y_of(n.key as f32) + 1.0, (n.len as f32 * zoom).max(4.0), KEY_H - 2.0);
+            let r = Rect::new(x_of(n.start as f32), y_of(n.key as f32) + 1.0, (n.len as f32 * zoom).max(4.0), kh - 2.0);
             let shrink = r.inset(k * r.h * 0.35);
             c.fill_rrect(shrink, 4.0, t.negative.mix(t.accent, 0.3).alpha(0.7 * (1.0 - k)));
         }
@@ -802,7 +846,7 @@ impl App {
             let w = (self.piano.last_len.max(1) as f32 * zoom).max(4.0);
             let strong = self.piano.chord_stamp || self.piano.scale_snap;
             for k in self.stamp_keys(key_at(input.y) as u8) {
-                let r = Rect::new(x_of(start), y_of(k as f32) + 1.0, w, KEY_H - 2.0);
+                let r = Rect::new(x_of(start), y_of(k as f32) + 1.0, w, kh - 2.0);
                 c.fill_rrect(r, 4.0, t.accent.alpha(if strong { 0.12 } else { 0.07 }));
                 c.stroke_rrect(r, 4.0, 1.0, t.accent.alpha(if strong { 0.6 } else { 0.35 }));
             }
@@ -814,7 +858,7 @@ impl App {
             for h in self.held.iter().filter(|h| h.channel == ch) {
                 let Some(start) = h.start.map(|s| s as f32) else { continue };
                 let end = if now >= start { now } else { pat_len };
-                let nr = Rect::new(x_of(start), y_of(h.key as f32) + 1.0, (x_of(end) - x_of(start)).max(3.0), KEY_H - 2.0);
+                let nr = Rect::new(x_of(start), y_of(h.key as f32) + 1.0, (x_of(end) - x_of(start)).max(3.0), kh - 2.0);
                 c.fill_rrect(nr, 4.0, t.negative.alpha(0.3));
                 c.stroke_rrect(nr, 4.0, 1.0, t.negative.alpha(0.85));
             }
@@ -841,7 +885,7 @@ impl App {
         for &k in &visible {
             let key = k as u8;
             let y = y_of(k as f32);
-            let r = Rect::new(keys.x, y, keys.w, KEY_H);
+            let r = Rect::new(keys.x, y, keys.w, kh);
             // Previewed, held on a keyboard or a controller, or sung.
             let playing = self.preview == Some((ch, key)) || self.held.iter().any(|h| h.channel == ch && h.key == key);
             let hov = hover_key == Some(key);
@@ -863,7 +907,7 @@ impl App {
         }
         // The voice's pitch now, between the keys: a cursor that follows it.
         if let Some(pv) = self.voice.live_pitch().filter(|_| self.voice_channel() == Some(ch)) {
-            let y = y_of(pv) + KEY_H * 0.5;
+            let y = y_of(pv) + kh * 0.5;
             c.fill_rect(Rect::new(keys.x, y - 1.0, keys.w, 2.0), t.accent_hot.alpha(0.85));
             c.fill_circle(keys.right() - 6.0, y, 6.0, t.accent.alpha(0.25));
             c.fill_circle(keys.right() - 6.0, y, 3.0, t.accent_hot);
@@ -944,10 +988,81 @@ impl App {
             c.fill_circle(x + 1.5, vel_lane.bottom() - 6.0 - h, 3.0, col);
         }
         c.set_clip(Some(prev));
-        draw_icon(c, Icon::Mixer, inner.x + KEYBOARD * 0.5, vel_lane.y + vel_lane.h * 0.5, 15.0, t.muted.alpha(0.7));
+        if vel_h >= 20.0 {
+            draw_icon(c, Icon::Mixer, inner.x + KEYBOARD * 0.5, vel_lane.y + vel_lane.h * 0.5, 15.0, t.muted.alpha(0.7));
+        }
         self.tip_zone(input, Rect::new(inner.x, vel_lane.y, KEYBOARD, vel_lane.h), tr("Velocity\nDrag in the lane to draw it"), "");
-        self.note_lane(c, input, ch, Rect::new(inner.x, note_lane.y, KEYBOARD - 6.0, LANE), note_lane, &x_of, &tick_at);
+        if lane_h >= 40.0 {
+            self.note_lane(c, input, ch, Rect::new(inner.x, note_lane.y, KEYBOARD - 6.0, lane_h), note_lane, &x_of, &tick_at);
+        }
+        self.piano_key_buttons(c, input, Rect::new(inner.x, inner.y, KEYBOARD - 6.0, RULER), grid);
+        self.piano_lanes_splitter(c, input, inner, grid, lanes_h, lanes_max);
     }
+
+    /// Key height: `k` times taller, the key under `y` staying in place.
+    fn piano_key_zoom(&mut self, k: f32, y: f32, grid: Rect) {
+        let old = self.layout.sizes.key_h;
+        // At least one pixel per step, so slow wheels still zoom.
+        let raw = (old * k).round();
+        let new = KEY_SPAN.fit(if k > 1.0 { raw.max(old + 1.0) } else { raw.min(old - 1.0) });
+        if new == old {
+            return;
+        }
+        let y = y.clamp(grid.y, grid.bottom());
+        let at = self.piano.scroll_y - (y - grid.y) / old;
+        self.layout.sizes.key_h = new;
+        self.piano.scroll_y = (at + (y - grid.y) / new).clamp(grid.h / new, 127.0);
+        self.anim.set(wid("pr-sy", 0, 0), self.piano.scroll_y);
+    }
+
+    /// Smaller and taller keys, in the corner above the keyboard.
+    fn piano_key_buttons(&mut self, c: &mut Canvas, input: &Input, r: Rect, grid: Rect) {
+        let w = ((r.w - 2.0) * 0.5).floor();
+        let tip = tr("Key height\nAlt + wheel on the notes, or Ctrl + wheel on the keys");
+        let kh = self.layout.sizes.key_h;
+        let mid = grid.y + grid.h * 0.5;
+        let less = Rect::new(r.x, r.y + 2.0, w, r.h - 6.0);
+        if self.icon_button(c, input, wid("pr-key-less", 0, 0), less, Icon::Minus, false, (tip, "")) && kh > KEY_SPAN.min {
+            self.piano_key_zoom(1.0 / 1.25, mid, grid);
+        }
+        let more = Rect::new(less.right() + 2.0, less.y, w, less.h);
+        if self.icon_button(c, input, wid("pr-key-more", 0, 0), more, Icon::Plus, false, (tip, "")) && kh < KEY_SPAN.max {
+            self.piano_key_zoom(1.25, mid, grid);
+        }
+    }
+
+    /// The splitter between the notes and the lanes under them, or the tab
+    /// that opens the folded lanes.
+    fn piano_lanes_splitter(&mut self, c: &mut Canvas, input: &Input, inner: Rect, grid: Rect, lanes_h: f32, lanes_max: f32) {
+        if !self.layout.sizes.lanes_open && lanes_h <= 1.0 && !self.is_dragging(splitter_id("pr-lanes")) {
+            let tab = Rect::new(inner.x + 4.0, inner.bottom() + 1.0, 56.0, 10.0);
+            if self.fold_tab(c, input, "pr-lanes", tab, Icon::ChevronUp, tr("Show the velocity and note lanes")) {
+                self.layout.sizes.lanes_open = true;
+                self.save_settings();
+            }
+            return;
+        }
+        let zone = Rect::new(inner.x, grid.bottom(), inner.w, 8.0);
+        let span = LANES_SPAN.up_to(lanes_max);
+        match self.splitter(c, input, "pr-lanes", zone, Axis::Rows, lanes_h, -1.0, span, tr("Drag: height of the lanes")) {
+            Some(Split::Size(h)) => {
+                let s = &mut self.layout.sizes;
+                (s.lanes_h, s.lanes_open) = (Some(h), true);
+                self.anim.set(wid("pr-lanes", 0, 0), h);
+            }
+            Some(Split::Fold) => self.layout.sizes.lanes_open = false,
+            Some(Split::Reset) => {
+                let s = &mut self.layout.sizes;
+                (s.lanes_h, s.lanes_open) = (None, true);
+                self.save_settings();
+            }
+            None => {}
+        }
+        if self.splitter_released(input, "pr-lanes") {
+            self.save_settings();
+        }
+    }
+
 
     /// Lane of chances, conditions, repeats, pans or fine pitches: a mark
     /// under each note, drawn by dragging (the selection, or the notes under
@@ -1070,31 +1185,117 @@ impl App {
     }
 
     /// Slide notes, portamento, key detection and groove, in the header from `at.x`.
-    fn piano_expression_header(&mut self, c: &mut Canvas, input: &Input, ch: usize, at: Rect) {
-        let t = self.theme;
+    /// Slides, portamento, key detection and groove, those `shown`; returns
+    /// where the next control goes.
+    fn piano_expression_header(&mut self, c: &mut Canvas, input: &Input, ch: usize, at: Rect, shown: [bool; 4]) -> f32 {
         let mut x = at.x;
-        let sel = self.piano.selected.clone();
-        let tip = if sel.is_empty() {
-            tr("Slide notes\nNew notes glide the held note to their pitch over their length")
-        } else {
-            tr("Slide notes\nThe selected notes become slides (or notes again)")
-        };
-        if self.icon_button(c, input, wid("pr-slide", 0, 0), Rect::new(x, at.y, 36.0, at.h), Icon::Slide, self.piano.slide_mode, (tip, "")) {
-            if sel.is_empty() {
-                self.piano.slide_mode = !self.piano.slide_mode;
+        if shown[0] {
+            let tip = if self.piano.selected.is_empty() {
+                tr("Slide notes\nNew notes glide the held note to their pitch over their length")
             } else {
-                let all = sel.iter().all(|&i| self.notes(ch).get(i).is_some_and(|n| n.slide));
-                for i in sel {
-                    if let Some(n) = self.notes_mut(ch).get_mut(i) {
-                        n.slide = !all;
-                    }
-                }
-                self.commit(tr("Slide notes"));
+                tr("Slide notes\nThe selected notes become slides (or notes again)")
+            };
+            if self.icon_button(c, input, wid("pr-slide", 0, 0), Rect::new(x, at.y, 36.0, at.h), Icon::Slide, self.piano.slide_mode, (tip, "")) {
+                self.piano_toggle_slide(ch);
             }
+            x += 38.0;
         }
-        x += 38.0;
-        // Portamento of the channel: drag up and down, wheel, double-click: off.
-        let r = Rect::new(x, at.y + 4.0, 80.0, at.h - 8.0);
+        if shown[1] {
+            x = self.piano_porta(c, input, ch, Rect::new(x, at.y + 4.0, 80.0, at.h - 8.0)) + 4.0;
+        }
+        if shown[2] {
+            let key = Rect::new(x, at.y, 36.0, at.h);
+            let key_open = matches!(self.popup.as_ref().map(|p| &p.kind), Some(Popup::KeyDetect { .. }));
+            if self.icon_button(c, input, wid("pr-key", 0, 0), key, Icon::Detect, key_open, (tr("Detect the key\nFrom this pattern's notes, then apply it to the project"), "")) {
+                self.detect_key(super::groove::KeySource::Pattern, key);
+            }
+            x += 38.0;
+        }
+        if shown[3] {
+            let groove = Rect::new(x, at.y, 36.0, at.h);
+            let grooved = self.project.patterns[self.project.current_pattern].groove.is_some();
+            if self.icon_button(c, input, wid("pr-groove", 0, 0), groove, Icon::Groove, grooved, (tr("Groove\nSwing and feel from the pool, extract, commit"), "")) {
+                self.open_popup(Popup::Groove, groove);
+            }
+            x += 38.0;
+        }
+        x
+    }
+
+    /// Slide notes: the selection becomes slides (or notes again), or else
+    /// new notes will be slides.
+    pub(super) fn piano_toggle_slide(&mut self, ch: usize) {
+        let sel = self.piano.selected.clone();
+        if sel.is_empty() {
+            self.piano.slide_mode = !self.piano.slide_mode;
+        } else {
+            let all = sel.iter().all(|&i| self.notes(ch).get(i).is_some_and(|n| n.slide));
+            for i in sel {
+                if let Some(n) = self.notes_mut(ch).get_mut(i) {
+                    n.slide = !all;
+                }
+            }
+            self.commit(tr("Slide notes"));
+        }
+    }
+
+    /// Sets the channel's portamento (seconds, 0: off).
+    pub(super) fn set_porta(&mut self, ch: usize, v: f32) {
+        let v = (v.clamp(0.0, ponzik_project::MAX_PORTA) * 1000.0).round() / 1000.0;
+        if let Some(c) = self.project.channels.get_mut(ch)
+            && c.porta != v
+        {
+            c.porta = v;
+            self.commit(tr("Portamento"));
+        }
+    }
+
+    /// The "More" menu: the piano roll's tools folded for lack of room
+    /// (bits in the order of the toolbar, see `piano_view`).
+    pub(super) fn piano_more_menu(&self, folded: u16) -> (String, Vec<MenuItem>) {
+        let mut v = Vec::new();
+        let on = |i: u16| folded & (1 << i) != 0;
+        let ch = self.piano_channel().unwrap_or(0);
+        if on(2) {
+            v.push(MenuItem::sub_of(Icon::Chord, tr("Chord"), Popup::Chord));
+            v.push(MenuItem::new(Icon::Chord, tr("Stamp chords"), Action::PianoChordStamp).on(self.piano.chord_stamp));
+        }
+        if on(3) {
+            v.push(MenuItem::sub_of(Icon::Dice, tr("Humanize"), Popup::Humanize));
+        }
+        if on(4) {
+            v.push(MenuItem::new(Icon::Wand, tr("MIDI tools"), Action::Popup(Popup::Tools)));
+        }
+        if on(5) {
+            v.push(MenuItem::new(Icon::Slide, tr("Slide notes"), Action::PianoSlide).on(self.piano.slide_mode));
+        }
+        if on(6) {
+            let porta = self.project.channels.get(ch).map_or(0.0, |c| c.porta);
+            let items = [0.0, 0.03, 0.06, 0.12, 0.25]
+                .into_iter()
+                .map(|s| {
+                    let name = if s == 0.0 { tr("Off").to_string() } else { format!("{:.0} ms", s * 1000.0) };
+                    MenuItem::plain(&name, Action::PianoPorta(s)).on((porta - s).abs() < 1e-4)
+                })
+                .collect();
+            let label = if porta > 0.0 { format!("{:.0} ms", porta * 1000.0) } else { tr("Off").to_string() };
+            v.push(MenuItem::sub(Icon::Glide, tr("Portamento"), items).detail(label));
+        }
+        if on(7) {
+            v.push(MenuItem::new(Icon::Detect, tr("Detect the key"), Action::PianoDetectKey).tip(tr("From this pattern's notes, then apply it to the project")));
+        }
+        if on(8) {
+            v.push(MenuItem::new(Icon::Groove, tr("Groove"), Action::Popup(Popup::Groove)));
+        }
+        if on(10) {
+            v.push(MenuItem::new(Icon::Info, tr("Help"), Action::None).tip(tr(PIANO_HELP)).sep());
+        }
+        (tr("More").into(), v)
+    }
+    /// Portamento of the channel: drag up and down, wheel, double-click: off.
+    /// Returns the right edge.
+    fn piano_porta(&mut self, c: &mut Canvas, input: &Input, ch: usize, r: Rect) -> f32 {
+        let t = self.theme;
         let id = wid("pr-porta", 0, 0);
         let hov = self.hovered(input, id, r);
         let porta = self.project.channels[ch].porta;
@@ -1113,11 +1314,7 @@ impl App {
             set = Some(porta + input.wheel * 0.01);
         }
         if let Some(v) = set {
-            let v = (v.clamp(0.0, ponzik_project::MAX_PORTA) * 1000.0).round() / 1000.0;
-            if v != porta {
-                self.project.channels[ch].porta = v;
-                self.commit(tr("Portamento"));
-            }
+            self.set_porta(ch, v);
         }
         let hv = self.hover_anim(id, hov || self.is_dragging(id));
         let on = porta > 0.0;
@@ -1129,18 +1326,7 @@ impl App {
             self.set_cursor(Cursor::ResizeV);
             self.set_tip(tr("Portamento\nEach note glides from the previous one · drag or wheel · double-click: off"), "");
         }
-        x += r.w + 4.0;
-        let key = Rect::new(x, at.y, 36.0, at.h);
-        let key_open = matches!(self.popup.as_ref().map(|p| &p.kind), Some(Popup::KeyDetect { .. }));
-        if self.icon_button(c, input, wid("pr-key", 0, 0), key, Icon::Detect, key_open, (tr("Detect the key\nFrom this pattern's notes, then apply it to the project"), "")) {
-            self.detect_key(super::groove::KeySource::Pattern, key);
-        }
-        x += 38.0;
-        let groove = Rect::new(x, at.y, 36.0, at.h);
-        let grooved = self.project.patterns[self.project.current_pattern].groove.is_some();
-        if self.icon_button(c, input, wid("pr-groove", 0, 0), groove, Icon::Groove, grooved, (tr("Groove\nSwing and feel from the pool, extract, commit"), "")) {
-            self.open_popup(Popup::Groove, groove);
-        }
+        r.right()
     }
 
     /// Décale au hasard le début (±`ticks`) et la vélocité (±`vel`, relatif) des
