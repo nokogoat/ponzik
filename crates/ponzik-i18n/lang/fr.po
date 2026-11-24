@@ -5889,6 +5889,126 @@ msgstr "Chaîne parallèle"
 msgid "Rack"
 msgstr "Rack"
 
+msgid "Instrument Rack"
+msgstr "Rack d'instruments"
+
+msgid "Racks"
+msgstr "Racks"
+
+msgid "Layers several instruments on one channel: key and velocity splits, a chain selector, sixteen macros"
+msgstr "Superpose plusieurs instruments sur un canal : partages du clavier et de la vélocité, sélecteur de chaîne, seize macros"
+
+msgid "Chain Selector"
+msgstr "Sélecteur de chaîne"
+
+msgid "Macro 9"
+msgstr "Macro 9"
+
+msgid "Macro 10"
+msgstr "Macro 10"
+
+msgid "Macro 11"
+msgstr "Macro 11"
+
+msgid "Macro 12"
+msgstr "Macro 12"
+
+msgid "Macro 13"
+msgstr "Macro 13"
+
+msgid "Macro 14"
+msgstr "Macro 14"
+
+msgid "Macro 15"
+msgstr "Macro 15"
+
+msgid "Macro 16"
+msgstr "Macro 16"
+
+msgid "Chain 1 Pan"
+msgstr "Pan chaîne 1"
+
+msgid "Chain 2 Pan"
+msgstr "Pan chaîne 2"
+
+msgid "Chain 3 Pan"
+msgstr "Pan chaîne 3"
+
+msgid "Chain 4 Pan"
+msgstr "Pan chaîne 4"
+
+msgid "Chain 5 Volume"
+msgstr "Volume chaîne 5"
+
+msgid "Chain 5 Pan"
+msgstr "Pan chaîne 5"
+
+msgid "Chain 6 Volume"
+msgstr "Volume chaîne 6"
+
+msgid "Chain 6 Pan"
+msgstr "Pan chaîne 6"
+
+msgid "Chain 7 Volume"
+msgstr "Volume chaîne 7"
+
+msgid "Chain 7 Pan"
+msgstr "Pan chaîne 7"
+
+msgid "Chain 8 Volume"
+msgstr "Volume chaîne 8"
+
+msgid "Chain 8 Pan"
+msgstr "Pan chaîne 8"
+
+msgid "Chain 9 Volume"
+msgstr "Volume chaîne 9"
+
+msgid "Chain 9 Pan"
+msgstr "Pan chaîne 9"
+
+msgid "Chain 10 Volume"
+msgstr "Volume chaîne 10"
+
+msgid "Chain 10 Pan"
+msgstr "Pan chaîne 10"
+
+msgid "Chain 11 Volume"
+msgstr "Volume chaîne 11"
+
+msgid "Chain 11 Pan"
+msgstr "Pan chaîne 11"
+
+msgid "Chain 12 Volume"
+msgstr "Volume chaîne 12"
+
+msgid "Chain 12 Pan"
+msgstr "Pan chaîne 12"
+
+msgid "Chain 13 Volume"
+msgstr "Volume chaîne 13"
+
+msgid "Chain 13 Pan"
+msgstr "Pan chaîne 13"
+
+msgid "Chain 14 Volume"
+msgstr "Volume chaîne 14"
+
+msgid "Chain 14 Pan"
+msgstr "Pan chaîne 14"
+
+msgid "Chain 15 Volume"
+msgstr "Volume chaîne 15"
+
+msgid "Chain 15 Pan"
+msgstr "Pan chaîne 15"
+
+msgid "Chain 16 Volume"
+msgstr "Volume chaîne 16"
+
+msgid "Chain 16 Pan"
+msgstr "Pan chaîne 16"
+
 msgid "Random values, smooth or stepped"
 msgstr "Valeurs au hasard, douces ou en paliers"
 

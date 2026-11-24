@@ -189,6 +189,7 @@ impl Channel {
     }
 
     pub(crate) fn set_tempo(&mut self, bpm: f32) {
+        self.instrument.set_tempo(bpm);
         for fx in self.note_fx.iter_mut().flatten() {
             fx.set_tempo(bpm);
         }

@@ -154,7 +154,8 @@ mod tests {
     #[test]
     fn every_native_device_has_factory_presets() {
         // External MIDI n'a pas de son ; Drum Pads se règle par kits d'échantillons (kit de départ).
-        for k in registry::instruments().iter().filter(|k| !matches!(k.id, "midi_out" | "drum_pads")) {
+        // An Instrument Rack's presets are whole racks, saved by the user.
+        for k in registry::instruments().iter().filter(|k| !matches!(k.id, "midi_out" | "drum_pads" | "instrument_rack")) {
             assert!(factory_preset_names(k.id).len() >= 6, "{}", k.id);
         }
         for id in ["eq", "compressor", "reverb", "delay", "saturator", "bus_comp", "vintage_verb", "chorus", "autofilter", "autotune", "vocoder"] {

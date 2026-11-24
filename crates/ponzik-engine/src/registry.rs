@@ -20,6 +20,7 @@ use crate::effects::Vocoder;
 use crate::instruments::{Brass, Guitar, Strings, Winds};
 use crate::instruments::DrumMachine;
 use crate::instruments::DrumPads;
+use crate::instruments::InstrumentRack;
 use crate::instrument::Instrument;
 use crate::instruments::{
     Bass303, DrumKind, DrumSynth, EPiano, ElectricPiano, ExternalMidi, FmSynth, Granular, Kick, Mallets, Organ, Piano, Pluck,
@@ -212,6 +213,13 @@ pub fn instruments() -> &'static [InstrumentKind] {
             category: "External",
             description: "Plays a hardware synth or another app: sends the channel's notes to a MIDI output port",
             create: || Box::new(ExternalMidi::new()),
+        },
+        InstrumentKind {
+            id: "instrument_rack",
+            name: "Instrument Rack",
+            category: "Racks",
+            description: "Layers several instruments on one channel: key and velocity splits, a chain selector, sixteen macros",
+            create: || Box::new(InstrumentRack::default()),
         },
     ]
 }
