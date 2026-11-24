@@ -234,7 +234,8 @@ sync, values typed by hand for every knob, Session
 view, a mixer of up to 1,000 tracks (inserts, sends, routing, solo, sidechain, PDC, master
 LUFS and spectrum), devices with visuals in stacked floating windows. 12 native
 instruments (Pulse, DrumSynth, FM, Wave, Sampler, Acid 303, Kick, Slicer,
-Granular, Plucked Strings, Electric Piano, Drum Machine), 27 native effects (EQ,
+Granular, Plucked Strings, Electric Piano, Drum Machine; the envelopes of Pulse, FM,
+Wave, Sampler and Granular have delay, hold and curved attack, decay and release), 27 native effects (EQ,
 compressor, bus compressor, limiter, mastering limiter, gate, OTT-style multiband, pump,
 ducking, transients, reverb, algorithmic reverb, shimmer, delay,
 character delay, chorus, phaser, saturator, character saturation, bitcrusher,
