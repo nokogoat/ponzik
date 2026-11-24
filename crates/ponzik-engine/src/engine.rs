@@ -159,6 +159,11 @@ pub enum Command {
     /// enregistre l'entrée brute dans `buffer`, rendu plein via
     /// [`Garbage::Calibration`]. `None` interrompt un calibrage en cours.
     Calibrate(Option<Box<RecordBuffer>>),
+    /// Free recording for the audio editor: the input (after the input strip)
+    /// is written into `buffer` whether the transport runs or not, no click,
+    /// no track. It comes back full, replaced or stopped (`None`) as
+    /// [`Garbage::Capture`].
+    Capture(Option<Box<RecordBuffer>>),
     /// Branche (ou débranche) la sortie MIDI : notes des instruments externes
     /// et horloge. L'ancienne repart en [`Garbage::MidiOut`].
     SetMidiOut(Option<Box<MidiOut>>),
@@ -223,6 +228,7 @@ impl std::fmt::Debug for Command {
             Command::Audition(_) => "Audition",
             Command::AuditionGain(_) => "AuditionGain",
             Command::Calibrate(_) => "Calibrate",
+            Command::Capture(_) => "Capture",
             Command::SetMidiOut(_) => "SetMidiOut",
             Command::SetMidiClock { .. } => "SetMidiClock",
             Command::SetVoice(_) => "SetVoice",
@@ -247,6 +253,8 @@ pub enum Garbage {
     Audition(Box<Audition>),
     /// Calibrage terminé : gardé à part par [`EngineHandle::take_calibration`].
     Calibration(Box<RecordBuffer>),
+    /// Free recording of the audio editor: kept apart by [`EngineHandle::take_capture`].
+    Capture(Box<RecordBuffer>),
     MidiOut(Box<MidiOut>),
     RecordChunk(Box<RecordChunk>),
     Frozen(Box<Frozen>),
@@ -326,6 +334,7 @@ pub struct EngineHandle {
     #[allow(clippy::vec_box)]
     recordings: Vec<Box<RecordBuffer>>,
     calibration: Option<Box<RecordBuffer>>,
+    capture: Option<Box<RecordBuffer>>,
     sample_rate: f32,
     voice: VoiceReports,
 }
@@ -454,6 +463,7 @@ impl EngineHandle {
             match g {
                 Garbage::Recording(rec) => self.recordings.push(rec),
                 Garbage::Calibration(rec) => self.calibration = Some(rec),
+                Garbage::Capture(rec) => self.capture = Some(rec),
                 _ => {}
             }
         }
@@ -463,6 +473,12 @@ impl EngineHandle {
     /// ([`EngineHandle::collect_garbage`] drops them all).
     pub fn take_garbage(&mut self) -> Option<Garbage> {
         self.garbage.pop()
+    }
+
+    /// Free recording given back (full or stopped) since the last call.
+    pub fn take_capture(&mut self) -> Option<Box<RecordBuffer>> {
+        self.collect_garbage();
+        self.capture.take()
     }
 
     /// Calibrage terminé (ou interrompu) depuis le dernier appel.
@@ -550,6 +566,8 @@ pub struct Engine {
     /// Calibrage en cours : entrée brute, et trames écoulées depuis son début.
     calibration: Option<Box<RecordBuffer>>,
     cal_clock: usize,
+    /// Free recording of the audio editor.
+    capture: Option<Box<RecordBuffer>>,
     /// Prises et calibrages que la file de retour pleine n'a pas pu prendre ;
     /// réessayés au bloc suivant (capacité réservée, jamais dépassée).
     returning: Vec<Garbage>,
@@ -860,7 +878,8 @@ impl Engine {
             recordings: std::array::from_fn(|_| None),
             calibration: None,
             cal_clock: 0,
-            returning: Vec::with_capacity(2 * MAX_RECORDINGS + 2),
+            capture: None,
+            returning: Vec::with_capacity(2 * MAX_RECORDINGS + 3),
             audition: None,
             midi: MidiLink::new(sample_rate),
             midi_clock: MidiClock::default(),
@@ -878,6 +897,7 @@ impl Engine {
             garbage: trash_rx,
             recordings: Vec::new(),
             calibration: None,
+            capture: None,
             sample_rate,
             voice: voice_reports,
         };
@@ -1075,7 +1095,7 @@ impl Engine {
     fn trash(&mut self, g: Garbage) {
         // File pleine : l'objet est libéré ici, en dernier recours ; une prise
         // ou un calibrage est gardé pour le bloc suivant s'il y a de la place.
-        if let Err(g @ (Garbage::Recording(_) | Garbage::Calibration(_))) = self.garbage.push(g)
+        if let Err(g @ (Garbage::Recording(_) | Garbage::Calibration(_) | Garbage::Capture(_))) = self.garbage.push(g)
             && self.returning.len() < self.returning.capacity()
         {
             self.returning.push(g);
@@ -1593,6 +1613,14 @@ impl Engine {
             self.state.input_clip.store(true, Ordering::Relaxed);
         }
         self.state.input_peak.record(peak(l), peak(r));
+        if let Some(cap) = self.capture.as_mut() {
+            cap.write(l, r);
+            if cap.is_full()
+                && let Some(cap) = self.capture.take()
+            {
+                self.trash(Garbage::Capture(cap));
+            }
+        }
         true
     }
 
@@ -2231,6 +2259,16 @@ impl Engine {
                     cal.sample_rate = self.sample_rate;
                     self.cal_clock = 0;
                     self.calibration = Some(cal);
+                }
+            }
+            Command::Capture(buffer) => {
+                if let Some(old) = self.capture.take() {
+                    self.trash(Garbage::Capture(old));
+                }
+                if let Some(mut cap) = buffer {
+                    cap.len = 0;
+                    cap.sample_rate = self.sample_rate;
+                    self.capture = Some(cap);
                 }
             }
             Command::SetMidiOut(out) => {
@@ -3804,6 +3842,35 @@ mod tests {
         // Plus de clics une fois le calibrage terminé.
         engine.process_duplex(&[0.0; 2 * 128], 2, &mut out, 2);
         assert!(out.iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn capture_records_the_input_without_transport_and_comes_back() {
+        let (mut engine, mut handle, _) = setup(&[]);
+        handle.send(Command::Capture(Some(Box::new(RecordBuffer::new(1_000, SR))))).unwrap();
+        let mut out = vec![0.0; 2 * 128];
+        let input: Vec<f32> = (0..2 * 128).map(|i| if i % 2 == 0 { 0.25 } else { -0.5 }).collect();
+        // Stopped transport: the input still goes in, until the buffer is full.
+        let mut cap = None;
+        for _ in 0..20 {
+            engine.process_duplex(&input, 2, &mut out, 2);
+            cap = handle.take_capture();
+            if cap.is_some() {
+                break;
+            }
+        }
+        let cap = cap.expect("full capture returned");
+        assert!(cap.is_full() && cap.len == 1_000);
+        assert!(cap.left[..cap.len].iter().all(|&v| (v - 0.25).abs() < 1e-6), "{:?}", &cap.left[..4]);
+        assert!(cap.right[..cap.len].iter().all(|&v| (v + 0.5).abs() < 1e-6));
+        // Stopped early: what was recorded comes back.
+        handle.send(Command::Capture(Some(Box::new(RecordBuffer::new(48_000, SR))))).unwrap();
+        engine.process_duplex(&input, 2, &mut out, 2);
+        engine.process_duplex(&input, 2, &mut out, 2);
+        handle.send(Command::Capture(None)).unwrap();
+        engine.process_duplex(&input, 2, &mut out, 2);
+        let cap = handle.take_capture().expect("stopped capture returned");
+        assert_eq!(cap.len, 256);
     }
 
     #[test]
