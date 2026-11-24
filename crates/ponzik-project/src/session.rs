@@ -446,7 +446,7 @@ impl Project {
         let slots = self.session_slots.iter().flatten().filter_map(|s| s.audio.as_ref().map(|a| (a, 0)));
         let live = self.session_live.iter().filter_map(|l| self.session_slot(l.col, l.row).audio.as_ref().map(|a| (a, l.period)));
         for (def, period) in slots.chain(live) {
-            let Some(sample) = loader(&def.path) else { continue };
+            let Some(sample) = loader(&def.path).map(|s| self.tuned_sample(&def.path, s)) else { continue };
             let (_, job_def) = Self::session_audio_cycle(def, period);
             if let Some(job) = crate::warp::WarpJob::for_clip(&job_def, &sample, &tempo, sample_rate)
                 && !jobs.iter().any(|j| j.key == job.key)

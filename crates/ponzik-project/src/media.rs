@@ -61,6 +61,7 @@ impl Project {
         self.audio_clips.iter_mut().for_each(|c| swap(&mut c.path));
         self.take_groups.iter_mut().flat_map(|g| g.takes.iter_mut()).for_each(|t| swap(&mut t.clip.path));
         self.session_slots.iter_mut().flatten().filter_map(|s| s.audio.as_mut()).for_each(|a| swap(&mut a.path));
+        self.pitch_edits.iter_mut().for_each(|d| swap(&mut d.path));
         changed
     }
 }
