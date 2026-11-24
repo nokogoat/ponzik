@@ -40,6 +40,7 @@ list to the edge to fold them; a small tab stays to open them again. Sizes and
 zooms are saved with your settings, and each view keeps its own device panel
 height. On a short screen the piano roll, mixer, session and Sample Lab start
 with the device panel shrunk to its header: drag it up to see the devices.
+
 ## Audio editor (Sample Lab, Edit mode)
 
 Like Edison; while the editor is shown, these keys go to it first.
