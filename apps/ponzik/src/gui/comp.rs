@@ -15,7 +15,7 @@ use ponzik_window::{Cursor, Key};
 
 use super::Input;
 use super::app::{Action, App, MenuItem, Popup, Rename};
-use super::playlist::{LANE_H, PATTERN_COLORS};
+use super::playlist::PATTERN_COLORS;
 use super::widgets::{Icon, draw_icon, wid};
 
 /// Height of a take lane.
@@ -93,12 +93,14 @@ impl Default for CompUi {
 pub struct Lanes {
     /// Top of each lane, and the bottom of the last one.
     top: Vec<f32>,
+    /// Height of a lane (the playlist's track height).
+    pub h: f32,
 }
 
 impl Lanes {
     pub fn y(&self, lane: usize) -> f32 {
         let last = self.top.len() - 1;
-        self.top[lane.min(last)] + lane.saturating_sub(last) as f32 * LANE_H
+        self.top[lane.min(last)] + lane.saturating_sub(last) as f32 * self.h
     }
 
     pub fn bottom(&self) -> f32 {
@@ -112,13 +114,13 @@ impl Lanes {
         }
         match self.top.windows(2).position(|w| y < w[1]) {
             Some(l) => l as f32,
-            None => (self.top.len() - 1) as f32 + ((y - self.bottom()) / LANE_H).floor(),
+            None => (self.top.len() - 1) as f32 + ((y - self.bottom()) / self.h).floor(),
         }
     }
 
     /// True on the take lanes under a lane.
     pub fn in_takes(&self, y: f32) -> bool {
-        self.top.windows(2).any(|w| y >= w[0] + LANE_H && y < w[1])
+        self.top.windows(2).any(|w| y >= w[0] + self.h && y < w[1])
     }
 }
 
@@ -135,20 +137,21 @@ impl App {
     pub(super) fn lane_layout(&self, y0: f32, lanes: usize) -> Lanes {
         let mut top = Vec::with_capacity(lanes + 1);
         let mut y = y0;
+        let h = self.layout.sizes.track_h;
         for l in 0..lanes {
             top.push(y);
             let rows = self.project.take_groups.iter().filter(|g| g.lane == l && !g.folded).map(|g| g.takes.len()).max().unwrap_or(0);
-            y += LANE_H + rows as f32 * TAKE_H;
+            y += h + rows as f32 * TAKE_H;
         }
         top.push(y);
-        Lanes { top }
+        Lanes { top, h }
     }
 
     /// Comp lane of a group (its whole take span).
     fn comp_rect(&self, g: &TakeGroup, lay: &Lanes, x_of: &dyn Fn(f32) -> f32) -> Rect {
         let (a, b) = g.span();
         let x = x_of(a as f32);
-        Rect::new(x + 1.0, lay.y(g.lane) + 3.0, (x_of(b as f32) - x - 2.0).max(4.0), LANE_H - 6.0)
+        Rect::new(x + 1.0, lay.y(g.lane) + 3.0, (x_of(b as f32) - x - 2.0).max(4.0), lay.h - 6.0)
     }
 
     /// Lane of take `k` (the newest on top).
@@ -156,7 +159,7 @@ impl App {
         let (a, b) = g.take_span(k).unwrap_or((0, 0));
         let row = g.takes.len() - 1 - k;
         let x = x_of(a as f32);
-        Rect::new(x + 1.0, lay.y(g.lane) + LANE_H + row as f32 * TAKE_H + 1.0, (x_of(b as f32) - x - 2.0).max(4.0), TAKE_H - 3.0)
+        Rect::new(x + 1.0, lay.y(g.lane) + lay.h + row as f32 * TAKE_H + 1.0, (x_of(b as f32) - x - 2.0).max(4.0), TAKE_H - 3.0)
     }
 
     fn comp_hit(&self, x: f32, y: f32, lay: &Lanes, area: Rect, x_of: &dyn Fn(f32) -> f32) -> Option<(usize, Hit)> {

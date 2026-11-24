@@ -267,7 +267,7 @@ impl App {
                 }
                 "menu" => {
                     if let Some(i) = last_audio {
-                        let y = 150.0 + self.project.audio_clips[i].lane as f32 * super::playlist::LANE_H;
+                        let y = 150.0 + self.project.audio_clips[i].lane as f32 * self.layout.sizes.track_h;
                         self.select_clip(ClipSel::Audio(i));
                         self.open_popup(super::app::Popup::AudioClipMenu(i), ponzik_ui::Rect::new(520.0, y, 0.0, 19.0));
                     }
