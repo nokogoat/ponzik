@@ -11924,3 +11924,138 @@ msgstr "armée"
 
 msgid "{} output"
 msgstr "Sortie de {}"
+msgid "Constant power: no dip in the middle"
+msgstr "Puissance constante : pas de creux au milieu"
+
+msgid "Crossfader"
+msgstr "Crossfader"
+
+msgid "Crossfader\nDrag: from side A to side B · double-click: middle"
+msgstr "Crossfader\nGlisser : du côté A au côté B · double-clic : milieu"
+
+msgid "Crossfader and cue\nTracks on side A or B, prelisten on the cue"
+msgstr "Crossfader et pré-écoute\nPistes côté A ou B, pré-écoute sur le cue"
+
+msgid "Crossfader curve"
+msgstr "Courbe du crossfader"
+
+msgid "Crossfader side"
+msgstr "Côté du crossfader"
+
+msgid "Cue blend"
+msgstr "Mélange de pré-écoute"
+
+msgid "Cue blend\nLeft: the master · right: only the cued tracks\nThe master itself never gets the cue"
+msgstr "Mélange de pré-écoute\nÀ gauche : le master · à droite : seulement les pistes en pré-écoute\nLe master ne reçoit jamais la pré-écoute"
+
+msgid "Cue: prelisten this track\nNever reaches the master"
+msgstr "Cue : pré-écouter cette piste\nN'atteint jamais le master"
+
+msgid "Cut: both sides at full level until the ends"
+msgstr "Coupure : les deux côtés à plein niveau jusqu'aux bouts"
+
+msgid "Gate: the clip plays while held"
+msgstr "Gate : le clip joue tant qu'il est maintenu"
+
+msgid "Hide the crossfader"
+msgstr "Masquer le crossfader"
+
+msgid "Launch velocity"
+msgstr "Vélocité de lancement"
+
+msgid "Launch velocity: a pad hit softly plays the clip softer, by this much"
+msgstr "Vélocité de lancement : un pad frappé doucement joue le clip plus doucement, d'autant"
+
+msgid "Linear: each side falls in a straight line"
+msgstr "Linéaire : chaque côté baisse en ligne droite"
+
+msgid "Meter off"
+msgstr "Mesure : non"
+
+msgid "Move performance marker"
+msgstr "Déplacer le marqueur de performance"
+
+msgid "Pad: click to launch on the next boundary\nShift: edit the clip"
+msgstr "Pad : cliquer pour lancer au prochain repère\nMaj : modifier le clip"
+
+msgid "Performance marker\nDrag it: the clips from here on are pads"
+msgstr "Marqueur de performance\nLe glisser : les clips à partir d'ici sont des pads"
+
+msgid "Performance mode"
+msgstr "Mode performance"
+
+msgid "Performance mode\nThe clips right of a marker become pads, launched live"
+msgstr "Mode performance\nLes clips à droite d'un marqueur deviennent des pads, lancés en direct"
+
+msgid "Performance mode off"
+msgstr "Mode performance désactivé"
+
+msgid "Performance mode on\nThe clips right of the marker are pads · click to turn off"
+msgstr "Mode performance activé\nLes clips à droite du marqueur sont des pads · cliquer pour désactiver"
+
+msgid "Performance mode: the clips right of the marker are pads"
+msgstr "Mode performance : les clips à droite du marqueur sont des pads"
+
+msgid "Performance record: nothing was played"
+msgstr "Enregistrement de la performance : rien n'a joué"
+
+msgid "Performance record: what you launch goes into the arrangement"
+msgstr "Enregistrement de la performance : ce que vous lancez va dans l'arrangement"
+
+msgid "Record performance"
+msgstr "Enregistrer la performance"
+
+msgid "Record performance\nWrites the clips you launch into the arrangement, where they played"
+msgstr "Enregistrer la performance\nÉcrit les clips que vous lancez dans l'arrangement, là où ils ont joué"
+
+msgid "Retrigger"
+msgstr "Relance"
+
+msgid "Retrigger: each press starts the clip over"
+msgstr "Relance : chaque appui reprend le clip du début"
+
+msgid "Scene tempo"
+msgstr "Tempo de la scène"
+
+msgid "Scene time signature"
+msgstr "Mesure de la scène"
+
+msgid "Side A of the crossfader"
+msgstr "Côté A du crossfader"
+
+msgid "Side B of the crossfader"
+msgstr "Côté B du crossfader"
+
+msgid "Stop all clips"
+msgstr "Arrêter tous les clips"
+
+msgid "Stop column {}"
+msgstr "Arrêter la colonne {}"
+
+msgid "Stop lane {}"
+msgstr "Arrêter la piste {}"
+
+msgid "Stop recording the performance\nThe clips played are written into the arrangement"
+msgstr "Arrêter l'enregistrement de la performance\nLes clips joués sont écrits dans l'arrangement"
+
+msgid "Tempo and meter"
+msgstr "Tempo et mesure"
+
+msgid "Tempo off"
+msgstr "Tempo : non"
+
+msgid "Tempo the scene sets when it starts\nWheel or arrows: one BPM"
+msgstr "Tempo que la scène impose à son départ\nMolette ou flèches : un BPM"
+
+msgid "Time signature the scene sets when it starts"
+msgstr "Mesure que la scène impose à son départ"
+
+msgid "{} clips written to the arrangement"
+msgstr "{} clips écrits dans l'arrangement"
+
+msgid "{} launches clips"
+msgstr "{} lance les clips"
+
+msgctxt "cue button"
+msgid "CUE"
+msgstr "CUE"
