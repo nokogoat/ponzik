@@ -896,6 +896,10 @@ impl App {
         match result {
             Ok(()) => {
                 self.toast(&tr_fmt!("{} copy written: {}", format.label(), path.display().to_string()));
+                // Instrument Racks degrade: what each one became.
+                for note in self.project.layer_export_notes() {
+                    self.toast(&note);
+                }
                 true
             }
             Err(e) => {
