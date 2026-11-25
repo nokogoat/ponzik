@@ -34,6 +34,7 @@ pub mod bounce;
 pub mod auto_rec;
 pub mod autosave;
 pub mod capture;
+pub mod controllers;
 pub mod comp;
 mod breakcore;
 mod zalgo;
@@ -49,6 +50,7 @@ pub mod groove;
 pub mod harmony;
 pub mod json;
 pub mod library;
+pub mod live;
 pub mod lmms;
 pub mod media;
 pub mod midi_file;
@@ -59,6 +61,7 @@ pub mod presets;
 pub mod rack;
 pub mod rpp;
 pub mod render;
+pub mod perform;
 pub mod scale;
 pub mod session;
 pub mod templates;
@@ -513,6 +516,8 @@ pub struct TrackDef {
     /// Frozen: the audio file of its render (everything that reaches it,
     /// through its inserts), played instead of its input and inserts.
     pub frozen: Option<String>,
+    /// Side of the crossfader the track listens to (see [`live`]).
+    pub xfade: ponzik_engine::xfader::Side,
 }
 
 /// Nom par défaut d'une piste de mixer (« Track 3 », « Piste 3 » en français).
@@ -530,7 +535,7 @@ pub fn is_default_track_name(name: &str) -> bool {
 /// Content equality: the identity of a track does not count.
 impl PartialEq for TrackDef {
     fn eq(&self, o: &Self) -> bool {
-        let Self { id: _, name, gain, pan, muted, output, sends, inserts, color, kind, folded, vca, modulators, frozen } = self;
+        let Self { id: _, name, gain, pan, muted, output, sends, inserts, color, kind, folded, vca, modulators, frozen, xfade } = self;
         *name == o.name
             && *gain == o.gain
             && *pan == o.pan
@@ -544,6 +549,7 @@ impl PartialEq for TrackDef {
             && *vca == o.vca
             && *modulators == o.modulators
             && *frozen == o.frozen
+            && *xfade == o.xfade
     }
 }
 
@@ -567,6 +573,7 @@ impl TrackDef {
             vca: None,
             modulators: Vec::new(),
             frozen: None,
+            xfade: ponzik_engine::xfader::Side::None,
         }
     }
 }
@@ -615,6 +622,9 @@ pub struct Project {
     pub grooves: Vec<groove::Groove>,
     /// Note-based pitch and timing edits of recorded files (see [`tune`]).
     pub pitch_edits: Vec<tune::PitchEditDef>,
+    /// Live performance: the playlist's performance mode, the crossfader
+    /// (see [`live`]).
+    pub live: live::Live,
 }
 
 /// A named section start on the arrangement lane.
@@ -706,6 +716,7 @@ impl Project {
             midi_map: Vec::new(),
             grooves: Vec::new(),
             pitch_edits: Vec::new(),
+            live: live::Live::default(),
         }
     }
 
@@ -767,8 +778,10 @@ impl Project {
     /// Fin du morceau : fin du dernier clip (pattern ou audio), arrondie à la
     /// mesure (of the time signature map), one bar at least.
     pub fn song_len(&self) -> u32 {
-        let patterns = self.clips.iter().map(|c| c.start.saturating_add(c.len));
-        let audio = self.audio_clips.iter().map(|c| c.start.saturating_add(c.len));
+        // The performance zone is not part of the song.
+        let song = |start: u32| !self.live.perf.in_zone(start);
+        let patterns = self.clips.iter().filter(|c| song(c.start)).map(|c| c.start.saturating_add(c.len));
+        let audio = self.audio_clips.iter().filter(|c| song(c.start)).map(|c| c.start.saturating_add(c.len));
         let takes = self.take_groups.iter().map(|g| g.span().1);
         let end = patterns.chain(audio).chain(takes).max().unwrap_or(0);
         let map = self.tempo_map();
@@ -873,7 +886,7 @@ impl Project {
             clips: self
                 .clips
                 .iter()
-                .filter(|c| !c.muted)
+                .filter(|c| !c.muted && !self.live.perf.in_zone(c.start))
                 .map(|c| Clip { pattern: c.pattern, start: c.start, len: c.len, offset: c.offset })
                 .collect(),
             mode: self.mode,
@@ -900,7 +913,7 @@ impl Project {
     fn song_audio(&self, sample_rate: f32, loader: SampleLoader, warps: WarpLookup, map: &TempoMap) -> Vec<AudioClip> {
         self.audio_clips
             .iter()
-            .filter(|c| !c.muted && self.frozen_track(c.track, loader).is_none())
+            .filter(|c| !c.muted && !self.live.perf.in_zone(c.start) && self.frozen_track(c.track, loader).is_none())
             .filter_map(|c| {
                 let sample = loader(&c.path)?;
                 let warp = c.warp.then(|| ClipWarp {
