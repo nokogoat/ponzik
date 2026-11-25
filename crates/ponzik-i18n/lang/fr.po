@@ -11499,3 +11499,53 @@ msgstr "{}\n{} · jusqu'à {:.0} ticks hors de la grille"
 
 msgid "{} uses"
 msgstr "{} utilisations"
+msgid "Vocoder"
+msgstr "Vocodeur"
+
+msgid "Filter bank vocoder: a voice on the sidechain input shapes the track or an internal chord following a channel's notes; formant shift, consonant noise, stereo spread"
+msgstr "Vocodeur à banc de filtres : une voix sur l'entrée latérale sculpte la piste ou un accord interne qui suit les notes d'un canal ; décalage des formants, bruit des consonnes, étalement stéréo"
+
+msgid "Carrier"
+msgstr "Porteuse"
+
+msgid "Unvoiced"
+msgstr "Consonnes"
+
+msgid "Emphasis"
+msgstr "Accentuation"
+
+msgid "Drone"
+msgstr "Bourdon"
+
+msgid "Modulator"
+msgstr "Modulante"
+
+msgid "Carrier level"
+msgstr "Niveau porteuse"
+
+msgid "Track audio"
+msgstr "Son de la piste"
+
+msgid "Saw chord"
+msgstr "Accord scie"
+
+msgid "Pulse chord"
+msgstr "Accord pulse"
+
+msgid "Noise"
+msgstr "Bruit"
+
+msgid "Synth"
+msgstr "Synthé"
+
+msgid "No key: listens to its track"
+msgstr "Sans clé : écoute sa piste"
+
+msgid "Band {} of {}: the voice at {} drives the carrier at {}\nPale bars: the modulator's level · colored bars: the output's"
+msgstr "Bande {} sur {} : la voix à {} pilote la porteuse à {}\nBarres pâles : niveau de la modulante · barres colorées : celui de la sortie"
+
+msgid "Channel whose notes the Saw and Pulse chords play (none: the Drone note)\nClick: next channel · right-click: none · wheel"
+msgstr "Canal dont les accords scie et pulse jouent les notes (aucun : la note du bourdon)\nClic : canal suivant · clic droit : aucun · molette"
+
+msgid "Consonant detector\nLights up on \"s\" and \"t\" sounds: noise is mixed into the carrier (Unvoiced)"
+msgstr "Détecteur de consonnes\nS'allume sur les « s » et les « t » : du bruit est mêlé à la porteuse (Consonnes)"

@@ -191,6 +191,8 @@ pub(super) fn card_width(kind: &str, params: &'static [ParamInfo]) -> f32 {
         super::acoustic::ACOUSTIC_W + GROUP_GAP
     } else if kind == "wavetable" {
         super::wavetable::WAVE_W + GROUP_GAP
+    } else if kind == "vocoder" {
+        super::vocoder::VIS_W + GROUP_GAP
     } else {
         0.0
     };
@@ -675,6 +677,10 @@ impl App {
             let w = super::wavetable::WAVE_W;
             self.wavetable_visual(c, input, Rect::new(x, body.y + 4.0, w, body.h - 10.0), device, params);
             x += w + GROUP_GAP;
+        } else if kind == "vocoder" {
+            let w = super::vocoder::VIS_W;
+            self.vocoder_visual(c, input, Rect::new(x, body.y + 4.0, w, body.h - 10.0), device, params);
+            x += w + GROUP_GAP;
         }
         let key = device_key(device);
         for (gi, g) in groups(params).into_iter().enumerate() {
@@ -704,6 +710,10 @@ impl App {
                 let shown = if self.is_dragging(id) { value } else { self.live_auto_value(target).map_or(value, |v| p.clamp(v)) };
                 let mut changed = if p.unit == Unit::Choice {
                     self.choice(c, input, id, cell, p, shown)
+                } else if kind == "vocoder" && p.id == ponzik_engine::effects::vocoder::P_MIDI_CHANNEL {
+                    // The channel whose notes the internal chord plays, by its name.
+                    self.at_channel_cell(c, input, cell, device, p, tr("Channel whose notes the Saw and Pulse chords play (none: the Drone note)\nClick: next channel · right-click: none · wheel"));
+                    None
                 } else {
                     self.knob(c, input, id, cell, p, shown)
                 };

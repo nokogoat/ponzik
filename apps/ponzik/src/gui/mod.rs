@@ -77,6 +77,7 @@ mod tools;
 mod tree;
 mod topbar;
 mod tour;
+mod vocoder;
 mod voice;
 mod tracks;
 mod updates;
@@ -821,6 +822,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // corrector on track 1, fed a synthetic singer.
     if let Ok(spec) = std::env::var("PONZIK_AUTOTUNE") {
         app.screenshot_autotune(&spec);
+    }
+    // PONZIK_VOCODER=<preset>|default[,formant:st]: a vocoder on track 1 keyed
+    // by track 2, fed a synthetic singer.
+    if let Ok(spec) = std::env::var("PONZIK_VOCODER") {
+        app.screenshot_vocoder(&spec);
     }
     // PONZIK_MIXER=bus:1,2,3,4;fold;vca:2,5;sel:4,5;return:delay@3 : bus, repli du
     // dernier bus, VCA, sélection et retours d'effet créés pour la capture.
