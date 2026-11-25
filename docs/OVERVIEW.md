@@ -81,7 +81,8 @@
 - Mixer with up to 999 tracks, buses and VCAs, 8 inserts and 4 sends per track,
   sidechain on every dynamics insert, plugin delay compensation, multi-core
   processing, per-track and per-device CPU meters, A/B on every device.
-- Freeze, bounce in place, consolidate, render selection.
+- Freeze, bounce in place, consolidate, render selection; resampling records the
+  master or any track's output live onto a track, aligned on the timeline.
 - Master LUFS meter and spectrum; export to WAV (16/24/32-bit float) or FLAC, stems,
   one file per section, peak or LUFS normalization.
 

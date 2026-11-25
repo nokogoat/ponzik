@@ -151,7 +151,7 @@ template" (V1-12)**.
 | V3-13 | **Ableton Link and MIDI clock** (input and output) | Playing along with other machines | M | engine, midi (in-house UDP networking) | – | ⬜ |
 | V3-14 | **VST3 and LV2 hosting**, plugins sandboxed in a separate process | Access to the whole plugin ecosystem | L | new crate | – | 🟡 VST3 (`ponzik-vst3`), LV2 (`ponzik-lv2`) and LADSPA (`ponzik-ladspa`) hosts shipped, scan in child processes; instances not sandboxed |
 | V3-15 | **DAWproject import** (and partial `.als`) | Bring your projects over from elsewhere | L | project | – | 🟡 `.als` import (MIDI tracks and clips, audio clips, tempo, locators) and export; no DAWproject yet |
-| V3-16 | **Master recording (resampling)** from the transport bar (Bitwig 5.3) | Keep an improvised jam | S | engine, ui | – | ⬜ |
+| V3-16 | **Master recording (resampling)** from the transport bar (Bitwig 5.3) | Keep an improvised jam | S | engine, ui | – | ✅ "Resample the master" in the record menu; any track's output too, from the record panel |
 | V3-17 | **Search everywhere**: the palette also searches presets, samples, channels, tracks and markers, and takes you there | Rule 7 | M | ui (palette.rs) | V2-22 | ⬜ |
 | V3-18 | **Detachable windows, multiple monitors** | Pros on two screens | L | window, ui | – | 🟡 devices in stacked floating windows inside the main window; no separate OS windows |
 
