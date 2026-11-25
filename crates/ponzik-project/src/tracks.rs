@@ -250,7 +250,12 @@ impl Project {
         self.midi_map.retain(|m| match m.target {
             ControlTarget::Param(t) => remap_target(t, &inside).is_some(),
             ControlTarget::Send { track, .. } => track < n,
-            ControlTarget::Transport(_) | ControlTarget::Scene(_) | ControlTarget::Slot { .. } => true,
+            ControlTarget::Transport(_)
+            | ControlTarget::Scene(_)
+            | ControlTarget::Slot { .. }
+            | ControlTarget::StopColumn(_)
+            | ControlTarget::StopAll
+            | ControlTarget::Crossfader => true,
         });
     }
 
