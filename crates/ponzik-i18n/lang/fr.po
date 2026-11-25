@@ -5889,6 +5889,15 @@ msgstr "Chaîne parallèle"
 msgid "Rack"
 msgstr "Rack"
 
+msgid "{}: Instrument Rack, only chain {} kept"
+msgstr "{} : rack d'instruments, seule la chaîne {} est gardée"
+
+msgid "{}: Instrument Rack, its instrument kept"
+msgstr "{} : rack d'instruments, son instrument est gardé"
+
+msgid "{}: empty Instrument Rack skipped"
+msgstr "{} : rack d'instruments vide ignoré"
+
 msgid "Instrument Rack"
 msgstr "Rack d'instruments"
 

@@ -471,7 +471,7 @@ impl Project {
     pub fn make_channel_mods(&self, c: usize) -> Option<Box<ModSet>> {
         let ch = self.channels.get(c)?;
         make_mods(&ch.modulators, (true, c), |_, id| {
-            let info = *native_params(&ch.instrument.kind, true).iter().find(|p| p.id == id)?;
+            let info = ch.instrument.param_info(id)?;
             Some((info, ch.instrument.get(id).unwrap_or(info.default)))
         })
     }
@@ -500,9 +500,9 @@ impl Project {
             }
         }
         for ch in &mut self.channels {
-            let params = native_params(&ch.instrument.kind, true);
+            let inst = ch.instrument.clone();
             for m in &mut ch.modulators {
-                m.targets.retain(|tg| params.iter().any(|p| p.id == tg.param));
+                m.targets.retain(|tg| inst.param_info(tg.param).is_some());
             }
         }
     }

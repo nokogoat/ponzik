@@ -36,7 +36,7 @@ fn params_json(params: &[(u32, f32)]) -> Json {
     Json::Arr(params.iter().map(|&(id, v)| Json::Arr(vec![id.into(), v.into()])).collect())
 }
 
-fn instrument_json(i: &InstrumentDef) -> Json {
+pub(crate) fn instrument_json(i: &InstrumentDef) -> Json {
     let mut pairs = vec![
         ("kind", i.kind.as_str().into()),
         ("params", params_json(&i.params)),
@@ -56,6 +56,9 @@ fn instrument_json(i: &InstrumentDef) -> Json {
     }
     if let Some(ab) = &i.ab {
         pairs.push(("ab", crate::ab::ab_json(ab, params_json)));
+    }
+    if let Some(rack) = i.layers() {
+        pairs.push(("rack", crate::inst_rack::layer_rack_json(rack)));
     }
     obj(pairs)
 }
@@ -504,19 +507,26 @@ fn load_pads(v: Option<&Json>) -> Vec<Vec<String>> {
         .collect()
 }
 
+/// An instrument written by [`instrument_json`] (an Instrument Rack with its chains).
+pub(crate) fn load_instrument(inst: &Json) -> InstrumentDef {
+    let field = |k| inst.get(k);
+    let kind = string_or(field("kind"), "pulse");
+    let rack = (kind == crate::inst_rack::INST_RACK).then(|| Box::new(crate::inst_rack::load_layer_rack(field("rack"))));
+    InstrumentDef {
+        kind,
+        params: load_params(field("params")),
+        sample: field("sample").and_then(Json::as_str).map(String::from),
+        pads: load_pads(field("pads")),
+        state: load_state(field("state")),
+        ab: crate::ab::load_ab(field("ab"), load_params, false),
+        rack,
+    }
+}
+
 fn load_channel(v: &Json) -> ChannelDef {
-    let inst = v.get("instrument");
-    let field = |k| inst.and_then(|i| i.get(k));
     ChannelDef {
         name: string_or(v.get("name"), tr("Channel")),
-        instrument: InstrumentDef {
-            kind: string_or(field("kind"), "pulse"),
-            params: load_params(field("params")),
-            sample: field("sample").and_then(Json::as_str).map(String::from),
-            pads: load_pads(field("pads")),
-            state: load_state(field("state")),
-            ab: crate::ab::load_ab(field("ab"), load_params, false),
-        },
+        instrument: v.get("instrument").map_or_else(|| InstrumentDef::new("pulse"), load_instrument),
         note_fx: load_note_fx(v.get("note_fx")),
         gain: gain(v.get("gain"), 0.8),
         pan: pan(v.get("pan")),
