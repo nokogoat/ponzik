@@ -40,6 +40,7 @@ mod keys;
 mod lanes;
 mod layers;
 mod learn;
+mod live;
 mod lessons;
 mod menu;
 mod library;
@@ -85,6 +86,7 @@ mod tracks;
 mod updates;
 mod whatsnew;
 mod widgets;
+mod xfader;
 
 use std::time::{Duration, Instant};
 
@@ -755,7 +757,15 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     if let Ok(spec) = std::env::var("PONZIK_SESSION") {
         app.screenshot_session(&spec);
     }
-    if view == View::Session {
+    // PONZIK_XFADER=0.3: the mixer's crossfader shown there, tracks on A and B, one cued.
+    if let Ok(spec) = std::env::var("PONZIK_XFADER") {
+        app.screenshot_xfader(&spec);
+    }
+    // PONZIK_PERFORM=demo|record: the playlist in performance mode, pads
+    // playing and one waiting for the next bar (the recording on).
+    if let Ok(spec) = std::env::var("PONZIK_PERFORM") {
+        app.screenshot_perform(&spec);
+    } else if view == View::Session {
         app.launch_scene(0);
     } else {
         app.toggle_play();

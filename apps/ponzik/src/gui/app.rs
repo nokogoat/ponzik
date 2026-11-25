@@ -912,6 +912,8 @@ pub struct App {
     pub session: ponzik_project::session::Player,
     /// Session view: selection, held buttons.
     pub session_ui: super::session::SessionUi,
+    /// Live performance: performance mode, pad controllers, cue.
+    pub live: super::live::LiveUi,
     /// Clavier d'ordinateur joué comme un piano (désactivé : les lettres sont des raccourcis).
     pub typing_keyboard: bool,
     /// Marqueur de départ de la lecture, en ticks (cliqué dans une règle).
@@ -1114,6 +1116,7 @@ impl App {
             typing_keyboard: false,
             session: ponzik_project::session::Player::new(super::session::session_seed()),
             session_ui: Default::default(),
+            live: Default::default(),
             solo: None,
             rec: Default::default(),
             voice: Default::default(),
@@ -1534,6 +1537,7 @@ impl App {
         self.load_plugin_states(states);
         let warps = self.synced.audio_clips != self.project.audio_clips
             || self.synced.session_slots != self.project.session_slots
+            || self.synced.live.perf != self.project.live.perf
             || self.synced.tempo_map() != self.project.tempo_map();
         let tunes = self.synced.pitch_edits != self.project.pitch_edits || warps;
         self.synced = self.project.clone();
@@ -1679,6 +1683,7 @@ impl App {
         self.session_ui = Default::default();
         self.project = project;
         self.project.session_live.clear();
+        self.live_project_replaced();
         self.past.clear();
         self.future.clear();
         self.last_edit = None;
@@ -1967,6 +1972,7 @@ impl App {
     /// Arrête tous les clips de la vue Session.
     pub fn clear_session(&mut self) {
         self.finish_arrangement_record();
+        self.clear_perf();
         self.session.reset();
         self.session_ui.release_all();
         if !self.project.session_live.is_empty() {
@@ -2154,9 +2160,7 @@ impl App {
     /// Appelé à chaque tour de boucle, hors rendu ; renvoie vrai s'il s'est passé quelque chose.
     pub fn poll_midi(&mut self) -> bool {
         let mut events = std::mem::take(&mut self.midi_events);
-        for input in &self.midi_inputs {
-            input.poll(&mut events);
-        }
+        self.poll_midi_inputs(&mut events);
         let any = !events.is_empty();
         self.handle_midi(&mut events);
         self.midi_events = events;
@@ -2269,6 +2273,7 @@ impl App {
         self.voice_tick();
         self.position = self.engine.position();
         self.advance_session();
+        self.performance_tick();
         // Tant que le moteur n'a pas reçu l'ordre de lecture, le pré-compte demandé reste affiché.
         let counting = self.engine.count_in();
         if !self.playing {
@@ -2462,6 +2467,7 @@ impl App {
         if self.popup.is_none() && self.start.is_none() && !self.sidebar_focus {
             self.shortcuts(input);
             self.session_keys(input);
+            self.perf_keys(input);
             self.musical_keyboard(input);
         } else if self.popup.is_some()
             && !self.settings_open()
