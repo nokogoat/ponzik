@@ -1507,7 +1507,7 @@ impl App {
         match source {
             InputSource::Left => s.right = s.left.clone(),
             InputSource::Right => s.left = s.right.clone(),
-            InputSource::Stereo => {}
+            InputSource::Stereo | InputSource::Resample(_) => {}
         }
         self.open_sample_in_editor(Arc::new(s), None, Source::Browser);
         self.audio_edit.name = name;

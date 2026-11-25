@@ -295,6 +295,8 @@ struct Ctx<'a> {
     count: usize,
     lat: &'a Latency,
     reduced: &'a [bool],
+    /// A track monitoring a resampled output is cut (see [`InputSource::Resample`]).
+    monitor: &'a [Option<InputSource>],
     silence: &'a [f32],
     meters: &'a [PeakMeter],
     clock: ModClock,
@@ -579,7 +581,10 @@ unsafe fn process_track(tracks: Tracks, idx: usize, cx: &Ctx, vca: f32, ready: i
         tap.extend(t.l[..n].iter().zip(&t.r[..n]).flat_map(|(&a, &b)| [a, b]));
     }
     let (gl, gr) = balance_gains(t.pan);
-    let (gl, gr) = if t.muted { (0.0, 0.0) } else { (gl * t.gain * vca, gr * t.gain * vca) };
+    // Recording a resampled output: the track itself is routed nowhere, so its
+    // own sound never comes back into what it records.
+    let cut = matches!(cx.monitor.get(idx), Some(Some(InputSource::Resample(_))));
+    let (gl, gr) = if t.muted || cut { (0.0, 0.0) } else { (gl * t.gain * vca, gr * t.gain * vca) };
     for i in 0..n {
         t.l[i] *= gl;
         t.r[i] *= gr;
@@ -740,7 +745,10 @@ impl Mixer {
                 continue;
             }
             std::mem::swap(&mut self.tracks[new], &mut old.tracks[was]);
-            self.monitor[new] = old.monitor[was];
+            self.monitor[new] = match old.monitor[was] {
+                Some(InputSource::Resample(k)) => map(k).map(InputSource::Resample),
+                m => m,
+            };
             let t = &mut self.tracks[new];
             t.output = map(t.output).filter(|&o| o != new).unwrap_or(MASTER);
             for s in &mut t.sends {
@@ -777,6 +785,23 @@ impl Mixer {
         for f in self.tracks.iter_mut().filter_map(|t| t.frozen.as_mut()) {
             f.sync(&clock);
         }
+    }
+
+    /// Latency of a track's post-fader output as of the last block (the
+    /// master: the whole mix, its inserts included): what resampling it lags.
+    pub fn output_latency(&self, track: usize) -> usize {
+        match track {
+            MASTER => self.lat.total,
+            t if t < self.tracks.len() => self.lat.out(t),
+            _ => 0,
+        }
+    }
+
+    /// Post-fader output of a track for the block just mixed (the master's
+    /// output for [`MASTER`]).
+    pub(crate) fn output(&self, track: usize, n: usize) -> Option<(&[f32], &[f32])> {
+        let t = self.tracks.get(track)?;
+        Some((&t.l[..n], &t.r[..n]))
     }
 
     /// Latence totale au master, en échantillons, mesurée au dernier bloc :
@@ -893,10 +918,10 @@ impl Mixer {
         self.plan_latency();
         self.delay_inputs(n);
         self.plan_vca();
-        let Self { tracks, order, silence, lat, reduced, clock, vca, ready, sleep, notes, .. } = self;
+        let Self { tracks, order, silence, lat, reduced, monitor, clock, vca, ready, sleep, notes, .. } = self;
         let count = tracks.len();
         let tracks = Tracks(tracks.as_mut_ptr());
-        let cx = Ctx { n, count, lat, reduced, silence, meters, clock: *clock, sleep: *sleep, notes };
+        let cx = Ctx { n, count, lat, reduced, monitor, silence, meters, clock: *clock, sleep: *sleep, notes };
         ready.fill(false);
         for &idx in order.iter() {
             if idx == MASTER || idx >= count || ready[idx] {
@@ -1002,10 +1027,10 @@ impl Mixer {
         self.sync_frozen();
         self.plan_latency();
         self.delay_inputs(n);
-        let Self { tracks, silence, lat, reduced, plan, clock, vca, sleep, notes, .. } = self;
+        let Self { tracks, silence, lat, reduced, monitor, plan, clock, vca, sleep, notes, .. } = self;
         let count = tracks.len();
         let tracks = Tracks(tracks.as_mut_ptr());
-        let cx = Ctx { n, count, lat, reduced, silence, meters, clock: *clock, sleep: *sleep, notes };
+        let cx = Ctx { n, count, lat, reduced, monitor, silence, meters, clock: *clock, sleep: *sleep, notes };
         let plan = &**plan;
         let vca = &**vca;
         let gather = |dst: usize| {

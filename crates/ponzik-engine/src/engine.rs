@@ -1048,8 +1048,12 @@ impl Engine {
         // A take on a deleted track ends; the others follow their track.
         for k in 0..MAX_RECORDINGS {
             let Some(rec) = self.recordings[k].as_mut() else { continue };
-            match map(rec.track) {
-                Some(t) => rec.track = t,
+            let source = match rec.source.resampled() {
+                Some(s) => map(s).map(InputSource::Resample),
+                None => Some(rec.source),
+            };
+            match map(rec.track).zip(source) {
+                Some((t, s)) => (rec.track, rec.source) = (t, s),
                 None => {
                     if let Some(rec) = self.recordings[k].take() {
                         self.trash(Garbage::Recording(rec));
@@ -1140,7 +1144,7 @@ impl Engine {
         reduced.fill(false);
         if self.low_latency {
             let count = tracks.len();
-            for t in (0..count).filter(|&t| monitor[t].is_some()) {
+            for t in (0..count).filter(|&t| monitor[t].is_some_and(|s| s.resampled().is_none())) {
                 let mut cur = t;
                 while !reduced[cur] {
                     reduced[cur] = true;
@@ -1537,7 +1541,11 @@ impl Engine {
         if has_input {
             self.route_input(pos_start, n, spt);
         }
-        self.metronome_click(pos_start, n, t0, spt);
+        // Resampling the master: the click joins after the take, unrecorded.
+        let resampling = self.recordings.iter().flatten().any(|r| r.source == InputSource::Resample(MASTER));
+        if !resampling {
+            self.metronome_click(pos_start, n, t0, spt, false);
+        }
         for (i, notes) in self.mixer.notes.iter_mut().enumerate() {
             *notes = self.channels.get(i).map_or(crate::ChannelNotes::EMPTY, |c| c.notes);
         }
@@ -1546,6 +1554,10 @@ impl Engine {
             None => self.mixer.process(n, &self.state.track_peaks),
         }
         self.pool = pool;
+        self.resample(pos_start, n, spt, contiguous);
+        if resampling {
+            self.metronome_click(pos_start, n, t0, spt, true);
+        }
         self.calibration_clicks(n);
         self.feed_scope(n);
         self.clock += n as u64;
@@ -1627,7 +1639,7 @@ impl Engine {
     /// Écoute des pistes, puis prises si le transport tourne.
     fn route_input(&mut self, pos_start: f64, n: usize, spt: f64) {
         for track in 0..self.mixer.len() {
-            let Some(source) = self.mixer.monitor[track] else { continue };
+            let Some(source) = self.mixer.monitor[track].filter(|s| s.resampled().is_none()) else { continue };
             let (sl, sr) = source.pick(&self.input_l[..n], &self.input_r[..n]);
             let (tl, tr) = self.mixer.input(track, n);
             for k in 0..n {
@@ -1642,11 +1654,11 @@ impl Engine {
         let contiguous = (pos_start - self.audio_next).abs() < 1e-6;
         // Une prise qui commence lit la latence du mixer tel qu'il est maintenant
         // (inserts tout juste changés compris), pas celle du bloc précédent.
-        if self.recordings.iter().flatten().any(|r| r.len == 0) {
+        if self.recordings.iter().flatten().any(|r| r.len == 0 && r.source.resampled().is_none()) {
             self.mixer.plan_latency();
         }
         let latency = self.mixer.latency();
-        for rec in self.recordings.iter_mut().flatten() {
+        for rec in self.recordings.iter_mut().flatten().filter(|r| r.source.resampled().is_none()) {
             if rec.len == 0 {
                 rec.start_tick = pos_start;
                 rec.mix_latency = latency;
@@ -1658,6 +1670,29 @@ impl Engine {
             let (sl, sr) = rec.source.pick(&self.input_l[..n], &self.input_r[..n]);
             // Tampon plein : on cesse d'écrire, il sera rendu au désarmement.
             rec.write(sl, sr);
+        }
+        self.publish_record_room();
+    }
+
+    /// Resampling takes: the post-fader output of their track (or the
+    /// master's), as just mixed, while the transport plays. The take notes
+    /// that output's latency: it lags the timeline by that much.
+    fn resample(&mut self, pos_start: f64, n: usize, spt: f64, contiguous: bool) {
+        if !self.playing || !self.recordings.iter().flatten().any(|r| r.source.resampled().is_some()) {
+            return;
+        }
+        for rec in self.recordings.iter_mut().flatten() {
+            let Some(track) = rec.source.resampled() else { continue };
+            let Some((l, r)) = self.mixer.output(track, n) else { continue };
+            if rec.len == 0 {
+                rec.start_tick = pos_start;
+                rec.mix_latency = self.mixer.output_latency(track);
+                rec.samples_per_tick = spt;
+                rec.jumps.clear();
+            } else if !contiguous {
+                rec.jump(pos_start);
+            }
+            rec.write(l, r);
         }
         self.publish_record_room();
     }
@@ -1793,7 +1828,8 @@ impl Engine {
     /// accent on the first beat of each bar (beats and bars follow the time
     /// signature map). Pendant le pré-compte, les temps se comptent depuis son
     /// début, in the signature where playback will start.
-    fn metronome_click(&mut self, pos_start: f64, n: usize, t0: f64, spt: f64) {
+    /// `after`: on the master's output (past its inserts and fader), not its input.
+    fn metronome_click(&mut self, pos_start: f64, n: usize, t0: f64, spt: f64, after: bool) {
         const MAX_CLICKS: usize = 16;
         let mut clicks = [(usize::MAX, false); MAX_CLICKS];
         let mut count = 0;
@@ -1827,7 +1863,7 @@ impl Engine {
         }
         let sr = self.sample_rate;
         let decay = (-1.0 / (0.012 * sr)).exp();
-        let (l, r) = self.mixer.input(MASTER, n);
+        let (l, r) = if after { self.mixer.master_mut(n) } else { self.mixer.input(MASTER, n) };
         let mut next = 0;
         for k in 0..n {
             while next < count && clicks[next].0 <= k {
