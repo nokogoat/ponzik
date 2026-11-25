@@ -13,7 +13,13 @@
   Drop…) you can move and duplicate, tempo changes and ramps, time signatures, take
   comping for vocals.
 - **Session view** (Ableton-style clip launcher) with launch modes, quantization,
-  follow actions and recording into the arrangement.
+  follow actions, launch velocity, scenes that set the tempo and time signature,
+  and recording into the arrangement.
+- **Performance mode** (FL Studio style): the playlist clips right of a marker
+  become pads launched live with the mouse, the keys or a Launchpad, APC or Push,
+  and the performance can be recorded back into the arrangement.
+- **Crossfader and cue**: tracks on side A or B of a master crossfader, and a
+  prelisten that never reaches the master.
 - **Hum to play**: sing a note and the selected instrument plays it in real time,
   snapped to your scale, and writes it into the piano roll.
 - **Groove pool**: MPC swings, Dilla, garage, trap and more, or grooves taken
