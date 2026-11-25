@@ -253,6 +253,9 @@ fn track_json(t: &TrackDef) -> Json {
     if let Some(vca) = t.vca {
         pairs.push(("vca", vca.into()));
     }
+    if t.xfade != ponzik_engine::xfader::Side::None {
+        pairs.push(("xfade", t.xfade.id().into()));
+    }
     if !t.modulators.is_empty() {
         pairs.push(("modulators", modulators_json(&t.modulators)));
     }
@@ -409,6 +412,7 @@ pub fn save(project: &Project) -> String {
         ),
     ];
     pairs.extend(crate::session::session_json(project, audio_clip_json));
+    pairs.extend(crate::live::live_json(&project.live));
     obj(pairs).pretty()
 }
 
@@ -689,6 +693,7 @@ fn load_track(v: &Json, index: usize) -> TrackDef {
         };
         t.folded = t.kind == TrackKind::Bus && bool_or(v.get("folded"), false);
         t.vca = crate::io::index(v.get("vca"), MAX_TRACKS).filter(|&x| x != index && x != MASTER);
+        t.xfade = v.get("xfade").and_then(Json::as_str).and_then(ponzik_engine::xfader::Side::from_id).unwrap_or_default();
     }
     for (slot, fx) in arr(v.get("inserts")).iter().take(INSERT_SLOTS).enumerate() {
         t.inserts[slot] = load_effect(fx);
@@ -915,6 +920,7 @@ pub fn load(text: &str) -> Result<Project, String> {
         }
     }
     crate::session::load_session(&mut p, &root, load_audio_clip);
+    p.live = crate::live::load_live(&root);
 
     for a in arr(root.get("automation")).iter().filter_map(|a| load_automation(a, n, np)) {
         // Une seule courbe par cible et portée : la première gagne.
