@@ -333,8 +333,10 @@ impl App {
         if self.icon_button(c, input, wid("mx-compact-btn", 0, 0), compact_r, Icon::Mixer, compact, tip) {
             self.mixer_compact = !compact;
         }
+        // Crossfader and cue.
+        let xf_left = self.mixer_xfader(c, input, header, compact_r.x - 8.0);
         // « + Bus » : nouveau bus, retour d'effet ou VCA.
-        let add = Rect::new(compact_r.x - 8.0 - 76.0, header.y, 76.0, header.h);
+        let add = Rect::new(xf_left - 76.0, header.y, 76.0, header.h);
         if self.mixer_add_button(c, input, add) {
             self.open_popup(Popup::NewBus, add);
         }
@@ -879,7 +881,8 @@ impl App {
         // Bas : sortie, mute ; valeur au-dessus ; fader au milieu.
         let mute = Rect::new(inner.x, inner.bottom() - 26.0, inner.w, 26.0);
         let out_r = Rect::new(inner.x, mute.y - 28.0, inner.w, 24.0);
-        let readout_y = out_r.y - 12.0;
+        // Crossfader shown: A, cue and B over the output.
+        let readout_y = out_r.y - 12.0 - self.strip_xfade_row(c, input, out_r.y, inner, tr);
         let fader = Rect::new(inner.x, pan_y + 22.0, inner.w, readout_y - 12.0 - pan_y - 22.0);
         if fader.h > 40.0 {
             self.track_fader(c, input, fader, tr, false);
