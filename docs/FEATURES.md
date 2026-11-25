@@ -132,7 +132,7 @@ Proprietary instruments cannot be copied, so Ponzik builds its own equivalents.
 | Pitch and frequency | Pitch Shifter, Frequency Shifter, Pitcher, Newtone | Shifter, Auto Shift | ✅ Pitch Shifter, Pitch Correction (Pitcher and Auto Shift equivalent: scale or MIDI target, retune speed, formants, vibrato) |
 | Rhythmic effects | Gross Beat, Scratcher | Beat Repeat, Looper | ✅ Slice |
 | Spectral | – | Spectral Time | ⬜ |
-| Vocoder | Vocodex, Vocoder | Vocoder | ⬜ |
+| Vocoder | Vocodex, Vocoder | Vocoder | ✅ **Vocoder**: 8 to 40 log-spaced bands (range, width), modulator from the sidechain key (or the track itself), carrier from the track, a saw or pulse chord following a channel's notes (a drone note without one) or noise; attack and release, formant shift, consonant (unvoiced) noise, emphasis, stereo spread, carrier and modulator levels, output, dry/wet; live modulator and output bars per band with the band layout |
 | Stereo and utilities | Stereo Shaper, Stereo Enhancer, Balance, Center, Phase Inverter, Mute 2, Frequency Splitter | Utility, Surround Panner | ✅ Utility (with phase inversion), Stereo Imager |
 | Analysis | Wave Candy, Spectroman, dB Meter | Spectrum, Tuner | 🟡 oscilloscope, VU meters, master spectrum and LUFS; tuner in the DSP crate only |
 | Modulation controllers | Peak Controller, Formula Controller, X-Y Controller, Envelope Controller, Keyboard Controller | LFO, Envelope Follower, Shaper, Expression Control | ⬜ |
@@ -242,7 +242,7 @@ all edited in one shared envelope graph with draggable points and bends), 27 nat
 compressor, bus compressor, limiter, mastering limiter, gate, OTT-style multiband, pump,
 ducking, transients, reverb, algorithmic reverb, shimmer, delay,
 character delay, chorus, phaser, saturator, character saturation, bitcrusher,
-noise and texture, autofilter, slice, pitch shifter, pitch correction, stereo imager, utility) and
+noise and texture, autofilter, slice, pitch shifter, pitch correction, vocoder, stereo imager, utility) and
 5 note effects (arpeggiator, chord, scale, random, repeat). CLAP, VST3, LV2 and LADSPA hosting.
 JSON projects with templates, autosave and crash recovery, undo with a history
 panel, MIDI file import and export, audio recording, count-in and tap tempo, WAV
