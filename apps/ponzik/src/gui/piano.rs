@@ -484,6 +484,8 @@ impl App {
         let chords = Rect::new(grid.x, inner.y + RULER, grid.w, CHORDS);
         self.tour_anchor(1, grid);
         self.spot(Spot::PianoGrid, grid);
+        // A groove dropped here: the pattern plays it.
+        self.drop_zone(input, grid, super::dnd::DropTarget::Pattern(self.project.current_pattern));
         let vel_lane = Rect::new(grid.x, grid.bottom() + 8.0, grid.w, vel_h);
         let note_lane = Rect::new(grid.x, vel_lane.bottom() + 8.0, grid.w, lane_h);
         let pat_len = self.project.patterns[pat].len.max(TICKS_PER_BAR) as f32;
@@ -733,11 +735,8 @@ impl App {
 
         // Notes du canal.
         let melodic_labels = kh >= 14.0;
-        let grooved: Vec<u32> = if self.project.patterns[pat].groove.is_some() {
-            self.project.played_notes(pat, ch).iter().map(|n| n.start).collect()
-        } else {
-            Vec::new()
-        };
+        // Where the groove plays each note: a ghost of it.
+        let groove = self.project.groove_of(pat, ch).cloned();
         for (i, n) in self.notes(ch).to_vec().into_iter().enumerate() {
             let r = Rect::new(x_of(n.start as f32), y_of(n.key as f32) + 1.0, (n.len as f32 * zoom).max(4.0), kh - 2.0);
             if r.right() < grid.x || r.x > grid.right() || r.bottom() < grid.y || r.y > grid.bottom() {
@@ -774,12 +773,10 @@ impl App {
                     c.stroke_rrect(body, 4.0, 1.0, fill);
                 }
             }
-            if let Some(&g) = grooved.get(i)
-                && g != n.start
-            {
-                // Where the pattern's groove plays the note.
-                let gx = x_of(g as f32).round();
-                c.fill_rect(Rect::new(gx, r.y - 1.0, 2.0, r.h + 2.0), t.accent_hot.alpha(0.9));
+            if let Some(g) = &groove {
+                let p = g.apply(&n, ch as u64);
+                let ghost = Rect::new(x_of(p.start as f32), r.y + 2.0, (p.len as f32 * zoom).max(4.0), r.h - 4.0);
+                self.groove_ghost(c, r, ghost);
             }
             if n.ratchet > 1 && r.w > 8.0 {
                 for j in 1..n.ratchet {

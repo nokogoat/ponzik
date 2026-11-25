@@ -170,6 +170,7 @@ impl App {
                 break;
             }
             let id = wid("pl-pat", p, 0);
+            self.drop_zone(input, row, super::dnd::DropTarget::Pattern(p));
             let hov = self.hovered(input, id, row);
             let hv = self.hover_anim(id, hov);
             let current = self.playlist.brush == p;

@@ -31,6 +31,7 @@ mod float;
 mod freeze;
 mod grand;
 mod groove;
+mod groovepool;
 mod hints;
 mod install;
 mod kbfocus;
@@ -661,9 +662,9 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
         };
         app.set_plugins(ponzik_project::plugins::scan(&scanner, None, false, ponzik_project::plugins::SCAN_TIMEOUT));
     }
-    // PONZIK_BROWSER=n: browser tab (0 instruments, 1 effects, 2 samples, 3 plugins).
+    // PONZIK_BROWSER=n: browser tab (0 instruments, 1 effects, 2 samples, 3 plugins, 4 grooves).
     if let Some(i) = std::env::var("PONZIK_BROWSER").ok().and_then(|v| v.parse::<usize>().ok()) {
-        app.sidebar_tab = i.min(3);
+        app.sidebar_tab = i.min(4);
     }
     // PONZIK_BROWSE=fav|recent:0,2|open:Drums,Drums/Kicks|q:kick|star:0,3|play:2|sel:1|focus|auto:off|vol:0.4
     // (";"-separated): the browser's filters, open folders, search, stars and preview.
@@ -899,6 +900,11 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
     // a controller lane and a groove in the piano roll.
     if let Ok(spec) = std::env::var("PONZIK_EXPRESS") {
         app.screenshot_express(&spec);
+    }
+    // PONZIK_GROOVES=pool|popup|channel|closed: grooves in the pool, played by
+    // the patterns, the Grooves tab open (or the groove popup).
+    if let Ok(spec) = std::env::var("PONZIK_GROOVES") {
+        app.screenshot_grooves(&spec);
     }
     // PONZIK_UPDATE=available|downloading|installed|uptodate|error|offline: a
     // pretend update state (toast, Settings › About).

@@ -1,8 +1,9 @@
-//! Groove pool, key detection and the chord track of the piano roll.
+//! Key detection, the chord track of the piano roll and grooves taken from
+//! audio clips (the pool itself is in `groovepool.rs`).
 
-use ponzik_engine::{AutoScope, AutoTarget, Note, ParamInfo, TICKS_PER_STEP, Unit};
-use ponzik_i18n::{tr, tr_fmt, tr_noop};
-use ponzik_project::groove::{GROOVE_STEPS, Groove, PatternGroove, groove_from_audio};
+use ponzik_engine::{AutoScope, AutoTarget, Note};
+use ponzik_i18n::{tr, tr_fmt};
+use ponzik_project::groove::{Groove, groove_from_audio};
 use ponzik_project::harmony::{KeyGuess, detect_key};
 use ponzik_project::ScaleKind;
 use ponzik_ui::{Canvas, Rect};
@@ -10,8 +11,7 @@ use ponzik_ui::{Canvas, Rect};
 use super::Input;
 use super::app::{Action, App, MenuItem, Popup, key_name};
 use super::lanes::PianoLane;
-use super::theme::*;
-use super::widgets::{Icon, wid};
+use super::widgets::Icon;
 
 /// Where a key is detected from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -23,9 +23,6 @@ pub enum KeySource {
     /// An audio clip of the playlist, by index.
     Audio(usize),
 }
-
-static TIMING: ParamInfo = ParamInfo::new(0, tr_noop("Timing"), 0.0, 1.0, 1.0, Unit::Percent);
-static VELOCITY: ParamInfo = ParamInfo::new(1, tr_noop("Velocity"), 0.0, 1.0, 1.0, Unit::Percent);
 
 /// "A minor", "C major": a detected key, in the interface's language.
 pub fn key_label(key: u8, scale: ScaleKind) -> String {
@@ -107,147 +104,13 @@ impl App {
         let name = std::path::Path::new(&clip.path).file_stem().map_or_else(|| tr("Audio").to_string(), |s| s.to_string_lossy().into_owned());
         match groove_from_audio(&clip, &sample, &self.project.tempo_map(), name.clone()) {
             Some(g) => {
-                self.project.grooves.push(g);
+                let id = self.project.add_groove(g);
+                self.groove_ui.sel = Some(id);
                 self.commit(tr("Extract a groove"));
                 self.toast(&tr_fmt!("Groove \"{}\" saved in the pool", name));
             }
             None => self.toast(tr("No attacks found in the clip")),
         }
-    }
-
-    /// Sets the groove of the current pattern (`None`: straight).
-    pub(super) fn set_groove(&mut self, groove: Option<Groove>) {
-        let pat = self.project.current_pattern;
-        let p = &mut self.project.patterns[pat];
-        p.groove = groove.map(|g| {
-            let (timing, velocity) = p.groove.as_ref().map_or((1.0, 1.0), |old| (old.timing, old.velocity));
-            PatternGroove { groove: g, timing, velocity }
-        });
-        self.commit(tr("Groove"));
-    }
-
-    /// Groove pool: the pattern's groove, its amounts, extract and commit.
-    /// False when it closes.
-    pub(super) fn groove_popup(&mut self, c: &mut Canvas, input: &Input, anchor: Rect, screen: Rect) -> bool {
-        let t = self.theme;
-        let open = self.anim.to(wid("popup", 0, 0), 1.0, T_HOVER);
-        const COLS: usize = 4;
-        const GAP: f32 = 4.0;
-        let (w, cell_h) = (392.0, 30.0);
-        let cell_w = (w - 24.0 - (COLS - 1) as f32 * GAP) / COLS as f32;
-        let pat = self.project.current_pattern;
-        let pool = self.project.groove_pool();
-        let current = self.project.patterns[pat].groove.clone();
-        let n_cells = pool.len() + 1;
-        let rows = n_cells.div_ceil(COLS) as f32;
-        let viz_h = 64.0;
-        let h = 40.0 + rows * (cell_h + GAP) + 12.0 + viz_h + 12.0 + 76.0 + 12.0 + 32.0 + 14.0;
-        let x = anchor.x.min(screen.right() - 12.0 - w).max(12.0);
-        let mut y0 = anchor.bottom() + 8.0;
-        if y0 + h > screen.bottom() - 8.0 {
-            y0 = (screen.bottom() - 8.0 - h).max(8.0);
-        }
-        let r = Rect::new(x, y0 + (1.0 - open) * 6.0, w, h);
-        c.fill_rrect(r.translate(0.0, 6.0).inset(-2.0), 16.0, t.shade(90.0 * open));
-        c.fill_rrect(r, 14.0, t.panel);
-        c.stroke_rrect(r, 14.0, 1.0, t.hairline.alpha(1.6));
-        let title = tr_fmt!("Groove · {}", self.project.patterns[pat].name);
-        let title = self.fit(self.f.sans_med, 12.0, &title, w - 32.0);
-        self.text(c, self.f.sans_med, 12.0, r.x + 16.0, r.y + 20.0, &title, t.muted);
-        let over = |b: Rect| input.inside && b.contains(input.x, input.y);
-
-        // The pool: none, the swings, the project's grooves.
-        let mut y = r.y + 34.0;
-        let mut picked: Option<Option<Groove>> = None;
-        for i in 0..n_cells {
-            let cell = Rect::new(r.x + 12.0 + (i % COLS) as f32 * (cell_w + GAP), y + (i / COLS) as f32 * (cell_h + GAP), cell_w, cell_h);
-            let (label, groove) = if i == 0 { (tr("None").to_string(), None) } else { (pool[i - 1].name.clone(), Some(pool[i - 1].clone())) };
-            let cur = match (&current, &groove) {
-                (None, None) => true,
-                (Some(c), Some(g)) => c.groove == *g,
-                _ => false,
-            };
-            let hov = over(cell);
-            self.choice_cell(c, cell, wid("groove-cell", i, 0), hov, cur, &label);
-            if hov {
-                if let Some(g) = &groove {
-                    self.set_tip(&tr_fmt!("{}\nUp to {:.0} ticks late · applied without moving the notes", g.name, g.depth()), "");
-                }
-                if input.pressed {
-                    picked = Some(groove);
-                }
-            }
-        }
-        if let Some(g) = picked {
-            self.set_groove(g);
-        }
-        y += rows * (cell_h + GAP) + 8.0;
-
-        // The groove over a bar: where each sixteenth lands, how loud.
-        let viz = Rect::new(r.x + 12.0, y, w - 24.0, viz_h);
-        c.fill_rrect(viz, 8.0, t.well);
-        let slot_w = viz.w / GROOVE_STEPS as f32;
-        let px_per_tick = slot_w / TICKS_PER_STEP as f32;
-        let pg = self.project.patterns[pat].groove.clone();
-        for s in 0..GROOVE_STEPS {
-            let gx = viz.x + (s as f32 + 0.5) * slot_w;
-            let beat = s % 4 == 0;
-            c.fill_rect(Rect::new(gx.round(), viz.y + 6.0, 1.0, viz.h - 12.0), t.hairline.alpha(if beat { 3.0 } else { 1.4 }));
-            let (dt, vel) = pg.as_ref().map_or((0.0, 1.0), |g| {
-                (g.groove.timing[s] * g.timing, 1.0 + (g.groove.velocity[s] - 1.0) * g.velocity)
-            });
-            let bar_h = ((viz.h - 16.0) * 0.6 * vel).clamp(3.0, viz.h - 12.0);
-            let bx = gx + dt * px_per_tick;
-            let col = if dt.abs() > 0.5 { t.accent_hot } else { t.accent };
-            c.fill_rrect(Rect::new(bx - 3.0, viz.bottom() - 6.0 - bar_h, 6.0, bar_h), 2.0, col.alpha(0.9));
-        }
-        y += viz_h + 12.0;
-
-        // Amounts.
-        let (timing, velocity) = pg.as_ref().map_or((1.0, 1.0), |g| (g.timing, g.velocity));
-        let k0 = Rect::new(r.x + 12.0, y, 84.0, 72.0);
-        let k1 = Rect::new(k0.right() + 8.0, y, 84.0, 72.0);
-        let t_new = self.knob(c, input, wid("groove-amt", 0, 0), k0, &TIMING, timing);
-        let v_new = self.knob(c, input, wid("groove-amt", 1, 0), k1, &VELOCITY, velocity);
-        if (t_new.is_some() || v_new.is_some())
-            && let Some(g) = self.project.patterns[pat].groove.as_mut()
-        {
-            g.timing = t_new.unwrap_or(g.timing).clamp(0.0, 1.0);
-            g.velocity = v_new.unwrap_or(g.velocity).clamp(0.0, 1.0);
-            self.commit(tr("Groove amount"));
-        }
-        let note = Rect::new(k1.right() + 12.0, y + 8.0, r.right() - 12.0 - k1.right() - 12.0, 56.0);
-        let lines = self.wrap(self.f.sans, 11.0, tr("The pattern plays the groove; its notes stay where they are until you commit."), note.w);
-        for (i, l) in lines.iter().enumerate().take(4) {
-            self.text(c, self.f.sans, 11.0, note.x, note.y + 8.0 + i as f32 * 14.0, l, t.muted);
-        }
-        y += 76.0 + 12.0;
-
-        // Extract and commit.
-        let bw = (w - 24.0 - 8.0) / 2.0;
-        let extract = Rect::new(r.x + 12.0, y, bw, 32.0);
-        if self.lab_button(c, input, wid("groove-extract", 0, 0), extract, Some(Icon::Groove), tr("Extract"), 0, tr("Saves this pattern's groove in the pool")) {
-            match self.project.extract_groove(pat) {
-                Some(_) => {
-                    self.commit(tr("Extract a groove"));
-                    self.toast(tr("Groove saved in the pool"));
-                }
-                None => self.toast(tr("No notes to take a groove from")),
-            }
-        }
-        let commit = Rect::new(extract.right() + 8.0, y, bw, 32.0);
-        let style = if pg.is_some() { 1 } else { 0 };
-        if self.lab_button(c, input, wid("groove-commit", 0, 0), commit, Some(Icon::Check), tr("Commit"), style, tr("Moves the notes where the groove plays them")) {
-            if self.project.commit_groove(pat) {
-                self.piano.selected.clear();
-                self.commit(tr("Commit the groove"));
-            } else {
-                self.toast(tr("Pick a groove first"));
-            }
-        }
-
-        let clicked = input.pressed || input.right_pressed;
-        !clicked || r.contains(input.x, input.y) || anchor.contains(input.x, input.y)
     }
 
     /// Chord names of the pattern above the piano roll, beat by beat (the
@@ -329,8 +192,8 @@ impl App {
                     self.piano.lane = if part == "bend" { PianoLane::PitchBend } else { PianoLane::Cc(1) };
                 }
                 "groove" => {
-                    let g = Groove::swing(66.0);
-                    self.project.patterns[pat].groove = Some(PatternGroove { groove: g, timing: 0.8, velocity: 1.0 });
+                    let id = self.project.add_groove(Groove { amount: 0.8, ..Groove::swing(66.0) });
+                    self.project.set_pattern_groove(pat, Some(id));
                 }
                 "chords" => {
                     // Am, F, C, G7, a beat each, over the bass.
