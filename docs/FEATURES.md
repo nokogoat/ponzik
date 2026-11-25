@@ -98,7 +98,7 @@ Proprietary instruments cannot be copied, so Ponzik builds its own equivalents.
 | Fruity Granulizer | Granular | ✅ Granular |
 | FL Keys, Plucked! | Piano, plucked strings | ✅ Electric Piano, Tine Piano, Reed Piano, Tonewheel Organ (with rotary speaker), Plucked Strings |
 | Autogun | FM preset player | ⬜ |
-| Layer, Patcher | Instrument stacking, modular chains | ⬜ |
+| Layer, Patcher | Instrument stacking, modular chains | 🟡 Layer: the Instrument Rack (up to 16 instruments on one channel, native or plugin, key and velocity splits with crossfades); no Patcher |
 | Loop Starter | Generates genre loops in the Channel Rack | ⬜ |
 
 ### Ableton Live
@@ -113,7 +113,7 @@ Proprietary instruments cannot be copied, so Ponzik builds its own equivalents.
 | Simpler, Sampler | Simple and multisample sampler | ✅ Sampler |
 | Drum Rack, Drum Sampler, Impulse | Pad-based drums | 🟡 DrumSynth, Drum Machine |
 | Granulator III | Granular | ✅ Granular |
-| Instrument Rack | Instrument stacking, macros | ⬜ |
+| Instrument Rack | Instrument stacking, macros | ✅ Instrument Rack: up to 16 chains (instrument, 2 note effects, 5 effects, level, pan, mute, solo, transpose), key, velocity and chain selector zones with fades over a mini keyboard, 16 macros, drop from the browser, group a channel into a rack, rack presets; no MIDI channel filter, plugins inside a chain have no window |
 | External Instrument, CV Instrument | Hardware control | ⬜ |
 
 ## 5. Native effects
@@ -168,7 +168,7 @@ Proprietary instruments cannot be copied, so Ponzik builds its own equivalents.
 | Finding and managing automation | FL · AB | ✅ automated knobs show their curves on hover and follow them while playing; right-click: show the curve (piano roll or playlist), mute, flatten to the knob, delete; an automation list of every curve |
 | Live automation recording | FL · AB | ✅ Touch, Latch and Write; transport and per-lane arm; one undo step per pass |
 | Clip envelopes (clip-relative modulation) | AB | ⬜ |
-| Mappable macros, macro variations, randomization | AB | ⬜ |
+| Mappable macros, macro variations, randomization | AB | 🟡 Instrument Rack: 16 macros mapped by map mode or right-click onto any device knob, chain level, pan or the chain selector, with min/max ranges (inverted too), automatable and modulatable; variations stored and recalled, Randomize with excluded macros. Effect Rack: 8 macros, no variations |
 | Linking a parameter to a MIDI controller (MIDI learn), keyboard and MIDI mapping mode | FL · AB | 🟡 MIDI learn on every knob, fader, send, macro, plugin parameter and transport button; absolute, relative (encoding detected), toggle, range, pickup; global or per-project links. No keyboard mapping |
 | Modulators (LFOs, envelopes, followers) patched to any parameter | FL · AB | ⬜ |
 

@@ -51,7 +51,8 @@ are never converted.
   library sounds.
 - Left out: automation clips, layer channels, plugin settings.
 - Saved copy: tempo, channels (samplers keep their sample, other instruments
-  become a 3x Osc), patterns, notes, playlist clips, mixer names, levels and
+  become a 3x Osc; an Instrument Rack stands as its first chain's instrument,
+  and the export says which racks lost chains), patterns, notes, playlist clips, mixer names, levels and
   routing. Ponzik's devices, effects, automation and the Session view are not kept.
 
 ## Ableton Live (`.als`)
