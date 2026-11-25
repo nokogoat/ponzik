@@ -608,10 +608,6 @@ unsafe fn process_track(tracks: Tracks, idx: usize, cx: &Ctx, vca: f32, ready: i
     // own sound never comes back into what it records.
     let cut = matches!(cx.monitor.get(idx), Some(Some(InputSource::Resample(_))));
     let (gl, gr) = if t.muted || cut { (0.0, 0.0) } else { (gl * t.gain * vca, gr * t.gain * vca) };
-    for i in 0..n {
-        t.l[i] *= gl;
-        t.r[i] *= gr;
-    let (gl, gr) = if t.muted { (0.0, 0.0) } else { (gl * t.gain * vca, gr * t.gain * vca) };
     if t.cue {
         // Cue: post-fader, before the crossfader.
         for i in 0..n {
@@ -973,15 +969,11 @@ impl Mixer {
         self.plan_latency();
         self.delay_inputs(n);
         self.plan_vca();
+        let xf = self.xf_ramps();
         let Self { tracks, order, silence, lat, reduced, monitor, clock, vca, ready, sleep, notes, .. } = self;
         let count = tracks.len();
         let tracks = Tracks(tracks.as_mut_ptr());
-        let cx = Ctx { n, count, lat, reduced, monitor, silence, meters, clock: *clock, sleep: *sleep, notes };
-        let xf = self.xf_ramps();
-        let Self { tracks, order, silence, lat, reduced, clock, vca, ready, sleep, notes, .. } = self;
-        let count = tracks.len();
-        let tracks = Tracks(tracks.as_mut_ptr());
-        let cx = Ctx { n, count, lat, reduced, silence, meters, clock: *clock, sleep: *sleep, notes, xf };
+        let cx = Ctx { n, count, lat, reduced, monitor, silence, meters, clock: *clock, sleep: *sleep, notes, xf };
         ready.fill(false);
         for &idx in order.iter() {
             if idx == MASTER || idx >= count || ready[idx] {
@@ -1087,15 +1079,11 @@ impl Mixer {
         self.sync_frozen();
         self.plan_latency();
         self.delay_inputs(n);
+        let xf = self.xf_ramps();
         let Self { tracks, silence, lat, reduced, monitor, plan, clock, vca, sleep, notes, .. } = self;
         let count = tracks.len();
         let tracks = Tracks(tracks.as_mut_ptr());
-        let cx = Ctx { n, count, lat, reduced, monitor, silence, meters, clock: *clock, sleep: *sleep, notes };
-        let xf = self.xf_ramps();
-        let Self { tracks, silence, lat, reduced, plan, clock, vca, sleep, notes, .. } = self;
-        let count = tracks.len();
-        let tracks = Tracks(tracks.as_mut_ptr());
-        let cx = Ctx { n, count, lat, reduced, silence, meters, clock: *clock, sleep: *sleep, notes, xf };
+        let cx = Ctx { n, count, lat, reduced, monitor, silence, meters, clock: *clock, sleep: *sleep, notes, xf };
         let plan = &**plan;
         let vca = &**vca;
         let gather = |dst: usize| {
