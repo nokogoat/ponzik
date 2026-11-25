@@ -3738,7 +3738,7 @@ msgid "Chance"
 msgstr "Hasard"
 
 msgid "Timing"
-msgstr "Retard"
+msgstr "Placement"
 
 msgid "Held"
 msgstr "Tenue"
