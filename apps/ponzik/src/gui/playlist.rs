@@ -140,10 +140,11 @@ impl App {
         if self.icon_button(c, input, wid("pl-paint", 0, 0), paint, Icon::Brush, self.playlist.paint, tip) {
             self.toggle_paint();
         }
-        let help = paint;
+        // Performance mode: its switch, then its controls when on.
+        let left = self.perf_header(c, input, header, paint.x - 8.0);
         // Hors mode morceau, la playlist ne joue pas : un bouton pour y passer.
-        if self.project.mode != PlayMode::Song {
-            let song = Rect::new(help.x - 44.0, header.y, 36.0, header.h);
+        if self.project.mode != PlayMode::Song && !self.perf_on() {
+            let song = Rect::new(left - 36.0, header.y, 36.0, header.h);
             let glow = 0.5 + 0.5 * (self.time * 3.0).sin();
             c.fill_rrect(song.inset(-2.0), 10.0, t.accent.alpha(0.08 + 0.06 * glow));
             if self.icon_button(c, input, wid("pl-song", 0, 0), song, Icon::Playlist, false, (tr("Play song"), "L")) {
@@ -368,6 +369,16 @@ impl App {
         let grid_id = wid("pl-grid", 0, 0);
         let clip_zone = Rect::new(lanes_r.x, lanes_r.y, lanes_r.w, (layout.bottom() - lanes_r.y).clamp(0.0, lanes_r.h));
         let lanes_clip = c.push_clip(lanes_r);
+        // Performance mode: the pads take their clicks first (Shift: edit).
+        let perf_taken = self.perf_input(input, lanes_r, lane_h, &lane_at, &lane_y, &x_of, &tick_at);
+        let perf_masked;
+        let input = if perf_taken {
+            perf_masked = Input { pressed: false, double: false, ..input.clone() };
+            &perf_masked
+        } else {
+            input
+        };
+        let lane_input = if perf_taken { input } else { lane_input };
         // Take groups first: their lanes keep the pointer from the clips.
         let comp_hot = self.comp_input(lane_input, &layout, area, &x_of, &tick_at, &snap_round);
         let over = !comp_hot && input.inside && clip_zone.contains(input.x, input.y) && (self.drag.is_none() || self.is_dragging(grid_id));
@@ -623,7 +634,7 @@ impl App {
                     Key::Char('b') if !mods.ctrl && !mods.alt && !mods.shift && !self.typing_keyboard => self.toggle_paint(),
                     Key::Char('d') if mods.ctrl => self.playlist.selected = None,
                     // 1–9: jump to that marker.
-                    Key::Char(d @ '1'..='9') if !mods.ctrl && !mods.alt && !mods.shift && !self.typing_keyboard => {
+                    Key::Char(d @ '1'..='9') if !mods.ctrl && !mods.alt && !mods.shift && !self.typing_keyboard && !self.perf_on() => {
                         self.jump_to_marker(d as usize - '1' as usize);
                     }
                     _ => {}
@@ -824,6 +835,8 @@ impl App {
         // Take groups: comp lanes, take lanes.
         self.draw_comps(c, lane_input, &layout, area, &x_of, &tick_at);
 
+        self.perf_overlay(c, input, lanes_r, lane_h, &lane_y, &x_of);
+
         // Couloirs d'automation, sous les clips.
         let auto_y = layout.bottom() + 4.0;
         if autos > 0 {
@@ -839,7 +852,7 @@ impl App {
         }
 
         // Tête de lecture.
-        if self.project.mode == PlayMode::Song {
+        if self.project.mode == PlayMode::Song || (self.perf_on() && self.playing) {
             let x = x_of(self.position as f32);
             c.fill_rect(Rect::new(x.round() - 1.0, ruler.y, 2.0, area.h), t.playhead);
         }
