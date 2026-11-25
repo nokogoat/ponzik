@@ -7399,9 +7399,6 @@ msgstr "Pitch bend · {}"
 msgid "Sustain pedal"
 msgstr "Pédale de sustain"
 
-msgid "Swing {}%"
-msgstr "Swing {} %"
-
 msgid "A parameter of the instrument, drawn in the pattern"
 msgstr "Un paramètre de l'instrument, dessiné dans le pattern"
 
@@ -7558,17 +7555,11 @@ msgstr "Notes glissées\nLes notes sélectionnées deviennent des glissés (ou r
 msgid "The clip's file is not loaded"
 msgstr "Le fichier du clip n'est pas chargé"
 
-msgid "The pattern plays the groove; its notes stay where they are until you commit."
-msgstr "Le pattern joue le groove ; ses notes restent en place jusqu'à ce que vous le figiez."
-
 msgid "Timing and accents of the clip's attacks, saved in the groove pool"
 msgstr "Placement et accents des attaques du clip, enregistrés dans la bibliothèque de grooves"
 
 msgid "drawn"
 msgstr "dessiné"
-
-msgid "{}\nUp to {:.0} ticks late · applied without moving the notes"
-msgstr "{}\nJusqu'à {:.0} ticks de retard · appliqué sans déplacer les notes"
 
 msgid "Grand Piano"
 msgstr "Piano à queue"
@@ -11355,3 +11346,156 @@ msgstr "{} notes éditées · elles jouent dans la playlist"
 
 msgid "Intonation"
 msgstr "Justesse"
+
+msgid "\"{}\" plays with {}"
+msgstr "« {} » joue avec {}"
+
+msgid "1 use"
+msgstr "1 utilisation"
+
+msgid "Add a groove to the pool"
+msgstr "Ajouter un groove au pool"
+
+msgid "Base\nThe grid the notes are matched against: each note takes the groove's offset at its grid point"
+msgstr "Base\nLa grille à laquelle les notes sont rapportées : chaque note prend le décalage du groove à son point de grille"
+
+msgid "Commit\nMoves the current pattern's notes where its grooves play them"
+msgstr "Figer\nDéplace les notes du pattern courant là où ses grooves les jouent"
+
+msgid "Dilla late snares"
+msgstr "Caisses claires en retard façon Dilla"
+
+msgid "Drag a groove from the library onto a pattern, or drop a loop or a MIDI file here to take its groove."
+msgstr "Glissez un groove de la bibliothèque sur un pattern, ou déposez ici une boucle ou un fichier MIDI pour en prendre le groove."
+
+msgid "Drop a loop or a MIDI file to take its groove"
+msgstr "Déposez une boucle ou un fichier MIDI pour en prendre le groove"
+
+msgid "Drop the groove on a clip"
+msgstr "Déposez le groove sur un clip"
+
+msgid "Drop the groove on a pattern clip"
+msgstr "Déposez le groove sur un clip de pattern"
+
+msgid "Drum and bass"
+msgstr "Drum and bass"
+
+msgid "Edit the groove"
+msgstr "Modifier le groove"
+
+msgid "Extract from \"{}\"\nThe timing and accents of the pattern's notes"
+msgstr "Extraire de « {} »\nLe placement et les accents des notes du pattern"
+
+msgid "Extract from the Sample Lab's sound\nOpen a loop in the Sample Lab first, or drop one here"
+msgstr "Extraire du son de l'Atelier\nOuvrez d'abord une boucle dans l'Atelier, ou déposez-en une ici"
+
+msgid "Extract from the Sample Lab's sound\n{} · its tempo is read from its length and beat"
+msgstr "Extraire du son de l'Atelier\n{} · son tempo est lu d'après sa durée et sa pulsation"
+
+msgid "Groove \"{}\" saved in the pool (read at {:.1} BPM)"
+msgstr "Groove « {} » enregistré dans le pool (lu à {:.1} BPM)"
+
+msgid "Groove base"
+msgstr "Base du groove"
+
+msgid "Groove pool"
+msgstr "Pool de grooves"
+
+msgid "Groove pool\nEvery groove of the project, in the browser"
+msgstr "Pool de grooves\nTous les grooves du projet, dans le navigateur"
+
+msgid "Groove pool: swing and feel for patterns, extracted or built in"
+msgstr "Pool de grooves : swing et feeling des patterns, extraits ou intégrés"
+
+msgid "Groove the clip"
+msgstr "Appliquer un groove au clip"
+
+msgid "Groove: {}\nThis channel's own groove in this pattern · right-click: remove"
+msgstr "Groove : {}\nLe groove propre à ce canal dans ce pattern · clic droit : retirer"
+
+msgid "Human drummer"
+msgstr "Batteur humain"
+
+msgid "Library"
+msgstr "Bibliothèque"
+
+msgid "MPC {}%"
+msgstr "MPC {} %"
+
+msgid "No attacks found in the sound"
+msgstr "Aucune attaque trouvée dans le son"
+
+msgid "Not used yet: drag it onto a pattern"
+msgstr "Pas encore utilisé : glissez-le sur un pattern"
+
+msgid "Only this channel plays it, in this pattern; it wins over the pattern's"
+msgstr "Seul ce canal le joue, dans ce pattern ; il l'emporte sur celui du pattern"
+
+msgid "Only {}"
+msgstr "Seulement {}"
+
+msgid "Open a loop in the Sample Lab first, or drop one here"
+msgstr "Ouvrez d'abord une boucle dans l'Atelier, ou déposez-en une ici"
+
+msgid "Played by {}"
+msgstr "Joué par {}"
+
+msgid "Reggaeton dembow"
+msgstr "Dembow reggaeton"
+
+msgid "Remove a groove"
+msgstr "Retirer un groove"
+
+msgid "Remove from the pool\nIts patterns play straight again"
+msgstr "Retirer du pool\nSes patterns rejouent droit"
+
+msgid "Shuffle"
+msgstr "Shuffle"
+
+msgid "Step {} · {:+.1} ticks ({:+.0} ms) · accent {:.0}%\nDrag sideways: timing · up and down: accent · double-click: reset"
+msgstr "Pas {} · {:+.1} ticks ({:+.0} ms) · accent {:.0} %\nGlisser de côté : placement · haut et bas : accent · double-clic : réinitialiser"
+
+msgid "The clip's attacks follow \"{}\""
+msgstr "Les attaques du clip suivent « {} »"
+
+msgid "The current pattern plays straight again"
+msgstr "Le pattern courant rejoue droit"
+
+msgid "The current pattern plays this groove"
+msgstr "Le pattern courant joue ce groove"
+
+msgid "The notes now sit where the groove played them"
+msgstr "Les notes sont maintenant là où le groove les jouait"
+
+msgid "The whole pattern plays the groove"
+msgstr "Tout le pattern joue le groove"
+
+msgid "Trap hi-hat swing"
+msgstr "Swing de charleston trap"
+
+msgid "Triplet feel"
+msgstr "Feeling ternaire"
+
+msgid "Turn Warp on for the clip to follow a groove"
+msgstr "Activez le Warp du clip pour qu'il suive un groove"
+
+msgid "UK garage 2-step"
+msgstr "UK garage 2-step"
+
+msgid "Whole pattern"
+msgstr "Tout le pattern"
+
+msgid "unused"
+msgstr "inutilisé"
+
+msgid "{}\nClick: settings · double-click: play it in the current pattern\nDrag onto a pattern, a channel or a clip"
+msgstr "{}\nClic : réglages · double-clic : le jouer dans le pattern courant\nGlisser sur un pattern, un canal ou un clip"
+
+msgid "{}\n{} · joins the project's pool when chosen"
+msgstr "{}\n{} · rejoint le pool du projet une fois choisi"
+
+msgid "{}\n{} · up to {:.0} ticks off the grid"
+msgstr "{}\n{} · jusqu'à {:.0} ticks hors de la grille"
+
+msgid "{} uses"
+msgstr "{} utilisations"

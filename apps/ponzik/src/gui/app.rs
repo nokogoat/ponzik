@@ -930,6 +930,8 @@ pub struct App {
     pub pan: Option<(u64, f32, f32, f32, f32)>,
     /// Catégorie affichée par le navigateur.
     pub sidebar_tab: usize,
+    /// The Grooves tab and the groove popup.
+    pub groove_ui: super::groovepool::GrooveUi,
     /// Sauvegarde automatique (absente hors de l'interface, en capture par exemple).
     autosaver: Option<Autosaver>,
     /// Sauvegarde d'une session interrompue, proposée au démarrage : fichier, ligne de détail.
@@ -1119,6 +1121,7 @@ impl App {
             drops: Vec::new(),
             pan: None,
             sidebar_tab: 0,
+            groove_ui: Default::default(),
             autosaver: None,
             recovery: None,
             tour: Default::default(),
@@ -2845,8 +2848,13 @@ impl App {
 
     fn sidebar_area(&mut self, c: &mut Canvas, input: &Input, r: Rect) {
         use super::tree::NavKey;
-        const CATS: [(Icon, &str); 4] =
-            [(Icon::Instrument, tr_noop("Instruments")), (Icon::Effect, tr_noop("Effects")), (Icon::Sample, tr_noop("Samples")), (Icon::Plugin, tr_noop("Plugins: CLAP, VST 3, LV2 and LADSPA"))];
+        const CATS: [(Icon, &str); 5] = [
+            (Icon::Instrument, tr_noop("Instruments")),
+            (Icon::Effect, tr_noop("Effects")),
+            (Icon::Sample, tr_noop("Samples")),
+            (Icon::Plugin, tr_noop("Plugins: CLAP, VST 3, LV2 and LADSPA")),
+            (Icon::Groove, tr_noop("Groove pool: swing and feel for patterns, extracted or built in")),
+        ];
         let t = self.theme;
         c.fill_rect(r, t.bg_deep);
         c.fill_rect(Rect::new(r.right() - 1.0, r.y, 1.0, r.h), t.hairline);
@@ -2974,6 +2982,13 @@ impl App {
             self.sidebar_query.clear();
             self.browser.filter = Filter::All;
             self.browser.sel = None;
+        }
+        // The Grooves tab is a panel of its own.
+        if self.sidebar_tab == super::groovepool::GROOVE_TAB && self.browser.filter == Filter::All {
+            let area = Rect::new(r.x, cats.bottom() + 8.0, r.w, r.bottom() - cats.bottom() - 8.0);
+            self.groove_pool_panel(c, input, area, inner_x, w);
+            c.set_clip(Some(prev));
+            return;
         }
         let query = self.sidebar_query.clone();
         let searching = !query.trim().is_empty();

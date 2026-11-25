@@ -516,6 +516,7 @@ impl App {
                 (Lead::Icon(icon), tint, entry.name.clone(), badges)
             }
             Payload::Files(_) => (Lead::Icon(Icon::Folder), tint, entry.name.clone(), Vec::new()),
+            Payload::Groove(_) => (Lead::Icon(Icon::Groove), tint, entry.name.clone(), Vec::new()),
         }
     }
 

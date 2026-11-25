@@ -27,6 +27,8 @@ pub enum Payload {
     Sample(PathBuf),
     /// Files from another application (unknown until dropped on X11).
     Files(Vec<PathBuf>),
+    /// A groove of the pool or of the library.
+    Groove(super::groovepool::GroovePick),
 }
 
 impl Payload {
@@ -36,6 +38,7 @@ impl Payload {
             Payload::Effect { .. } => Icon::Effect,
             Payload::Sample(_) => Icon::Sample,
             Payload::Files(_) => Icon::Folder,
+            Payload::Groove(_) => Icon::Groove,
         }
     }
 
@@ -48,6 +51,7 @@ impl Payload {
                 [one] => one.file_name().map_or(String::new(), |s| s.to_string_lossy().into_owned()),
                 many => tr_fmt!("{} files", many.len()),
             },
+            Payload::Groove(_) => tr("Groove").to_string(),
         }
     }
 }
@@ -71,6 +75,10 @@ pub enum DropTarget {
     RackChain { track: usize, slot: usize, chain: usize },
     /// A slot of the Session view: an audio clip.
     SessionSlot { col: usize, row: usize },
+    /// A pattern (its whole groove).
+    Pattern(usize),
+    /// The groove pool: a loop or a MIDI file dropped there gives its groove.
+    GroovePool,
 }
 
 pub struct Dnd {
@@ -136,6 +144,11 @@ impl App {
                         | DropTarget::Lab
                         | DropTarget::Pad { .. }
                         | DropTarget::SessionSlot { .. }
+                        | DropTarget::GroovePool
+                )
+                | (
+                    Payload::Groove(_),
+                    DropTarget::Rack | DropTarget::Channel(_) | DropTarget::Pattern(_) | DropTarget::Lane { .. } | DropTarget::SessionSlot { .. }
                 )
         )
     }
@@ -203,7 +216,10 @@ impl App {
                 c.stroke_rrect(r, 10.0, 1.5, t.accent.alpha(0.9));
             }
             // Pastille qui suit le curseur.
-            let name = payload.name();
+            let name = match &payload {
+                Payload::Groove(pick) => self.groove_pick_name(*pick),
+                _ => payload.name(),
+            };
             let tw = self.fonts.measure(self.f.sans_med, 13.0, &name).min(220.0);
             let chip = Rect::new(input.x + 10.0, input.y + 8.0, tw + 42.0, 32.0);
             c.fill_rrect(chip.translate(0.0, 4.0), 12.0, t.shade(70.0));
@@ -238,6 +254,8 @@ impl App {
     pub(super) fn add_default(&mut self, payload: Payload) {
         self.note_recent(&payload);
         match payload {
+            // A click on a groove selects it (the list does it).
+            Payload::Groove(_) => {}
             Payload::Files(paths) => self.drop_files(paths, None),
             Payload::Instrument { kind, name } => self.add_channel_kind(&kind, &name),
             Payload::Effect { kind, .. } => {
@@ -256,6 +274,22 @@ impl App {
     }
 
     fn drop_payload(&mut self, payload: Payload, target: DropTarget) {
+        use super::groovepool::GrooveTarget;
+        if let Payload::Groove(pick) = payload {
+            let pattern = self.project.current_pattern;
+            match target {
+                DropTarget::Pattern(p) => self.apply_groove(GrooveTarget::Pattern(p), Some(pick)),
+                DropTarget::Rack => self.apply_groove(GrooveTarget::Pattern(pattern), Some(pick)),
+                DropTarget::Channel(channel) => self.apply_groove(GrooveTarget::Channel { pattern, channel }, Some(pick)),
+                DropTarget::Lane { lane, tick } => self.drop_groove_on_lane(pick, lane, tick),
+                DropTarget::SessionSlot { col, row } => match self.project.session_grid.get(col).and_then(|c| c.get(row)).copied().flatten() {
+                    Some(p) => self.apply_groove(GrooveTarget::Pattern(p), Some(pick)),
+                    None => self.toast(tr("Drop the groove on a pattern clip")),
+                },
+                _ => {}
+            }
+            return;
+        }
         self.note_recent(&payload);
         match (payload, target) {
             (Payload::Files(paths), target) => self.drop_files(paths, Some(target)),
@@ -304,6 +338,7 @@ impl App {
             (Payload::Sample(path), DropTarget::Lane { lane, tick }) => {
                 self.add_audio_clip(&path.to_string_lossy(), Some((lane, tick)));
             }
+            (Payload::Sample(path), DropTarget::GroovePool) => self.extract_groove_from_file(&path),
             (Payload::Sample(path), DropTarget::SessionSlot { col, row }) => {
                 self.add_session_audio(&path.to_string_lossy(), col, row);
             }
@@ -313,6 +348,12 @@ impl App {
 
     /// Files dropped from another application on `target` (or anywhere else).
     pub fn drop_files(&mut self, paths: Vec<PathBuf>, target: Option<DropTarget>) {
+        if target == Some(DropTarget::GroovePool) {
+            for p in &paths {
+                self.extract_groove_from_file(p);
+            }
+            return;
+        }
         let of = |kind: FileKind| paths.iter().filter(|p| file_kind(p) == kind).cloned().collect::<Vec<_>>();
         // A project replaces everything: it goes first and alone.
         if let Some(p) = paths.iter().find(|p| matches!(file_kind(p), FileKind::Project | FileKind::Foreign)) {

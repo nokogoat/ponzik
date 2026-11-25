@@ -97,8 +97,14 @@ impl App {
         }
         self.tip_zone(input, swing_box, tr("Swing\nDrag or scroll · double-click: 0%"), "");
         self.spot(Spot::RackSwing, swing_box);
+        // The pattern's groove (pool, amounts, commit).
+        let groove_b = Rect::new(swing_box.x - 8.0 - 36.0, header.y, 36.0, header.h);
+        let grooved = self.project.patterns[pat].groove.is_some();
+        if self.icon_button(c, input, wid("rack-groove", 0, 0), groove_b, Icon::Groove, grooved, (tr("Groove\nSwing and feel from the pool, extract, commit"), "")) {
+            self.open_popup(Popup::Groove, groove_b);
+        }
         // Left: the pattern being edited and the project's scale, unless the top bar has them.
-        self.view_context(c, input, header, swing_box.x - 16.0);
+        self.view_context(c, input, header, groove_b.x - 16.0);
 
         c.fill_rrect(body, 16.0, t.panel);
         c.stroke_rrect(body, 16.0, 1.0, t.hairline);
@@ -303,7 +309,11 @@ impl App {
         let lock = self.channel_lock(ch);
         let missing = self.channel_missing_sample(ch);
         let looped = if missing.is_none() { self.channel_loop(ch, false) } else { None };
-        let badge_w = lock.map_or(0.0, |_| 24.0) + missing.as_ref().map_or(0.0, |_| 24.0) + looped.map_or(0.0, |_| 24.0);
+        let own_groove = self.project.patterns[self.project.current_pattern].groove.as_ref().is_some_and(|g| g.channels.iter().any(|(c, _)| *c == ch));
+        let badge_w = lock.map_or(0.0, |_| 24.0)
+            + missing.as_ref().map_or(0.0, |_| 24.0)
+            + looped.map_or(0.0, |_| 24.0)
+            + if own_groove { 22.0 } else { 0.0 };
         self.text_fit(c, self.f.sans_med, 15.0, name_r.x, cy, &name, name_r.w - badge_w, name_col);
         let mut badge_x = name_r.x + self.fonts.measure(self.f.sans_med, 15.0, &name).min(name_r.w - badge_w) + 14.0;
         if let Some(path) = missing {
@@ -355,6 +365,10 @@ impl App {
                 self.want_hint(super::hints::Hint::FitLoop, r);
             }
             badge_x += 26.0;
+        }
+        if own_groove {
+            self.channel_groove_mark(c, input, badge_x - 2.0, cy, ch);
+            badge_x += 22.0;
         }
         if let Some(target) = lock {
             // Frozen (by itself or with its track): a frost badge right after the name.
