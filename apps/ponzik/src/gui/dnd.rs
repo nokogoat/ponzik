@@ -73,6 +73,8 @@ pub enum DropTarget {
     Pad { channel: usize, pad: usize, add_layer: bool },
     /// The end of one chain of a rack.
     RackChain { track: usize, slot: usize, chain: usize },
+    /// A chain of an Instrument Rack (`None`: a new chain).
+    LayerChain { channel: usize, chain: Option<usize> },
     /// A slot of the Session view: an audio clip.
     SessionSlot { col: usize, row: usize },
     /// A pattern (its whole groove).
@@ -134,8 +136,8 @@ impl App {
     fn accepts(payload: &Payload, target: DropTarget) -> bool {
         matches!(
             (payload, target),
-            (Payload::Instrument { .. }, DropTarget::Rack | DropTarget::Channel(_))
-                | (Payload::Effect { .. }, DropTarget::Channel(_) | DropTarget::Track(_) | DropTarget::Slot(..) | DropTarget::RackChain { .. })
+            (Payload::Instrument { .. }, DropTarget::Rack | DropTarget::Channel(_) | DropTarget::LayerChain { .. })
+                | (Payload::Effect { .. }, DropTarget::Channel(_) | DropTarget::Track(_) | DropTarget::Slot(..) | DropTarget::RackChain { .. } | DropTarget::LayerChain { .. })
                 | (
                     Payload::Sample(_) | Payload::Files(_),
                     DropTarget::Rack
@@ -308,6 +310,8 @@ impl App {
             }
             (Payload::Effect { kind, .. }, DropTarget::Track(t)) => self.insert_effect(t, None, &kind),
             (Payload::Effect { kind, .. }, DropTarget::Slot(t, s)) => self.insert_effect(t, Some(s), &kind),
+            (Payload::Instrument { kind, .. }, DropTarget::LayerChain { channel, chain }) => self.drop_on_layer(channel, chain, &kind, true),
+            (Payload::Effect { kind, .. }, DropTarget::LayerChain { channel, chain }) => self.drop_on_layer(channel, chain, &kind, false),
             (Payload::Effect { kind, .. }, DropTarget::RackChain { track, slot, chain }) => {
                 if ponzik_project::rack::rack_accepts(&kind) {
                     self.run_rack_action(super::rackfx::RackAction::Add { track, slot, chain, kind });

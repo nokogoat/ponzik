@@ -230,6 +230,7 @@ impl App {
         let (kind, inst) = self.device_kind(d);
         match d {
             Device::Effect { track, slot } if kind == ponzik_project::rack::RACK => self.rack_width(track, slot),
+            Device::Instrument(ch) if kind == ponzik_project::inst_rack::INST_RACK => self.layer_width(ch),
             _ => card_width(&kind, params_of(&kind, inst)).max(self.title_width(d)),
         }
     }
@@ -627,6 +628,11 @@ impl App {
         {
             return self.rack_device(c, input, body, track, slot);
         }
+        if let Device::Instrument(ch) = device
+            && kind == ponzik_project::inst_rack::INST_RACK
+        {
+            return self.layer_device(c, input, body, ch);
+        }
         self.device_body(c, input, body, device, &kind, params);
     }
 
@@ -720,6 +726,9 @@ impl App {
                 if let Device::RackUnit { track, slot, unit } = device {
                     self.macro_range_knob(c, cell, id, track, slot, unit, p, &mut changed, input.mods.alt);
                 }
+                if let Device::Instrument(ch) = device {
+                    self.layer_range_knob(c, cell, id, ch, p, &mut changed, input.mods.alt);
+                }
                 self.mod_knob(c, input, id, cell, device, p, value, &mut changed);
                 if let Some(v) = changed {
                     self.set_param_value(device, p, v);
@@ -764,6 +773,11 @@ impl App {
 
     pub fn save_preset(&mut self, device: Device, name: &str) {
         let (kind, _) = self.device_kind(device);
+        if let Device::Instrument(ch) = device
+            && kind == ponzik_project::inst_rack::INST_RACK
+        {
+            return self.save_layer_preset(ch, name);
+        }
         let params = self.device_params(device);
         // A plugin's preset keeps its whole patch.
         let editor = self.editors.editor(device).filter(|e| e.is_alive());
@@ -834,7 +848,8 @@ impl App {
 
     pub(super) fn param_value(&self, device: Device, p: &ParamInfo) -> f32 {
         match device {
-            Device::Instrument(ch) => self.project.channels.get(ch).and_then(|c| c.instrument.get(p.id)),
+            // An Instrument Rack's knob driven by a macro follows it.
+            Device::Instrument(ch) => return self.project.channels.get(ch).map_or(p.default, |c| c.instrument.effective(p.id, p)),
             Device::Effect { track, slot } => self.project.tracks[track].inserts[slot].as_ref().and_then(|e| e.get(p.id)),
             Device::RackUnit { track, slot, unit } => {
                 return self.project.tracks[track].inserts[slot].as_ref().map_or(p.default, |e| e.effective(unit_param(unit, p.id), p));
@@ -844,6 +859,9 @@ impl App {
     }
 
     pub(super) fn set_param_value(&mut self, device: Device, p: &ParamInfo, v: f32) {
+        if self.layer_learn_hit(device, p) {
+            return;
+        }
         let v = p.clamp(v);
         if (self.param_value(device, p) - v).abs() < f32::EPSILON {
             return;

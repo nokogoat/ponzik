@@ -144,6 +144,9 @@ impl App {
 
     /// Menu lines of a knob inside a rack: map it to a macro.
     pub(super) fn macro_menu_items(&self, target: AutoTarget) -> Vec<MenuItem> {
+        if let AutoTarget::InstrumentParam { channel, id } = target {
+            return self.layer_macro_items(channel, id);
+        }
         let AutoTarget::EffectParam { track, slot, id } = target else { return Vec::new() };
         let Some((unit, param)) = split_param(id) else { return Vec::new() };
         let Some(rack) = self.rack_def(track, slot).and_then(|d| d.rack.as_deref()) else { return Vec::new() };
@@ -368,7 +371,7 @@ impl App {
     }
 
     /// Small value field: drag up and down; double-click resets.
-    fn mini_value(&mut self, c: &mut Canvas, input: &Input, id: u64, r: Rect, device: Device, p: &ParamInfo, value: f32) {
+    pub(super) fn mini_value(&mut self, c: &mut Canvas, input: &Input, id: u64, r: Rect, device: Device, p: &ParamInfo, value: f32) {
         let t = self.theme;
         let hov = self.hovered(input, id, r);
         let hv = self.hover_anim(id, hov || self.is_dragging(id));

@@ -461,6 +461,8 @@ pub struct LoadedPreset {
     pub params: Vec<(u32, f32)>,
     pub rack: Option<ponzik_project::RackDef>,
     pub state: Option<ponzik_project::PluginState>,
+    /// An Instrument Rack's chains and mappings.
+    pub layers: Option<ponzik_project::inst_rack::InstRackDef>,
 }
 
 pub fn load_preset(path: &Path) -> Result<LoadedPreset, String> {
@@ -469,5 +471,6 @@ pub fn load_preset(path: &Path) -> Result<LoadedPreset, String> {
         params: ponzik_project::presets::parse_preset(&text)?,
         rack: ponzik_project::presets::parse_rack(&text),
         state: ponzik_project::presets::parse_state(&text),
+        layers: ponzik_project::inst_rack::parse_layer_preset(&text),
     })
 }
