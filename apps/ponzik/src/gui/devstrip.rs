@@ -294,6 +294,14 @@ impl App {
             v.push(MenuItem::new(Icon::ChevronLeft, tr("Move left"), Action::Device(d, DeviceOp::Move(-1))).detail(format!("Ctrl {} ←", tr("Shift"))).dim(first));
             v.push(MenuItem::new(Icon::ChevronRight, tr("Move right"), Action::Device(d, DeviceOp::Move(1))).detail(format!("Ctrl {} →", tr("Shift"))).dim(last));
         }
+        if let Device::Instrument(ch) = d
+            && kind != ponzik_project::inst_rack::INST_RACK
+        {
+            v.push(
+                MenuItem::new(Icon::Rack, tr("Group into an Instrument Rack"), Action::Layer(super::layers::LayerAction::Group(ch)))
+                    .tip(tr("Its instrument becomes the first chain: add more to play them together")),
+            );
+        }
         let collapsed = self.is_collapsed(d);
         v.push(MenuItem::new(if collapsed { Icon::Expand } else { Icon::Collapse }, if collapsed { tr("Expand") } else { tr("Collapse") }, Action::Device(d, DeviceOp::Collapse)).sep());
         let floating = self.layout.floating(d);

@@ -38,6 +38,7 @@ mod kbfocus;
 mod keymap;
 mod keys;
 mod lanes;
+mod layers;
 mod learn;
 mod lessons;
 mod menu;
@@ -789,6 +790,10 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
             }
         }
         app.commit(tr("Capture effects"));
+    }
+    // PONZIK_LAYERS=0 : channel 0 becomes a layered piano and strings rack, focused.
+    if let Ok(spec) = std::env::var("PONZIK_LAYERS") {
+        app.screenshot_layers(&spec);
     }
     // PONZIK_RACK=3 : a rack with macros on track 3, focused.
     if let Ok(spec) = std::env::var("PONZIK_RACK") {

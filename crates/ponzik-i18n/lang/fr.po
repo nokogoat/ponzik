@@ -5889,6 +5889,204 @@ msgstr "Chaîne parallèle"
 msgid "Rack"
 msgstr "Rack"
 
+msgid "A rack holds {} chains at most"
+msgstr "Un rack contient {} chaînes au plus"
+
+msgid "Add a chain"
+msgstr "Ajouter une chaîne"
+
+msgid "Add a chain\nor drop an instrument from the browser"
+msgstr "Ajouter une chaîne\nou déposer un instrument depuis le navigateur"
+
+msgid "Add a chain first"
+msgstr "Ajoutez d'abord une chaîne"
+
+msgid "Add a device"
+msgstr "Ajouter un appareil"
+
+msgid "Add a device to the chain"
+msgstr "Ajouter un appareil à la chaîne"
+
+msgid "Add: {}"
+msgstr "Ajouter : {}"
+
+msgid "Bypass a device"
+msgstr "Contourner un appareil"
+
+msgid "Capture layers"
+msgstr "Capture des couches"
+
+msgid "Chain"
+msgstr "Chaîne"
+
+msgid "Chain selector zones: one value picks the chains, a macro morphs"
+msgstr "Zones du sélecteur de chaîne : une valeur choisit les chaînes, une macro fait le fondu"
+
+msgid "Chain selector: {}"
+msgstr "Sélecteur de chaîne : {}"
+
+msgid "Chain zone"
+msgstr "Zone de chaîne"
+
+msgid "Click: open · right-click: menu"
+msgstr "Clic : ouvrir · clic droit : menu"
+
+msgid "Click: show its devices · right-click: menu"
+msgstr "Clic : voir ses appareils · clic droit : menu"
+
+msgid "Delete a variation"
+msgstr "Supprimer une variation"
+
+msgid "Drag the edges or the zone · Alt: fades · double-click: whole range"
+msgstr "Tirer les bords ou la zone · Alt : fondus · double-clic : toute la plage"
+
+msgid "Drag: pick the chains that play · map it to a macro to morph"
+msgstr "Tirer : choisir les chaînes qui jouent · l'assigner à une macro pour un fondu"
+
+msgid "Drop here: a new chain"
+msgstr "Déposer ici : une nouvelle chaîne"
+
+msgid "Drop instruments here, or click +"
+msgstr "Déposez des instruments ici, ou cliquez sur +"
+
+msgid "Empty chain"
+msgstr "Chaîne vide"
+
+msgid "Every key, velocity and selector value"
+msgstr "Toutes les touches, vélocités et valeurs du sélecteur"
+
+msgid "Group into an Instrument Rack"
+msgstr "Grouper dans un rack d'instruments"
+
+msgid "Its instrument becomes the first chain: add more to play them together"
+msgstr "Son instrument devient la première chaîne : ajoutez-en d'autres pour les jouer ensemble"
+
+msgid "Keeps the values of every macro as a variation"
+msgstr "Garde les valeurs de toutes les macros comme variation"
+
+msgid "Key zones: which notes each chain plays"
+msgstr "Zones de touches : les notes que joue chaque chaîne"
+
+msgid "Keys {} to {}"
+msgstr "Touches {} à {}"
+
+msgid "Macro {}"
+msgstr "Macro {}"
+
+msgid "Map: click, then move a knob of the rack"
+msgstr "Assigner : cliquez, puis bougez un bouton du rack"
+
+msgid "Move a device in the chain"
+msgstr "Déplacer un appareil dans la chaîne"
+
+msgid "Move a knob of the rack to map it to Macro {}"
+msgstr "Bougez un bouton du rack pour l'assigner à la macro {}"
+
+msgid "Move down"
+msgstr "Descendre"
+
+msgid "Move up"
+msgstr "Monter"
+
+msgid "Mute a chain"
+msgstr "Couper une chaîne"
+
+msgid "Mute the chain"
+msgstr "Couper la chaîne"
+
+msgid "No transpose"
+msgstr "Sans transposition"
+
+msgid "Octave down"
+msgstr "Octave en dessous"
+
+msgid "Octave up"
+msgstr "Octave au-dessus"
+
+msgid "Piano and strings"
+msgstr "Piano et cordes"
+
+msgid "Randomize leaves a macro alone"
+msgstr "Le hasard épargne une macro"
+
+msgid "Randomize leaves alone"
+msgstr "Le hasard épargne"
+
+msgid "Randomize the macros"
+msgstr "Macros au hasard"
+
+msgid "Randomize the macros\nExcluded macros keep their value"
+msgstr "Macros au hasard\nLes macros exclues gardent leur valeur"
+
+msgid "Recall a variation"
+msgstr "Rappeler une variation"
+
+msgid "Recall: the macros take these values"
+msgstr "Rappel : les macros prennent ces valeurs"
+
+msgid "Remove a device from the chain"
+msgstr "Retirer un appareil de la chaîne"
+
+msgid "Remove the chain"
+msgstr "Retirer la chaîne"
+
+msgid "Reset the zones"
+msgstr "Réinitialiser les zones"
+
+msgid "Selector {} to {}"
+msgstr "Sélecteur {} à {}"
+
+msgid "Semitone down"
+msgstr "Demi-ton en dessous"
+
+msgid "Semitone up"
+msgstr "Demi-ton au-dessus"
+
+msgid "Sixteen macros"
+msgstr "Seize macros"
+
+msgid "Solo a chain"
+msgstr "Isoler une chaîne"
+
+msgid "Solo the chain"
+msgstr "Isoler la chaîne"
+
+msgid "Store a variation"
+msgstr "Enregistrer une variation"
+
+msgid "Store the macros"
+msgstr "Enregistrer les macros"
+
+msgid "This device cannot go there"
+msgstr "Cet appareil ne peut pas aller là"
+
+msgid "This preset is for an Instrument Rack"
+msgstr "Ce preset est pour un rack d'instruments"
+
+msgid "Transpose a chain"
+msgstr "Transposer une chaîne"
+
+msgid "Variation {}"
+msgstr "Variation {}"
+
+msgid "Variations"
+msgstr "Variations"
+
+msgid "Variations: store and recall the macro values"
+msgstr "Variations : enregistrer et rappeler les valeurs des macros"
+
+msgid "Vel"
+msgstr "Vél."
+
+msgid "Velocities {} to {}"
+msgstr "Vélocités {} à {}"
+
+msgid "Velocity zones: soft and hard layers"
+msgstr "Zones de vélocité : couches douces et fortes"
+
+msgid "{} mapped to Macro {}"
+msgstr "{} assigné à la macro {}"
+
 msgid "{}: Instrument Rack, only chain {} kept"
 msgstr "{} : rack d'instruments, seule la chaîne {} est gardée"
 

@@ -233,6 +233,8 @@ pub enum Popup {
     RackAdd { track: usize, slot: usize, chain: usize },
     /// Right-click on a device inside a rack.
     RackDevice { track: usize, slot: usize, unit: usize },
+    /// A menu of an Instrument Rack.
+    Layer(super::layers::LayerMenu),
     /// "What's new in Ponzik": the latest changelog section, or all of it.
     WhatsNew,
     /// The Learn panel: short lessons.
@@ -310,6 +312,8 @@ pub enum Action {
     Lessons(Option<usize>),
     /// Edit of an effect rack.
     Rack(super::rackfx::RackAction),
+    /// Edit of an Instrument Rack.
+    Layer(super::layers::LayerAction),
     /// Edit of the modulators.
     Mod(super::modulators::ModAction),
     AddInstrument(&'static str, Option<usize>),
@@ -964,6 +968,8 @@ pub struct App {
     pub rack_sel: HashMap<(usize, usize), usize>,
     /// Device chip dragged inside a rack.
     pub rack_chip: Option<super::rackfx::ChipDrag>,
+    /// Instrument Racks: selected chains, map mode, zone drags.
+    pub layers: super::layers::LayerUi,
     /// Modulator cards: handle drag, depth mode, live traces.
     pub mod_ui: super::modulators::ModUi,
     /// MIDI learn and the controller links.
@@ -1151,6 +1157,7 @@ impl App {
             audio_edit: Default::default(),
             rack_sel: HashMap::new(),
             rack_chip: None,
+            layers: Default::default(),
             mod_ui: Default::default(),
             ctl: Default::default(),
             autorec: Default::default(),
@@ -3367,6 +3374,7 @@ impl App {
                 super::menu::effect_items(|_| true, |id| Action::AddEffect(*track, id)),
             ),
             Popup::AddModulator { track, channel } => (tr("Modulators").into(), self.add_mod_items(*track, *channel)),
+            Popup::Layer(m) => self.layer_menu(m),
             Popup::RackAdd { track, slot, chain } => (tr_fmt!("Chain {}", chain + 1), self.rack_add_items(*track, *slot, *chain)),
             Popup::RackDevice { track, slot, unit } => {
                 let (kind, _) = self.device_kind(super::devices::Device::RackUnit { track: *track, slot: *slot, unit: *unit });
@@ -3842,6 +3850,7 @@ impl App {
         match action {
             Action::None => {}
             Action::Rack(a) => self.run_rack_action(a),
+            Action::Layer(a) => self.run_layer_action(a),
             Action::Mod(a) => self.run_mod_action(a),
             Action::AddInstrument(kind, None) => self.add_instrument(kind),
             Action::AddInstrument(kind, Some(ch)) => {
@@ -4132,9 +4141,10 @@ impl App {
             },
             Action::LoadPreset(device, path) => match compat::load_preset(&path) {
                 Ok(preset) => {
-                    match preset.state {
-                        Some(state) => self.apply_plugin_preset(device, &preset.params, state),
-                        None => self.apply_preset(device, &preset.params, preset.rack),
+                    match (preset.layers, preset.state) {
+                        (Some(layers), _) => self.apply_layer_preset(device, &preset.params, layers),
+                        (None, Some(state)) => self.apply_plugin_preset(device, &preset.params, state),
+                        (None, None) => self.apply_preset(device, &preset.params, preset.rack),
                     }
                     let name = path.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
                     self.toast(&tr_fmt!("Preset loaded: {}", name));
