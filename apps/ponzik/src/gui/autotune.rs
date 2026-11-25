@@ -527,7 +527,7 @@ impl App {
                 }
                 let p = &at::params()[id as usize];
                 if id == at::P_MIDI_CHANNEL {
-                    self.at_channel_cell(c, input, cell, device, p);
+                    self.at_channel_cell(c, input, cell, device, p, tr("Channel whose notes are the target (MIDI target: Notes or Melody)\nClick: next channel · right-click: none · wheel"));
                 } else {
                     self.at_cell(c, input, cell, device, p);
                 }
@@ -566,7 +566,7 @@ impl App {
     }
 
     /// The channel whose notes are the target: its name; click for the next one.
-    fn at_channel_cell(&mut self, c: &mut Canvas, input: &Input, cell: Rect, device: Device, p: &'static ParamInfo) {
+    pub(super) fn at_channel_cell(&mut self, c: &mut Canvas, input: &Input, cell: Rect, device: Device, p: &'static ParamInfo, tip: &str) {
         let t = self.theme;
         let value = self.param_value(device, p).round() as usize;
         let count = self.project.channels.len();
@@ -587,7 +587,7 @@ impl App {
         let mut changed = None;
         if hov {
             self.set_cursor(Cursor::Hand);
-            self.set_tip(tr("Channel whose notes are the target (MIDI target: Notes or Melody)\nClick: next channel · right-click: none · wheel"), "");
+            self.set_tip(tip, "");
             self.claim_wheel();
             if input.pressed {
                 changed = Some((value + 1) % (count + 1));
