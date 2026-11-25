@@ -15,7 +15,6 @@ use ponzik_engine::{MAX_FINE, MAX_RATCHET, NOTE_FX_SLOTS, Note, NoteCond, PlayMo
 use ponzik_engine::effects::fx_rack::{CHAIN_LEN, CHAINS, MACROS, MAX_MAPPINGS, UNITS};
 use ponzik_engine::{MacroMap, ModKind};
 
-use crate::groove::{GROOVE_STEPS, Groove, PatternGroove};
 use crate::json::{self, Json};
 use crate::rack::{ModTarget, ModulatorDef, RackDef, RackDevice, rack_accepts};
 use crate::{
@@ -184,11 +183,7 @@ fn pattern_json(p: &PatternDef) -> Json {
         ("color", p.color.into()),
         ("notes", Json::Arr(notes)),
     ];
-    if let Some(g) = &p.groove {
-        let mut groove = groove_json(&g.groove);
-        groove.extend([("timing_amount", g.timing.into()), ("velocity_amount", g.velocity.into())]);
-        pairs.push(("groove", obj(groove)));
-    }
+    crate::groove::pattern_groove_json(p, &mut pairs);
     obj(pairs)
 }
 
@@ -397,7 +392,7 @@ pub fn save(project: &Project) -> String {
             ),
         ),
         ("midi_map", crate::midi_map::mappings_json(&project.midi_map)),
-        ("grooves", Json::Arr(project.grooves.iter().map(|g| obj(groove_json(g))).collect())),
+        ("grooves", crate::groove::pool_json(&project.grooves)),
         ("pitch_edits", crate::tune::edits_json(&project.pitch_edits)),
         (
             "session",
@@ -567,38 +562,9 @@ fn load_pattern(v: &Json, index: usize, channels: usize) -> PatternDef {
         len: u32_or(v.get("len"), TICKS_PER_BAR).max(1),
         notes,
         color: u32_or(v.get("color"), 0),
-        groove: v.get("groove").and_then(|g| {
-            Some(PatternGroove {
-                groove: load_groove(g)?,
-                timing: f32_or(g.get("timing_amount"), 1.0).clamp(0.0, 1.0),
-                velocity: f32_or(g.get("velocity_amount"), 1.0).clamp(0.0, 1.0),
-            })
-        }),
+        // Read with the pool (`groove::load_grooves`).
+        groove: None,
     }
-}
-
-/// `{"name", "timing": [16 ticks], "velocity": [16 ratios]}`.
-fn groove_json(g: &Groove) -> Vec<(&'static str, Json)> {
-    vec![
-        ("name", g.name.as_str().into()),
-        ("timing", Json::Arr(g.timing.iter().map(|&t| t.into()).collect())),
-        ("velocity", Json::Arr(g.velocity.iter().map(|&v| v.into()).collect())),
-    ]
-}
-
-fn load_groove(v: &Json) -> Option<Groove> {
-    let mut g = Groove::straight(string_or(v.get("name"), "Groove"));
-    let (timing, velocity) = (arr(v.get("timing")), arr(v.get("velocity")));
-    if timing.is_empty() && velocity.is_empty() {
-        return None;
-    }
-    for (i, t) in timing.iter().take(GROOVE_STEPS).enumerate() {
-        g.timing[i] = f32_or(Some(t), 0.0).clamp(-(TICKS_PER_BAR as f32), TICKS_PER_BAR as f32);
-    }
-    for (i, t) in velocity.iter().take(GROOVE_STEPS).enumerate() {
-        g.velocity[i] = f32_or(Some(t), 1.0).clamp(0.0, 4.0);
-    }
-    Some(g)
 }
 
 fn load_clip(v: &Json, patterns: usize) -> Option<ClipDef> {
@@ -973,7 +939,7 @@ pub fn load(text: &str) -> Result<Project, String> {
     }
     p.midi_map = crate::midi_map::load_mappings(root.get("midi_map"), n);
     p.clamp_track_refs();
-    p.grooves = arr(root.get("grooves")).iter().filter_map(load_groove).collect();
+    crate::groove::load_grooves(&mut p, &root);
     p.pitch_edits = crate::tune::load_edits(root.get("pitch_edits"));
     Ok(p)
 }
@@ -1129,14 +1095,64 @@ mod tests {
 
     #[test]
     fn grooves_round_trip() {
+        use crate::groove::{Groove, GrooveBase, factory};
         let mut p = Project::empty();
         p.add_channel("A", InstrumentDef::new("pulse"), 60);
+        p.add_channel("B", InstrumentDef::new("pulse"), 60);
         p.add_note(0, 0, Note::new(24, 24, 60, 0.8));
-        p.patterns[0].groove = Some(PatternGroove { groove: Groove::swing(62.0), timing: 0.5, velocity: 0.25 });
-        let mut extracted = Groove::swing(54.0);
+        let mut g = Groove::swing(62.0);
+        (g.base, g.quantize, g.amount, g.random, g.velocity_amount) = (GrooveBase::EighthTriplet, 0.25, 0.5, 0.125, 0.75);
+        let a = p.add_groove(g);
+        let mut extracted = factory::library().into_iter().find(|g| g.steps == 32).unwrap();
         extracted.name = "Break".into();
         extracted.velocity[4] = 1.5;
-        p.grooves.push(extracted);
+        let b = p.add_groove(extracted);
+        p.add_groove(factory::library().into_iter().find(|g| g.bars() == 2).unwrap());
+        p.set_pattern_groove(0, Some(a));
+        p.set_channel_groove(0, 1, Some(b));
+        assert_eq!(load(&save(&p)).unwrap(), p);
+    }
+
+    #[test]
+    fn older_pattern_grooves_join_the_pool() {
+        // Before the pool held ids, each pattern kept a copy of its groove.
+        let old = |name: &str| format!(r#"{{"name": "{name}", "timing": [0, 8, 0, 8, 0, 8, 0, 8, 0, 8, 0, 8, 0, 8, 0, 8], "velocity": [1.2], "timing_amount": 0.5, "velocity_amount": 0.25}}"#);
+        let text = format!(
+            r#"{{"format": "ponzik-project", "channels": [{{}}], "patterns": [{{"groove": {}}}, {{"groove": {}}}, {{"groove": {}}}],
+            "grooves": [{{"name": "Kept", "timing": [1, 2]}}]}}"#,
+            old("Swing"),
+            old("Swing"),
+            old("Other")
+        );
+        let p = load(&text).unwrap();
+        assert_eq!(p.grooves.len(), 3);
+        let id = p.patterns[0].groove_id(0).unwrap();
+        assert_eq!(p.patterns[1].groove_id(0), Some(id));
+        assert_ne!(p.patterns[2].groove_id(0), Some(id));
+        let g = p.groove(id).unwrap();
+        assert_eq!((g.timing[1], g.velocity[0], g.velocity[1], g.amount, g.velocity_amount), (8.0, 1.2, 1.0, 0.5, 0.25));
+        // The short groove repeats its steps over a bar.
+        assert_eq!(p.grooves[0].timing.len(), 16);
+        assert_eq!(p.grooves[0].timing[3], 2.0);
+    }
+
+    #[test]
+    fn junk_grooves_load_as_nothing() {
+        let text = r#"{"format": "ponzik-project", "channels": [{}],
+            "grooves": [7, "x", {"timing": "no"}, {"id": 3, "steps": -4, "timing": [1e30, "a", null], "base": "1/7", "amount": 9, "random": -2},
+                        {"id": 3, "timing": [1]}, {"id": 1.5, "timing": [2], "velocity": [99]}],
+            "patterns": [{"groove": 42, "channel_grooves": [[0, 3], [0, 3], [9, 3], ["a"], 5]}, {"groove": 3.5}, {"groove": [1]}]}"#;
+        let p = load(text).unwrap();
+        assert_eq!(p.grooves.len(), 3);
+        let g = p.groove(3).unwrap();
+        assert_eq!((g.steps, g.timing.len(), g.amount, g.random), (16, 16, 1.0, 0.0));
+        assert!(g.timing.iter().all(|t| t.abs() <= 192.0));
+        assert!(p.grooves.iter().all(|g| g.velocity.iter().all(|v| (0.0..=4.0).contains(v))));
+        let ids: Vec<u32> = p.grooves.iter().map(|g| g.id).collect();
+        assert!(ids.iter().enumerate().all(|(i, a)| !ids[i + 1..].contains(a)), "{ids:?}");
+        assert_eq!(p.patterns[0].groove.as_ref().unwrap().all, None);
+        assert_eq!(p.patterns[0].groove.as_ref().unwrap().channels, [(0, 3)]);
+        assert!(p.patterns[1].groove.is_none() && p.patterns[2].groove.is_none());
         assert_eq!(load(&save(&p)).unwrap(), p);
     }
 

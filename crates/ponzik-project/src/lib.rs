@@ -607,7 +607,7 @@ pub struct Project {
     pub markers: Vec<Marker>,
     /// MIDI controller links saved with this project (see [`midi_map`]).
     pub midi_map: Vec<midi_map::MidiMapping>,
-    /// Grooves extracted into the project's pool (after the built-in ones).
+    /// The groove pool: grooves patterns refer to by id (see [`groove`]).
     pub grooves: Vec<groove::Groove>,
     /// Note-based pitch and timing edits of recorded files (see [`tune`]).
     pub pitch_edits: Vec<tune::PitchEditDef>,
@@ -853,8 +853,8 @@ impl Project {
             .patterns
             .iter()
             .map(|p| {
-                let mut notes = match &p.groove {
-                    Some(g) => p.notes.iter().map(|n| g.apply(n)).collect(),
+                let mut notes: Vec<Vec<Note>> = match &p.groove {
+                    Some(_) => (0..p.notes.len()).map(|ch| self.grooved_notes(p, ch)).collect(),
                     None => p.notes.clone(),
                 };
                 notes.resize(n, Vec::new());
@@ -1264,6 +1264,7 @@ impl Project {
                 p.notes.remove(idx);
             }
         }
+        self.grooves_channel_removed(idx);
         // Les courbes du canal disparaissent, celles des suivants suivent leur canal.
         self.automation.retain_mut(|a| {
             let channel = match &mut a.target {
