@@ -200,7 +200,7 @@ in the product.
 | **Character delay** | Tape, analog, ping-pong, saturation in the feedback loop, wow and flutter, ducking | EchoBoy, Valhalla Delay | 2 | ✅ tape, analog, digital |
 | **Character saturation** | Tube, tape, transistor, rectifier, multiband, with a mix control | Decapitator, Saturn 2 | 2 | ✅ |
 | **Animated filter** | Envelope filter, drawn and step LFO, vowel and comb modes | FilterFreak, MicroShift | 2 | ⬜ |
-| **Vocoder** | 16 to 32 bands, internal or sidechain carrier, formants | Vocodex, Live's Vocoder | 2 (V2-1) | ⬜ |
+| **Vocoder** | 16 to 32 bands, internal or sidechain carrier, formants | Vocodex, Live's Vocoder | 2 (V2-1) | ✅ 8 to 40 bands, track, chord or noise carrier, formant shift, consonant noise |
 | **Pitch corrector** | Real-time automatic tuning to the scale, adjustable speed (the "T-Pain" effect at 0 ms) | Auto-Tune, Pitcher, Melodyne | 3 (V3-5) | ✅ Pitch Correction effect (real time, scale or MIDI target) |
 | **Wavetable synth 2** | Ponzik Wave extended: 3 oscillators + sub + noise, spectral, granular and multisample modes, modulation matrix, phase distortion, table import | Serum 2, Vital | 3 (V2-6) | ⬜ |
 | **Modular drum synth** | Kick, snare, hi-hat in layers (transient + body + noise), a preset family per machine | Bitwig v8, v9 and v0 | 2 | ✅ Drum Machine (eight layered pads); no per-machine preset families yet |
