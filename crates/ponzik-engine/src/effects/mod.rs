@@ -35,6 +35,7 @@ mod tranche;
 mod transient;
 mod utility;
 mod vintage_verb;
+pub mod vocoder;
 
 pub use amp::Amp;
 pub use autotune::AutoTune;
@@ -67,6 +68,7 @@ pub use tranche::Tranche;
 pub use transient::Transient;
 pub use utility::Utility;
 pub use vintage_verb::VintageVerb;
+pub use vocoder::Vocoder;
 
 use ponzik_dsp::biquad::{Biquad, BiquadCoefs};
 

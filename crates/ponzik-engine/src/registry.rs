@@ -16,6 +16,7 @@ use crate::effects::Lofi;
 use crate::effects::VintageVerb;
 use crate::effects::Amp;
 use crate::effects::AutoTune;
+use crate::effects::Vocoder;
 use crate::instruments::{Brass, Guitar, Strings, Winds};
 use crate::instruments::DrumMachine;
 use crate::instruments::DrumPads;
@@ -302,6 +303,13 @@ pub fn effects() -> &'static [EffectKind] {
             create: || Box::new(AutoTune::default()),
         },
         EffectKind {
+            id: "vocoder",
+            name: "Vocoder",
+            category: "Pitch",
+            description: "Filter bank vocoder: a voice on the sidechain input shapes the track or an internal chord following a channel's notes; formant shift, consonant noise, stereo spread",
+            create: || Box::new(Vocoder::default()),
+        },
+        EffectKind {
             id: "reverb",
             name: "Reverb",
             category: "Space",
@@ -482,7 +490,7 @@ pub fn effect_kind(id: &str) -> Option<&'static EffectKind> {
 }
 
 /// Effets qui écoutent une entrée latérale ([`Effect::sidechain`]).
-const SIDECHAIN_EFFECTS: [&str; 4] = ["compressor", "bus_comp", "gate", "ducker"];
+const SIDECHAIN_EFFECTS: [&str; 5] = ["compressor", "bus_comp", "gate", "ducker", "vocoder"];
 
 /// Vrai si l'effet `id` accepte une piste clé.
 pub fn takes_sidechain(id: &str) -> bool {
