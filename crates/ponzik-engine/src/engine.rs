@@ -817,6 +817,7 @@ impl Engine {
         let bpm = sequence.tempo_view().bpm_at(0.0);
         for ch in &mut channels {
             ch.instrument.set_sample_rate(sample_rate);
+            ch.instrument.set_tempo(bpm as f32);
             for fx in ch.note_fx.iter_mut().flatten() {
                 fx.set_sample_rate(sample_rate);
                 fx.set_tempo(bpm as f32);
