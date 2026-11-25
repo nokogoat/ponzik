@@ -798,7 +798,7 @@ mod tests {
         app.position = 100.0;
         keys(&mut app, vec![(2, false)]);
         let gate = app.project.session_live.iter().find(|l| l.col == 1).copied();
-        assert_eq!(gate, Some(LiveClip { col: 1, row: 0, start: 0, end: TICKS_PER_BAR, offset: 0, period: 0 }));
+        assert_eq!(gate, Some(LiveClip { col: 1, row: 0, start: 0, end: TICKS_PER_BAR, offset: 0, period: 0, soft: 0 }));
         assert!(app.project.session_live.iter().any(|l| l.col == 0 && l.end == u32::MAX));
     }
 
@@ -813,7 +813,7 @@ mod tests {
         app.advance_session();
         app.position = 500.0;
         app.handle_midi(&mut vec![MidiEvent::NoteOff { channel: 9, key: 36, velocity: 0 }]);
-        assert_eq!(app.project.session_live, [LiveClip { col: 1, row: 0, start: 0, end: 2 * TICKS_PER_BAR, offset: 0, period: 0 }]);
+        assert_eq!(app.project.session_live, [LiveClip { col: 1, row: 0, start: 0, end: 2 * TICKS_PER_BAR, offset: 0, period: 0, soft: 0 }]);
         assert!(app.held.is_empty(), "a linked pad plays no note");
     }
 

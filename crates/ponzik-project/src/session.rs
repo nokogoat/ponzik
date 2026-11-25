@@ -78,14 +78,20 @@ pub enum Quant {
 impl Quant {
     pub const ALL: [Quant; 6] = [Self::None, Self::Sixteenth, Self::Beat, Self::Bar, Self::Bars2, Self::Bars4];
 
+    /// Ticks of a step in 4/4.
     pub fn ticks(self) -> u32 {
+        self.ticks_in(TICKS_PER_BAR)
+    }
+
+    /// Ticks of a step with bars of `bar` ticks (the beat stays a quarter note).
+    pub fn ticks_in(self, bar: u32) -> u32 {
         match self {
             Self::None => 0,
             Self::Sixteenth => TICKS_PER_STEP,
             Self::Beat => TICKS_PER_BAR / 4,
-            Self::Bar => TICKS_PER_BAR,
-            Self::Bars2 => 2 * TICKS_PER_BAR,
-            Self::Bars4 => 4 * TICKS_PER_BAR,
+            Self::Bar => bar.max(1),
+            Self::Bars2 => 2 * bar.max(1),
+            Self::Bars4 => 4 * bar.max(1),
         }
     }
 
@@ -124,11 +130,16 @@ pub const LAUNCH_AHEAD: f64 = 2.0;
 /// Tick where a launch made at `pos` starts: the next boundary of `quant`
 /// (right away for [`Quant::None`]), or the transport start when stopped.
 pub fn launch_tick(pos: f64, quant: Quant, playing: bool) -> u32 {
+    launch_tick_in(pos, quant.ticks(), playing)
+}
+
+/// Like [`launch_tick`], with a quantization step of `step` ticks (0: none).
+pub fn launch_tick_in(pos: f64, step: u32, playing: bool) -> u32 {
     if !playing {
         return 0;
     }
     let at = pos.max(0.0) + LAUNCH_AHEAD;
-    let q = quant.ticks() as f64;
+    let q = step as f64;
     let tick = if q == 0.0 { at.ceil() } else { (at / q).ceil() * q };
     tick.min(u32::MAX as f64 / 2.0) as u32
 }
@@ -268,11 +279,29 @@ pub struct SlotDef {
     /// An audio clip in the slot: its file, loop length (`len`), warp and
     /// gain; `start` and `lane` are unused. Plays on its `track`.
     pub audio: Option<AudioClipDef>,
+    /// Launch velocity sensitivity, in percent: at 100, a pad hit softly
+    /// plays the clip that much softer; at 0, every launch plays as written.
+    pub velocity: u8,
+}
+
+/// Velocity taken off a clip (percent, see [`SessionSlot::soft`]) launched
+/// with `velocity` (1..=127) on a slot of sensitivity `amount` (percent).
+pub fn launch_soft(amount: u8, velocity: u8) -> u8 {
+    let amount = f32::from(amount.min(100)) / 100.0;
+    let v = f32::from(velocity.clamp(1, 127)) / 127.0;
+    (amount * (1.0 - v) * 100.0).round() as u8
 }
 
 impl SlotDef {
-    pub const DEFAULT: SlotDef =
-        SlotDef { launch: LaunchMode::Trigger, quant: None, legato: false, follow: Follow::OFF, color: 0, audio: None };
+    pub const DEFAULT: SlotDef = SlotDef {
+        launch: LaunchMode::Trigger,
+        quant: None,
+        legato: false,
+        follow: Follow::OFF,
+        color: 0,
+        audio: None,
+        velocity: 0,
+    };
 
     pub fn is_default(&self) -> bool {
         *self == Self::DEFAULT
@@ -289,6 +318,24 @@ impl Default for SlotDef {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SceneDef {
     pub follow: Follow,
+    /// Tempo the scene sets when it starts, in hundredths of BPM (0: none).
+    pub tempo: u32,
+    /// Time signature the scene sets when it starts.
+    pub sig: Option<(u8, u8)>,
+}
+
+impl SceneDef {
+    /// Tempo range a scene can set.
+    pub const BPM: (f32, f32) = (20.0, 999.0);
+
+    /// The scene's tempo in BPM, if it sets one.
+    pub fn bpm(&self) -> Option<f32> {
+        (self.tempo > 0).then(|| (self.tempo as f32 / 100.0).clamp(Self::BPM.0, Self::BPM.1))
+    }
+
+    pub fn set_bpm(&mut self, bpm: Option<f32>) {
+        self.tempo = bpm.filter(|b| b.is_finite() && *b > 0.0).map_or(0, |b| (b.clamp(Self::BPM.0, Self::BPM.1) * 100.0).round() as u32);
+    }
 }
 
 /// A clip playing (or about to) in the session: slot, start and end in
@@ -302,6 +349,8 @@ pub struct LiveClip {
     pub end: u32,
     pub offset: u32,
     pub period: u32,
+    /// Velocity taken off (percent): a soft launch of a velocity-sensitive slot.
+    pub soft: u8,
 }
 
 impl Project {
@@ -347,6 +396,21 @@ impl Project {
         self.session_slot(col, row).quant.unwrap_or(self.session_quant)
     }
 
+    /// Bar of the session, in ticks: the song's first time signature.
+    pub fn session_bar(&self) -> u32 {
+        self.tempo_map().sig_at(0.0).bar_len()
+    }
+
+    /// Ticks of a quantization step in the session's bars.
+    pub fn quant_ticks(&self, q: Quant) -> u32 {
+        q.ticks_in(self.session_bar())
+    }
+
+    /// Tick where a launch made at `pos` with `quant` starts.
+    pub fn launch_at(&self, pos: f64, quant: Quant, playing: bool) -> u32 {
+        launch_tick_in(pos, self.quant_ticks(quant), playing)
+    }
+
     /// Puts a pattern in a slot (its audio clip goes).
     pub fn set_session_pattern(&mut self, col: usize, row: usize, pattern: usize) {
         if let Some(cell) = self.session_grid.get_mut(col).and_then(|c| c.get_mut(row)) {
@@ -388,8 +452,9 @@ impl Project {
             .iter()
             .filter_map(|l| {
                 let pattern = self.session_pattern(l.col, l.row)?;
-                Some(SessionSlot { pattern, start: l.start, end: l.end, offset: l.offset, period: l.period, soft: 0 })
+                Some(SessionSlot { pattern, start: l.start, end: l.end, offset: l.offset, period: l.period, soft: l.soft })
             })
+            .chain(self.perf_slots())
             .collect()
     }
 
@@ -404,7 +469,8 @@ impl Project {
     /// Engine clips of the launched audio clips.
     pub(crate) fn session_audio_live(&self, sample_rate: f32, loader: SampleLoader, warps: WarpLookup) -> Vec<AudioClip> {
         let tempo = self.session_tempo();
-        self.session_live
+        let mut clips: Vec<AudioClip> = self
+            .session_live
             .iter()
             .filter(|l| self.session_pattern(l.col, l.row).is_none())
             .filter_map(|l| {
@@ -421,7 +487,7 @@ impl Project {
                     start: l.start,
                     len: l.end.saturating_sub(l.start).max(1),
                     offset: def.offset,
-                    gain: def.gain,
+                    gain: def.gain * (1.0 - f32::from(l.soft.min(100)) / 100.0),
                     fade_in: def.fade_in,
                     fade_out: def.fade_out,
                     fade_in_curve: def.fade_in_curve,
@@ -435,7 +501,9 @@ impl Project {
                     xfade_out: 0.0,
                 })
             })
-            .collect()
+            .collect();
+        clips.extend(self.perf_audio(sample_rate, loader, warps));
+        clips
     }
 
     /// Renders needed by the warped audio clips of the session (one loop of
@@ -445,7 +513,9 @@ impl Project {
         let mut jobs: Vec<crate::warp::WarpJob> = Vec::new();
         let slots = self.session_slots.iter().flatten().filter_map(|s| s.audio.as_ref().map(|a| (a, 0)));
         let live = self.session_live.iter().filter_map(|l| self.session_slot(l.col, l.row).audio.as_ref().map(|a| (a, l.period)));
-        for (def, period) in slots.chain(live) {
+        // The performance zone's audio clips loop at the session tempo too.
+        let perf = self.perf_audio_defs().into_iter().map(|a| (a, 0));
+        for (def, period) in slots.chain(live).chain(perf) {
             let Some(sample) = loader(&def.path).map(|s| self.tuned_sample(&def.path, s)) else { continue };
             let (_, job_def) = Self::session_audio_cycle(def, period);
             if let Some(job) = crate::warp::WarpJob::for_clip(&job_def, &sample, &tempo, sample_rate)
@@ -553,6 +623,8 @@ pub struct Column {
     pub pending: Vec<Pending>,
     /// Row whose button is held (gate and repeat slots).
     pub held: Option<usize>,
+    /// Velocity taken off each row's clip by its last launch (percent).
+    pub soft: [u8; SESSION_SCENES],
 }
 
 impl Column {
@@ -624,6 +696,9 @@ pub struct Player {
     /// Seed of the follow actions' chances.
     pub seed: u64,
     pub recorder: Option<Recorder>,
+    /// Scenes that started since the interface last looked (their tempo
+    /// and time signature apply then).
+    pub started: Vec<usize>,
 }
 
 impl Player {
@@ -657,17 +732,24 @@ impl Player {
 
     /// The slot's button is pressed (mouse, key or note) at `pos`.
     pub fn launch(&mut self, p: &Project, col: usize, row: usize, pos: f64, playing: bool) {
+        self.launch_with(p, col, row, pos, playing, 127);
+    }
+
+    /// Like [`Player::launch`], hit with `velocity` (a pad): a velocity-sensitive
+    /// slot plays softer.
+    pub fn launch_with(&mut self, p: &Project, col: usize, row: usize, pos: f64, playing: bool, velocity: u8) {
         if col >= SESSION_COLUMNS || !p.session_filled(col, row) {
             return;
         }
         let slot = p.session_slot(col, row);
+        self.cols[col].soft[row] = launch_soft(slot.velocity, velocity);
         let quant = p.slot_quant(col, row);
-        let at = launch_tick(pos, quant, playing);
+        let at = p.launch_at(pos, quant, playing);
         if slot.launch == LaunchMode::Toggle && self.cols[col].last_row() == Some(row) {
             self.schedule(col, at, Step::Stop);
             return;
         }
-        let period = if slot.launch == LaunchMode::Repeat { quant.ticks().max(TICKS_PER_STEP) } else { 0 };
+        let period = if slot.launch == LaunchMode::Repeat { p.quant_ticks(quant).max(TICKS_PER_STEP) } else { 0 };
         if slot.launch.held() {
             self.cols[col].held = Some(row);
         }
@@ -688,7 +770,7 @@ impl Player {
         match p.session_slot(col, row).launch {
             LaunchMode::Gate => {
                 let started = self.started_at(col, row);
-                let at = launch_tick(pos, quant, playing).max(started.map_or(0, |s| s + quant.ticks().max(TICKS_PER_STEP)));
+                let at = p.launch_at(pos, quant, playing).max(started.map_or(0, |s| s + p.quant_ticks(quant).max(TICKS_PER_STEP)));
                 if playing && started.is_some() {
                     let c = &mut self.cols[col];
                     c.pending.retain(|x| x.at < at);
@@ -737,7 +819,7 @@ impl Player {
         if row >= SESSION_SCENES {
             return;
         }
-        let at = launch_tick(pos, p.session_quant, playing);
+        let at = p.launch_at(pos, p.session_quant, playing);
         self.plan_scene(p, row, at, false);
         self.scene_pending.retain(|&(t, _)| t < at);
         self.scene_pending.push((at, Some(row)));
@@ -782,7 +864,7 @@ impl Player {
             self.cols[col] = Column::default();
             return;
         }
-        let at = launch_tick(pos, p.session_quant, playing);
+        let at = p.launch_at(pos, p.session_quant, playing);
         self.cols[col].held = None;
         self.schedule(col, at, Step::Stop);
     }
@@ -819,6 +901,7 @@ impl Player {
             match scene {
                 Some(row) => {
                     self.scene = Some((row, at));
+                    self.started.push(row);
                     if self.scene_queued.is_some_and(|(r, t)| r == row && t == at) {
                         self.scene_queued = None;
                     }
@@ -861,7 +944,7 @@ impl Player {
         if !follow.is_on() || self.cols[col].held == Some(row) {
             return;
         }
-        let t = at.saturating_add(u32::from(follow.bars) * TICKS_PER_BAR);
+        let t = at.saturating_add(u32::from(follow.bars) * p.session_bar());
         // Something planned earlier already replaces the clip.
         if self.cols[col].pending.iter().any(|x| x.at <= t) {
             return;
@@ -881,7 +964,7 @@ impl Player {
         if !follow.is_on() {
             return;
         }
-        let t = at.saturating_add(u32::from(follow.bars) * TICKS_PER_BAR);
+        let t = at.saturating_add(u32::from(follow.bars) * p.session_bar());
         let seed = self.seed_of(SESSION_COLUMNS, row, at);
         match resolve(follow.pick(seed), row, &p.session_filled_scenes(), seed) {
             Target::Keep => {}
@@ -909,7 +992,7 @@ impl Player {
             let mut cur = c.playing;
             for x in &c.pending {
                 if let Some(pl) = cur {
-                    out.push(LiveClip { col, row: pl.row, start: pl.start, end: x.at.max(pl.start), offset: pl.offset, period: pl.period });
+                    out.push(LiveClip { col, row: pl.row, start: pl.start, end: x.at.max(pl.start), offset: pl.offset, period: pl.period, soft: c.soft[pl.row] });
                 }
                 cur = match x.step {
                     Step::Play { row, offset, period } => Some(Playing { row, start: x.at, offset, period }),
@@ -917,7 +1000,7 @@ impl Player {
                 };
             }
             if let Some(pl) = cur {
-                out.push(LiveClip { col, row: pl.row, start: pl.start, end: u32::MAX, offset: pl.offset, period: pl.period });
+                out.push(LiveClip { col, row: pl.row, start: pl.start, end: u32::MAX, offset: pl.offset, period: pl.period, soft: c.soft[pl.row] });
             }
         }
         out.retain(|l| l.end > l.start && p.session_filled(l.col, l.row));
@@ -1012,6 +1095,9 @@ pub(crate) fn session_json(p: &Project, audio_json: fn(&AudioClipDef) -> Json) -
             if s.color != 0 {
                 pairs.push(("color", s.color.into()));
             }
+            if s.velocity > 0 {
+                pairs.push(("velocity", s.velocity.into()));
+            }
             if let Some(a) = &s.audio {
                 pairs.push(("audio", audio_json(a)));
             }
@@ -1022,8 +1108,20 @@ pub(crate) fn session_json(p: &Project, audio_json: fn(&AudioClipDef) -> Json) -
         .session_scenes
         .iter()
         .enumerate()
-        .filter(|(_, s)| s.follow != Follow::OFF)
-        .map(|(r, s)| obj(vec![("row", r.into()), ("follow", follow_json(&s.follow))]))
+        .filter(|(_, s)| **s != SceneDef::default())
+        .map(|(r, s)| {
+            let mut pairs = vec![("row", r.into())];
+            if s.follow != Follow::OFF {
+                pairs.push(("follow", follow_json(&s.follow)));
+            }
+            if let Some(bpm) = s.bpm() {
+                pairs.push(("tempo", bpm.into()));
+            }
+            if let Some((num, den)) = s.sig {
+                pairs.push(("sig", Json::Arr(vec![num.into(), den.into()])));
+            }
+            obj(pairs)
+        })
         .collect();
     vec![("session_quant", p.session_quant.id().into()), ("session_slots", Json::Arr(slots)), ("session_scenes", Json::Arr(scenes))]
 }
@@ -1044,6 +1142,7 @@ pub(crate) fn load_session(p: &mut Project, root: &Json, load_audio: fn(&Json) -
             follow: load_follow(v.get("follow")),
             color: v.get("color").and_then(Json::as_f64).filter(|n| n.is_finite() && *n >= 0.0).map_or(0, |n| n as u32 & 0xff_ffff),
             audio,
+            velocity: v.get("velocity").and_then(Json::as_f64).filter(|n| n.is_finite()).map_or(0, |n| n.round().clamp(0.0, 100.0) as u8),
         };
         // A slot holds a pattern or an audio clip, not both.
         if slot.audio.is_some() {
@@ -1053,7 +1152,14 @@ pub(crate) fn load_session(p: &mut Project, root: &Json, load_audio: fn(&Json) -
     }
     for v in root.get("session_scenes").and_then(Json::as_arr).unwrap_or(&[]) {
         if let Some(r) = idx(v.get("row"), SESSION_SCENES) {
-            p.session_scenes[r].follow = load_follow(v.get("follow"));
+            let scene = &mut p.session_scenes[r];
+            scene.follow = load_follow(v.get("follow"));
+            scene.set_bpm(v.get("tempo").and_then(Json::as_f64).map(|b| b as f32));
+            scene.sig = v.get("sig").and_then(Json::as_arr).and_then(|a| {
+                let n = |k: usize| a.get(k).and_then(Json::as_f64).filter(|n| n.fract() == 0.0);
+                let (num, den) = (n(0)?, n(1)?);
+                ((1.0..=32.0).contains(&num) && [1.0, 2.0, 4.0, 8.0, 16.0].contains(&den)).then_some((num as u8, den as u8))
+            });
         }
     }
 }
@@ -1110,7 +1216,7 @@ mod tests {
         // The engine gets the clip before it starts.
         let mut pl = Player::new(1);
         pl.launch(&p, 0, 0, 100.0, true);
-        assert_eq!(pl.live(&p), [LiveClip { col: 0, row: 0, start: 192, end: u32::MAX, offset: 0, period: 0 }]);
+        assert_eq!(pl.live(&p), [LiveClip { col: 0, row: 0, start: 192, end: u32::MAX, offset: 0, period: 0, soft: 0 }]);
     }
 
     #[test]
@@ -1172,7 +1278,7 @@ mod tests {
         pl.advance(&p, (2 * BAR) as f64);
         assert_eq!(
             pl.live(&p),
-            [LiveClip { col: 0, row: 1, start: 2 * BAR, end: 3 * BAR, offset: 0, period: 0 }],
+            [LiveClip { col: 0, row: 1, start: 2 * BAR, end: 3 * BAR, offset: 0, period: 0, soft: 0 }],
             "the stop is planned a bar ahead"
         );
         pl.advance(&p, (3 * BAR) as f64);
@@ -1188,14 +1294,14 @@ mod tests {
         pl.advance(&p, 400.0);
         assert_eq!(pl.cols[0].held, Some(0));
         pl.release(&p, 0, 0, 900.0, true);
-        assert_eq!(pl.live(&p), [LiveClip { col: 0, row: 0, start: BAR, end: 3 * BAR, offset: 0, period: 0 }]);
+        assert_eq!(pl.live(&p), [LiveClip { col: 0, row: 0, start: BAR, end: 3 * BAR, offset: 0, period: 0, soft: 0 }]);
         pl.advance(&p, (3 * BAR) as f64);
         assert!(pl.is_idle());
         // A quick tap still plays one quantum.
         let mut pl = Player::new(0);
         pl.launch(&p, 0, 0, 100.0, true);
         pl.release(&p, 0, 0, 120.0, true);
-        assert_eq!(pl.live(&p), [LiveClip { col: 0, row: 0, start: BAR, end: 2 * BAR, offset: 0, period: 0 }]);
+        assert_eq!(pl.live(&p), [LiveClip { col: 0, row: 0, start: BAR, end: 2 * BAR, offset: 0, period: 0, soft: 0 }]);
         // Without quantization, it stops right on release.
         p.session_slot_mut(0, 0).unwrap().quant = Some(Quant::None);
         let mut pl = Player::new(0);
@@ -1215,7 +1321,7 @@ mod tests {
         pl.advance(&p, 400.0);
         pl.launch(&p, 0, 1, 500.0, true);
         assert!(pl.cols[0].stopping());
-        assert_eq!(pl.live(&p), [LiveClip { col: 0, row: 1, start: BAR, end: 2 * BAR, offset: 0, period: 0 }]);
+        assert_eq!(pl.live(&p), [LiveClip { col: 0, row: 1, start: BAR, end: 2 * BAR, offset: 0, period: 0, soft: 0 }]);
     }
 
     #[test]
@@ -1226,10 +1332,10 @@ mod tests {
         let mut pl = Player::new(0);
         pl.launch(&p, 0, 0, 10.0, true);
         pl.advance(&p, 100.0);
-        assert_eq!(pl.live(&p), [LiveClip { col: 0, row: 0, start: 96, end: u32::MAX, offset: 0, period: 96 }]);
+        assert_eq!(pl.live(&p), [LiveClip { col: 0, row: 0, start: 96, end: u32::MAX, offset: 0, period: 96, soft: 0 }]);
         pl.release(&p, 0, 0, 250.0, true);
         // From its last restart (tick 192) it plays on.
-        assert_eq!(pl.live(&p), [LiveClip { col: 0, row: 0, start: 192, end: u32::MAX, offset: 0, period: 0 }]);
+        assert_eq!(pl.live(&p), [LiveClip { col: 0, row: 0, start: 192, end: u32::MAX, offset: 0, period: 0, soft: 0 }]);
     }
 
     #[test]
@@ -1246,12 +1352,12 @@ mod tests {
         pl.launch(&p, 0, 1, 650.0, true);
         assert_eq!(pl.cols[0].queued(), Some((1, 672)));
         let live = pl.live(&p);
-        assert_eq!(live[1], LiveClip { col: 0, row: 1, start: 672, end: u32::MAX, offset: 0, period: 0 });
+        assert_eq!(live[1], LiveClip { col: 0, row: 1, start: 672, end: u32::MAX, offset: 0, period: 0, soft: 0 });
         pl.launch(&p, 0, 1, 700.0, true);
-        assert_eq!(pl.live(&p)[1], LiveClip { col: 0, row: 1, start: 768, end: u32::MAX, offset: 0, period: 0 }, "2 bars: 0 in the bar");
+        assert_eq!(pl.live(&p)[1], LiveClip { col: 0, row: 1, start: 768, end: u32::MAX, offset: 0, period: 0, soft: 0 }, "2 bars: 0 in the bar");
         pl.launch(&p, 0, 1, 520.0, true);
         // 576 is 192 into the bar.
-        assert_eq!(pl.live(&p)[1], LiveClip { col: 0, row: 1, start: 576, end: u32::MAX, offset: 192, period: 0 });
+        assert_eq!(pl.live(&p)[1], LiveClip { col: 0, row: 1, start: 576, end: u32::MAX, offset: 192, period: 0, soft: 0 });
         pl.advance(&p, 600.0);
         // Back to the first clip without legato: from its start.
         pl.launch(&p, 0, 0, 650.0, true);
@@ -1259,7 +1365,7 @@ mod tests {
         p.session_slot_mut(0, 0).unwrap().legato = true;
         pl.launch(&p, 0, 0, 700.0, true);
         // At 768: 768 − 576 + 192 = 384 → 96 of its 288-tick loop.
-        assert_eq!(pl.live(&p)[1], LiveClip { col: 0, row: 0, start: 768, end: u32::MAX, offset: 96, period: 0 });
+        assert_eq!(pl.live(&p)[1], LiveClip { col: 0, row: 0, start: 768, end: u32::MAX, offset: 96, period: 0, soft: 0 });
     }
 
     #[test]
@@ -1274,8 +1380,8 @@ mod tests {
         assert_eq!(pl.scene, Some((0, 0)));
         // Scene 1 is planned four bars on, in both columns; empty slots stop.
         let live = pl.live(&p);
-        assert!(live.contains(&LiveClip { col: 0, row: 0, start: 0, end: 4 * BAR, offset: 0, period: 0 }));
-        assert!(live.contains(&LiveClip { col: 1, row: 1, start: 4 * BAR, end: u32::MAX, offset: 0, period: 0 }));
+        assert!(live.contains(&LiveClip { col: 0, row: 0, start: 0, end: 4 * BAR, offset: 0, period: 0, soft: 0 }));
+        assert!(live.contains(&LiveClip { col: 1, row: 1, start: 4 * BAR, end: u32::MAX, offset: 0, period: 0, soft: 0 }));
         assert!(live.iter().all(|l| l.col < 2));
         pl.advance(&p, (4 * BAR) as f64);
         assert_eq!(pl.scene, Some((1, 4 * BAR)));
@@ -1359,13 +1465,59 @@ mod tests {
 
         // The engine plays it in session mode, cycling from its phase.
         p.mode = ponzik_engine::PlayMode::Session;
-        p.session_live = vec![LiveClip { col: 2, row: 0, start: 384, end: u32::MAX, offset: 100, period: 0 }];
+        p.session_live = vec![LiveClip { col: 2, row: 0, start: 384, end: u32::MAX, offset: 100, period: 0, soft: 0 }];
         let sample = Arc::new(Sample { name: "l".into(), sample_rate: 48_000.0, left: vec![0.1; 100], right: vec![0.1; 100], markers: Vec::new() });
         let seq = p.sequence_with(&|_| Some(sample.clone()));
         assert_eq!(seq.audio_clips.len(), 1);
         let a = &seq.audio_clips[0];
         assert_eq!((a.start, a.cycle, a.phase, a.track), (384, BAR, 100, 3));
         assert!(seq.session.is_empty());
+    }
+
+    #[test]
+    fn velocity_sensitive_slots_play_soft_hits_softer() {
+        assert_eq!(launch_soft(0, 1), 0, "not sensitive");
+        assert_eq!(launch_soft(100, 127), 0, "a full hit");
+        assert_eq!(launch_soft(100, 64), 50);
+        assert_eq!(launch_soft(50, 1), 50);
+        let mut p = project();
+        p.session_slot_mut(0, 0).unwrap().velocity = 100;
+        let mut pl = Player::new(0);
+        pl.launch_with(&p, 0, 0, 0.0, false, 64);
+        pl.launch_with(&p, 1, 0, 0.0, false, 10);
+        let live = pl.live(&p);
+        assert_eq!(live[0].soft, 50);
+        assert_eq!(live[1].soft, 0, "column 1 is not sensitive");
+        p.session_live = live;
+        p.mode = ponzik_engine::PlayMode::Session;
+        let seq = p.sequence_with(&|_| None);
+        assert_eq!(seq.session[0].soft, 50);
+    }
+
+    #[test]
+    fn scenes_set_tempo_and_meter_and_bars_follow_the_meter() {
+        let mut p = project();
+        p.session_scenes[1].set_bpm(Some(140.5));
+        p.session_scenes[1].sig = Some((3, 4));
+        assert_eq!(p.session_scenes[1].bpm(), Some(140.5));
+        let mut pl = Player::new(0);
+        pl.launch_scene(&p, 1, 0.0, false);
+        pl.advance(&p, 0.0);
+        assert_eq!(pl.started, [1], "the interface applies its tempo and meter");
+        // In 3/4, a bar is three beats: launches land there.
+        p.signatures = vec![ponzik_engine::TimeSig { tick: 0, num: 3, den: 4 }];
+        assert_eq!(p.session_bar(), 3 * PPQ);
+        let mut pl = Player::new(0);
+        pl.launch(&p, 0, 0, 100.0, true);
+        assert_eq!(pl.cols[0].queued(), Some((0, 3 * PPQ)));
+        // Saved and read back; junk falls back.
+        let back = crate::io::load(&crate::io::save(&p)).unwrap();
+        assert_eq!(back.session_scenes[1], p.session_scenes[1]);
+        let junk = r#"{"format": "ponzik-project", "session_scenes": [{"row": 0, "tempo": -5, "sig": [3, 5]}, {"row": 1, "tempo": 5000, "sig": [7, 8]}]}"#;
+        let p = crate::io::load(junk).unwrap();
+        assert_eq!(p.session_scenes[0], SceneDef::default());
+        assert_eq!(p.session_scenes[1].bpm(), Some(SceneDef::BPM.1));
+        assert_eq!(p.session_scenes[1].sig, Some((7, 8)));
     }
 
     #[test]
@@ -1378,6 +1530,7 @@ mod tests {
         s.legato = true;
         s.follow = Follow { bars: 8, a: FollowAction::Other, b: FollowAction::Again, chance_a: 35 };
         s.color = 0x3ccfc4;
+        s.velocity = 80;
         p.set_session_audio(4, 2, AudioClipDef { path: "a.wav".into(), len: 768, warp: true, bpm: 128.0, ..Default::default() });
         p.session_scenes[3].follow = Follow { bars: 2, a: FollowAction::Previous, ..Follow::OFF };
         let back = crate::io::load(&crate::io::save(&p)).unwrap();
