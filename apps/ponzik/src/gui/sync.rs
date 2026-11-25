@@ -118,7 +118,11 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: Loader) -> V
         }
         // A sampler in tempo sync gets its sample stretched again for a new tempo or length.
         let resync = ponzik_project::sync_key(&a.instrument, old.bpm) != ponzik_project::sync_key(&b.instrument, new.bpm);
-        if !same_instrument(&a.instrument, &b.instrument) || resync {
+        let layers = |d: &InstrumentDef| d.kind == ponzik_project::inst_rack::INST_RACK;
+        if layers(&a.instrument) && layers(&b.instrument) {
+            // Instrument Rack: only the chains, zones, mappings and values that changed.
+            cmds.extend(ponzik_project::inst_rack::layer_commands(i, &a.instrument, &b.instrument, sample_rate, new.bpm, loader));
+        } else if !same_instrument(&a.instrument, &b.instrument) || resync {
             cmds.push(Command::ReplaceInstrument {
                 channel: i,
                 instrument: new.make_synced_instrument(&b.instrument, sample_rate, loader),
@@ -159,7 +163,7 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: Loader) -> V
             cmds.push(Command::SetChannelPorta { channel: i, secs: b.porta });
         }
         // After the parameters: the set reads its base values from `new`.
-        if a.modulators != b.modulators || (!b.modulators.is_empty() && !same_instrument(&a.instrument, &b.instrument)) {
+        if a.modulators != b.modulators || (!b.modulators.is_empty() && (!same_instrument(&a.instrument, &b.instrument) || a.instrument.rack != b.instrument.rack)) {
             cmds.push(Command::SetChannelModulators { channel: i, mods: new.make_channel_mods(i) });
         }
     }

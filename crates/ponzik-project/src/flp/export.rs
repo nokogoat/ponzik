@@ -10,7 +10,8 @@
 //! velocity), playlist clips of patterns and audio files, mixer tracks (name,
 //! colour, volume, pan, mute, output and sends). Lost: Ponzik's instruments
 //! and effects and their settings, note effects, automation, tempo changes,
-//! markers, the Session view, takes, warping and fades.
+//! markers, the Session view, takes, warping and fades. An Instrument Rack
+//! exports as its first chain's instrument.
 
 use std::collections::BTreeMap;
 
@@ -159,7 +160,9 @@ pub fn export_flp(project: &Project, media: &dyn Fn(&str) -> Option<String>) -> 
     // Channels.
     let track = |t: usize| t.min(FL_INSERTS - 2) as u8;
     for (i, c) in p.channels.iter().enumerate() {
-        let sampler = c.instrument.kind == "sampler";
+        // An Instrument Rack: its first chain's instrument stands for it.
+        let inst = c.instrument.first_layer().unwrap_or_else(|| InstrumentDef::new("pulse"));
+        let sampler = inst.kind == "sampler";
         w.word(CH_NEW, i as u16);
         w.byte(CH_TYPE, if sampler { TYPE_SAMPLER } else { TYPE_NATIVE });
         w.text(PLUGIN_INTERNAL_NAME, if sampler { "" } else { GENERATOR });
@@ -168,7 +171,7 @@ pub fn export_flp(project: &Project, media: &dyn Fn(&str) -> Option<String>) -> 
             w.dword(PLUGIN_COLOR, color_event(c.color));
         }
         w.byte(CH_ENABLED, u8::from(!c.muted));
-        if let Some(sample) = c.instrument.sample.as_deref().filter(|_| sampler) {
+        if let Some(sample) = inst.sample.as_deref().filter(|_| sampler) {
             w.text(CH_SAMPLE_PATH, &file_path(sample));
         }
         w.dword(CH_ROOT_NOTE, c.root_note.min(127) as u32);
@@ -287,6 +290,22 @@ fn levels(pan: f32, gain: f32) -> [u8; 24] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_instrument_rack_exports_as_its_first_chain() {
+        let mut p = Project::empty();
+        let mut sampler = InstrumentDef::new("sampler");
+        sampler.sample = Some("/samples/piano.wav".into());
+        let mut rack = sampler.into_layer_rack();
+        rack.layer_add_chain(Some("strings"));
+        p.add_channel("Layers", rack, 60);
+        p.add_channel("Empty", InstrumentDef::new_layer_rack(), 60);
+        let (q, _) = import_flp(&export_flp(&p, &|_| None), "x", &|raw| Some(raw.to_string())).unwrap();
+        assert_eq!(q.channels[0].instrument.kind, "sampler");
+        assert_eq!(q.channels[0].instrument.sample.as_deref(), Some("/samples/piano.wav"));
+        assert_eq!(q.channels.len(), 2);
+        assert_eq!(p.layer_export_notes().len(), 2);
+    }
 
     #[test]
     fn a_project_comes_back_through_the_reader() {

@@ -39,6 +39,7 @@ mod breakcore;
 mod zalgo;
 mod demo;
 pub mod history;
+pub mod inst_rack;
 pub mod io;
 pub mod flp;
 pub mod foreign;
@@ -108,6 +109,8 @@ pub struct InstrumentDef {
     pub state: Option<PluginState>,
     /// The other A/B state, once compared (see [`ab`]).
     pub ab: Option<Box<ab::DeviceAb>>,
+    /// Chains and macros, for an Instrument Rack (kind [`inst_rack::INST_RACK`]).
+    pub rack: Option<Box<inst_rack::InstRackDef>>,
 }
 
 /// Opaque state of a CLAP or VST 3 plugin (`clap.state`, VST 3 component and
@@ -118,7 +121,8 @@ pub type PluginState = Arc<[u8]>;
 
 impl InstrumentDef {
     pub fn new(kind: &str) -> Self {
-        Self { kind: kind.into(), params: Vec::new(), sample: None, pads: Vec::new(), state: None, ab: None }
+        let rack = (kind == inst_rack::INST_RACK).then(Box::default);
+        Self { kind: kind.into(), params: Vec::new(), sample: None, pads: Vec::new(), state: None, ab: None, rack }
     }
 
     /// Every audio file the instrument needs (sample and pad layers).
@@ -999,6 +1003,9 @@ impl Project {
     /// Un plugin CLAP ou VST 3 introuvable ou défaillant est remplacé par Pulse (le projet
     /// garde son identifiant d'origine).
     pub fn make_instrument(def: &InstrumentDef, sample_rate: f32, loader: SampleLoader) -> Box<dyn Instrument> {
+        if def.kind == inst_rack::INST_RACK {
+            return inst_rack::make_layer_rack(def, sample_rate, 120.0, loader);
+        }
         let created = match plugins::instrument_from_kind(&def.kind) {
             Some(r) => r.map_err(|e| eprintln!("{}: {e}", def.kind)).ok(),
             None => registry::create_instrument(&def.kind),
