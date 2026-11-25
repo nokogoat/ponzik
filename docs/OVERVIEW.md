@@ -30,7 +30,9 @@
   (Rhodes-style), **Reed Piano** (Wurlitzer-style), **Tonewheel Organ** with rotary
   speaker, **Mallets**, plus synths (Pulse, FM, Wavetable, Acid 303, Granular, Pluck),
   drums (Kick, DrumSynth, Drum Machine, **Drum Pads**), Sampler, Slicer and External
-  MIDI for hardware synths.
+  MIDI for hardware synths. The **Instrument Rack** layers up to 16 of them (or
+  plugins) on one channel: key and velocity splits with crossfades, a chain selector
+  that a macro morphs, 16 macros with variations and Randomize.
 - **33 native effects**: EQ with spectrum, compressors, bus compressor, OTT-style
   multiband, limiters with true peak, gate, transient shaper, pump, ducking, reverbs,
   shimmer, delays, chorus, phaser, rotary speaker, saturators, **Amp & Cab**,
