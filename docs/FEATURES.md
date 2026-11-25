@@ -19,7 +19,7 @@ Legend: **FL** = FL Studio · **AB** = Ableton Live · ✅ done in Ponzik · �
 | Session view: clip grid, scenes, quantized launching | AB | ✅ 8 × 8 |
 | Arrangement view: linear timeline, tracks, recording the Session into the Arrangement | AB | 🟡 playlist |
 | Clip View / Device View (clip and effect chain details at the bottom of the screen) | AB | ✅ resizable bottom device panel with a strip of device chips (jump, drag to reorder, bypass, detach, presets), collapsible cards, an effect inserted between two cards, Ctrl+arrows from device to device, keyboard focus (Tab, arrows, Enter); clip panel for the selected clip |
-| Performance mode: launch Playlist clips live | FL | ⬜ |
+| Performance mode: launch Playlist clips live | FL | ✅ the clips right of the performance marker become pads: click, keys 1 to 8 (a column) or controller pads; one clip per lane; quantization off, beat, bar or 2 bars; trigger, gate, toggle, retrigger; progress ring and queued blink on each clip, stop buttons per lane and stop all; record the performance into the arrangement (the zone moves right when the take runs into it) |
 | Browser: samples, presets, plugins, projects, favorites, tags, collections | FL · AB | 🟡 instruments, effects, CLAP, VST3, LV2 and LADSPA plugins (format badge, a folder per format), WAV and FLAC files in a collapsible folder tree, search, favorites, recent items, drag and drop; no presets or collections |
 | Similar-sound search in the browser | AB | ⬜ |
 | Plugin picker, plugin database | FL | 🟡 CLAP, VST3, LV2 and LADSPA plugins listed in the browser, scanned in child processes with a cache |
@@ -156,7 +156,7 @@ Proprietary instruments cannot be copied, so Ponzik builds its own equivalents.
 | Sidechain | FL · AB | ✅ key track per insert (compressor, gate, Ducking) |
 | Plugin delay compensation (PDC), track delay | FL · AB | 🟡 PDC on tracks, sends and sidechain keys, for native, CLAP, VST3, LV2 and LADSPA effects; no manual track delay |
 | Multiple inputs and outputs, multi-output plugins | FL · AB | ⬜ |
-| Crossfader, cue (pre-listen) | AB | ⬜ |
+| Crossfader, cue (pre-listen) | AB | ✅ tracks on side A or B, master crossfader with linear, constant power and cut curves (ramped per block, MIDI learnable); cue per track, post-fader and before the crossfader, on a cue bus that never reaches the master. One stereo output only: the cue is blended into what you hear (cue blend knob), the master, its meters, recordings and exports keep the full mix |
 | Track and chain presets | FL · AB | ⬜ |
 
 ## 7. Automation and modulation
@@ -176,9 +176,10 @@ Proprietary instruments cannot be copied, so Ponzik builds its own equivalents.
 
 | Feature | Where | Ponzik |
 |---|---|---|
-| Quantized clip and scene launching | AB | ✅ to the bar |
-| Follow actions (automatic clip chaining) | AB | ⬜ |
-| Launch modes (trigger, gate, toggle, repeat), legato | AB | ⬜ |
+| Quantized clip and scene launching | AB | ✅ off to 4 bars, bars follow the time signature; launch velocity sensitivity per slot; scenes can set the tempo and the time signature |
+| Follow actions (automatic clip chaining) | AB | ✅ next, previous, first, last, any, other, again, stop; A/B with chance, after N bars; clips and scenes; seeded |
+| Launch modes (trigger, gate, toggle, repeat), legato | AB | ✅ |
+| Pad controllers as clip launchers | AB · FL | 🟡 Launchpad X, Mini MK3 and Pro MK3 (programmer mode, RGB LEDs in the clip colors), older Launchpads, APC Mini and MK2, APC40 and MK2, Push 1/2 in user mode and any 8x8 note grid, found by port name; MIDI learn for launch, stop and stop all. Not yet checked on real hardware |
 | Looper | AB | ⬜ |
 | Ableton Link sync | AB | ⬜ |
 | MIDI clock sync | FL · AB | ⬜ |

@@ -23,6 +23,9 @@ The same as FL Studio, and every one of them can be remapped in Settings.
 | Ctrl+Q | Quantize |
 | Ctrl+G | Group mixer tracks into a bus |
 | Ctrl+Shift+C | Capture the last phrase you played |
+| 1 to 8 (Session view) | Launch a scene (held: its gate clips play) |
+| 1 to 8 (playlist, performance mode) | Launch the same clip number on every lane (otherwise: jump to a marker) |
+| Shift+click (playlist, performance mode) | Edit a pad clip instead of launching it |
 | Ctrl+= · Ctrl+− · Ctrl+0 | Interface size |
 | Ctrl+Shift+F | Maximize the view (browser and devices hidden), again to restore; double-clicking a view tab does it too |
 | Ctrl+wheel | Zoom in time (piano roll, playlist) |
