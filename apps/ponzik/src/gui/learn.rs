@@ -13,6 +13,7 @@ use ponzik_project::midi_map::{
 use ponzik_ui::{Canvas, Rect};
 
 use super::Input;
+use super::live::pad_velocity;
 use super::app::{Action, App, MenuItem};
 use super::mixer::{gain_to_pos, pos_to_gain};
 use super::theme::*;
@@ -124,6 +125,9 @@ impl App {
             },
             ControlTarget::Scene(row) => tr_fmt!("Launch scene {}", row + 1),
             ControlTarget::Slot { col, row } => tr_fmt!("Launch slot {} · {}", col + 1, row + 1),
+            ControlTarget::StopColumn(col) => tr_fmt!("Stop column {}", col + 1),
+            ControlTarget::StopAll => tr("Stop all clips").into(),
+            ControlTarget::Crossfader => tr("Crossfader").into(),
         }
     }
 
@@ -136,7 +140,12 @@ impl App {
                 Some(info.to_norm(self.auto_value(p)?))
             }
             ControlTarget::Send { track, slot } => Some(self.project.tracks.get(track)?.sends[slot].1.clamp(0.0, 1.0)),
-            ControlTarget::Transport(_) | ControlTarget::Scene(_) | ControlTarget::Slot { .. } => Some(0.0),
+            ControlTarget::Crossfader => Some(self.project.live.xfader.pos),
+            ControlTarget::Transport(_)
+            | ControlTarget::Scene(_)
+            | ControlTarget::Slot { .. }
+            | ControlTarget::StopColumn(_)
+            | ControlTarget::StopAll => Some(0.0),
         }
     }
 
@@ -158,7 +167,12 @@ impl App {
                     tr.sends[slot].1 = if n < 0.01 { 0.0 } else { n };
                 }
             }
-            ControlTarget::Transport(_) | ControlTarget::Scene(_) | ControlTarget::Slot { .. } => {}
+            ControlTarget::Crossfader => self.project.live.xfader.pos = n,
+            ControlTarget::Transport(_)
+            | ControlTarget::Scene(_)
+            | ControlTarget::Slot { .. }
+            | ControlTarget::StopColumn(_)
+            | ControlTarget::StopAll => {}
         }
     }
 
@@ -296,7 +310,9 @@ impl App {
                 Outcome::Trigger => match m.target {
                     ControlTarget::Transport(a) => self.transport_action(a),
                     ControlTarget::Scene(row) => self.launch_scene(row),
-                    ControlTarget::Slot { col, row } => self.launch_clip(col, row),
+                    ControlTarget::Slot { col, row } => self.launch_clip_with(col, row, pad_velocity(value)),
+                    ControlTarget::StopColumn(col) => self.stop_launcher_column(col),
+                    ControlTarget::StopAll => self.stop_all_launched(),
                     _ => {}
                 },
                 Outcome::Release => match m.target {

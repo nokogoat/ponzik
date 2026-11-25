@@ -51,12 +51,18 @@ pub enum ControlTarget {
     Scene(usize),
     /// Launches a slot of the Session view (held: a gate slot plays).
     Slot { col: usize, row: usize },
+    /// Stops a column of the Session view (a lane in performance mode).
+    StopColumn(usize),
+    /// Stops every launched clip.
+    StopAll,
+    /// The master crossfader.
+    Crossfader,
 }
 
 impl ControlTarget {
     /// Pressed rather than turned.
     pub fn is_button(self) -> bool {
-        matches!(self, Self::Transport(_) | Self::Scene(_) | Self::Slot { .. })
+        matches!(self, Self::Transport(_) | Self::Scene(_) | Self::Slot { .. } | Self::StopColumn(_) | Self::StopAll)
     }
 }
 
@@ -477,6 +483,9 @@ pub fn mapping_json(m: &MidiMapping) -> Json {
         ControlTarget::Transport(a) => obj(vec![("kind", "transport".into()), ("action", a.id().into())]),
         ControlTarget::Scene(row) => obj(vec![("kind", "scene".into()), ("row", row.into())]),
         ControlTarget::Slot { col, row } => obj(vec![("kind", "slot".into()), ("col", col.into()), ("row", row.into())]),
+        ControlTarget::StopColumn(col) => obj(vec![("kind", "stop".into()), ("col", col.into())]),
+        ControlTarget::StopAll => obj(vec![("kind", "stop_all".into())]),
+        ControlTarget::Crossfader => obj(vec![("kind", "crossfader".into())]),
     };
     let mut pairs = vec![
         ("source", source),
@@ -520,6 +529,9 @@ pub fn load_mapping(v: &Json, channels: usize) -> Option<MidiMapping> {
         "transport" => ControlTarget::Transport(TransportAction::from_id(t.get("action")?.as_str()?)?),
         "scene" => ControlTarget::Scene(index(t.get("row"), crate::SESSION_SCENES)?),
         "slot" => ControlTarget::Slot { col: index(t.get("col"), crate::SESSION_COLUMNS)?, row: index(t.get("row"), crate::SESSION_SCENES)? },
+        "stop" => ControlTarget::StopColumn(index(t.get("col"), crate::PLAYLIST_LANES)?),
+        "stop_all" => ControlTarget::StopAll,
+        "crossfader" => ControlTarget::Crossfader,
         _ => return None,
     };
     let mode = match v.get("mode").and_then(Json::as_str) {
@@ -670,7 +682,13 @@ mod tests {
         assert_eq!(pad.apply(&mut s, CtlValue::Note { on: true, velocity: 90 }, 0.0), Outcome::Trigger);
         assert_eq!(pad.apply(&mut s, CtlValue::Note { on: false, velocity: 0 }, 0.0), Outcome::Release);
         assert_eq!(pad.apply(&mut s, CtlValue::Note { on: false, velocity: 0 }, 0.0), Outcome::None);
-        for target in [ControlTarget::Scene(7), ControlTarget::Slot { col: 2, row: 5 }] {
+        for target in [
+            ControlTarget::Scene(7),
+            ControlTarget::Slot { col: 2, row: 5 },
+            ControlTarget::StopColumn(3),
+            ControlTarget::StopAll,
+            ControlTarget::Crossfader,
+        ] {
             let m = MidiMapping::new(CtlSource::Note { channel: 0, key: 40 }, target, CtlMode::Toggle);
             assert_eq!(load_mapping(&mapping_json(&m), 4), Some(m));
         }
