@@ -30,6 +30,10 @@ const HEAD_H: f32 = 30.0;
 const STOP_H: f32 = 34.0;
 /// Follow action waits offered, in bars (0: off).
 const FOLLOW_BARS: [u16; 10] = [0, 1, 2, 4, 8, 12, 16, 24, 32, 64];
+/// Launch velocity sensitivities offered, in percent.
+const VELOCITY: [u8; 5] = [0, 25, 50, 75, 100];
+/// Time signatures a scene can set.
+const SCENE_SIGS: [(u8, u8); 7] = [(2, 4), (3, 4), (4, 4), (5, 4), (6, 8), (7, 8), (12, 8)];
 
 /// What the inspector shows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -92,7 +96,7 @@ impl App {
         }
     }
 
-    fn ensure_session_mode(&mut self) {
+    pub(super) fn ensure_session_mode(&mut self) {
         if self.project.mode != PlayMode::Session {
             self.set_mode(PlayMode::Session);
         }
@@ -104,11 +108,16 @@ impl App {
 
     /// A slot's button goes down (mouse, MIDI).
     pub fn launch_clip(&mut self, col: usize, row: usize) {
+        self.launch_clip_with(col, row, 127);
+    }
+
+    /// A slot's button goes down with a velocity (a pad).
+    pub fn launch_clip_with(&mut self, col: usize, row: usize, velocity: u8) {
         if !self.project.session_filled(col, row) {
             return;
         }
         let (pos, playing) = (self.position, self.playing && self.project.mode == PlayMode::Session);
-        self.session.launch(&self.project, col, row, pos, playing);
+        self.session.launch_with(&self.project, col, row, pos, playing, velocity);
         self.ensure_session_mode();
         self.push_session();
     }
@@ -234,7 +243,7 @@ impl App {
     }
 
     /// Color and name of a slot's clip.
-    fn slot_look(&self, col: usize, row: usize) -> (Color, String) {
+    pub(super) fn slot_look(&self, col: usize, row: usize) -> (Color, String) {
         let slot = self.project.session_slot(col, row);
         let (base, name) = match (self.project.session_pattern(col, row), &slot.audio) {
             (Some(p), _) => (self.pattern_tint(p), self.project.patterns[p].name.clone()),
@@ -331,6 +340,15 @@ impl App {
             self.text_right(c, self.f.mono_med, 12.0, cell.right() - 12.0, cell.y + cell.h * 0.5, &(r + 1).to_string(), t.muted.mix(t.text2, hv));
             if self.project.session_scenes[r].follow.is_on() {
                 draw_icon(c, Icon::ChevronRight, cell.right() - 30.0, cell.y + cell.h * 0.5, 10.0, t.select);
+            }
+            // Tempo and meter the scene sets.
+            let scene = self.project.session_scenes[r];
+            let mut set = scene.bpm().map(|b| ponzik_i18n::num(b as f64, 1)).unwrap_or_default();
+            if let Some((n, d)) = scene.sig {
+                set = if set.is_empty() { format!("{n}/{d}") } else { format!("{set} {n}/{d}") };
+            }
+            if !set.is_empty() && cell.h > 36.0 {
+                self.text_center(c, self.f.mono, 9.0, cell.x + cell.w * 0.5, cell.bottom() - 9.0, &set, t.accent.alpha(0.9));
             }
             self.ctl_mark(c, (cell.right() - 6.0, cell.y + 6.0), 1.0, ControlTarget::Scene(r));
             if hov {
@@ -659,6 +677,17 @@ impl App {
         }
         y += 36.0;
 
+        y = self.inspector_label(c, r.x, y, tr("Velocity"));
+        let i = VELOCITY.iter().position(|&v| v >= slot.velocity).unwrap_or(0);
+        let label = if slot.velocity == 0 { tr("Off").to_string() } else { format!("{}%", slot.velocity) };
+        let tip = tr("Launch velocity: a pad hit softly plays the clip softer, by this much");
+        let d = self.stepper(c, input, wid("ses-vel", col, row), Rect::new(r.x, y, r.w, 26.0), &label, tip);
+        if d != 0 {
+            let velocity = VELOCITY[(i as i32 + d).clamp(0, VELOCITY.len() as i32 - 1) as usize];
+            edited = Some((tr("Launch velocity"), ponzik_project::SlotDef { velocity, ..slot.clone() }));
+        }
+        y += 36.0;
+
         if let Some(a) = &slot.audio {
             y = self.inspector_label(c, r.x, y, tr("Loop length"));
             let beats = a.len as f32 / (TICKS_PER_BAR / 4) as f32;
@@ -702,12 +731,37 @@ impl App {
             self.open_popup(Popup::Control(target), midi);
         }
         self.ctl_mark(c, (midi.right() - 4.0, midi.y + 4.0), 1.0, target);
-        let follow = self.project.session_scenes[row].follow;
-        let (edited, y) = self.follow_editor(c, input, "ses-sfollow", r.x, r.y + 44.0, r.w, follow, true);
+        let scene = self.project.session_scenes[row];
+        let (edited, y) = self.follow_editor(c, input, "ses-sfollow", r.x, r.y + 44.0, r.w, scene.follow, true);
         if let Some(f) = edited {
             self.project.session_scenes[row].follow = f;
             self.commit(tr("Scene follow action"));
         }
+        // Tempo and time signature the scene sets when it starts.
+        let half = (r.w - 8.0) * 0.5;
+        let y = self.inspector_label(c, r.x, y, tr("Tempo and meter"));
+        let label = scene.bpm().map_or_else(|| tr("Tempo off").to_string(), |b| tr_fmt!("{} BPM", ponzik_i18n::num(b as f64, 1)));
+        let tip = tr("Tempo the scene sets when it starts\nWheel or arrows: one BPM");
+        let d = self.stepper(c, input, wid("ses-stempo", row, 0), Rect::new(r.x, y, half, 26.0), &label, tip);
+        if d != 0 {
+            let bpm = match scene.bpm() {
+                None if d > 0 => Some(self.project.bpm.round()),
+                None => None,
+                Some(b) if d < 0 && b <= ponzik_project::SceneDef::BPM.0 => None,
+                Some(b) => Some(b.round() + d as f32),
+            };
+            self.project.session_scenes[row].set_bpm(bpm);
+            self.commit(tr("Scene tempo"));
+        }
+        let label = scene.sig.map_or_else(|| tr("Meter off").to_string(), |(n, d)| format!("{n}/{d}"));
+        let i = scene.sig.and_then(|s| SCENE_SIGS.iter().position(|x| *x == s)).map_or(0, |i| i + 1) as i32;
+        let d = self.stepper(c, input, wid("ses-ssig", row, 0), Rect::new(r.x + half + 8.0, y, half, 26.0), &label, tr("Time signature the scene sets when it starts"));
+        if d != 0 {
+            let k = (i + d).clamp(0, SCENE_SIGS.len() as i32);
+            self.project.session_scenes[row].sig = (k > 0).then(|| SCENE_SIGS[k as usize - 1]);
+            self.commit(tr("Scene time signature"));
+        }
+        let y = y + 36.0;
         let line = tr("The scene's clips launch together, on the session's quantization; empty slots stop their column.");
         let mut y = y + 6.0;
         for part in self.wrap(self.f.sans, 12.0, line, r.w) {
@@ -752,6 +806,24 @@ impl App {
                 }
                 "rec" => {
                     self.session.start_recording(0.0);
+                }
+                "live" => {
+                    // A filled grid, a velocity-sensitive slot, scenes with tempo and meter.
+                    let n = self.project.patterns.len().max(1);
+                    for col in 0..5 {
+                        for row in 0..4 {
+                            if (col + row) % 3 != 2 {
+                                self.project.set_session_pattern(col, row, (col + row) % n);
+                            }
+                        }
+                    }
+                    if let Some(s) = self.project.session_slot_mut(0, 0) {
+                        s.velocity = 75;
+                    }
+                    self.project.session_scenes[1].set_bpm(Some(128.0));
+                    self.project.session_scenes[1].sig = Some((3, 4));
+                    self.project.session_scenes[2].set_bpm(Some(140.0));
+                    self.commit(tr("Fill a slot"));
                 }
                 _ => {}
             }
