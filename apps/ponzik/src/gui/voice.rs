@@ -447,7 +447,7 @@ impl App {
         draw_icon(c, Icon::Mic, in_r.x + 15.0, icy, 14.0, if self.rec.input.is_some() { t.accent } else { t.muted });
         let device = self.rec.input.as_ref().map_or_else(|| tr("No input").to_string(), |(n, _)| n.clone());
         let source = match self.rec.settings.source {
-            InputSource::Stereo => tr("Stereo"),
+            InputSource::Stereo | InputSource::Resample(_) => tr("Stereo"),
             InputSource::Left => tr("In 1"),
             InputSource::Right => tr("In 2"),
         };

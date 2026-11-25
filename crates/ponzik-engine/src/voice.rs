@@ -154,7 +154,7 @@ impl VoiceInput {
         let n = l.len().min(mono.len());
         let mono = &mut mono[..n];
         match settings.source {
-            InputSource::Stereo => {
+            InputSource::Stereo | InputSource::Resample(_) => {
                 for (m, (a, b)) in mono.iter_mut().zip(l.iter().zip(r)) {
                     *m = 0.5 * (a + b);
                 }

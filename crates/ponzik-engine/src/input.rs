@@ -111,17 +111,30 @@ pub enum InputSource {
     Left,
     /// Entrée 2, en mono.
     Right,
+    /// Resampling: the output of a mixer track, post-fader, recorded as it
+    /// plays ([`crate::mixer::MASTER`]: the master's output, what is heard).
+    /// Never monitored: the armed track's own output is cut while it records
+    /// (see [`crate::Command::SetMonitor`]), so nothing loops back.
+    Resample(usize),
 }
 
 impl InputSource {
     pub fn is_mono(self) -> bool {
-        self != InputSource::Stereo
+        matches!(self, InputSource::Left | InputSource::Right)
+    }
+
+    /// The mixer track resampled, for [`InputSource::Resample`].
+    pub fn resampled(self) -> Option<usize> {
+        match self {
+            InputSource::Resample(t) => Some(t),
+            _ => None,
+        }
     }
 
     /// Les canaux (gauche, droite) que la source donne à une piste stéréo.
     pub(crate) fn pick<'a>(self, l: &'a [f32], r: &'a [f32]) -> (&'a [f32], &'a [f32]) {
         match self {
-            InputSource::Stereo => (l, r),
+            InputSource::Stereo | InputSource::Resample(_) => (l, r),
             InputSource::Left => (l, l),
             InputSource::Right => (r, r),
         }
