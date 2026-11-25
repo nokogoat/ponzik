@@ -16,7 +16,10 @@
   follow actions and recording into the arrangement.
 - **Hum to play**: sing a note and the selected instrument plays it in real time,
   snapped to your scale, and writes it into the piano roll.
-- **Groove pool**, key detection, MIDI capture (Ctrl+Shift+C keeps what you just
+- **Groove pool**: MPC swings, Dilla, garage, trap and more, or grooves taken
+  from your own loops, MIDI files and takes; drag one onto patterns, channels
+  and clips, shared so one tweak changes them all, with a ghost of where each
+  note lands. Key detection, MIDI capture (Ctrl+Shift+C keeps what you just
   played even if you weren't recording).
 
 ## Sounds
