@@ -59,6 +59,7 @@ mod rack;
 mod rackfx;
 mod samplelab;
 mod record;
+mod resample;
 mod session;
 mod settings;
 mod start;
@@ -848,7 +849,7 @@ pub fn screenshot(path: &str, width: usize, height: usize, view: &str) -> Result
         app.screenshot_audio_edit(&spec);
     }
     // PONZIK_RECORD=1 : piste armée et panneau d'enregistrement ; =takes : avec des prises
-    // en boucle ; =devices : la liste des entrées.
+    // en boucle ; =devices : la liste des entrées ; =resample[-menu] : le master rééchantillonné.
     if let Ok(mode) = std::env::var("PONZIK_RECORD") {
         app.screenshot_record(&mode);
     }

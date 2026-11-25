@@ -525,6 +525,9 @@ impl App {
         let armed = self.autorec.mode != ponzik_project::auto_rec::AutoMode::Read;
         let v = vec![
             MenuItem::new(Icon::Mic, tr("Recording panel"), Action::ToggleRecordPanel).on(self.rec.panel).tip(tr("Input, level, monitoring, latency")),
+            MenuItem::new(Icon::Mixer, tr("Resample the master"), Action::ResampleMaster)
+                .on(self.rec.resample == Some(ponzik_engine::mixer::MASTER))
+                .tip(tr("A new track records what you hear, in time with the song")),
             MenuItem::new(Icon::Record, tr("Count-in"), Action::ToggleCountIn).on(self.count_in).tip(tr("One bar of metronome before recording")),
             MenuItem::new(Icon::Metronome, tr("Metronome"), Action::ToggleMetronome).on(self.metronome).detail(key(S::Metronome)),
             MenuItem::new(Icon::Voice, tr("Voice to Notes"), Action::ToggleVoice).on(self.voice.enabled).tip(tr("Sing or hum to play the selected instrument")).sep(),

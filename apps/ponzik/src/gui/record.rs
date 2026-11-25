@@ -38,7 +38,7 @@ const TAKE_LOW_SECONDS: f32 = 8.0;
 /// Tampons gardés pour les prochaines prises, ramenés à leur taille de départ.
 const SPARE_TAKES: usize = 2;
 const PANEL_W: f32 = 372.0;
-const PANEL_H: f32 = 556.0;
+const PANEL_H: f32 = 600.0;
 /// Graduations du VU-mètre d'entrée, en dBFS.
 const METER_TICKS: [f32; 7] = [-48.0, -36.0, -24.0, -18.0, -12.0, -6.0, 0.0];
 const METER_FLOOR: f32 = -60.0;
@@ -82,7 +82,7 @@ impl RecordSettings {
     /// Texte `clé=valeur`, une ligne par réglage.
     pub fn to_text(&self) -> String {
         let source = match self.source {
-            InputSource::Stereo => "stereo",
+            InputSource::Stereo | InputSource::Resample(_) => "stereo",
             InputSource::Left => "in1",
             InputSource::Right => "in2",
         };
@@ -166,6 +166,9 @@ pub struct RecordState {
     pub input: Option<(String, u16)>,
     /// Pistes armées et leur source.
     pub armed: Vec<(usize, InputSource)>,
+    /// Resampling: the track whose output the armed tracks record (the
+    /// master: what is heard); `None`: the audio input. Not saved.
+    pub resample: Option<usize>,
     /// Tampons confiés au moteur : piste et source.
     in_engine: Vec<(usize, InputSource)>,
     /// Prises en cours allongées : piste, trames accordées, moment du dernier envoi.
@@ -206,8 +209,13 @@ impl RecordState {
     /// Armed tracks and takes follow their track to its new number; those of
     /// a deleted track are dropped (the engine ends their take).
     pub(super) fn follow_tracks(&mut self, map: impl Fn(usize) -> Option<usize>) {
-        self.armed = self.armed.iter().filter_map(|&(t, s)| Some((map(t)?, s))).collect();
-        self.in_engine = self.in_engine.iter().filter_map(|&(t, s)| Some((map(t)?, s))).collect();
+        let source = |s: InputSource| match s.resampled() {
+            Some(k) => map(k).map(InputSource::Resample),
+            None => Some(s),
+        };
+        self.armed = self.armed.iter().filter_map(|&(t, s)| Some((map(t)?, source(s)?))).collect();
+        self.in_engine = self.in_engine.iter().filter_map(|&(t, s)| Some((map(t)?, source(s)?))).collect();
+        self.resample = self.resample.and_then(|k| if k == MASTER { Some(MASTER) } else { map(k) });
         self.granted = self.granted.iter().filter_map(|&(t, n, at)| Some((map(t)?, n, at))).collect();
     }
 
@@ -257,7 +265,7 @@ impl App {
         if old.low_latency != settings.low_latency {
             self.send(Command::SetLowLatencyMonitoring(settings.low_latency));
         }
-        if old.source != settings.source {
+        if old.source != settings.source && self.rec.resample.is_none() {
             // Toutes les pistes armées suivent la source choisie.
             for a in &mut self.rec.armed {
                 a.1 = settings.source;
@@ -281,7 +289,9 @@ impl App {
         let armed = self.rec.armed.clone();
         let on = self.rec.settings.monitor && self.rec.input.is_some();
         for (track, source) in armed {
-            self.send(Command::SetMonitor { track, source: on.then_some(source) });
+            // A track resampling an output is cut, input or not: nothing loops back.
+            let resampling = source.resampled().is_some();
+            self.send(Command::SetMonitor { track, source: (on || resampling).then_some(source) });
         }
     }
 
@@ -338,8 +348,10 @@ impl App {
         if let Some(output) = self.rec.output.as_mut() {
             let _ = output.set_input(None);
         }
-        for (track, _) in self.rec.armed.clone() {
-            self.send(Command::SetMonitor { track, source: None });
+        for (track, s) in self.rec.armed.clone() {
+            if s.resampled().is_none() {
+                self.send(Command::SetMonitor { track, source: None });
+            }
         }
     }
 
@@ -356,9 +368,14 @@ impl App {
             self.toast(&tr_fmt!("{} disarmed", name));
             return;
         }
+        if self.rec.resample == Some(track) {
+            self.toast(tr("A track can't record its own output: pick another source"));
+            return;
+        }
         let first = self.rec.armed.is_empty();
-        self.rec.armed.push((track, self.rec.settings.source));
-        if !self.rec.demo && !self.open_input() {
+        let source = self.arm_source();
+        self.rec.armed.push((track, source));
+        if source.resampled().is_none() && !self.rec.demo && !self.open_input() {
             self.rec.armed.retain(|&(t, _)| t != track);
             return;
         }
@@ -398,7 +415,7 @@ impl App {
     /// À chaque image : niveaux, latences, tampons du moteur, prises et calibrage revenus.
     pub(super) fn record_tick(&mut self, dt: f32) {
         // L'entrée reste ouverte tant qu'on en a besoin (piste armée, panneau ouvert).
-        let want_input = !self.rec.armed.is_empty() || self.rec.panel || self.voice.enabled || self.audio_edit.capture.is_some();
+        let want_input = self.rec.armed.iter().any(|a| a.1.resampled().is_none()) || self.rec.panel || self.voice.enabled || self.audio_edit.capture.is_some();
         if want_input && self.rec.input.is_none() && self.rec.output.is_some() && !self.rec.demo && self.rec.input_error.is_none() {
             // Échec : le panneau reste ouvert sur la liste des micros, avec l'erreur ;
             // on ne réessaie qu'au prochain choix de micro ou à la réouverture.
@@ -453,8 +470,10 @@ impl App {
 
     /// Le moteur enregistre les pistes armées quand l'enregistrement du transport est actif.
     fn sync_record_buffers(&mut self) {
+        // Resampling takes need no input.
+        let input = self.rec.input.is_some() || self.rec.demo;
         let want: Vec<(usize, InputSource)> =
-            if self.record && (self.rec.input.is_some() || self.rec.demo) { self.rec.armed.clone() } else { Vec::new() };
+            if self.record { self.rec.armed.iter().filter(|a| input || a.1.resampled().is_some()).copied().collect() } else { Vec::new() };
         let gone: Vec<(usize, InputSource)> = self.rec.in_engine.iter().filter(|a| !want.contains(a)).copied().collect();
         for (track, _) in gone {
             self.rec.in_engine.retain(|&(t, _)| t != track);
@@ -530,6 +549,10 @@ impl App {
     /// Retard total d'une prise, en trames : compensation du mixer, aller-retour
     /// du pilote et décalage manuel (ou calibré).
     fn take_shift(&self, rec: &RecordBuffer) -> usize {
+        // Resampled: only the latency of the output it recorded, no converters.
+        if rec.source.resampled().is_some() {
+            return rec.mix_latency;
+        }
         let offset = (self.rec.settings.offset_ms as f64 / 1000.0 * rec.sample_rate as f64).round() as i64;
         (rec.mix_latency as i64 + self.rec.latency.round_trip() as i64 + offset).max(0) as usize
     }
@@ -805,7 +828,7 @@ impl App {
             (tr("Input 2 only, mono take"), ""),
         ];
         let sel = match self.rec.settings.source {
-            InputSource::Stereo => 0,
+            InputSource::Stereo | InputSource::Resample(_) => 0,
             InputSource::Left => 1,
             InputSource::Right => 2,
         };
@@ -814,6 +837,8 @@ impl App {
             s.source = [InputSource::Stereo, InputSource::Left, InputSource::Right][i];
             self.set_record_settings(s);
         }
+        y += 40.0;
+        self.record_source_row(c, input, Rect::new(inner.x, y, inner.w, 34.0));
         y += 44.0;
 
         // VU-mètre d'entrée.
@@ -1124,6 +1149,19 @@ impl App {
         self.rec.settings.strip.high_pass = true;
         let track = 3;
         self.project.tracks[track].name = "Vocals".into();
+        if let Some(rest) = mode.strip_prefix("resample") {
+            // Resampling the master (`resample-menu`: its source menu open).
+            self.project.tracks[track].name = tr("Resampling").to_string();
+            self.rec.resample = Some(MASTER);
+            self.rec.armed.push((track, InputSource::Resample(MASTER)));
+            self.record = true;
+            self.open_record_panel(Some((1040.0, TOP_BAR + 4.0)));
+            if rest == "-menu" {
+                let x = (1040.0 - PANEL_W * 0.5) + 16.0;
+                self.open_popup(super::app::Popup::RecordSource, Rect::new(x, TOP_BAR + 4.0 + 16.0 + 40.0 + 16.0 + 42.0 + 40.0 + 34.0, PANEL_W - 32.0, 0.0));
+            }
+            return;
+        }
         self.rec.armed.push((track, InputSource::Left));
         self.record = true;
         self.project.loop_range = Some((4 * ponzik_engine::TICKS_PER_BAR, 8 * ponzik_engine::TICKS_PER_BAR));

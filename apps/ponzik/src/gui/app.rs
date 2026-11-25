@@ -195,6 +195,8 @@ pub enum Popup {
     MainMenu,
     /// Under the record button: count-in, metronome, input, voice, automation.
     RecordMenu,
+    /// What the armed tracks record: the input, or a resampled output.
+    RecordSource,
     /// Under the project name: rename, save, open, export.
     ProjectMenu,
     /// Right-click on the mode pill: pattern, song, session.
@@ -461,6 +463,10 @@ pub enum Action {
     /// Opens or closes a plugin device's own window.
     ToggleEditor(super::devices::Device),
     SetAutoMode(ponzik_project::auto_rec::AutoMode),
+    /// Armed tracks record this track's output (`None`: the audio input).
+    SetResample(Option<usize>),
+    /// A new track, armed on the master's output.
+    ResampleMaster,
     /// The last phrase played becomes a pattern.
     CaptureMidi,
     /// Waits for a MIDI control to move, then links it.
@@ -3598,6 +3604,7 @@ impl App {
             }
             Popup::AutoMode => (tr("Record automation").into(), self.auto_mode_items()),
             Popup::RecordMenu => self.record_menu(),
+            Popup::RecordSource => self.record_source_items(),
             Popup::ProjectMenu => self.project_menu(),
             Popup::ModeMenu => self.mode_menu(),
             Popup::Control(target) => {
@@ -4064,6 +4071,8 @@ impl App {
             Action::Automate(target, value) => self.create_automation(target, value),
             Action::Learn(target) => self.start_learn(target),
             Action::SetAutoMode(m) => self.set_auto_mode(m),
+            Action::SetResample(s) => self.set_resample(s),
+            Action::ResampleMaster => self.resample_master(),
             Action::CaptureMidi => self.capture_midi(),
             Action::Unlink(target) => self.unlink(target),
             Action::SaveAs => self.open_save_dialog(super::filedialog::Then::Nothing),
