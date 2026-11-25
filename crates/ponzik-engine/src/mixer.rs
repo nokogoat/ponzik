@@ -1141,6 +1141,12 @@ impl Mixer {
         (&m.l[..n], &m.r[..n])
     }
 
+    /// Sets the crossfader gains at once, without a ramp (a new engine).
+    pub fn set_crossfader_now(&mut self, gains: [f32; 3]) {
+        self.xf_gain = gains;
+        self.xf_prev = gains;
+    }
+
     /// Crossfader gains of the block: from where the last block ended to the target.
     fn xf_ramps(&self) -> [(f32, f32); 3] {
         std::array::from_fn(|k| (self.xf_prev[k], self.xf_gain[k]))

@@ -40,7 +40,8 @@ impl PerfClip {
         }
     }
 
-    /// Length of one loop, in ticks.
+    /// Length of one loop, in ticks (never 0).
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> u32 {
         match self {
             Self::Pattern(c) => c.len.max(1),
@@ -172,7 +173,7 @@ impl Project {
         let zone = self.live.perf.zone;
         if self.live.perf.on && end > zone {
             let map = self.tempo_map();
-            let to = (map.ceil_bar(end as f64) as u32).max(end);
+            let to = map.ceil_bar(end as f64).max(end);
             let delta = to - zone;
             for c in self.clips.iter_mut().filter(|c| c.start >= zone) {
                 c.start += delta;
