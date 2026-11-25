@@ -307,7 +307,7 @@ pub fn palette_index(rgb: u32, dim: bool) -> u8 {
 
 /// Red and green levels (0..3) of a color on a two-color Launchpad or APC.
 fn red_green(rgb: u32) -> (u8, u8) {
-    let (r, g) = ((rgb >> 16 & 0xff) as u32, (rgb >> 8 & 0xff) as u32);
+    let (r, g) = (rgb >> 16 & 0xff, rgb >> 8 & 0xff);
     let max = r.max(g).max(1);
     ((r * 3 / max) as u8, (g * 3 / max) as u8)
 }

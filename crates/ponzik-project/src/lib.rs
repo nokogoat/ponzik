@@ -1146,6 +1146,7 @@ impl Project {
             t.output = def.output;
             t.sends = def.sends;
             t.vca = def.vca;
+            t.xfade = def.xfade;
             if let Some(sample) = self.frozen_track(i, loader) {
                 // Frozen: its render replaces its input and inserts, which stay unloaded.
                 t.frozen = Some(Box::new(Frozen::new(sample)));
@@ -1161,6 +1162,8 @@ impl Project {
         if let Some(order) = self.routing_order() {
             mixer.order = order;
         }
+        mixer.set_crossfader_now(self.live.xfader.table());
+        mixer.cue_mix = self.live.xfader.cue_mix;
         (engine, handle)
     }
 

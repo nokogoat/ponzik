@@ -183,6 +183,8 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: Loader) -> V
         || old.pitch_edits != new.pitch_edits
         || old.take_groups != new.take_groups
         || old.session_live != new.session_live
+        || old.live.playing != new.live.playing
+        || old.live.perf != new.live.perf
         || old.loop_range != new.loop_range
         || n_old != n_new
         || renumbered
@@ -213,6 +215,13 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: Loader) -> V
             cmds.push(Command::SetTrackFrozen { track: t, frozen: player });
         }
     }
+    // Crossfader and cue blend.
+    if old.live.xfader.table() != new.live.xfader.table() {
+        cmds.push(Command::SetCrossfader(new.live.xfader.table()));
+    }
+    if old.live.xfader.cue_mix != new.live.xfader.cue_mix {
+        cmds.push(Command::SetCueMix(new.live.xfader.cue_mix));
+    }
     for t in 0..new.tracks.len() {
         let (a, b) = (old_track(t), &new.tracks[t]);
         let unloaded = refrozen.contains(&t) || track_freeze(new, t, loader).is_some();
@@ -221,6 +230,9 @@ pub fn diff(old: &Project, new: &Project, sample_rate: f32, loader: Loader) -> V
         }
         if a.pan != b.pan {
             cmds.push(Command::SetTrackPan { track: t, pan: b.pan });
+        }
+        if a.xfade != b.xfade {
+            cmds.push(Command::SetTrackXfade { track: t, side: b.xfade });
         }
         if a.muted != b.muted {
             cmds.push(Command::SetTrackMute { track: t, muted: b.muted });
